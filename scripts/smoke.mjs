@@ -51,7 +51,7 @@ try{
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1));await page.screenshot({path:path.join(output,'06-narrow.png'),fullPage:true});record('390px layout has no page overflow');
   await page.setViewportSize({width:1440,height:900});
   await appendFile(path.join(accepted.activeProject.root,'app.js'),'\n// external edit invalidates prior evidence\n');
-  await page.getByRole('button',{name:'Refresh project',exact:true}).click();
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
   const stale=await untilState(page,s=>s.task.revision!==accepted.task.revision);assert.equal(stale.task.acceptedRevision,null);assert.equal(stale.task.previewRevision,null);assert.equal(stale.task.check.status,'stale');assert(await page.getByRole('button',{name:'Accept this revision',exact:true}).isDisabled());record('External edit invalidates checks, preview, and acceptance');
   await page.getByRole('button',{name:'Profile menu',exact:true}).click();
   await page.getByRole('menuitem',{name:/Settings/}).click();
