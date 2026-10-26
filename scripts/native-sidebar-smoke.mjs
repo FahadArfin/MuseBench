@@ -76,7 +76,10 @@ try {
     }
   }, html);
   await page.getByRole('button',{name:'Muse AI',exact:true}).click();
-  await page.getByRole('button', { name: 'New Muse chat', exact: true }).waitFor();
+  await page.locator('.muse-agent-shortcut').click();
+  await page.getByRole('button',{name:'Expand Ideas',exact:true}).click();
+  await page.getByRole('button',{name:'Expand Goals',exact:true}).click();
+  assert.equal(await page.getByRole('button', { name: 'New Muse chat', exact: true }).count(),0);
   for (const [label, title] of [['Muse chats', 'Design a native Muse sidebar'], ['Ideas', 'A quiet writing room'], ['Goals', 'Ship my desktop app']]) await item(label, title).waitFor();
   await until(async () => { const current = await state(); return ['chats', 'ideas', 'goals'].every(kind => current.library?.[kind]?.items?.length > 0); }, 'All native library groups populate');
   const initial = await state();
@@ -97,6 +100,7 @@ try {
   assert.equal(await item('Muse chats', 'Learn a new keyboard shortcut').count(), 0);
   record('Collection groups collapse and expand; long chat lists expose reversible show-more controls');
 
+  await page.getByRole('button',{name:'Search Muse chats',exact:true}).click();
   const beforeFilter = await views();
   const filter = page.getByRole('textbox', { name: 'Filter Muse sidebar', exact: true });
   await filter.fill('autumn');
@@ -167,7 +171,7 @@ try {
   assert.equal(await evaluate(chat.id, 'document.querySelector("textarea").value'), 'Unsent native sidebar draft');
   record('Refresh reconciles renamed and removed collection items without reloading an active chat');
 
-  await page.getByRole('button', { name: 'New Muse chat', exact: true }).click();
+  await page.keyboard.press('Control+n');
   await until(async () => new URL((await visible()).url).pathname === '/thread/new', 'New Muse chat opens official new-thread destination');
   const newChat = await visible();
   await until(async () => await evaluate(newChat.id, 'Boolean(document.querySelector("textarea"))'), 'New chat composer ready');
@@ -176,7 +180,7 @@ try {
   const newDocumentId = await evaluate(newChat.id, 'window.__fixtureDocumentId');
   await item('Muse chats', 'Main conversation').click();
   await until(async () => new URL((await visible()).url).pathname === '/', 'Main conversation opens from a draft with no chat switcher');
-  await page.getByRole('button', { name: 'New Muse chat', exact: true }).click();
+  await page.keyboard.press('Control+n');
   await until(async () => (await visible()).id === newChat.id, 'Unsent new-chat view reused');
   assert.equal(await evaluate(newChat.id, 'window.__fixtureDocumentId'), newDocumentId);
   assert.equal(await evaluate(newChat.id, 'document.querySelector("textarea").value'), 'Unsent new Muse chat draft');

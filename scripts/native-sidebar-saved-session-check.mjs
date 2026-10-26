@@ -62,7 +62,7 @@ try{
   assert.equal((await state()).library.selectedId,main.id);
   record('Main conversation opens directly from its native chat row');
   stage='Open an unsent Muse draft';
-  await page.getByRole('button',{name:'New Muse chat',exact:true}).click();
+  await page.keyboard.press('Control+n');
   await until(()=>remoteBoolean(`()=>location.pathname==='/thread/new'&&Boolean(document.querySelector('[contenteditable="true"],textarea'))`));
   record('New Muse chat opens the official empty draft without sending a message');
   await page.getByRole('group',{name:'Muse chats',exact:true}).getByRole('button',{name:main.title,exact:true}).click();

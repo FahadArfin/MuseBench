@@ -109,24 +109,23 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
   const agentButton=<button type="button" className={`navigation-row muse-agent-shortcut ${destination==='bot'&&!library.selectedId?'active':''}`} aria-label={agentName} title={agentName} aria-current={destination==='bot'&&!library.selectedId?'page':undefined} disabled={!available.bot} onClick={()=>onNavigate('bot')}>
     {agentProfile?.avatar?<img className="muse-agent-avatar" src={agentProfile.avatar} alt="" draggable={false}/>:<Bot size={20} aria-hidden="true"/>}<span>{agentName}</span>
   </button>;
-  if(destination==='chat')return <div className="personal-navigation"><nav className="meta-native-navigation" aria-label="Meta AI navigation">
-    {([{action:'newChat',label:'New chat',icon:SquarePen},{action:'search',label:'Search',icon:Search},{action:'media',label:'Media',icon:Images},{action:'artifacts',label:'Artifacts',icon:Shapes},{action:'scheduled',label:'Scheduled',icon:CalendarDays},{action:'vibes',label:'Vibes',icon:Clapperboard}] as const).map(item=><button key={item.action} type="button" aria-label={item.label} aria-current={item.action==='scheduled'&&schedules?'page':undefined} className={`navigation-row ${item.action==='scheduled'&&schedules?'active':''}`} disabled={!available.chat} onClick={()=>onCommand({type:'metaAction',action:item.action})}><item.icon size={17}/><span>{item.label}</span>{item.action==='search'&&<kbd>Ctrl K</kbd>}{item.action==='newChat'&&<kbd>Ctrl N</kbd>}</button>)}
-    {schedules&&<ScheduledTasks schedules={schedules} onCommand={onCommand}/>}
-    <div className="meta-native-service-switch"><button className="navigation-row active" type="button" aria-label="Chat" aria-current="page" onClick={()=>onNavigate('chat')}><MessageCircle size={16}/><span>Meta AI Chat</span></button>{agentButton}</div>
-  </nav></div>;
   return <div className="personal-navigation">
     <div className="personal-sidebar-controls">
-      <button type="button" className="navigation-row personal-new-chat" aria-label="New Muse chat" title="New Muse chat · Ctrl+N" disabled={!available.bot} onClick={() => onCommand({ type: 'newMuseChat' })}><SquarePen size={16} /><span>New Muse chat</span><kbd>Ctrl N</kbd></button>
       {agentButton}
-      <div className="personal-filter-row" hidden={!searchOpen}>
+      <div className="personal-filter-row" hidden={!searchOpen || destination==='chat'}>
         <div className="personal-filter"><Search size={14} aria-hidden="true" /><input ref={input} aria-label="Filter Muse sidebar" aria-describedby={filterId} placeholder="Search your Muse" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); event.stopPropagation(); setQuery(''); } }} />{query && <button type="button" aria-label="Clear Muse filter" onClick={() => { setQuery(''); input.current?.focus(); }}><X size={12} /></button>}</div>
         <button type="button" className="icon-button personal-refresh" aria-label="Refresh Muse sidebar" title="Refresh Muse chats, ideas, and goals" disabled={refreshing || !available.bot} onClick={() => onCommand({ type: 'refreshLibrary' })}><RefreshCw size={14} className={refreshing ? 'spin' : ''} /></button>
       </div>
       <p className="sr-only" id={filterId}>Filters the loaded chat, idea, and goal titles in this sidebar.</p>
     </div>
     <div className="personal-navigation-scroll">
-      <nav aria-label="Meta AI navigation">
-        <button type="button" className="navigation-row personal-meta-chat" aria-label="Chat" disabled={!available.chat} title="Regular Meta AI chat" onClick={() => onNavigate('chat')}><MessageCircle size={16} /><span>Meta AI Chat</span></button>
+      <nav className="meta-native-navigation" aria-label="Meta AI navigation">
+        <button type="button" className={`navigation-row personal-meta-chat ${destination==='chat'?'active':''}`} aria-current={destination==='chat'?'page':undefined} aria-label="Chat" disabled={!available.chat} title="Regular Meta AI chat" onClick={() => onNavigate('chat')}><MessageCircle size={16} /><span>Meta AI Chat</span></button>
+    {([{action:'newChat',label:'New chat',icon:SquarePen},{action:'search',label:'Search',icon:Search},{action:'media',label:'Media',icon:Images},{action:'artifacts',label:'Artifacts',icon:Shapes},{action:'scheduled',label:'Scheduled',icon:CalendarDays},{action:'vibes',label:'Vibes',icon:Clapperboard}] as const).map(item=><button key={item.action} type="button" aria-label={item.label} aria-current={item.action==='scheduled'&&schedules?'page':undefined} className={`navigation-row ${item.action==='scheduled'&&schedules?'active':''}`} disabled={!available.chat} onClick={()=>onCommand({type:'metaAction',action:item.action})}><item.icon size={17}/><span>{item.label}</span>{destination==='chat'&&item.action==='search'&&<kbd>Ctrl K</kbd>}{destination==='chat'&&item.action==='newChat'&&<kbd>Ctrl N</kbd>}</button>)}
+    {destination==='chat'&&schedules&&<ScheduledTasks schedules={schedules} onCommand={onCommand}/>}
+      </nav>
+      {destination!=='chat' && <>
+      <nav aria-label="Muse collections">
         <div className="personal-recents-tools"><button type="button" className="icon-button" aria-label="Search Muse chats" title="Search your Muse · Ctrl+K" aria-expanded={searchOpen} onClick={() => onSearchOpenChange(!searchOpen)}><Search size={15}/></button></div>
         <PersonalCollection label="Muse chats" noun="chats" icon={MessageCircle} group={library.chats} selectedId={library.selectedId} active={destination === 'bot'} query={query} available={available.bot} onNavigate={() => onNavigate('bot')} onSelect={id => onCommand({ type: 'selectItem', id })} />
         <PersonalCollection label="Ideas" noun="ideas" icon={Lightbulb} group={library.ideas} selectedId={library.selectedId} active={destination === 'ideas'} query={query} available={available.ideas} onNavigate={() => onNavigate('ideas')} onSelect={id => onCommand({ type: 'selectItem', id })} />
@@ -137,6 +136,7 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
         <button className="navigation-row" type="button" aria-label="Muse feed" onClick={() => onAction('feed')}><Newspaper size={15} /><span>Feed</span></button>
         <button className="navigation-row" type="button" aria-label="Muse library" onClick={() => onAction('library')}><Library size={15} /><span>Library</span></button>
       </nav></div>
+      </>}
     </div>
   </div>;
 }
