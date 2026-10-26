@@ -4,6 +4,7 @@ import {mkdtemp,mkdir,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createController} from '../src/controller/index.mjs';
+import {validateAction} from '../electron/security.mjs';
 function runtime(){
  let state={transport:'exec',status:'unavailable',permissionVerified:false,cleanup:'confirmed',messages:[],runId:null},listeners=new Set(),sequence=0;const sent=[];
  const emit=patch=>{state={...state,...patch};for(const fn of listeners)fn(structuredClone(state));};
@@ -24,4 +25,26 @@ test('background chats own events, queues and stops while navigation remains ind
  state=await act({type:'selectTask',id:first});assert.ok(state.task.messages.some(m=>m.text==='Only first chat gets this'));assert.equal(state.runtime.status,'running');
  await act({type:'newTask',mode:'muse',request:'Same checkout'});state=await controller.dispatch({type:'sendMessage',text:'Conflicting write'});assert.match(state.error,/another chat|checkout/i);
  await controller.close();assert.equal(firstRuntime.snapshot().status,'unavailable');
+});
+
+async function fixture(t){
+ const dir=await mkdtemp(path.join(tmpdir(),'muse-lifecycle-')),project=path.join(dir,'project');await mkdir(project);const runtimes=[];
+ const factory=()=>{const r=runtime(),connect=r.connect;r.connect=async options=>{assert.equal(r.snapshot().permissionVerified,false,'must not reconnect a verified runtime');await connect(options);};r.refreshModels=async()=>{};runtimes.push(r);return r;};
+ const c=await createController({dataDir:path.join(dir,'data'),runtimeFactory:factory});t.after(async()=>{await c.close();await rm(dir,{recursive:true,force:true});});
+ const act=async action=>{const s=await c.dispatch(action);assert.equal(s.error,null);return s;};await act({type:'openProject',path:project});const s=await act({type:'newTask',mode:'muse',request:'First'});return{c,act,runtimes,id:s.task.id};
+}
+test('desktop model discovery action crosses the IPC boundary',()=>{assert.deepEqual(validateAction({type:'refreshModels'}),{type:'refreshModels'});});
+test('loading models before the first prompt retains the workspace connection',async t=>{
+ const {act,runtimes}=await fixture(t);await act({type:'refreshModels'});await act({type:'sendMessage',text:'Use the selected model'});assert.equal(runtimes.reduce((n,r)=>n+r.sent.length,0),1);
+});
+test('inactive retained chats preserve pin, archive and sidebar changes when reopened',async t=>{
+ const {act,id}=await fixture(t);let s=await act({type:'newTask',mode:'muse',request:'Second'});const second=s.task.id;
+ await act({type:'setTaskFlags',id,pinned:true});s=await act({type:'selectTask',id});assert.equal(s.task.pinned,true);
+ await act({type:'selectTask',id:second});await act({type:'moveSidebarItem',kind:'chat',id,section:'recents'});s=await act({type:'selectTask',id});assert.equal(s.task.pinned,false);
+ await act({type:'selectTask',id:second});await act({type:'moveSidebarItem',kind:'chat',id,section:'pinned'});s=await act({type:'selectTask',id});assert.equal(s.task.pinned,true);
+ await act({type:'selectTask',id:second});await act({type:'setTaskFlags',id,archived:true});s=await act({type:'selectTask',id});assert.equal(s.task.archived,true);assert.equal(s.task.pinned,false);
+});
+test('deleting the selected chat keeps runtime events connected for the next chat',async t=>{
+ const {act,id,c,runtimes}=await fixture(t);await act({type:'setTaskFlags',id,archived:true});await act({type:'deleteTask',id});await act({type:'newTask',mode:'muse',request:'Successor'});await act({type:'sendMessage',text:'Continue here'});
+ runtimes.find(r=>r.sent.length).finish('Successor reply');await new Promise(r=>setTimeout(r,40));assert.ok(c.getState().task.messages.some(m=>m.text==='Successor reply'));assert.equal(c.getState().runtime.status,'completed');
 });

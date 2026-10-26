@@ -62,12 +62,13 @@ try{
  await compare('prompt-queue');
  for(let index=0;index<3;index++)await click('button','Remove queued prompt 1');
 
- await click('button','Reasoning effort');await compare('reasoning-picker');await escape();
+ await click('button','Reasoning effort');await compare('reasoning-picker');await click('button','Load installed models');await compare('native-model-catalog');await escape();
+ await click('button','Add to chat');await click('button','Workflows');await compare('workflow-library');await click('button','Edit');await compare('workflow-editor');await click('button','Close dialog');
  await click('button','Project overview');await compare('project-overview');
  await click('button','Reasoning effort');await compare('project-reasoning-picker');await escape();
  await click('button','Add project');await compare('create-project');await escape();
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:',',ctrlKey:true,bubbles:true})));await compare('settings');await escape();
- await click('button','Customize');await compare('customize');await escape();
+ await click('button','Customize');await compare('customize');await click('summary','Project skills and rules');await click('button','Review project instructions');await compare('project-instruction-review');await escape();
  await click('button','Muse AI');await compare('muse-shell');
  await click('nav[aria-label="Meta AI navigation"] button','Chat');await compare('meta-shell');
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(430,820));await browserPage.setViewportSize({width:430,height:820});await compare('meta-toggle-narrow');

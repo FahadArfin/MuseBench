@@ -1,4 +1,5 @@
 import {createServer} from 'vite';
+import {build} from 'esbuild';
 import {chromium} from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir,writeFile} from 'node:fs/promises';
@@ -157,6 +158,9 @@ try {
  await page.setViewportSize({width:430,height:820});
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:'artifacts/browser-preview/mobile.png'});
+ const singleTier=await browser.newPage();await singleTier.setContent('<div id="root"></div>');
+ const component=(await build({stdin:{contents:"import React from 'react';import {createRoot} from 'react-dom/client';import {ReasoningPicker} from './src/ui/ReasoningPicker';window.changes=[];createRoot(document.getElementById('root')).render(<ReasoningPicker value='high' levels={['high']} onChange={v=>window.changes.push(v)}/>);",loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser',jsx:'automatic'})).outputFiles[0].text;
+ await singleTier.addScriptTag({content:component});const fixedSlider=singleTier.getByRole('slider',{name:'Reasoning level'});await fixedSlider.waitFor();assert.equal(await fixedSlider.isDisabled(),true);assert.equal(await fixedSlider.getAttribute('max'),'0');await singleTier.getByRole('button',{name:'Reset reasoning to High'}).click();assert.deepEqual(await singleTier.evaluate(()=>window.changes),['high']);await singleTier.close();
  assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
  await writeFile('artifacts/browser-preview/report.json',JSON.stringify({status:'passed',checks:['shared interface','composer replies','blocked shell','settings','read-only personal website snapshots','Work artifact','Sites','Spaces','reload isolation','mobile width','no external requests'],errors,external},null,2));
  console.log('PASS browser preview navigation, isolation, settings and responsive layout');

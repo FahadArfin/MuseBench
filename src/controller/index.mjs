@@ -215,7 +215,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     db.exec('BEGIN IMMEDIATE');
     try{
       db.prepare('DELETE FROM tasks WHERE id=?').run(id);db.prepare('DELETE FROM baselines WHERE task_id=?').run(id);db.prepare('DELETE FROM checkpoints WHERE task_id=?').run(id);
-      const retained=contexts.get(id);if(retained){retained.unsubscribe?.();retained.task=null;contexts.delete(id);}if(context.task?.id===id)context.task=null;
+      const retained=contexts.get(id);if(retained){retained.unsubscribe?.();retained.unsubscribe=null;retained.task=null;contexts.delete(id);}if(context.task?.id===id)context.task=null;
       taskRecords.delete(id);delete state.drafts[draftKey(target.projectId,id)];state.checkpoints=state.checkpoints.filter(item=>item.taskId!==id);persist();db.exec('COMMIT');
     }catch(error){db.exec('ROLLBACK');Object.assign(state,previous.state);baseline=previous.baseline;taskRecords.clear();for(const [key,value] of previous.records)taskRecords.set(key,value);state.runtime=runtime?.snapshot?.()??missingRuntime();throw error;}
     try{db.exec('PRAGMA wal_checkpoint(TRUNCATE)');}catch{/* Logical deletion is committed; SQLite retries checkpointing on close. */}
@@ -492,7 +492,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           }else{
             if(action.section==='pinned')t.pinned=true;
             if(action.section==='recents')t.pinned=false;
-            taskRecords.set(t.id,t);db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(t),t.id);
+            saveRecord(t);
             if(state.task?.id===t.id)state.task=t;
           }
         }
@@ -502,7 +502,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         requireNavigationIdle();if(action.pinned!==undefined&&typeof action.pinned!=='boolean'||action.archived!==undefined&&typeof action.archived!=='boolean')throw Error('Invalid chat organization choice.');
         const t=state.task?.id===action.id?state.task:taskRecords.get(action.id);if(!t)throw Error('Chat not found.');if(contextBusy(contexts.get(t.id)))throw Error('Stop this chat before changing its archive or pin state.');
         if(action.pinned!==undefined){if(t.archived&&action.pinned)throw Error('Restore this chat before pinning it.');t.pinned=action.pinned;}if(action.archived!==undefined){if(action.archived&&!t.archived)t.archivedAt=new Date(archiveNow()).toISOString();if(!action.archived)t.archivedAt=null;t.archived=action.archived;}if(t.archived){t.pinned=false;t.queuePaused=true;t.queueHold=true;}
-        t.updatedAt=now();taskRecords.set(t.id,structuredClone(t));db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(t),t.id);break;
+        saveRecord(t);break;
       }
       case 'deleteTask':await deleteArchivedChat(action.id);break;
       case 'saveWorkflow':{const w=validateWorkflow(action.workflow),index=state.workflows.findIndex(item=>item.id===w.id);if(index<0){if(state.workflows.length>=30)throw Error('The library holds up to 30 workflows.');state.workflows.push(w);}else state.workflows[index]=w;break;}
@@ -553,7 +553,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'renameTask':{requireNavigationIdle();const t=requireTask();if(typeof action.title!=='string'||!action.title.trim()||action.title.length>100)throw Error('Use a chat name up to 100 characters.');t.title=action.title.trim();break;}
       case 'setMemories':{requireNavigationIdle();if(typeof action.text!=='string'||action.text.length>1500)throw Error('Memory instructions must be at most 1,500 characters.');state.memories=action.text.trim();break;}
       case 'setGoal':{requireNavigationIdle();const t=requireTask();if(typeof action.objective!=='string'||action.objective.length>1000||!['active','paused'].includes(action.status))throw Error('Use a goal up to 1,000 characters.');t.goal=action.objective.trim()?{objective:action.objective.trim(),status:action.status}:null;break;}
-      case 'refreshModels':{requireNavigationIdle();if(!runtime?.refreshModels)throw Error('Model discovery needs the native exec connection.');if(!runtime.snapshot().permissionVerified){if(!state.activeProject)throw Error('Choose a project first.');await runtime.connect({workspaceRoot:state.activeProject.root});}await runtime.refreshModels();break;}
+      case 'refreshModels':{requireNavigationIdle();if(!runtime?.refreshModels)throw Error('Model discovery needs the native exec connection.');if(!runtime.snapshot().permissionVerified){if(!state.activeProject)throw Error('Choose a project first.');await runtime.connect({binary:preferredBinary??undefined,workspaceRoot:state.activeProject.root});context.root=state.activeProject.root;preferredBinary=runtime.snapshot().binary??preferredBinary;}await runtime.refreshModels();break;}
       case 'setRunOptions':{requireNavigationIdle();const t=requireTask();t.runOptions=validateRunOptions(action.runOptions);break;}
       case 'updatePlan':{requireNavigationIdle();const t=requireTask();if(typeof action.plan!=='string'||!Array.isArray(action.criteria))throw Error('A plan and criteria are required.');t.plan=action.plan.slice(0,16000);t.criteria=action.criteria.filter(x=>typeof x==='string').slice(0,20).map(x=>x.slice(0,1000));t.planApproved=false;t.runtimeComplete=false;t.acceptedRevision=null;context.pending=false;context.turn=null;break;}
       case 'approvePlan':{const t=requireTask();if(!t.plan.trim()||!t.criteria.length)throw Error('Write a plan and at least one criterion.');t.planApproved=true;t.runtimeComplete=t.mode==='manual';message('system',t.mode==='manual'?'Plan approved. Manual work context explicitly confirmed.':'Plan approved.');break;}
