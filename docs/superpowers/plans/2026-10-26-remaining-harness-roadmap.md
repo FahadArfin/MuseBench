@@ -22,7 +22,7 @@
 ## Feature sequence
 
 - [x] **1. Capabilities:** shared capability contract and connection display; test disconnected/exec/MSP/preview states and unsupported reasons. Files: shared/runtime-capabilities.*, UI WorkspacePanels, capability tests. Verify build/browser, commit/push.
-- [ ] **2. Budgets:** validated per-chat/queued time and step profiles; show actual effective limits, preserve defaults and stop/cleanup. Files: shared/run-options, runtime/exec, composer, controller tests. Verify invalid inputs and native arguments/timeout, commit/push.
+- [x] **2. Budgets:** validated per-chat/queued time and step profiles; show actual effective limits, preserve defaults and stop/cleanup. Files: shared/run-options, runtime/exec, composer, controller tests. Verify invalid inputs and native arguments/timeout, commit/push.
 - [ ] **3. Background chats:** task-bound runtime registry, independent navigation, running badges and targeted stop; serialize overlapping checkout writes and retain restart recovery. Test concurrent isolated tasks, switching during output, cancellation and late events. Commit/push.
 - [ ] **4. Context handoffs:** attributed text/files sent to a chosen chat queue, preserving source and recipient identity; no implicit approval. Test cross-project references, duplicates and archived recipients. Commit/push.
 - [ ] **5. Workflow library:** saved editable app workflow templates, phases, budgets, writable scope and completion checks; inspect installed native workflow contracts before native execution controls. Test persistence, validation and dispatch. Commit/push.
@@ -41,3 +41,5 @@
 - Base: 63484c9.
 
 - Feature 1: capability tests RED (missing module) then GREEN; 29 runtime/capability tests, production build and browser smoke passed. Preview labels all connection capabilities as simulated.
+
+- Feature 2: budget tests RED then GREEN; 53 runtime/controller/settings tests, build and browser smoke passed. Presets are Standard (3 min/8 steps), Extended (15 min/32 steps), Deep (45 min/96 steps). Older settings keep original defaults; queues retain their selected run options. Token caps are explicitly not claimed.

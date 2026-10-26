@@ -1,9 +1,12 @@
+export const RUN_BUDGETS = Object.freeze({standard:Object.freeze({label:'Standard',minutes:3,steps:8}),extended:Object.freeze({label:'Extended',minutes:15,steps:32}),deep:Object.freeze({label:'Deep',minutes:45,steps:96})});
+export function runBudget(id='standard'){if(!Object.hasOwn(RUN_BUDGETS,id))throw Error('Invalid task budget.');return {...RUN_BUDGETS[id]};}
 export const REASONING_LEVELS = Object.freeze(['none','minimal','low','medium','high','xhigh','max','ultra']);
 export const APPROVAL_MODES = Object.freeze(['ask','auto','never']);
 export const DEFAULT_RUN_OPTIONS = Object.freeze({reasoning:'high',approval:'ask'});
 export function validateRunOptions(value = DEFAULT_RUN_OPTIONS) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key=>!['reasoning','approval'].includes(key)) || !REASONING_LEVELS.includes(value.reasoning) || !APPROVAL_MODES.includes(value.approval)) throw Error('Invalid reasoning or approval options.');
-  return {reasoning:value.reasoning,approval:value.approval};
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some(key=>!['reasoning','approval','budget'].includes(key)) || !REASONING_LEVELS.includes(value.reasoning) || !APPROVAL_MODES.includes(value.approval)) throw Error('Invalid reasoning or approval options.');
+  if(Object.hasOwn(value,'budget'))runBudget(value.budget);
+  return {reasoning:value.reasoning,approval:value.approval,...(Object.hasOwn(value,'budget')?{budget:value.budget}:{})};
 }
 export function restoreRunOptions(value) { try { return validateRunOptions(value); } catch { return {...DEFAULT_RUN_OPTIONS}; } }
 export function approvalArguments(approval) {

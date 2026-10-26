@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {curateEnvironment,discoverMuseBinaries,parseMuseVersion,SETUP_URL} from './index.mjs';
 import {createExecConversationFold} from './exec-conversation-events.mjs';
 import {createJobSpawner} from './windows-job.mjs';
-import {validateRunOptions,approvalArguments} from '../shared/run-options.mjs';
+import {validateRunOptions,approvalArguments,runBudget} from '../shared/run-options.mjs';
 
 const HOST_VERSION='1.4.13';
 const execFileAsync=promisify(execFile);
@@ -109,7 +109,7 @@ function deadline(promise,timeoutMs,message) {
  * The injected process boundary is used by contract tests, never by product UI. */
 export function createExecRuntime({durableSessions=false,environment=process.env,platform=process.platform,helperPath=defaultHelperPath,spawnProcess,stopProcess=stopNativeProcess,verifyConfiguration=checkConfiguration,extensionReview,timeoutMs=10000,runTimeoutMs=180000,maxModelSteps=8}={}) {
  if(platform!=='win32')throw Error('The native exec compatibility mode is supported only on Windows.');
- if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000||!Number.isInteger(runTimeoutMs)||runTimeoutMs<1||runTimeoutMs>180000||!Number.isInteger(maxModelSteps)||maxModelSteps<1||maxModelSteps>16)throw Error('Invalid Muse runtime limits.');
+ if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000||!Number.isInteger(runTimeoutMs)||runTimeoutMs<1||runTimeoutMs>3600000||!Number.isInteger(maxModelSteps)||maxModelSteps<1||maxModelSteps>128)throw Error('Invalid Muse runtime limits.');
  const env=curateEnvironment(environment),candidates=discoverMuseBinaries({environment,platform});
  const spawnNative=spawnProcess??createJobSpawner({helperPath});
  let state={status:'unavailable',reason:candidates.length?'Connect to verify the native Windows sandbox and exec format.':'Install official Muse, then select its native executable.',binary:candidates[0]??null,sdkVersion:HOST_VERSION,transport:'exec',durableSessions,inputAccepted:false,sessionId:null,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,liveVerified:false,messages:[],shellEnabled:false,shellUnavailableReason:null,shellResults:[],activity:{items:[],truncated:false},pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,permissionDescription:fileDescription,planReadOnlyEnforced:false};
@@ -266,6 +266,8 @@ export function createExecRuntime({durableSessions=false,environment=process.env
   const options=validateRunOptions(runOptions);
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a message up to 64,000 characters in chat or plan mode.');
   if(connecting||closing||!state.permissionVerified||!usable.has(state.status)||owner&&!owner.closed)throw Error('Muse is blocked or uncertain. Connect a verified native runtime first.');
+  const selectedBudget=options.budget?runBudget(options.budget):null;
+  const limits={steps:selectedBudget?.steps??maxModelSteps,wallTimeMs:selectedBudget?selectedBudget.minutes*60000:runTimeoutMs,tokenBudget:null};
   const token=epoch;update({status:'checking-permissions',reason:null});
   try{await verifyConfiguration({environment:env,workspaceRoot:workspace,extensionReview});current(token);await verifyManagedConfiguration(token);current(token);await verifySandbox(token);current(token);}
   catch(error){if(token===epoch)update({status:'blocked',reason:safeReason(error.message),permissionVerified:false});throw error;}
@@ -279,8 +281,8 @@ export function createExecRuntime({durableSessions=false,environment=process.env
   if(state.shellEnabled)prompt=shellPrompt(workspace,prompt,!!sessionId);
   let prepared;try{prepared=await preparePrompt(prompt);current(token);}catch(error){await prepared?.dispose();if(token===epoch)update({status:'blocked',reason:'The request context could not be prepared. Try sending again.',permissionVerified:false});throw error;}
   const label=options.approval==='ask'?'Ask me':options.approval==='auto'?'Auto-review':'No prompts (sandboxed)';
-  update({status:'running',inputAccepted:false,reason:null,failureCode:null,liveVerified:false,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,shellResults:[],activity:{items:[],truncated:false},cleanup:undefined,runOptions:options,permissionProfile:options.approval==='never'?null:options.approval==='auto'?':auto-review':':ask-me',permissionArguments:permissionArgs(state.shellEnabled,options.approval,sessionId),permissionDescription:(state.shellEnabled?shellDescription:fileDescription).replace('Ask me',label).replace('Each request starts an independent native run',sessionId?"Each request resumes this chat’s native session":'Each request starts an independent native run')});
-  try{current(token);const args=execArgs(workspace,'meta','',maxModelSteps,state.shellEnabled,options,sessionId).slice(0,-2).concat(imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,resumeSession,duration:runTimeoutMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
+  update({status:'running',runLimits:limits,inputAccepted:false,reason:null,failureCode:null,liveVerified:false,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,shellResults:[],activity:{items:[],truncated:false},cleanup:undefined,runOptions:options,permissionProfile:options.approval==='never'?null:options.approval==='auto'?':auto-review':':ask-me',permissionArguments:permissionArgs(state.shellEnabled,options.approval,sessionId),permissionDescription:(state.shellEnabled?shellDescription:fileDescription).replace('Ask me',label).replace('Each request starts an independent native run',sessionId?"Each request resumes this chat’s native session":'Each request starts an independent native run')});
+  try{current(token);const args=execArgs(workspace,'meta','',limits.steps,state.shellEnabled,options,sessionId).slice(0,-2).concat(imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,resumeSession,duration:limits.wallTimeMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
   return snapshot();
  }
 

@@ -268,3 +268,8 @@ test('oversized native output fails closed and final text without model identity
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Edit'});h.model().stdout.emit('data',Buffer.from('x'.repeat(600000)));await tick();assert.equal(h.runtime.snapshot().status,'uncertain');
  const other=await harness(t);await other.connect();await other.runtime.send({text:'Edit'});other.model().stdout.emit('data',Buffer.from(jsonl(records({model:false}))));other.model().finish();await tick();assert.equal(other.runtime.snapshot().status,'uncertain');assert.equal(other.runtime.snapshot().liveVerified,false);
 });
+
+test('explicit budget reaches native step limit and runtime deadline metadata',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Investigate',runOptions:{reasoning:'high',approval:'ask',budget:'extended'}});
+ const args=h.calls.findLast(c=>c.args.includes('meta')).args;assert.equal(args[args.indexOf('--max-model-steps')+1],'32');const state=h.runtime.snapshot();assert.equal(state.runLimits.steps,32);assert.equal(state.runLimits.wallTimeMs,900000);assert.equal(state.runLimits.tokenBudget,null);
+});

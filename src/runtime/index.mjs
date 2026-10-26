@@ -287,7 +287,7 @@ export function createRuntime({environment=process.env,platform=process.platform
 
  async function send({text,mode='chat',runOptions}={}) {
   const options=validateRunOptions(runOptions);
-  if(options.reasoning!=='high'||options.approval!=='ask')throw Error('These run options require the Windows native exec connection.');
+  if(options.reasoning!=='high'||options.approval!=='ask'||options.budget&&options.budget!=='standard')throw Error('These run options require the Windows native exec connection.');
   if(typeof text!=='string'||!text.trim()||text.length>20000||!['chat','plan'].includes(mode))throw Error('Enter a message up to 20,000 characters and a supported chat or plan mode.');
   if(!owner||!adapter||connecting||sending||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
   const token=epoch;sending=true;
