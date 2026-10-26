@@ -127,7 +127,7 @@ export function createRuntime({environment=process.env,platform=process.platform
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000)throw Error('Invalid runtime timeout.');
  const candidates=discoverMuseBinaries({environment,platform});
  const childEnvironment=curateEnvironment(environment);
- let state={status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
+ let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
  const listeners=new Set();
  const snapshot=()=>structuredClone(state);

@@ -13,7 +13,7 @@ const stamp='2026-10-26T14:00:00.000Z';
 const copy=<T,>(value:T):T=>structuredClone(value);
 const id=()=>crypto.randomUUID();
 const desktop=async():Promise<never>=>{throw new Error('This action needs the MuseBench desktop app. Browser preview uses sample data only.');};
-const runtime:RuntimeState={status:'ready',reason:'Browser preview · No model or shell connection',binary:null,sdkVersion:'Preview',modelId:'Muse · sample',liveVerified:false};
+const runtime:RuntimeState={simulation:true,status:'ready',reason:'Browser preview · No model or shell connection',binary:null,sdkVersion:'Preview',modelId:'Muse · sample',liveVerified:false};
 function task(title:string,taskId:string=id(),projectId='preview-project'):Task {
  return {id:taskId,projectId,title,mode:'muse',createdAt:stamp,updatedAt:stamp,acceptedRevision:null,request:title,plan:'',criteria:[],planApproved:false,baselineRevision:'sample-before',revision:'sample-after',changes:[],messages:[{id:id(),role:'user',text:title,at:stamp}],shellResults:[],check:null,previewRevision:null,runtimeComplete:true,runOptions:{reasoning:'high',approval:'ask'},runs:[]};
 }

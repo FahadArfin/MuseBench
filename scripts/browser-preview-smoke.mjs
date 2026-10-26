@@ -19,6 +19,8 @@ await mkdir('artifacts/browser-preview',{recursive:true});
 try {
  await page.goto('http://127.0.0.1:4321/preview.html');
  await page.getByRole('group',{name:'Choose workspace'}).waitFor({timeout:30000});
+ await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('button',{name:'Muse connection',exact:true}).click();
+ const connection=page.getByRole('dialog',{name:'Your Muse connection',exact:true});await connection.getByText('Connection capabilities',{exact:true}).click();await connection.getByText('Live steering',{exact:false}).waitFor();assert.equal(await connection.locator('[data-status="simulated"]').count(),11);await page.screenshot({path:'artifacts/browser-preview/capabilities.png'});await connection.getByRole('button',{name:'Close dialog',exact:true}).click();
  assert.equal(await page.locator('.browser-preview-banner').count(),0);assert.equal(await page.getByRole('button',{name:'Toggle review panel'}).count(),0);assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);
  assert.equal((await page.locator('.sidebar:not([hidden]) .sidebar-chrome').boundingBox()).y,0);
  assert(await page.getByText('Build a clearer project overview',{exact:true}).count()>0);
@@ -152,3 +154,4 @@ try {
  console.log('PASS browser preview navigation, isolation, settings and responsive layout');
 } catch(error){await page.screenshot({path:'artifacts/browser-preview/failure.png'}).catch(()=>{});console.error(JSON.stringify({errors,external}));throw error;}
 finally {await browser.close();await server.close();}
+

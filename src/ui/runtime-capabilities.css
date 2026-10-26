@@ -1,0 +1,8 @@
+.runtime-capabilities{margin:16px 0;border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.runtime-capabilities summary{cursor:pointer;font-weight:600;font-size:13px}
+.runtime-capabilities dl{margin:8px 0 0;max-height:300px;overflow:auto}
+.runtime-capabilities dl>div{padding:9px 0;border-top:1px solid var(--border)}
+.runtime-capabilities dt{display:flex;justify-content:space-between;gap:12px;font-size:12px}
+.runtime-capabilities dt span{color:var(--muted);font-size:11px}
+.runtime-capabilities dt span[data-status=available]{color:var(--accent)}
+.runtime-capabilities dd{margin:4px 0 0;font-size:11px;line-height:1.5;color:var(--muted)}
