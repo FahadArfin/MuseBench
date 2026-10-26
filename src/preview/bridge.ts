@@ -86,7 +86,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const dictation={id:null,status:'idle' as const,available:false,language:null,text:'',error:'Microphone input is available in the desktop app.'};
  return {
   windowControlsOverlay:true,
-  getState:code.read,onState:code.on,dispatch,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);if(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},
+  getState:code.read,onState:code.on,dispatch,openProjectFile:desktop,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);if(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},
   configureNotifications:async()=>({supported:false}),dictation:async command=>{if(['status','refresh','cancel','stop'].includes(command))return copy(dictation);return desktop();},onDictation:()=>()=>{},
   saveCodeDraft:async input=>{state.drafts![`${input.projectId}:${input.taskId??'new'}`]={text:input.text,files:copy(input.files),mode:input.mode};},
   searchChats:async input=>copy([...tasks.values()].filter(t=>(input.includeArchived||!t.archived)&&`${t.title} ${t.messages.map(m=>m.text).join(' ')}`.toLowerCase().includes(input.query.toLowerCase())).map(t=>({...t,projectName:project.name,snippet:t.messages.at(-1)?.text??''}))),

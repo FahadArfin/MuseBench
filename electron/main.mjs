@@ -1,3 +1,4 @@
+import {createFileEditor} from './file-editor.mjs';
 import {customizeBlocked} from '../src/shared/customize-policy.mjs';
 import {createCommandInfo,exportTranscript} from './command-info.mjs';
 import {createCustomize} from './customize.mjs';
@@ -84,6 +85,11 @@ else {
       if (!trustedSender(event,window.webContents,uiURL)) throw Error('Workspace access is restricted to the main MuseBench window.');
       return fn(...args);
     });
+    const openFileEditor=createFileEditor({dataDir,getState:()=>controller.getState(),choose:async()=>{
+      const result=await dialog.showOpenDialog(window,{title:'Choose your preferred text editor',properties:['openFile'],filters:[{name:'Editor application',extensions:['exe']}]});
+      return result.canceled?null:result.filePaths[0];
+    }});
+    handler('musebench:open-file',openFileEditor);
     handler('musebench:state',()=>controller.getState());
     handler('musebench:window-theme',theme=>updateWindowTheme(window,theme));
     handler('musebench:code-context',input=>controller.inspectContext(input));

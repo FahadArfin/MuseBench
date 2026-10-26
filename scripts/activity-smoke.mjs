@@ -43,7 +43,13 @@ try{
  assert.equal(await card.getByRole('button',{name:/notes.txt/}).locator('.changed-file-counts').getAttribute('aria-label'),'1 additions, 0 deletions');
  await screenshot('changed-files');
  await card.getByRole('button',{name:/README.md/}).click();const review=page.getByRole('complementary',{name:'File changes',exact:true});assert.equal(await review.isVisible(),true);await page.getByLabel('File diff for README.md').waitFor();
- assert.equal(await page.locator('.code-line.context').filter({hasText:'KEEP THIS'}).count(),1);assert.equal(await page.locator('.code-line.removed').count(),2);assert.equal(await page.locator('.code-line.added').count(),2);record('Inline edited-files card exposes exact per-file counts and opens the selected diff');await screenshot('selected-diff');
+ const readme=review.getByRole('region',{name:'Changes in README.md',exact:true});
+ assert.equal(await readme.locator('.code-line.context').filter({hasText:'KEEP THIS'}).count(),1);assert.equal(await readme.locator('.code-line.removed').count(),2);assert.equal(await readme.locator('.code-line.added').count(),2);
+ assert.equal(await review.locator('.diff').count(),2);await review.getByLabel('File diff for notes.txt').waitFor();
+ assert.equal(await review.getByRole('heading',{name:'Changed files',exact:true}).count(),0);assert.equal(await review.getByRole('button',{name:'Refresh',exact:true}).count(),0);
+ await readme.getByRole('button',{name:'README.md',exact:true}).click();assert.equal(await readme.getByLabel('File diff for README.md').count(),0);await readme.getByRole('button',{name:'README.md',exact:true}).click();
+ await assert.rejects(page.evaluate(()=>window.musebench.openProjectFile({taskId:'stale',path:'README.md'})),/active task/);
+ record('Review stacks every changed file, collapses independently, and rejects stale editor requests');record('Inline edited-files card exposes exact per-file counts and opens the selected diff');await screenshot('selected-diff');
  await page.getByRole('button',{name:'Close details panel'}).click();await card.getByRole('button',{name:'View changes',exact:true}).focus();await page.keyboard.press('Enter');await review.waitFor();await page.getByRole('button',{name:'Close details panel'}).click();record('View changes opens file details using the keyboard');
  // The following extra rows are explicitly renderer fixtures, not real edits.
  const moreFiles=structuredClone(state);moreFiles.task.changes.push(...Array.from({length:3},(_,i)=>({path:`extra-${i}.txt`,status:'added',additions:1,deletions:0,before:'',after:'fixture\n'})));

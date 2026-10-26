@@ -32,6 +32,7 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   onDictation: callback => { const listener = (_event, state) => callback(state); ipcRenderer.on('musebench:dictation-update', listener); return () => ipcRenderer.removeListener('musebench:dictation-update', listener); },
   dispatch: action => ipcRenderer.invoke('musebench:action', action),
   chooseProject: () => ipcRenderer.invoke('musebench:choose-project'),
+  openProjectFile: input => ipcRenderer.invoke('musebench:open-file', input),
   chooseBinary: () => ipcRenderer.invoke('musebench:choose-binary'),
   openExternal: url => ipcRenderer.invoke('musebench:external', url),
   personalState: () => ipcRenderer.invoke('musebench:personal-state'),

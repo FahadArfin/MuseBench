@@ -178,3 +178,16 @@ Production build and source/packaged activity checks passed: artifacts/transcrip
 - Scheduled now displays three fictional reminders in the shared Upcoming sidebar and a sample Scheduled page with suggestions and a scheduling composer.
 - Sample editing updates both lists; deletion has a confirmation, and New task focuses the sample composer. Edits are in memory and reset on reload. No account or scheduler calls are made.
 - Typecheck passed. Verified Scheduled navigation, edit/save reflected in both lists, and New task focus in the in-app browser. Inspected and saved artifacts/meta-scheduled/browser-preview.png; left the Scheduled preview open.
+
+
+## Compact file changes - 2026-10-26
+
+final result: passed
+
+Compared the user's Codex Changes reference with artifacts/compact-file-changes.png at the supplied 1337 x 1244 preview viewport. The reference has a wider dock; comparison focuses on the file header and diff region, retaining MuseBench's existing shell and colors.
+
+- Removed the FILES label, Changed files heading, explanatory copy, summary count/revision, Refresh button, file tabs, and Before/After switch.
+- All changed files stack vertically with compact path headers, addition/removal counts, editor actions, collapsible content, old/new line numbers, and red/green diff rows.
+- Preview and production Electron renderer match for both the file changes view and editor menu. Desktop fixture checks cover multiple files, collapse/expand, keyboard navigation, and narrow layout.
+- Desktop editor launch defaults to VS Code and remembers a user-selected editor executable. Browser preview reports desktop-only capability; deleted files cannot open. Tests cover stale task binding, path traversal, symlink escape, cancellation, and remembered editor arguments.
+- Existing binary/large comparison notices retained. No P0/P1/P2 findings. P3: syntax coloring is unchanged; code uses the existing monospace text rendering.

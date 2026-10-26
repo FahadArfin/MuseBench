@@ -42,6 +42,9 @@ try{
  async function click(selector,label){for(const page of [browserPage,desktopPage])await page.evaluate(({selector,label})=>{const elements=[...document.querySelectorAll(selector)].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height);const element=elements.find(e=>(e.getAttribute('aria-label')||e.textContent?.trim())===label);if(!element)throw Error(`Missing visible control ${selector} ${label}`);element.click();},{selector,label});}
  async function escape(){for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));}
  await compare('code-chat');
+ await click('button','View changes');await compare('file-changes');
+ await click('summary','Choose editor for src/ProjectOverview.tsx');await compare('file-editor-menu');
+ await click('button','Close details panel');
  for(const text of ['Polish the toolbar','Check keyboard navigation','Review the mobile layout']){for(const page of [browserPage,desktopPage])await page.evaluate(text=>{const input=document.querySelector('textarea[aria-label="Message Muse"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,text);input.dispatchEvent(new Event('input',{bubbles:true}));},text);await click('button','Queue message');}
  await compare('prompt-queue');
  for(let index=0;index<3;index++)await click('button','Remove queued prompt 1');

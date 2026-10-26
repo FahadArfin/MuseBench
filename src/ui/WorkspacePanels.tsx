@@ -32,13 +32,43 @@ export function Modal({ title, children, close, className = '' }: { title: strin
   return <div className="modal-scrim" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}><div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className={`modal ${className}`}><div className="modal-heading"><h2>{title}</h2><button className="icon-button" aria-label="Close dialog" onClick={close}><X size={18} /></button></div>{children}</div></div>;
 }
 
-function Diff({ file }: { file: FileChange }) {
-  const [view, setView] = useState<'diff' | 'before' | 'after'>('diff');
-  const comparison=useMemo(()=>computeFileDiff(view==='after'?'':file.before,view==='before'?'':file.after),[file.before,file.after,view]);
-  const allRows=comparison.rows;
-  const rows=allRows.slice(0,3000);
-
-  return <div className="diff"><div className="diff-toolbar"><span><FileCode2 size={15} />{file.path}</span><div className="segmented">{(['diff', 'before', 'after'] as const).map(item => <button key={item} aria-pressed={view === item} className={view === item ? 'selected' : ''} onClick={() => setView(item)}>{item}</button>)}</div></div>{file.binary ? <p className="empty-copy">Binary file. Text comparison is unavailable.</p> : <><p className="diff-notice" hidden={!comparison.approximate&&!comparison.truncated&&allRows.length<=3000}>{comparison.approximate?'Large comparison: line counts are approximate. ':''}{comparison.truncated||allRows.length>3000?'Showing the first 3,000 rows. Open the file in your editor to inspect the full contents.':''}</p><div className="diff-code" tabIndex={0} aria-label={`File ${view} for ${file.path}`}>{rows.map((row, i) => <div className={`code-line ${view==='diff'?row.kind:'context'}`} key={i}><span className="line-number">{view==='before'?row.oldLine:row.newLine??row.oldLine}</span><span className="line-sign">{view==='diff'?(row.kind === 'added' ? '+' : row.kind === 'removed' ? '−' : ' '):' '}</span><code>{row.text.replace(/\r$/,'') || ' '}{row.noNewline&&<small className="no-newline"> ⏎ No newline at end of file</small>}</code></div>)}</div></>}</div>;
+function Diff({ file, taskId }: { file: FileChange; taskId: string }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [error, setError] = useState('');
+  const menu = useRef<HTMLDetailsElement>(null);
+  const comparison = useMemo(() => computeFileDiff(file.before, file.after), [file.before, file.after]);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => { if (menu.current && !menu.current.contains(event.target as Node)) menu.current.open = false; };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape' && menu.current) menu.current.open = false; };
+    document.addEventListener('pointerdown', dismiss); document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', dismiss); document.removeEventListener('keydown', escape); };
+  }, []);
+  const open = async (editor: 'preferred'|'vscode'|'choose') => {
+    if (menu.current) menu.current.open = false;
+    setError(''); setOpening(true);
+    try { if (!window.musebench) throw Error('Open this file from the MuseBench desktop app.'); await window.musebench.openProjectFile({taskId, path:file.path, editor}); }
+    catch (error) { setError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, '') : String(error)); }
+    finally { setOpening(false); }
+  };
+  const unavailable = file.status === 'deleted';
+  return <section className="diff" data-file-path={file.path} aria-label={`Changes in ${file.path}`}>
+    <div className="diff-toolbar">
+      <button className="diff-file-toggle" aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)} title={file.path}>
+        {collapsed ? <ChevronRight size={13}/> : <ChevronDown size={13}/>}<FileCode2 size={14}/><span>{file.path}</span>
+      </button>
+      <div className="diff-file-actions">
+        {file.binary ? <span className="diff-file-kind">Binary</span> : <span className="diff-counts"><span className="additions">{file.approximate?'~':''}+{file.additions}</span><span className="deletions">−{file.deletions}</span></span>}
+        <button className="icon-button" disabled={opening || unavailable} aria-label={`Open ${file.path} in editor`} title={unavailable?'Deleted file': 'Open in preferred editor (VS Code by default)'} onClick={() => void open('preferred')}><ExternalLink size={14}/></button>
+        {!unavailable && <details className="diff-editor-menu" ref={menu} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node))event.currentTarget.open=false;}}><summary className="icon-button" aria-label={`Choose editor for ${file.path}`} title="Choose editor"><ChevronDown size={12}/></summary><div><button disabled={opening} onClick={()=>void open('vscode')}>Open in VS Code</button><button disabled={opening} onClick={()=>void open('choose')}>Choose preferred editor…</button></div></details>}
+      </div>
+    </div>
+    {error && <p className="diff-open-error" role="alert">{error}</p>}
+    {!collapsed && (file.binary ? <p className="empty-copy">Binary file. Text comparison is unavailable.</p> : <>
+      {(comparison.approximate || comparison.truncated || comparison.rows.length > 3000) && <p className="diff-notice">{comparison.approximate?'Large comparison: line counts are approximate. ':''}{comparison.truncated||comparison.rows.length>3000?'Showing the first 3,000 rows. Open in your editor for the full contents.':''}</p>}
+      <div className="diff-code" tabIndex={0} aria-label={`File diff for ${file.path}`}>{comparison.rows.slice(0,3000).map((row,i)=><div className={`code-line ${row.kind}`} key={i}><span className="line-number">{row.oldLine ?? ''}</span><span className="line-number">{row.newLine ?? ''}</span><span className="line-sign">{row.kind==='added'?'+':row.kind==='removed'?'−':' '}</span><code>{row.text.replace(/\r$/,'')||' '}{row.noNewline&&<small className="no-newline"> No newline at end of file</small>}</code></div>)}</div>
+    </>)}
+  </section>;
 }
 
 export function ShellCommands({ results }: { results: ShellResult[] }) {
@@ -46,13 +76,18 @@ export function ShellCommands({ results }: { results: ShellResult[] }) {
   return <section className="shell-commands" aria-label="Muse command results"><div className="shell-commands-heading"><Terminal size={15} /><strong>Muse commands</strong><span>{results.length}</span></div><p className="shell-evidence-note">Native sandbox results. Run Checks to attach evidence to the current revision.</p>{results.map(result => <details className={`shell-result ${result.terminalStatus === 'failed' || result.exitCode !== 0 ? 'shell-result-failed' : ''}`} key={`${result.runId}:${result.callId}`}><summary><span>PowerShell · {result.terminalStatus}</span><code>exit {result.exitCode}</code><ChevronDown size={13} /></summary><div className="shell-result-body"><span className="shell-field-label">Command</span><pre aria-label="Native command">{result.command || '(No command text reported)'}</pre><span className="shell-field-label">Output</span><pre aria-label="Native command output">{result.output || '(No output)'}</pre><p className="shell-result-meta">Native outcome: {result.outcome}{result.terminalReason ? ` · ${result.terminalReason}` : ''}</p>{result.truncated && <p className="shell-truncated">Command details or output were shortened.</p>}</div></details>)}</section>;
 }
 
-export function ProjectToolsPanel({ state, busy, act, stage, selectedFilePath, onSelectFilePath }: { state: AppState; busy: boolean; act: Act; stage: 'changes'|'preview'|'checks'; selectedFilePath?:string; onSelectFilePath?:(path:string)=>void }) {
+export function ProjectToolsPanel({ state, busy, act, stage, selectedFilePath }: { state: AppState; busy: boolean; act: Act; stage: 'changes'|'preview'|'checks'; selectedFilePath?:string; onSelectFilePath?:(path:string)=>void }) {
   const task = state.task, project = state.activeProject;
-  const [filePath, setFilePath] = useState<string>();
+  const changesRef = useRef<HTMLDivElement>(null);
   const [previewScript, setPreviewScript] = useState('');
   const [checkScript, setCheckScript] = useState('');
   const [showPreviewLog, setShowPreviewLog] = useState(false);
-  useEffect(() => { setFilePath(undefined); }, [task?.id]);
+  useEffect(() => {
+    if (stage === 'changes' && selectedFilePath) {
+      const file = [...(changesRef.current?.querySelectorAll<HTMLElement>('[data-file-path]') ?? [])].find(element => element.dataset.filePath === selectedFilePath);
+      file?.scrollIntoView({block:'nearest'});
+    }
+  }, [stage, selectedFilePath, task?.id]);
   useEffect(() => {
     const scripts = Object.keys(project?.scripts ?? {});
     setPreviewScript(scripts.includes('dev') ? 'dev' : scripts.includes('start') ? 'start' : scripts[0] ?? '');
@@ -61,9 +96,8 @@ export function ProjectToolsPanel({ state, busy, act, stage, selectedFilePath, o
   if (!task) return <section className="review-workspace"><div className="stage-empty"><Files size={24} /><h3>No active task</h3><p>Start a task to inspect its files, preview or checks.</p></div></section>;
   const scripts = Object.keys(project?.scripts ?? {});
   const passed = task.check?.status === 'passed' && task.check.revision === task.revision;
-  const selectedFile = task.changes.find(file=>file.path===(selectedFilePath??filePath))??task.changes[0];
-  return <section className="review-workspace"><div className="stage-body">
-      {stage === 'changes' && <><div className="section-heading"><div><p className="eyebrow">FILES</p><h2>Changed files</h2><p>Review the difference from your task’s starting point.</p></div><button className="button compact" disabled={busy} onClick={() => void act({ type: 'refresh' })}><RefreshCw size={14} />Refresh</button></div>{task.changes.length > 0 ? <><div className="change-summary"><span><Files size={16} />{task.changes.length} changed files</span><span className="additions">+{task.changes.reduce((sum, file) => sum + file.additions, 0)}</span><span className="deletions">−{task.changes.reduce((sum, file) => sum + file.deletions, 0)}</span><code>{short(task.revision)}</code></div><div className="file-tabs">{task.changes.map(file => <button key={file.path} className={selectedFile?.path === file.path ? 'selected' : ''} onClick={() => {setFilePath(file.path);onSelectFilePath?.(file.path);}}><FileCode2 size={14} /><span>{file.path}</span>{file.binary?<small>Binary</small>:<small><span className="additions">{file.approximate?'~':''}+{file.additions}</span> <span className="deletions">−{file.deletions}</span></small>}<small className={file.status === 'deleted' ? 'deletions' : 'additions'}>{file.status === 'added' ? 'A' : file.status === 'deleted' ? 'D' : 'M'}</small></button>)}</div>{selectedFile && <Diff key={selectedFile.path} file={selectedFile} />}</> : <div className="stage-empty"><Files size={30} /><h3>No changes yet.</h3><p>{task.mode === 'manual' ? 'Edit the project in your editor, then refresh to compare your files.' : 'Connect Muse and send your request, then refresh to see the files that changed.'}</p></div>}</>}
+  return <section className="review-workspace"><div ref={changesRef} className={`stage-body ${stage === 'changes' ? 'changes-body' : ''}`}>
+      {stage === 'changes' && (task.changes.length ? task.changes.map(file => <Diff key={`${task.id}:${file.path}`} taskId={task.id} file={file}/>) : <p className="empty-copy">No changes yet.</p>)}
       {stage === 'preview' && <><div className="section-heading"><div><p className="eyebrow">PREVIEW</p><h2>Project preview</h2><p>Run your project in a local preview.</p></div></div><div className="command-card"><label htmlFor="preview-script">Preview script</label><div className="command-controls"><select id="preview-script" value={previewScript} disabled={busy || state.preview.status === 'running' || !scripts.length} onChange={e => setPreviewScript(e.target.value)}>{!scripts.length && <option value="">No package scripts</option>}{scripts.map(script => <option key={script} value={script}>{script}</option>)}</select><button className={`button ${state.preview.status === 'running' ? '' : 'primary'}`} disabled={busy || !previewScript || state.preview.status === 'starting'} onClick={() => void act(state.preview.status === 'running' ? { type: 'stopPreview' } : { type: 'startPreview', script: previewScript })}>{state.preview.status === 'running' ? <><Square size={13} />Stop preview</> : state.preview.status === 'starting' ? <><LoaderCircle size={14} className="spin" />Starting…</> : <><Play size={14} />Start preview</>}</button></div><code>{project?.scripts[previewScript] ?? 'Add a preview script to package.json to continue.'}</code></div><div className="preview-frame"><div className="preview-browserbar"><span className={`tiny-dot ${state.preview.status === 'running' ? 'running-dot' : ''}`} /><span>{state.preview.url ?? 'Your local preview'}</span><button className="icon-button" aria-label="Toggle preview logs" onClick={() => setShowPreviewLog(!showPreviewLog)}><Terminal size={14} /></button></div>{state.preview.status === 'running' && state.preview.url ? <iframe key={state.preview.url} title="Project preview" src={state.preview.url} sandbox="allow-scripts allow-forms allow-same-origin" /> : <div className="preview-placeholder"><Play size={29} /><h3>{state.preview.status === 'failed' ? 'Preview couldn’t start.' : state.preview.status === 'starting' ? 'Starting preview…' : 'Preview is stopped'}</h3><p>{state.preview.status === 'failed' ? 'Read the command output below, resolve the issue, and try again.' : 'Run a package script to view your local app here.'}</p></div>}</div>{(showPreviewLog || state.preview.status === 'failed') && <pre className="log-output" aria-label="Preview command output">{state.preview.log || 'No preview output yet.'}</pre>}</>}
       {stage === 'checks' && <><div className="section-heading"><div><p className="eyebrow">CHECKS</p><h2>Project checks</h2><p>Run a script and inspect the output for this revision.</p></div><span className={`pill ${passed ? 'green' : task.check?.status === 'failed' ? 'red' : ''}`}>{task.check?.status === 'running' ? <LoaderCircle className="spin" size={13} /> : passed ? <Check size={13} /> : <Circle size={11} />}{task.check ? (task.check.revision !== task.revision ? 'Stale evidence' : task.check.status) : 'Not run'}</span></div><div className="command-card"><label htmlFor="check-script">Project check</label><div className="command-controls"><select id="check-script" value={checkScript} onChange={e => setCheckScript(e.target.value)} disabled={busy || task.check?.status === 'running' || !scripts.length}>{!scripts.length && <option value="">No package scripts</option>}{scripts.map(script => <option key={script} value={script}>{script}</option>)}</select><button className="button primary" disabled={busy || !checkScript || task.check?.status === 'running'} onClick={() => void act({ type: 'runCheck', script: checkScript })}><Play size={14} />Run check</button>{task.check?.status === 'running' && <button className="button" onClick={() => void act({ type: 'cancelCheck' })}><Square size={13} />Cancel</button>}</div><code>{project?.scripts[checkScript] ?? 'Add a check script to package.json to continue.'}</code></div><div className="check-terminal"><div className="terminal-heading"><span><Terminal size={15} />Command output</span><span>{task.check ? `exit ${task.check.exitCode ?? '—'} · ${short(task.check.revision)}` : 'Waiting for a run'}</span></div><pre className="log-output">{task.check?.log || 'Your check output will appear here.\n\nChoose a script above to begin.'}</pre></div></>}
       </div></section>;
