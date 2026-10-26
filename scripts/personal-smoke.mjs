@@ -343,7 +343,8 @@ try {
   }
   record('Accounts panel safely overlays the website and waits for late Settings tab handlers before opening account, connectors, and WhatsApp destinations without pairing');
 
-  await page.locator('.personal-tools > summary').click();
+  assert.equal(await page.locator('.personal-tools > summary').count(), 0);
+  await page.getByRole('button', { name: 'Muse feed', exact: true }).waitFor();
   for (const [button, expected] of [['Search Muse', 'Search opened'], ['Muse feed', 'Feed opened'], ['Muse library', 'Library opened']]) {
     await page.locator('aside.personal-sidebar').getByRole('button', { name: button, exact: true }).click();
     await until(async () => await remoteEval(bot.id, 'document.querySelector("#fixture-action")?.textContent') === expected, `${button} invokes the official website control`);

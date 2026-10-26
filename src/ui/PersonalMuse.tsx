@@ -132,11 +132,11 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
         <PersonalCollection label="Ideas" noun="ideas" icon={Lightbulb} group={library.ideas} selectedId={library.selectedId} active={destination === 'ideas'} query={query} available={available.ideas} onNavigate={() => onNavigate('ideas')} onSelect={id => onCommand({ type: 'selectItem', id })} />
         <PersonalCollection label="Goals" noun="goals" icon={Target} group={library.goals} selectedId={library.selectedId} active={destination === 'goals'} query={query} available={available.goals} onNavigate={() => onNavigate('goals')} onSelect={id => onCommand({ type: 'selectItem', id })} />
       </nav>
-      <details className="personal-tools"><summary>More<ChevronDown size={13}/></summary><nav aria-label="Muse tools">
+      <div className="personal-tools"><nav aria-label="Muse tools">
         <button className="navigation-row" type="button" aria-label="Search Muse" onClick={() => onAction('search')}><Search size={15} /><span>Search Muse</span><ExternalLink size={11} /></button>
         <button className="navigation-row" type="button" aria-label="Muse feed" onClick={() => onAction('feed')}><Newspaper size={15} /><span>Feed</span></button>
         <button className="navigation-row" type="button" aria-label="Muse library" onClick={() => onAction('library')}><Library size={15} /><span>Library</span></button>
-      </nav></details>
+      </nav></div>
     </div>
   </div>;
 }
