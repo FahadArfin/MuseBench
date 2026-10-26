@@ -122,3 +122,23 @@ test('branch from an assistant response includes that output, excludes later tur
  const context=await c.inspectContext({projectId:fork.activeProject.id,taskId:fork.task.id,text:'Continue',files:[]});assert.match(context.prompt,/First answer/);assert.doesNotMatch(context.prompt,/Later answer/);
  const original=await c.dispatch({type:'selectTask',id:before.task.id});assert.deepEqual(original.task.messages.map(({id,role,text,at})=>({id,role,text,at})),before.task.messages.map(({id,role,text,at})=>({id,role,text,at})));
 });
+
+test('queued prompts can move during a run and execute in the chosen order',async t=>{
+ const {c,runtime}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'First'});
+ for(const text of ['Second','Third','Fourth'])await c.dispatch({type:'queueMessage',text,mode:'plan',runOptions:{reasoning:'low',approval:'ask'}});
+ const s=c.getState(),[second,third,fourth]=s.task.promptQueue;
+ const action={type:'moveQueued',taskId:s.task.id,id:fourth.id,beforeId:second.id};assert.deepEqual(validateAction(action),action);
+ assert.equal((await c.dispatch(action)).error,null);assert.deepEqual(c.getState().task.promptQueue,[fourth,second,third]);assert.equal(runtime.sent.length,1);
+ runtime.finish();await wait(()=>runtime.sent.length===2);assert.match(runtime.sent[1].text,/Fourth/);assert.equal(runtime.sent[1].mode,'plan');assert.equal(runtime.sent[1].runOptions.reasoning,'low');
+ const before=c.getState().task.promptQueue;assert.match((await c.dispatch(action)).error,/queue|started/i);assert.deepEqual(c.getState().task.promptQueue,before);
+ assert.match((await c.dispatch({...action,id:second.id,taskId:'another-chat'})).error,/chat/i);assert.deepEqual(c.getState().task.promptQueue,before);
+});
+test('queue reordering persists and does not resume paused work',async t=>{
+ const {c,runtime,dataDir}=await fixture(t);await start(c);
+ for(const text of ['One','Two','Three'])await c.dispatch({type:'queueMessage',text});
+ const s=c.getState(),[one,two,three]=s.task.promptQueue;
+ assert.equal((await c.dispatch({type:'moveQueued',taskId:s.task.id,id:one.id,beforeId:null})).error,null);
+ assert.deepEqual(c.getState().task.promptQueue,[two,three,one]);assert.equal(c.getState().task.queuePaused,true);assert.equal(runtime.sent.length,0);
+ await c.close();const reopened=await createController({dataDir,runtime:fakeRuntime()});t.after(()=>reopened.close());assert.deepEqual(reopened.getState().task.promptQueue,[two,three,one]);await reopened.close();
+ for(const bad of [{taskId:1,id:'x',beforeId:null},{taskId:'t',id:'x',beforeId:42},{taskId:'t',id:'',beforeId:null}])assert.throws(()=>validateAction({type:'moveQueued',...bad}));
+});

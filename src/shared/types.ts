@@ -34,6 +34,7 @@ export type Action =
   | {type:'setTaskFlags';id:string;pinned?:boolean;archived?:boolean}
   | {type:'forkTask';messageId:string}
   | {type:'queueMessage';text:string;files?:ContextFile[];mode?:'chat'|'plan';runOptions?:RunOptions}
+  | {type:'moveQueued';taskId:string;id:string;beforeId:string|null}
   | {type:'removeQueued';id:string} | {type:'pauseQueue'|'resumeQueue'};
 export type PersonalDestination = 'bot' | 'chat' | 'ideas' | 'goals';
 export interface PersonalLibraryItem { id: string; kind: 'chat' | 'idea' | 'goal'; title: string; }

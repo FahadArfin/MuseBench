@@ -1,3 +1,4 @@
+import {moveQueuedPrompt} from '../shared/queued-prompts.mjs';
 import {planSidebarMove} from '../shared/sidebar-order.mjs';
 import {projectDetails} from '../shared/create-project.mjs';
 import {projectGit} from '../shared/project-git.mjs';
@@ -417,6 +418,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         t.promptQueue??=[];t.promptQueue.push({id:randomUUID(),text:action.text.trim(),files,mode:action.mode??'chat',runOptions:validateRunOptions(action.runOptions??t.runOptions),at:now()});
         if(!closing&&!t.queueHold&&museTurnPending&&['running','starting','submitting'].includes(state.runtime.status))t.queuePaused=false;break;
       }
+      case 'moveQueued':{const t=requireTask();t.promptQueue=moveQueuedPrompt(t,action);break;}
       case 'removeQueued':{const t=requireTask();t.promptQueue=(t.promptQueue??[]).filter(q=>q.id!==action.id);break;}
       case 'pauseQueue':{const t=requireTask();t.queuePaused=true;t.queueHold=true;break;}
       case 'resumeQueue':{

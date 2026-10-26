@@ -1,0 +1,17 @@
+.prompt-queue{border:1px solid var(--border);border-radius:16px;background:var(--surface-hover);margin:0 8px -8px;padding:8px 10px 15px}
+.prompt-queue header{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px;padding:1px 5px 5px;margin:0}
+.prompt-queue header span{flex:1}
+.prompt-queue header button{font-size:11px}
+.queue-list{list-style:none;padding:0;margin:0;max-height:200px;overflow:auto}
+.queued-prompt{position:relative;display:flex;align-items:center;gap:6px;padding:3px 0;min-height:32px;border-radius:6px;font-size:13px}
+.queued-prompt:hover{background:var(--surface)}
+.queued-prompt .queued-text{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queued-prompt .icon-button{flex:none;width:26px;height:26px;color:var(--muted);border-radius:5px}
+.queued-prompt .icon-button:hover{color:var(--text)}
+.queued-prompt .queue-grip{cursor:grab;touch-action:none}
+.queued-prompt .queue-grip:active{cursor:grabbing}
+.queue-dragging{opacity:.45}
+.queue-drop-before{box-shadow:inset 0 2px var(--accent)}
+.queue-drop-after{box-shadow:inset 0 -2px var(--accent)}
+.queue-announcement{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+@media(max-width:600px){.prompt-queue{margin-inline:0}.queued-prompt{font-size:12px}}

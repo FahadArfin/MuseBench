@@ -28,6 +28,20 @@ try {
  await page.screenshot({path:'artifacts/browser-preview/collapsed-profile.png'});
  await page.getByRole('button',{name:'Profile menu',exact:true}).click();await page.getByRole('menu',{name:'Your profile',exact:true}).getByText('Alex Morgan',{exact:true}).waitFor();await page.keyboard.press('Escape');await page.keyboard.press('Control+b');
  await page.screenshot({path:'artifacts/browser-preview/code.png'});
+ const queued=page.getByRole('region',{name:'Queued prompts'}),composer=page.getByRole('textbox',{name:'Message Muse',exact:true});
+ for(const text of ['Polish the toolbar','Check keyboard navigation','Review the mobile layout']){await composer.fill(text);await composer.press('Alt+Enter');await composer.waitFor();assert.equal(await composer.inputValue(),'');}
+ assert.equal(await queued.locator('li').count(),3);
+ const source=await queued.getByRole('button',{name:'Reorder queued prompt 3',exact:true}).boundingBox(),destination=await queued.locator('li').first().boundingBox();
+ await page.mouse.move(source.x+source.width/2,source.y+source.height/2);await page.mouse.down();await page.mouse.move(destination.x+destination.width/2,destination.y+3,{steps:15});await page.mouse.up();
+ await page.waitForFunction(()=>document.querySelector('.queued-text')?.textContent==='Review the mobile layout');
+ await queued.getByRole('button',{name:'Reorder queued prompt 1',exact:true}).press('Alt+ArrowDown');
+ await page.waitForFunction(()=>document.querySelector('.queued-text')?.textContent==='Polish the toolbar');
+ assert.deepEqual(await queued.locator('.queued-text').allTextContents(),['Polish the toolbar','Review the mobile layout','Check keyboard navigation']);
+ await page.screenshot({path:'artifacts/browser-preview/prompt-queue.png'});
+ await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1));await page.screenshot({path:'artifacts/browser-preview/prompt-queue-narrow.png'});await page.setViewportSize({width:1440,height:960});
+ await queued.getByRole('button',{name:'Edit queued prompt 2',exact:true}).click();assert.equal(await composer.inputValue(),'Review the mobile layout');assert.equal(await queued.locator('li').count(),2);await composer.fill('');
+ while(await queued.count())await queued.getByRole('button',{name:'Remove queued prompt 1',exact:true}).click();
+
  const before=await page.evaluate(()=>window.musebench.getState());
  await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Keep this draft');
  await page.getByRole('button',{name:'Reasoning effort',exact:true}).click();

@@ -1,3 +1,4 @@
+import {moveQueuedPrompt} from '../shared/queued-prompts.mjs';
 import {loadSnapshots,selectSnapshot,selectedSnapshot,subscribeSnapshots,type SnapshotKey} from './snapshots';
 import {planSidebarMove} from '../shared/sidebar-order.mjs';
 import {projectDetails} from '../shared/create-project.mjs';
@@ -41,6 +42,11 @@ export function createPreviewBridge():MuseBenchBridge {
    case 'selectProject':state.activeProject=state.projects.find(p=>p.id===action.id)??project;break;
    case 'selectTask':state.task=tasks.get(action.id)??initial;state.activeProject=state.projects.find(p=>p.id===state.task!.projectId)??project;break;
    case 'newTask':{const next=task(action.request,id(),state.activeProject?.id??project.id);next.runOptions=action.runOptions??next.runOptions;next.messages.push({id:id(),role:'assistant',text:'Preview conversation created. Messages stay in this browser tab until you reset or reload.',at:stamp});tasks.set(next.id,next);state.task=next;break;}
+   case 'queueMessage':if(current){if((current.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');if(!action.text.trim())throw Error('Enter a prompt.');(current.promptQueue??=[]).push({id:id(),text:action.text.trim(),files:copy(action.files??[]),mode:action.mode??'chat',runOptions:copy(action.runOptions??current.runOptions!),at:stamp});current.queuePaused=true;}break;
+   case 'moveQueued':if(current)current.promptQueue=moveQueuedPrompt(current,action);break;
+   case 'removeQueued':if(current)current.promptQueue=current.promptQueue?.filter(item=>item.id!==action.id);break;
+   case 'pauseQueue':if(current)current.queuePaused=true;break;
+   case 'resumeQueue':if(current){const next=current.promptQueue?.shift();if(next)reply(current,next.text);current.queuePaused=true;}break;
    case 'sendMessage':if(current)reply(current,action.text);break;
    case 'renameTask':if(current)current.title=action.title;break;
    case 'setRunOptions':if(current)current.runOptions=copy(action.runOptions);break;
