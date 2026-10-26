@@ -3,10 +3,10 @@ import {GripVertical,Pencil,Trash2} from 'lucide-react';
 import type {QueuedPrompt} from '../shared/types';
 import './prompt-queue.css';
 
-export function PromptQueue({items,paused,busy,running,onMove,onEdit,onRemove,onToggle}:{
- items:QueuedPrompt[];paused:boolean;busy:boolean;running:boolean;
+export function PromptQueue({items,busy,onMove,onEdit,onRemove}:{
+ items:QueuedPrompt[];busy:boolean;
  onMove:(id:string,beforeId:string|null)=>Promise<boolean>;
- onEdit:(item:QueuedPrompt)=>void;onRemove:(id:string)=>void;onToggle:()=>void;
+ onEdit:(item:QueuedPrompt)=>void;onRemove:(id:string)=>void;
 }){
  const drag=useRef<string|null>(null);
  const [dragging,setDragging]=useState<string|null>(null),[target,setTarget]=useState<string|null|undefined>(),[notice,setNotice]=useState('');
@@ -17,7 +17,6 @@ export function PromptQueue({items,paused,busy,running,onMove,onEdit,onRemove,on
   return event.clientY<box.y+box.height/2?id:items[items.findIndex(item=>item.id===id)+1]?.id??null;
  };
  return <section className="prompt-queue" aria-label="Queued prompts">
-  <header><span>{paused?'Queue paused':'Queued for after this turn'} · {items.length}</span><button className="text-link" disabled={busy||running&&paused} onClick={onToggle}>{paused?'Run queue':'Pause'}</button></header>
   <ol className="queue-list">
    {items.map((item,index)=><li key={item.id} className={`queued-prompt ${dragging===item.id?'queue-dragging':''} ${target===item.id?'queue-drop-before':''} ${index===items.length-1&&target===null?'queue-drop-after':''}`}
     onDragOver={event=>{if(busy||!drag.current)return;event.preventDefault();event.dataTransfer.dropEffect='move';setTarget(position(event,item.id));}}
