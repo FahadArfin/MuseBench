@@ -34,6 +34,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const state:AppState={projectCreationRoot:'Documents/MuseBench',projects:[project],tasks:[initial,other],activeProject:project,task:initial,checkpoints:[],preview:{status:'stopped',url:null,log:'',script:null},runtime:copy(runtime),busy:false,error:null,drafts:{}};
  const code=channel(()=>state);
  function sync(){state.tasks=[...tasks.values()];return code.emit();}
+ const sampleWorktrees:import('../shared/types').ManagedWorktree[]=[];
  const imageData=new Map<string,string>();
  function reply(current:Task,text:string,images:import('../shared/types').CodeImage[]=[]){current.messages.push({id:id(),role:'user',text,images,at:new Date().toISOString()},{id:id(),role:'assistant',text:'Preview reply — your message is shown here so you can review the conversation layout. No request was sent to Muse and no project files were changed.',at:new Date().toISOString()});current.updatedAt=new Date().toISOString();}
  async function dispatch(action:Action):Promise<AppState>{
@@ -43,6 +44,7 @@ export function createPreviewBridge():MuseBenchBridge {
    case 'selectProject':state.activeProject=state.projects.find(p=>p.id===action.id)??project;break;
    case 'selectTask':state.task=tasks.get(action.id)??initial;state.activeProject=state.projects.find(p=>p.id===state.task!.projectId)??project;break;
    case 'newTask':{const next=task(action.request,id(),state.activeProject?.id??project.id);next.runOptions=action.runOptions??next.runOptions;next.messages.push({id:id(),role:'assistant',text:'Preview conversation created. Messages stay in this browser tab until you reset or reload.',at:stamp});tasks.set(next.id,next);state.task=next;break;}
+   case 'createWorktree':case 'openWorktree':{let item=action.type==='openWorktree'?sampleWorktrees.find(i=>i.id===action.id):undefined;if(action.type==='createWorktree'){if(!action.branch.trim()||action.branch.startsWith('-'))throw Error('Choose a valid branch.');item={id:id(),branch:action.branch,base:action.base,commit:'sample-base',path:'Sample worktrees/'+action.branch,sourceRoot:project.root,createdAt:stamp,status:'ready',available:true};sampleWorktrees.push(item);}if(!item)throw Error('Worktree unavailable');let p=state.projects.find(p=>p.root===item!.path);if(!p){p={...project,id:id(),name:project.name+' · '+item.branch,root:item.path,branch:item.branch};state.projects.push(p);}state.activeProject=p;state.task=null;break;}
    case 'queueMessage':if(current){if((current.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');if(!action.text.trim())throw Error('Enter a prompt.');(current.promptQueue??=[]).push({id:id(),text:action.text.trim(),files:copy(action.files??[]),images:copy(action.images??[]),mode:action.mode??'chat',runOptions:copy(action.runOptions??current.runOptions!),at:stamp});current.queuePaused=true;}break;
    case 'moveQueued':if(current)current.promptQueue=moveQueuedPrompt(current,action);break;
    case 'removeQueued':if(current)current.promptQueue=current.promptQueue?.filter(item=>item.id!==action.id);break;
@@ -87,6 +89,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const dictation={id:null,status:'idle' as const,available:false,language:null,text:'',error:'Microphone input is available in the desktop app.'};
  return {
   windowControlsOverlay:true,
+  inspectWorktrees:async input=>({root:state.projects.find(p=>p.id===input.projectId)?.root??project.root,branch:'main',head:'sample-base',dirty:true,items:copy(sampleWorktrees)}),
   importCodeImage:async input=>{const match=/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(input.dataUrl);if(!match||input.dataUrl.length>11200000)throw Error('Choose an image up to 8 MB.');const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));const id=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');imageData.set(input.projectId+id,input.dataUrl);return{id,name:input.name,mime:match[1],bytes:bytes.length};},
   readCodeImage:async input=>{const data=imageData.get(input.projectId+input.image.id);if(!data)throw Error('Screenshot unavailable');return data;},
   getState:code.read,onState:code.on,dispatch,openProjectFile:desktop,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);if(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},

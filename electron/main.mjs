@@ -94,6 +94,7 @@ else {
     handler('musebench:window-theme',theme=>updateWindowTheme(window,theme));
     handler('musebench:code-image-import',input=>controller.importImage(input));
     handler('musebench:code-image-read',input=>controller.readImage(input));
+    handler('musebench:worktrees',input=>controller.inspectWorktrees(input));
     handler('musebench:code-context',input=>controller.inspectContext(input));
     handler('musebench:chat-search',input=>controller.searchChats(input));
     handler('musebench:code-draft',async input=>{const result=await controller.dispatch(validateAction({...input,type:'saveDraft'}));if(result.error)throw Error(result.error);});

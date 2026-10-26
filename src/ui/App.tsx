@@ -1,3 +1,4 @@
+import {WorktreeDialog} from './WorktreeDialog';
 import {CodeImages,useImageUploads} from './CodeImages';
 import {PromptQueue} from './PromptQueue';
 import {CreateProject} from './CreateProject';
@@ -106,7 +107,7 @@ export default function App() {
   const selectProduct = (next: 'code' | 'personal') => { setProduct(next); setMobileNav(false); requestAnimationFrame(()=>{const target=document.querySelector<HTMLButtonElement>('.sidebar:not([hidden]) .product-mode-switch [aria-pressed="true"]');if(target?.checkVisibility())target.focus({preventScroll:true});}); };
   const navigatePersonal = (destination: PersonalDestination) => { setProduct('personal'); setPersonalMode('chat'); setMobileNav(false); void personalCommand({ type: 'navigate', destination }); };
   const workModeSwitch=<div className="work-mode-switch" role="group" aria-label="Chat or Work"><button type="button" aria-label="Chat" title="Meta AI chat" aria-pressed={personalMode==='chat'} onClick={()=>navigatePersonal('chat')}><MessageSquare size={14}/><span>Chat</span></button><button type="button" aria-label="Work" title="Documents, spreadsheets, and presentations" aria-pressed={personalMode==='work'} onClick={()=>setPersonalMode('work')}><Files size={14}/><span>Work</span></button></div>;
-  const [modal, setModal] = useState<'create-project' | 'runtime' | 'settings' | 'search' | 'history' | 'command' | 'extensions' | 'context' | null>(null);
+  const [modal, setModal] = useState<'worktrees' | 'create-project' | 'runtime' | 'settings' | 'search' | 'history' | 'command' | 'extensions' | 'context' | null>(null);
   const [commandView,setCommandView]=useState<CommandView>({id:'help'});
   const [skills,setSkills]=useState<MuseSkill[]>([]),[skillsStatus,setSkillsStatus]=useState('idle');
   const skillsKey=useRef(''),skillsGeneration=useRef(0);
@@ -267,6 +268,7 @@ export default function App() {
     const entry=findCommand(id);
     if(id==='unknown'){showCommand(id,args);return;}
     setMessage(prefix);
+    if(id==='worktree'){if(project)setModal('worktrees');else void openFolder('chat');return;}
     if(id==='mcp'||id==='plugins'||id==='customize'){openCustomize(id==='mcp'?'mcp':id==='plugins'?'plugins':'skills');return;}
     if(entry?.kind==='info'){showCommand(id,args,entry.detail);return;}
     if(id==='fast'){applyOptions({...options,reasoning:args==='on'?'low':args==='off'?'high':options.reasoning==='low'?'high':'low'});return;}
@@ -446,6 +448,7 @@ export default function App() {
     <SpacesWorkspace active={codeSpaces||(product==='personal'&&personalMode==='work'&&spacesVisible&&!sitesVisible)} state={spacesState} command={spacesCommand} workItems={workState?.items??[]} workBusy={Boolean(workState?.busy)} onOpenWork={()=>{setProduct('personal');setPersonalMode('work');setSitesVisible(false);setSpacesVisible(false);setWorkHome(false);}} modeSwitch={codeSpaces?null:workModeSwitch} onNavigationOpen={revealSidebar} preferences={preferences} home={spacesHome} onHomeChange={setSpacesHome}/>
     <SitesWorkspace active={codeSites||(product==='personal'&&personalMode==='work'&&sitesVisible)} state={sitesState} command={sitesCommand} importFolder={importFolder} connect={connectHosting} pollAuth={pollAuth} workItems={workState?.items??[]} workBusy={Boolean(workState?.busy)} modeSwitch={codeSites?null:workModeSwitch} onNavigationOpen={revealSidebar} preferences={preferences} home={sitesHome} onHomeChange={setSitesHome}/>
     {modal==='extensions'&&<CustomizeDialog initialTab={customizeTab} initialQuery={customizeQuery} close={closeModal} running={customizeBlocked(state,workState,sitesState,sitesState?.generation)} onConnection={()=>setModal('runtime')} onChanged={()=>{setShortcutRevision(value=>value+1);skillsKey.current='';loadSkills();}} onPersonal={action=>{closeModal();setProduct('personal');setPersonalMode('chat');void personalCommand({type:'serviceAction',action});}}/>}
+    {modal==='worktrees'&&project&&<WorktreeDialog project={project} busy={busy||runtimeActive} act={act} onClose={closeModal} onOpened={()=>{closeModal();setCreating(true);setView('project');}}/>}
     {modal==='context'&&project&&<CodeContext project={project} taskId={showTask?task!.id:null} text={message} files={contextFiles} onFiles={setContextFiles} act={act} busy={busy||runtimeActive} close={closeModal}/>}
     {modal === 'runtime' && <RuntimeDialog state={state} busy={busy} act={act} close={closeModal} onError={setLocalError} />}{modal === 'settings' && <SettingsDialog openCustomize={()=>openCustomize()} state={state} busy={busy||runtimeActive||Boolean(state.runtime.pending)} act={act} openPersonal={destination=>{closeModal();navigatePersonal(destination);}} preferences={preferences} onChange={setPreferences} close={closeModal} openConnection={() => setModal('runtime')} />}{modal === 'history' && <CheckpointDialog state={state} close={closeModal} />}
     {modal === 'create-project' && <CreateProject root={state.projectCreationRoot??'Documents/MuseBench'} close={closeModal} onExisting={async()=>{await openFolder();setModal(null);}} onCreate={async details=>{const next=await act({type:'createProject',...details});if(!next||next.error)throw Error(next?.error??'Could not create the project.');setProduct('code');setView('project');setCreating(false);setReviewOpen(false);setMobileNav(false);setModal(null);}}/>}

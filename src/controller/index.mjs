@@ -1,3 +1,4 @@
+import {createWorktreeService} from './worktrees.mjs';
 import {createImageStore} from './code-images.mjs';
 import {imageReferences} from '../shared/code-images.mjs';
 import {moveQueuedPrompt} from '../shared/queued-prompts.mjs';
@@ -115,7 +116,7 @@ async function freePort(){const server=net.createServer();await new Promise((res
 
 export async function createController({dataDir,projectsDir,newProjectsDir,templateDir=fileURLToPath(new URL('../../templates/tea-store',import.meta.url)),runtime,checkTimeoutMs=120000,archiveNow=()=>Date.now()}={}){
   if(!dataDir)throw Error('A controller dataDir is required.');await fs.mkdir(dataDir,{recursive:true});dataDir=await fs.realpath(dataDir);
-  const imageStore=createImageStore(dataDir);
+  const imageStore=createImageStore(dataDir),worktrees=createWorktreeService(dataDir);
   const legacyProjectsDir=path.join(dataDir,'projects');projectsDir=projectsDir??legacyProjectsDir;
   if(!path.isAbsolute(projectsDir))throw Error('Project storage must be an absolute folder.');projectsDir=path.resolve(projectsDir);
   newProjectsDir=newProjectsDir??projectsDir;if(!path.isAbsolute(newProjectsDir))throw Error('New project storage must be an absolute folder.');newProjectsDir=path.resolve(newProjectsDir);
@@ -250,6 +251,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const validateBinding=(projectId,taskId)=>{
     if(state.activeProject?.id!==projectId||taskId!=null&&state.task?.id!==taskId)throw Error('The selected project or chat changed. Open context again.');
   };
+  const inspectWorktrees=async ({projectId})=>{const p=state.projects.find(p=>p.id===projectId);if(!p)throw Error('Project unavailable.');return worktrees.inspect(p.root);};
   const importImage=async ({projectId,taskId=null,...input})=>{validateBinding(projectId,taskId);const ref=await imageStore.import(projectId,input);validateBinding(projectId,taskId);return ref;};
   const readImage=async ({projectId,image})=>{if(!state.projects.some(p=>p.id===projectId))throw Error('Project unavailable.');return imageStore.read(projectId,image);};
   const contextAllowed=name=>!name.split('/').some(part=>['.muse','.codex','.config','auth.json','.mcp.json'].includes(part.toLowerCase()));
@@ -334,6 +336,12 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(await canonicalRoot(root)!==root)throw Error('The new project folder changed unexpectedly.');
         await fs.writeFile(path.join(root,'README.md'),`# ${name}\n\n${instructions}\n`,{flag:'wx'});
         const p={id:randomUUID(),name,root,demo:false,scripts:{},instructions};await selectProject(p);state.projects.push(p);break;
+      }
+      case 'createWorktree':case 'openWorktree':{
+        requireNavigationIdle();validateBinding(action.projectId,null);const source=state.activeProject;
+        const item=action.type==='createWorktree'?await worktrees.create(source.root,{branch:action.branch,base:action.base}):await worktrees.open(source.root,action.id);
+        const root=await canonicalRoot(item.path);if(root!==item.path)throw Error('Worktree folder changed.');const info=await scriptsFor(root);await snapshot(root);
+        let p=state.projects.find(p=>p.root===root);if(!p){p={id:randomUUID(),name:source.name.split(' · ')[0]+' · '+item.branch,root,demo:false,scripts:info.scripts,instructions:source.instructions,worktree:{id:item.id,sourceRoot:item.sourceRoot,branch:item.branch,base:item.base}};state.projects.push(p);}await selectProject(p);break;
       }
       case 'openProject':{
         requireNavigationIdle();const root=await canonicalRoot(action.path);if(inside(root,dataDir))throw Error('The project cannot contain MuseBench application data.');const info=await scriptsFor(root);await snapshot(root);
@@ -494,5 +502,5 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   if(state.task)try{const row=db.prepare('SELECT revision FROM baselines WHERE task_id=?').get(state.task.id);if(!row||row.revision!==state.task.baselineRevision)throw Error('The saved task baseline is unavailable. Start a new task.');await current();}catch(error){state.error=error.message;state.task.previewRevision=null;state.task.acceptedRevision=null;state.task.runtimeComplete=false;if(state.task.check)state.task.check.status='stale';}
   persist();
   const archiveTimer=setInterval(()=>{queue=queue.then(purgeArchived).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,inspectContext,searchChats,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(closing||closed)return Promise.reject(Error('Controller closed.'));const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,runtime?.disconnect?.()]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);unsubscribe?.();persist();closed=true;listeners.clear();db.close();})();return closePromise;}};
+  return{getState,inspectContext,searchChats,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(closing||closed)return Promise.reject(Error('Controller closed.'));const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,runtime?.disconnect?.()]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);unsubscribe?.();persist();closed=true;listeners.clear();db.close();})();return closePromise;}};
 }

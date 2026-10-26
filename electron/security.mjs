@@ -3,7 +3,7 @@ import {validateSidebarMove} from '../src/shared/sidebar-order.mjs';
 import {projectDetails} from '../src/shared/create-project.mjs';
 import {fileReferences} from '../src/shared/chat-context.mjs';
 import {validateRunOptions} from '../src/shared/run-options.mjs';
-const actions = new Set(['moveSidebarItem','createProject','setProjectInstructions','saveDraft','setTaskFlags','deleteTask','forkTask','queueMessage','moveQueued','removeQueued','pauseQueue','resumeQueue','renameTask','setGoal','setMemories','openProject','selectProject','selectTask','createDemo','createCommandCopy','newTask','setRunOptions','updatePlan','approvePlan','applyDemo','refresh','runCheck','cancelCheck','startPreview','stopPreview','inspectPreview','accept','sendMessage','connectMuse','disconnectMuse','runtimeDecision','clearError']);
+const actions = new Set(['moveSidebarItem','createWorktree','openWorktree','createProject','setProjectInstructions','saveDraft','setTaskFlags','deleteTask','forkTask','queueMessage','moveQueued','removeQueued','pauseQueue','resumeQueue','renameTask','setGoal','setMemories','openProject','selectProject','selectTask','createDemo','createCommandCopy','newTask','setRunOptions','updatePlan','approvePlan','applyDemo','refresh','runCheck','cancelCheck','startPreview','stopPreview','inspectPreview','accept','sendMessage','connectMuse','disconnectMuse','runtimeDecision','clearError']);
 export function allowedExternal(value) {
   try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.port && (['dev.meta.ai','github.com','meta-models.github.io'].includes(u.hostname) || (u.hostname === 'www.google.com' && u.pathname === '/search' && [...u.searchParams.keys()].every(key=>key==='q') && u.searchParams.getAll('q').length===1 && Boolean(u.searchParams.get('q')?.trim()) && !u.hash)); } catch { return false; }
 }
@@ -17,6 +17,7 @@ export function validateAction(action) {
   const fields = {openProject:'path',selectProject:'id',selectTask:'id',newTask:'request',runCheck:'script',startPreview:'script',inspectPreview:'revision',accept:'revision',sendMessage:'text',runtimeDecision:'decision'};
   if (fields[action.type]) string(fields[action.type]);
   if (action.type === 'connectMuse' && action.binary !== undefined) string('binary',4096);
+  if(['createWorktree','openWorktree'].includes(action.type)){string('projectId',200);if(action.type==='createWorktree'){string('branch',100);string('base',200);}else string('id',100);}
   if (action.type === 'newTask' && !['demo','manual','muse'].includes(action.mode)) throw Error('Invalid task mode.');
   if (action.type === 'sendMessage' && action.mode !== undefined && !['chat','plan'].includes(action.mode)) throw Error('Invalid message mode.');
   if (action.type === 'updatePlan') { string('plan'); if (!Array.isArray(action.criteria) || !action.criteria.length || action.criteria.length > 30 || action.criteria.some(c=>typeof c !== 'string' || !c.trim() || c.length>2000)) throw Error('Add between 1 and 30 acceptance criteria.'); }

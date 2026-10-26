@@ -2,7 +2,7 @@ export interface DictationState { id: string | null; status: 'idle' | 'starting'
 export interface RunOptions { reasoning: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'; approval: 'ask' | 'auto' | 'never'; }
 export type Stage = 'plan' | 'changes' | 'preview' | 'checks' | 'review';
 export type CheckStatus = 'not-run' | 'running' | 'passed' | 'failed' | 'cancelled' | 'stale';
-export interface Project { repositoryUrl?:string|null; branch?:string|null; id: string; name: string; root: string; demo: boolean; scripts: Record<string,string>; instructions?:string; }
+export interface Project {worktree?:{id:string;sourceRoot:string;branch:string;base:string}; repositoryUrl?:string|null; branch?:string|null; id: string; name: string; root: string; demo: boolean; scripts: Record<string,string>; instructions?:string; }
 export interface FileChange { path: string; status: 'added' | 'modified' | 'deleted'; additions: number; deletions: number; before: string; after: string; binary?: boolean; approximate?: boolean; }
 export type WorkStatus = 'queued'|'working'|'waiting'|'completed'|'failed'|'cancelled'|'interrupted';
 export interface ActivityItem {id:string;kind:'model'|'tool'|'agent';title:string;tool:string;status:WorkStatus;detail:string;output:string;truncated?:boolean;agentId?:string;}
@@ -17,6 +17,7 @@ export interface Preview { status: 'stopped' | 'starting' | 'running' | 'failed'
 export interface RuntimeState { modelId?:string|null; status: string; reason: string | null; binary: string | null; sdkVersion: string; hostVersion?: string; sessionId?: string | null; liveVerified: boolean; messages?: unknown[]; pending?: unknown; transport?: 'exec' | 'msp'; shellEnabled?: boolean; shellUnavailableReason?: string | null; shellResults?: ShellResult[]; activity?:{items:ActivityItem[];truncated:boolean}; }
 export interface AppState { sidebarOrder?:Record<string,string[]>; projectCreationRoot?:string; drafts?:Record<string,CodeDraft>; memories?:string; projects: Project[]; tasks: TaskSummary[]; activeProject: Project | null; task: Task | null; checkpoints: Checkpoint[]; preview: Preview; runtime: RuntimeState; busy: boolean; error: string | null; }
 export type Action =
+  | {type:'createWorktree';projectId:string;branch:string;base:string} | {type:'openWorktree';projectId:string;id:string}
   | {type:'moveSidebarItem';kind:'project'|'chat';id:string;section:'projects'|'project'|'pinned'|'recents';projectId?:string;beforeId?:string|null}
   | {type:'createProject';name:string;goals:string;context:string}
   | {type:"renameTask";title:string} | {type:"setMemories";text:string} | {type:"setGoal";objective:string;status:"active"|"paused"}
@@ -87,7 +88,11 @@ export interface ChatSearchResult extends TaskSummary {projectName:string;snippe
 export interface MuseBenchBridge {
  inspectCodeContext(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[]}):Promise<CodeContextResult>;
  searchChats(input:{query:string;includeArchived:boolean}):Promise<ChatSearchResult[]>;
+ inspectWorktrees(input:{projectId:string}):Promise<WorktreeState>;
  importCodeImage(input:{projectId:string;taskId:string|null;name:string;dataUrl:string}):Promise<CodeImage>;
  readCodeImage(input:{projectId:string;image:CodeImage}):Promise<string>;
  saveCodeDraft(input:{images?:CodeImage[];projectId:string;taskId:string|null;text:string;files:ContextFile[];mode:'chat'|'plan'}):Promise<void>;
 }
+
+export interface ManagedWorktree {id:string;path:string;branch:string;base:string;commit:string;sourceRoot:string;createdAt:string;status:string;available:boolean;locked?:boolean;}
+export interface WorktreeState {root:string;branch:string;head:string;dirty:boolean;items:ManagedWorktree[];}

@@ -35,10 +35,10 @@
 
 ## Feature 3 Worktrees
 
-- [ ] Test Git creation, branch/base validation, dirty source preservation and restart persistence in disposable repositories.
-- [ ] Add a controller-owned Git worktree service, persist ownership and expose creation/list/open without automatic deletion or merge.
-- [ ] Add shared project UI with current folder versus isolated worktree, explicit base/branch and retained worktree list; preview simulates state.
-- [ ] Verify tests, build and parity; commit and push.
+- [x] Test Git creation, branch/base validation, dirty source preservation and restart persistence in disposable repositories.
+- [x] Add a controller-owned Git worktree service, persist ownership and expose creation/list/open without automatic deletion or merge.
+- [x] Add shared project UI with current folder versus isolated worktree, explicit base/branch and retained worktree list; preview simulates state.
+- [x] Verify tests, build and parity; commit and push.
 
 ## Feature 4 Persistent sessions
 
@@ -56,3 +56,5 @@
 - Screenshots: storage tests RED then GREEN; 609 tests passed, browser smoke passed, 22 parity scenes passed, package verified (73 files). Image input native arguments are covered by injected runtime tests; no live model image request made.
 
 - Skills: three failing catalog assertions made GREEN; 10 targeted tests, browser interaction checks, 22 parity scenes and production build passed. Package matches source. Skill requests remain explicitly distinguished from confirmed loader execution.
+
+- Worktrees: disposable Git test RED then GREEN, including dirty source preservation and controller restart/open; browser creation flow, 22 parity scenes, build and 74-file package checks passed. Worktrees remain retained; no merge or cleanup action is added.
