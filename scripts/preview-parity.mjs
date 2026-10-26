@@ -32,6 +32,16 @@ try{
  async function compare(name){
   // Wait for layout/motion, not requests to external services.
   await Promise.all([browserPage,desktopPage].map(page=>page.waitForTimeout(250)));
+  for(const page of [browserPage,desktopPage]){
+   const placement=await page.evaluate(()=>{
+    const toggle=[...document.querySelectorAll('[aria-label="Chat or Work"]')].find(e=>e.getBoundingClientRect().width>0);
+    if(!toggle)return null;
+    const workspace=toggle.closest('.workspace'),header=workspace.querySelector('.topbar');
+    const t=toggle.getBoundingClientRect(),w=workspace.getBoundingClientRect(),h=header.getBoundingClientRect();
+    return {centerOffset:Math.abs(t.x+t.width/2-w.x-w.width/2),belowHeader:t.y-h.bottom};
+   });
+   if(placement){assert.ok(placement.centerOffset<=1,`${name}: mode switch must remain centered`);assert.ok(placement.belowHeader>=24,`${name}: mode switch needs space below the title bar`);}
+  }
   const [a,b]=await Promise.all([measure(browserPage),measure(desktopPage)]);
   const differences=[];if(a.length!==b.length)differences.push(`Element count ${a.length} / ${b.length}`);
   for(let i=0;i<Math.min(a.length,b.length);i++){const {box:abox,...aa}=a[i],{box:bbox,...bb}=b[i];if(JSON.stringify(aa)!==JSON.stringify(bb)||abox.some((n,j)=>Math.abs(n-bbox[j])>1))differences.push({index:i,browser:a[i],electron:b[i]});}

@@ -256,13 +256,12 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
     };
   }, [active, covered, error, command]);
   return <section className="workspace personal-workspace" hidden={!active} inert={!active ? true : undefined} aria-label="Meta AI workspace">
-    <header className={`topbar personal-topbar ${modeSwitch?'has-mode-switch':''}`}>
+    <header className="topbar personal-topbar">
       <div className="personal-header-context">
       <button type="button" className="icon-button mobile-toggle" aria-label="Open navigation" onClick={onNavigationOpen}><PanelLeft size={17} /></button>
       {collapsed && <button type="button" className="icon-button collapsed-toggle" aria-label="Show sidebar" onClick={onToggleSidebar}><PanelLeft size={17} /></button>}
       <NavigationButtons/><div className="breadcrumbs"><strong>{label}</strong>{state?.loading && <LoaderCircle size={13} className="spin personal-header-loading" aria-label="Loading page" />}</div>
       </div>
-      {modeSwitch}
       <div className="topbar-actions">
         {signingIn ? <span className="personal-auth-status" role="status"><ShieldCheck size={14} /><span>{state?.authWindowOpen ? 'Finish sign-in in the opened window' : 'Signing in with Meta'}</span></span> : <>
           {<button type="button" className={`icon-button personal-presentation-toggle ${compact ? 'selected' : ''}`} aria-label={destination==='chat'?'Use integrated Meta AI layout':'Use integrated Muse layout'} aria-pressed={compact} title={compact ? 'Show original website navigation' : 'Use integrated navigation'} disabled={!ready} onClick={() => void command({ type: 'presentation', compact: !compact })}>{compact ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}</button>}
@@ -282,6 +281,7 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
         </div>
       </div>
     </header>
+    {modeSwitch && <div className="workspace-mode-row">{modeSwitch}</div>}
     {state?.notice && <div className="personal-notice" role="status"><Info size={14} /><p>{state.notice}</p><button type="button" className="icon-button" aria-label="Dismiss Meta AI notice" onClick={() => void command({ type: 'dismissNotice' })}><X size={14} /></button></div>}
     <div className="personal-browser-slot" ref={slot} data-testid="personal-browser-slot">
       {browserPreview.personal?.(state)}
