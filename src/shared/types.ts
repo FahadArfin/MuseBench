@@ -17,6 +17,7 @@ export interface Preview { status: 'stopped' | 'starting' | 'running' | 'failed'
 export interface RuntimeState {runLimits?:{steps:number;wallTimeMs:number;tokenBudget:null};simulation?:boolean;permissionVerified?:boolean;durableSessions?:boolean; modelId?:string|null; status: string; reason: string | null; binary: string | null; sdkVersion: string; hostVersion?: string; sessionId?: string | null; liveVerified: boolean; messages?: unknown[]; pending?: unknown; transport?: 'exec' | 'msp'; shellEnabled?: boolean; shellUnavailableReason?: string | null; shellResults?: ShellResult[]; activity?:{items:ActivityItem[];truncated:boolean}; }
 export interface AppState {backgroundChats?:boolean; sidebarOrder?:Record<string,string[]>; projectCreationRoot?:string; drafts?:Record<string,CodeDraft>; memories?:string; projects: Project[]; tasks: TaskSummary[]; activeProject: Project | null; task: Task | null; checkpoints: Checkpoint[]; preview: Preview; runtime: RuntimeState; busy: boolean; error: string | null; }
 export type Action =
+  | {type:'handoffContext';id:string;sourceTaskId:string;targetTaskId:string;text:string;files:ContextFile[]}
   | {type:'recoverSession';choice:'continue'|'fresh'}
   | {type:'createWorktree';projectId:string;branch:string;base:string} | {type:'openWorktree';projectId:string;id:string}
   | {type:'moveSidebarItem';kind:'project'|'chat';id:string;section:'projects'|'project'|'pinned'|'recents';projectId?:string;beforeId?:string|null}
@@ -82,7 +83,7 @@ export interface MuseBenchBridge {
 export interface ContextFile {path:string;hash:string;}
 export interface CodeImage {id:string;name:string;mime:string;bytes:number;}
 export interface CodeDraft {images?:CodeImage[];text:string;files:ContextFile[];mode:'chat'|'plan';updatedAt?:string;}
-export interface QueuedPrompt extends CodeDraft {id:string;runOptions:RunOptions;at:string;}
+export interface QueuedPrompt extends CodeDraft {handoff?:{id:string;sourceTaskId:string;sourceTitle:string};id:string;runOptions:RunOptions;at:string;}
 export interface ContextSummary {characters:number;estimatedTokens:number;includedMessages:number;omittedMessages:number;truncatedMessages:number;fileCount:number;replayedFiles:number;limit:number;}
 export interface CodeContextResult extends ContextSummary {prompt:string;attachments:(ContextFile&{text:string})[];files:(ContextFile&{characters:number})[];}
 export interface ChatSearchResult extends TaskSummary {projectName:string;snippet:string;}

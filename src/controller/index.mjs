@@ -1,3 +1,4 @@
+import {handoffText} from '../shared/context-handoff.mjs';
 import {restoreNativeSession,prepareNativeSession,settleNativeSession} from '../shared/native-session.mjs';
 import {createWorktreeService} from './worktrees.mjs';
 import {createImageStore} from './code-images.mjs';
@@ -160,7 +161,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const contextBusy=c=>!!c&&(c.pending||['running','starting','submitting','connecting','checking-permissions'].includes(c.runtime?.snapshot?.().status)||c.runtime?.snapshot?.().cleanup==='unconfirmed'||!!c.runtime?.snapshot?.().pending);
   const saveRecord=t=>{if(!t)return;t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));};
   const bindContext=task=>{
-    if(!runtimeFactory){context.task=task;return;}
+    if(!runtimeFactory){contexts.clear();context.task=task;if(task)contexts.set(task.id,context);return;}
     let next=task&&contexts.get(task.id);
     if(!next){next=!context.task&&!contextBusy(context)?context:newContext(runtimeFactory());next.task=task;if(task)contexts.set(task.id,next);subscribeContext(next);}
     context=next;runtime=context.runtime;state.runtime=runtime?.snapshot?.()??missingRuntime();
@@ -489,6 +490,20 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         t.updatedAt=now();taskRecords.set(t.id,structuredClone(t));db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(t),t.id);break;
       }
       case 'deleteTask':await deleteArchivedChat(action.id);break;
+      case 'handoffContext':{
+        const source=requireTask();if(action.sourceTaskId!==source.id)throw Error('The selected source chat changed. Open the handoff again.');
+        if(typeof action.id!=='string'||!action.id||action.id.length>200)throw Error('Invalid handoff identity.');
+        const target=contexts.get(action.targetTaskId)?.task??taskRecords.get(action.targetTaskId);
+        if(!target||target.id===source.id||target.mode!=='muse')throw Error('Choose another Muse chat.');if(target.archived)throw Error('Restore the archived recipient first.');
+        const files=fileReferences(action.files),digest=hash(JSON.stringify({source:source.id,target:target.id,text:action.text,files})),receipt=target.handoffReceipts?.find(r=>r.id===action.id);
+        if(receipt){if(receipt.digest!==digest)throw Error('This handoff identity was already used for different context.');break;}
+        if((target.promptQueue??[]).length>=5)throw Error('The recipient queue already holds five prompts.');
+        const {attachments}=await selectedSources(files),text=handoffText({title:source.title,project:state.activeProject.name,text:action.text,files:attachments});
+        target.promptQueue??=[];target.promptQueue.push({id:randomUUID(),text,files:[],images:[],mode:'chat',runOptions:restoreRunOptions(target.runOptions),at:now(),handoff:{id:action.id,sourceTaskId:source.id,sourceTitle:source.title}});
+        target.handoffReceipts=[...(target.handoffReceipts??[]),{id:action.id,digest}].slice(-100);
+        const owner=contexts.get(target.id);if(owner?.pending&&!target.queueHold)target.queuePaused=false;
+        saveRecord(target);break;
+      }
       case 'queueMessage':{
         const t=requireTask();if(t.mode!=='muse'||t.archived)throw Error('Open an active Muse chat to queue a request.');if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
         if(!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid conversation mode.');if((t.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');const files=fileReferences(action.files),images=imageReferences(action.images);await selectedSources(files);await imageStore.resolve(t.projectId,images);

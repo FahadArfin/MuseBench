@@ -230,3 +230,5 @@
 
 .diff-notice { padding: 10px 14px; margin:0; color:var(--muted); font-size:12px; }
 .no-newline { color:var(--muted); font:11px var(--font-mono, monospace); }
+
+.handoff-dialog form{display:grid;gap:14px}.handoff-dialog label{display:grid;gap:7px;font-size:12px}.handoff-dialog select,.handoff-dialog textarea{width:100%;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font:inherit}.handoff-dialog textarea{resize:vertical}

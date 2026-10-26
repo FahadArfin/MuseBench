@@ -24,7 +24,7 @@
 - [x] **1. Capabilities:** shared capability contract and connection display; test disconnected/exec/MSP/preview states and unsupported reasons. Files: shared/runtime-capabilities.*, UI WorkspacePanels, capability tests. Verify build/browser, commit/push.
 - [x] **2. Budgets:** validated per-chat/queued time and step profiles; show actual effective limits, preserve defaults and stop/cleanup. Files: shared/run-options, runtime/exec, composer, controller tests. Verify invalid inputs and native arguments/timeout, commit/push.
 - [x] **3. Background chats:** task-bound runtime registry, independent navigation, running badges and targeted stop; serialize overlapping checkout writes and retain restart recovery. Test concurrent isolated tasks, switching during output, cancellation and late events. Commit/push.
-- [ ] **4. Context handoffs:** attributed text/files sent to a chosen chat queue, preserving source and recipient identity; no implicit approval. Test cross-project references, duplicates and archived recipients. Commit/push.
+- [x] **4. Context handoffs:** attributed text/files sent to a chosen chat queue, preserving source and recipient identity; no implicit approval. Test cross-project references, duplicates and archived recipients. Commit/push.
 - [ ] **5. Workflow library:** saved editable app workflow templates, phases, budgets, writable scope and completion checks; inspect installed native workflow contracts before native execution controls. Test persistence, validation and dispatch. Commit/push.
 - [ ] **6. Context/usage:** expose context omissions and actual native usage where supported; compaction must use a validated native API or remain explicitly unavailable. Test limits/provenance. Commit/push.
 - [ ] **7. Worktree lifecycle:** setup action, task association, retained/recoverable archives; never destructive implicit cleanup. Test dirty/locked/missing/submodule cases and restart. Commit/push.
@@ -46,3 +46,5 @@
 
 - Feature 3: background controller test RED then GREEN; 625 tests, browser smoke, production build and 25 parity scenes passed. Two real native model requests completed in separate task sessions with correctly routed replies. Queue continuation, isolated stop, overlap rejection, restart receipts and shutdown cancellation are covered. At most four chats run concurrently; overlapping root folders are serialized.
 - Feature 3 regression fixes: shutdown cancellation precedes waiting for preflight, removed chats detach retained contexts, and legacy approval behavior remains unchanged. Retained task contexts keep archive/move metadata synchronized.
+
+- Feature 4: attributed handoffs retain bounded file snapshots and recipient permissions, deduplicate retries across restart, and reject stale sources/archived recipients. 627 regression tests, production build and browser smoke passed; added a focused size/attribution check before commit.
