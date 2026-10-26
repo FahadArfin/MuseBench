@@ -32,15 +32,15 @@ try {
  await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Keep this draft');
  await page.getByRole('button',{name:'Reasoning effort',exact:true}).click();
  for(const [label,value] of [['None','none'],['Minimal','minimal'],['Low','low'],['Medium','medium'],['High','high'],['Extra high','xhigh'],['Max','max'],['Ultra','ultra']]){
-  await page.getByRole('radio',{name:label,exact:true}).check();
-  await page.waitForFunction(value=>document.querySelector('.thinking-option.selected input')?.value===value,value);
+  await page.getByRole('combobox',{name:'Select reasoning effort'}).selectOption(value);
+  await page.waitForFunction(value=>document.querySelector('select[aria-label="Select reasoning effort"]')?.value===value,value);
   assert.equal((await page.evaluate(()=>window.musebench.getState())).task.runOptions.reasoning,value);
   assert.equal(await page.getByRole('slider',{name:'Reasoning level'}).getAttribute('aria-valuetext'),label);
  }
  await page.getByRole('slider',{name:'Reasoning level'}).focus();await page.keyboard.press('Home');await page.keyboard.press('ArrowRight');
- await page.waitForFunction(()=>document.querySelector('.thinking-option.selected input')?.value==='minimal');
+ await page.waitForFunction(()=>document.querySelector('select[aria-label="Select reasoning effort"]')?.value==='minimal');
  await page.getByRole('button',{name:'Reset reasoning to High'}).click();
- await page.waitForFunction(()=>document.querySelector('.thinking-option.selected input')?.value==='high');
+ await page.waitForFunction(()=>document.querySelector('select[aria-label="Select reasoning effort"]')?.value==='high');
  assert.equal(await page.getByRole('textbox',{name:'Message Muse',exact:true}).inputValue(),'Keep this draft');
  assert.equal((await page.evaluate(()=>window.musebench.getState())).task.messages.length,before.task.messages.length);
  await page.screenshot({path:'artifacts/browser-preview/reasoning-dark.png'});

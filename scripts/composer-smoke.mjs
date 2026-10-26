@@ -33,7 +33,7 @@ try{
  assert.equal((await state()).runtime.binary,null,'Offline test must not discover a real Muse binary');
  await composer().fill('Look into the parser.');
  await page.getByRole('button',{name:'Reasoning effort',exact:true}).click();
- await page.getByRole('radio',{name:'Extra high',exact:true}).check();
+ await page.getByRole('combobox',{name:'Select reasoning effort'}).selectOption('xhigh');
  assert.match(await page.getByRole('button',{name:'Reasoning effort',exact:true}).innerText(),/Extra high/);
  await page.getByRole('button',{name:'Approval access',exact:true}).click();
  await shot('01-approval-menu');
