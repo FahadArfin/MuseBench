@@ -1,3 +1,7 @@
+import uiSkill from '../../templates/musebench-skills/musebench-ui-parity/SKILL.md?raw';
+import runtimeSkill from '../../templates/musebench-skills/musebench-runtime-check/SKILL.md?raw';
+import releaseSkill from '../../templates/musebench-skills/musebench-release-check/SKILL.md?raw';
+import {MUSEBENCH_SKILL_PACK} from '../shared/skill-pack.mjs';
 import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
 import {handoffText} from '../shared/context-handoff.mjs';
 import {moveQueuedPrompt} from '../shared/queued-prompts.mjs';
@@ -159,6 +163,17 @@ export function createPreviewBridge():MuseBenchBridge {
    return siteChannel.emit();
   },
   customize:async command=>{
+   if(command.type==='preparePackSkill'){
+    const item=MUSEBENCH_SKILL_PACK.find(item=>item.id===command.id);if(!item)throw Error('Unknown skill.');
+    const instructions=({'musebench-ui-parity':uiSkill,'musebench-runtime-check':runtimeSkill,'musebench-release-check':releaseSkill} as Record<string,string>)[item.id];
+    return {state:copy(customize),prepared:{token:item.id,kind:'skills',title:item.title,folder:'Preview / '+item.id,fingerprint:'Preview sample — no installed files',instructions,files:['SKILL.md'],capabilities:[]}};
+   }
+   if(command.type==='install'){
+    const item=MUSEBENCH_SKILL_PACK.find(item=>item.id===command.token);if(!item||!command.reviewed)throw Error('Review the skill first.');
+    if(!customize.skills.some(skill=>skill.id===item.id))customize.skills.push({id:item.id,title:item.title,description:'Optional MuseBench project reference',scope:'user',activation:'user-only'});
+    customize.skillImports=[...(customize.skillImports??[]),{title:item.title,folder:'Preview / '+item.id,fingerprint:'Preview sample — no installed files',at:stamp}];
+    return {state:copy(customize),message:'Preview only: skill installation simulated.'};
+   }
    if(command.type==='createSkill')customize.skills.push({id:id(),title:command.name,description:command.description,scope:'user',activation:'user-only'});
    else if(command.type==='skillActivation'){const skill=customize.skills.find(s=>s.id===command.id);if(skill)skill.activation=command.activation;}
    else if(command.type!=='refresh')return desktop();

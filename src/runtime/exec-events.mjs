@@ -1,3 +1,4 @@
+import {skillReceipt} from '../shared/skill-receipts.mjs';
 import {nativeUsage} from '../shared/native-usage.mjs';
 import {createActivityProjection} from '../shared/activity.mjs';
 const controlKinds = new Map([
@@ -38,7 +39,7 @@ export function createExecEventFold({ maxText = 200000, maxRecords = 20000, maxS
   const state = {
     sessionId: null, commandId: null, runId: null, text: '', terminal: null,
     reason: null, modelId: null, providerId: null, approvalRequested: false,
-    recordCount: 0, shellResults: [], usage: null,
+    recordCount: 0, shellResults: [], usage: null, skills: [],
   };
   const activity = createActivityProjection();
   const sequences = new Map();
@@ -48,7 +49,7 @@ export function createExecEventFold({ maxText = 200000, maxRecords = 20000, maxS
   let started = false;
   let failure = null;
   let finished = null;
-  const detached = (value) => ({ ...value, usage: value.usage?{...value.usage}:null, activity: activity.snapshot(), shellResults: value.shellResults.map((result) => ({ ...result })) });
+  const detached = (value) => ({ ...value, skills:value.skills.map(s=>({...s})), usage: value.usage?{...value.usage}:null, activity: activity.snapshot(), shellResults: value.shellResults.map((result) => ({ ...result })) });
   const snapshot = () => detached(state);
   const fail = (message) => {
     failure ??= new Error(`Muse exec event error: ${message}`);
@@ -135,6 +136,8 @@ export function createExecEventFold({ maxText = 200000, maxRecords = 20000, maxS
         requireText(payload.text, 'Output delta');
         if (state.text.length + payload.text.length > maxText) fail('Combined output exceeds the text limit.');
         state.text += payload.text;
+      } else if (type === 'tool.result' && payload.correlation_facts?.tool_name === 'read_skill') {
+        requireRun(payload);if(started&&record.record_type==='event'&&record.durability==='durable'){const receipt=skillReceipt(payload);if(receipt&&state.skills.length<32&&!state.skills.some(s=>s.callId===receipt.callId))state.skills.push(receipt);}
       } else if (type === 'tool.result' && payload.correlation_facts?.tool_name === 'powershell') {
         requireRun(payload);
         if (!started) fail('Shell result arrived before the run started.');

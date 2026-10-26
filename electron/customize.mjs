@@ -1,7 +1,9 @@
+import {fileURLToPath} from 'node:url';
+import {MUSEBENCH_SKILL_PACK} from '../src/shared/skill-pack.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {randomUUID} from 'node:crypto';
-import {mkdir,writeFile,realpath,lstat} from 'node:fs/promises';
+import {mkdir,writeFile,realpath,lstat,readdir} from 'node:fs/promises';
 import path from 'node:path';
 import {curateEnvironment,discoverMuseBinaries} from '../src/runtime/index.mjs';
 import {customizeBlocked} from '../src/shared/customize-policy.mjs';
@@ -33,6 +35,8 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  if(!profile||!path.isAbsolute(profile))throw Error('A Windows user profile is required for Customize.');
  review??=createExtensionReview({dataDir,profile});
  const settingsPath=path.join(profile,'.config','muse','settings.json');
+ const importsFile=path.join(dataDir,'skill-imports.json');
+ const imports=async()=>{try{const value=JSON.parse(await optionalText(importsFile)??'[]');return Array.isArray(value)?value.slice(-100):[];}catch{return[];}};
  const pending=new Map(),processes=new Map();let busy=false,closed=false;
  function binary(){const value=getState().runtime?.binary??discoverMuseBinaries({environment:env})[0];if(typeof value!=='string'||!(path.isAbsolute(value)||path.win32.isAbsolute(value))||!value.toLowerCase().endsWith('.exe'))throw Error('Install or select the official Muse CLI in Connection settings.');return value;}
  async function cli(args,{oauth=false}={}){
@@ -69,26 +73,29 @@ export function createCustomize({getState,environment=process.env,dataDir,review
    }else errors.push('Plugins could not be refreshed.');
   }
   try{const {config}=await settings();servers=await Promise.all(Object.entries(config.mcp_servers??{}).slice(0,250).map(async([name,entry])=>({name:clean(name,100),revision:configurationDigest(entry),transport:entry.transport==='stdio'?'stdio':'streamable_http',address:entry.transport==='stdio'?clean(entry.command,200):safeAddress(entry.url),enabled:entry.enabled!==false,reviewed:await review.allowMcp(name,entry),oauth:entry.transport==='streamable_http'})));pluginsReviewed=await review.pluginsReviewed();const afterPlugins=await review.pluginState();if(beforePlugins?.revision===afterPlugins.revision){if(inventoryDisplayed)pluginRevision=afterPlugins.revision;}else errors.push('Plugins changed while loading. Refresh before reviewing them.');}catch{errors.push('Muse configuration could not be read. Correct settings.json in the official CLI before editing.');}
-  return{available,skills:skillRows,plugins:pluginRows,servers,pluginsReviewed,pluginRevision,errors};
+  return{skillImports:await imports(),available,skills:skillRows,plugins:pluginRows,servers,pluginsReviewed,pluginRevision,errors};
  }
  function safeAddress(value){try{const u=new URL(value);return u.origin+u.pathname;}catch{return'Configured server';}}
  function requireReview(command){if(command.reviewed!==true)throw Error('Review extension access before continuing.');}
- async function prepare(kind){
-  const folder=await chooseFolder(kind);if(!folder)return null;
+ async function prepare(kind,knownFolder){
+  const folder=knownFolder??await chooseFolder(kind);if(!folder)return null;
   const hash=await treeDigest(folder),result=await cli([kind,'validate',folder,'--json']);
   if(result.valid===false)throw Error('Muse rejected this folder. Fix its manifest or SKILL.md first.');
   const token=randomUUID();pending.clear();pending.set(token,{kind,folder,hash,id:result.plugin?.id,created:Date.now()});
-  return{token,kind,title:clean(result.plugin?.display_name||result.plugin?.id||path.basename(folder),200),folder,capabilities:capabilities(result.plugin?.capabilities??result.capabilities)};
+  let instructions,files;
+  if(kind==='skills'){instructions=await optionalText(path.join(folder,'SKILL.md'));if(instructions===null||instructions.length>30000)throw Error('Skill instructions must fit within 30,000 characters for review.');files=[];const walk=async(dir,rel='')=>{for(const entry of await readdir(dir,{withFileTypes:true})){const name=rel?rel+'/'+entry.name:entry.name;if(files.length>=200)throw Error('Skill review supports up to 200 files.');if(entry.isDirectory())await walk(path.join(dir,entry.name),name);else files.push(name);}};await walk(folder);}
+  return{fingerprint:hash,instructions,files,token,kind,title:clean(result.plugin?.display_name||result.plugin?.id||path.basename(folder),200),folder,capabilities:capabilities(result.plugin?.capabilities??result.capabilities)};
  }
  async function dispatch(command){
   if(closed)throw Error('Customize is closed.');
-  const supported=['refresh','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
+  const supported=['refresh','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
   if(!object(command)||!supported.includes(command.type)||JSON.stringify(command).length>40000)throw Error('Unsupported Customize action.');
   if(command.type==='refresh')return{state:await snapshot()};
   if(busy)throw Error('Wait for the current setup operation to finish.');
   if(customizeBlocked(getState())||isActive())throw Error('Let the running task finish and confirm it has stopped before changing extensions.');
   busy=true;
   try{
+   if(command.type==='preparePackSkill'){if(!MUSEBENCH_SKILL_PACK.some(s=>s.id===command.id))throw Error('Unknown MuseBench skill.');const source=fileURLToPath(new URL('../templates/musebench-skills/'+command.id+'/SKILL.md',import.meta.url)),text=await optionalText(source);if(!text)throw Error('Bundled skill is missing.');const folder=path.join(dataDir,'skill-drafts',randomUUID(),command.id);await mkdir(folder,{recursive:true});await writeFile(path.join(folder,'SKILL.md'),text,'utf8');return{prepared:await prepare('skills',folder)};}
    if(command.type==='prepareSkill'||command.type==='preparePlugin')return{prepared:await prepare(command.type==='prepareSkill'?'skills':'plugins')};
    if(command.type==='install'){
     requireReview(command);const item=pending.get(command.token);if(!item||Date.now()-item.created>600000)throw Error('Folder review expired. Choose the folder again.');
@@ -97,6 +104,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
     pending.delete(command.token);
     const before=item.kind==='plugins'?await review.pluginState():null;
     const installed=await cli([item.kind,'install',item.folder,'--scope','user','--json']);
+    if(item.kind==='skills')await atomicJson(importsFile,[...await imports(),{title:path.basename(item.folder),folder:item.folder,fingerprint:item.hash,at:new Date().toISOString()}].slice(-100));
     if(item.kind==='plugins'){
      const after=await review.pluginState();
      if(!idOK(item.id)||installed.installed?.id!==item.id||after.packages[item.id]!==item.hash||!unchangedOthers(before,after,item.id))throw Error('Plugin files or another plugin changed during installation. The new inventory is not approved; refresh and review it.');

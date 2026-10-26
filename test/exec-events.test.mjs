@@ -407,3 +407,8 @@ test('usage reports replace earlier counters and retain correlation checks',()=>
  fold.accept(frame(2,'run.usage',{...data,models:[{...data.models[0],input_tokens:120}]},{kind:'exec.usage',id:session}));assert.equal(fold.snapshot().usage.inputTokens,120);
  assert.throws(()=>fold.accept(frame(3,'run.usage',{...data,run_stream:{kind:'run',id:'foreign'}},{kind:'exec.usage',id:session})),/run/i);
 });
+test('skill receipt requires an owned successful native loader result, never model prose',()=>{
+ const fold=start(createExecEventFold());fold.accept(frame(4,'run.output.delta',{text:'I loaded bundled:git.'}));assert.deepEqual(fold.snapshot().skills,[]);
+ const record=frame(5,'tool.result',{kind:'tool_result',call_id:'skill-1',correlation_facts:{tool_name:'read_skill',outcome:'success'},text:'<read-skill-result name="bundled:git" status="ok">\n<metadata>\nsource: bundled\nbytes_returned: 100\nbytes_total: 100\ntruncated: false\n</metadata>\nSkill body'});fold.accept(record);assert.deepEqual(fold.snapshot().skills,[{id:'bundled:git',scope:'bundled',bytes:100,total:100,truncated:false,callId:'skill-1',runId:run}]);
+ const wrong=start(createExecEventFold());assert.throws(()=>wrong.accept({...record,sequence:4,payload:{...record.payload,run_stream:{kind:'run',id:'foreign'}}}),/run/i);
+});

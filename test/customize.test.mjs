@@ -128,3 +128,21 @@ test('closing Customize aborts outstanding CLI work and rejects new setup',async
  const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:(_binary,_args,options)=>new Promise((_resolve,reject)=>{options.signal.addEventListener('abort',()=>reject(Error('Aborted')));entered();})});
  const operation=service.dispatch({type:'createSkill',name:'test',description:'test',instructions:'test'});const failed=assert.rejects(operation,/Muse could not complete/);await started;await service.close();await failed;await assert.rejects(service.dispatch({type:'refresh'}),/closed/);
 });
+test('skill review exposes bounded instructions and binds install to source fingerprint',async()=>{
+ const f=await fixture(),folder=path.join(f.root,'skill');await mkdir(folder);await writeFile(path.join(folder,'SKILL.md'),'---\nname: fixture\ndescription: Example\n---\n\nInspect before editing.');
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,chooseFolder:async()=>folder,run:async()=>({stdout:'{"valid":true,"skills":[],"plugins":[]}'})});
+ const {prepared}=await service.dispatch({type:'prepareSkill'});assert.match(prepared.instructions,/Inspect before editing/);assert.match(prepared.fingerprint,/^[a-f0-9]{64}$/);assert.deepEqual(prepared.files,['SKILL.md']);await writeFile(path.join(folder,'SKILL.md'),'changed');await assert.rejects(service.dispatch({type:'install',token:prepared.token,reviewed:true}),/changed/);
+});
+
+test('background and unresolved task contexts block extension changes',()=>{
+ assert.equal(customizeBlocked({tasks:[{runtimeStatus:'running'}]}),true);
+ assert.equal(customizeBlocked({tasks:[{runtimeStatus:'unavailable',runtimeBusy:true}]}),true);
+});
+test('optional pack review and install retain source provenance across service restart',async()=>{
+ const f=await fixture(),options={getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:async()=>({stdout:'{"valid":true,"skills":[],"plugins":[]}'})};
+ const service=api.createCustomize(options),{prepared}=await service.dispatch({type:'preparePackSkill',id:'musebench-runtime-check'});
+ assert.match(prepared.instructions,/Get-Command npm.cmd/);assert.match(prepared.fingerprint,/^[a-f0-9]{64}$/);
+ await service.dispatch({type:'install',token:prepared.token,reviewed:true});
+ const state=await api.createCustomize(options).snapshot();assert.equal(state.skillImports.length,1);assert.equal(state.skillImports[0].fingerprint,prepared.fingerprint);
+ await assert.rejects(service.dispatch({type:'preparePackSkill',id:'../../other'}),/Unknown/);
+});

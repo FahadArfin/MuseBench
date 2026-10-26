@@ -83,6 +83,7 @@ export function createExecConversationFold({
       terminal: unresolved().length ? null : latest?.terminal ?? null,
       reason: latest?.reason ?? null, modelId: latest?.modelId ?? root?.modelId ?? null,
       providerId: latest?.providerId ?? root?.providerId ?? null,
+      skills:runs.flatMap(run=>run.state.skills).slice(-32),
       usage: combineUsage(runs.map(run=>run.state.usage)),
       approvalRequested: runs.some(run => run.state.approvalRequested), recordCount,
       shellResults: shellResults.map(item => ({ ...item })), activity: { items, truncated },
