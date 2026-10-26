@@ -57,8 +57,14 @@ try{
  await click('button','Customize');await compare('customize');await escape();
  await click('button','Muse AI');await compare('muse-shell');
  await click('nav[aria-label="Meta AI navigation"] button','Chat');await compare('meta-shell');
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(430,820));await browserPage.setViewportSize({width:430,height:820});await compare('meta-toggle-narrow');
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(1440,960));await browserPage.setViewportSize({width:1440,height:960});
+
  await click('button','Scheduled');await compare('scheduled-sidebar');
  await click('[aria-label="Chat or Work"] button','Work');await compare('work-home');
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(430,820));await browserPage.setViewportSize({width:430,height:820});await compare('work-toggle-narrow');
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(1440,960));await browserPage.setViewportSize({width:1440,height:960});
+
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.querySelector('nav[aria-label="Saved work"] button')?.click());await compare('work-editor');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>[...document.querySelectorAll('button')].find(e=>e.getAttribute('aria-label')?.startsWith('All sites'))?.click());await compare('sites-home');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>[...document.querySelectorAll('button')].find(e=>e.textContent?.includes('Studio notes')&&e.getBoundingClientRect().width)?.click());await compare('site-editor');

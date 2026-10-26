@@ -4,8 +4,8 @@
 :root[data-window-overlay="true"] .sidebar-chrome{-webkit-app-region:drag;user-select:none}
 :root[data-window-overlay="true"] .sidebar-chrome button{-webkit-app-region:no-drag}
 :root[data-window-overlay="true"] .sidebar-chrome+.sidebar-heading{-webkit-app-region:no-drag}
-@media(min-width:701px){.app:not(.sidebar-collapsed) .topbar>.navigation-history{display:none}}
-@media(max-width:700px){.nav-open .topbar>.navigation-history{display:none}}
+@media(min-width:701px){.app:not(.sidebar-collapsed) .topbar .navigation-history{display:none}}
+@media(max-width:700px){.nav-open .topbar .navigation-history{display:none}}
 .sidebar .section-label-full-row{position:relative;padding:0;gap:0}
 .section-label-full-row>.sidebar-section-toggle{width:100%;min-height:32px;justify-content:flex-start;text-align:left;padding:0 38px 0 8px;border-radius:6px}
 .section-label-full-row>.sidebar-section-toggle:hover{background:var(--surface)}
