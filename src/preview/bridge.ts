@@ -165,6 +165,7 @@ export function createPreviewBridge():MuseBenchBridge {
    return siteChannel.emit();
   },
   customize:async command=>{
+   if(['reviewProject','approveProject','revokeProject'].includes(command.type))return {state:copy(customize),projectReview:{root:state.activeProject?.root??project.root,fingerprint:'Preview sample',reviewed:command.type==='approveProject',files:[{path:'AGENTS.md',text:'Preview sample: keep shared desktop and browser controls in sync.'}]}};
    if(command.type==='preparePackSkill'){
     const item=MUSEBENCH_SKILL_PACK.find(item=>item.id===command.id);if(!item)throw Error('Unknown skill.');
     const instructions=({'musebench-ui-parity':uiSkill,'musebench-runtime-check':runtimeSkill,'musebench-release-check':releaseSkill} as Record<string,string>)[item.id];

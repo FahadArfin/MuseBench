@@ -58,7 +58,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  function skills(value){return(value.skills??[]).filter(item=>idOK(item.id)).slice(0,500).map(item=>({id:item.id,title:clean(item.display_name||item.name||item.id,200),description:clean(item.short_description||item.description,800),scope:clean(item.scope,30),activation:item.activation==='user-invocable-only'?'user-only':['on','off','user-only'].includes(item.activation)?item.activation:'off'}));}
  function plugins(value){return(value.plugins??[]).filter(item=>idOK(item.record?.id)).slice(0,250).map(item=>({id:item.record.id,title:clean(item.record.display_name||item.record.id,200),description:clean(item.record.description,800),version:clean(item.record.version,60),enabled:item.record.enabled===true,valid:item.valid===true,capabilities:capabilities(item.plugin?.capabilities),reviewRequired:!item.active}));}
  function capabilities(value){return Object.entries(value??{}).filter(([,items])=>Array.isArray(items)&&items.length).map(([kind,items])=>({kind:clean(kind,60),count:items.length}));}
- async function skillList(){const args=['skills','list','--json'];const workspace=getState().activeProject?.root;if(workspace)args.push('--workspace',workspace);return skills(await cli(args));}
+ async function skillList(){const args=['skills','list','--json'];const workspace=getState().activeProject?.root;if(workspace){args.push('--workspace',workspace);if(await review.allowProject(workspace))args.push('--trust-workspace');}return skills(await cli(args));}
  async function snapshot(){
   const errors=[];let skillRows=[],pluginRows=[],servers=[],available=true,pluginsReviewed=false,pluginRevision=null,inventoryDisplayed=false;
   let beforePlugins;try{beforePlugins=await review.pluginState();}catch{/* Invalid inventories stay unreviewed. */}
@@ -88,13 +88,14 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  }
  async function dispatch(command){
   if(closed)throw Error('Customize is closed.');
-  const supported=['refresh','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
+  const supported=['refresh','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
   if(!object(command)||!supported.includes(command.type)||JSON.stringify(command).length>40000)throw Error('Unsupported Customize action.');
   if(command.type==='refresh')return{state:await snapshot()};
   if(busy)throw Error('Wait for the current setup operation to finish.');
   if(customizeBlocked(getState())||isActive())throw Error('Let the running task finish and confirm it has stopped before changing extensions.');
   busy=true;
   try{
+   if(['reviewProject','approveProject','revokeProject'].includes(command.type)){const root=getState().activeProject?.root;if(!root)throw Error('Choose a project first.');if(command.type==='approveProject'){requireReview(command);if(command.root!==root)throw Error('The selected project changed.');await review.approveProject(root,command.fingerprint);}if(command.type==='revokeProject'){if(command.root!==root)throw Error('The selected project changed.');await review.revokeProject(root);}return{projectReview:await review.projectState(root),state:await snapshot()};}
    if(command.type==='preparePackSkill'){if(!MUSEBENCH_SKILL_PACK.some(s=>s.id===command.id))throw Error('Unknown MuseBench skill.');const source=fileURLToPath(new URL('../templates/musebench-skills/'+command.id+'/SKILL.md',import.meta.url)),text=await optionalText(source);if(!text)throw Error('Bundled skill is missing.');const folder=path.join(dataDir,'skill-drafts',randomUUID(),command.id);await mkdir(folder,{recursive:true});await writeFile(path.join(folder,'SKILL.md'),text,'utf8');return{prepared:await prepare('skills',folder)};}
    if(command.type==='prepareSkill'||command.type==='preparePlugin')return{prepared:await prepare(command.type==='prepareSkill'?'skills':'plugins')};
    if(command.type==='install'){

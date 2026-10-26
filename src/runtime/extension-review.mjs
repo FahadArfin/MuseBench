@@ -1,3 +1,4 @@
+import {projectTrustSnapshot} from './project-trust.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {readFile,writeFile,mkdir,rename,stat,lstat,readdir,realpath,unlink} from 'node:fs/promises';
@@ -60,6 +61,10 @@ export function createExtensionReview({dataDir,profile}){
   async approvePlugins(expected){const value=await load(),actual=(await pluginState()).revision;if(expected!==undefined&&actual!==expected)throw Error('Plugins changed after review. Refresh and review them again.');value.plugins=actual;await atomicJson(file,value);},
   async allowFile(candidate){if(path.resolve(candidate)!==path.resolve(inventory))return false;try{const actual=(await pluginState()).revision;return actual!=='absent'&&actual===(await load()).plugins;}catch{return false;}},
   async pluginsReviewed(){if(await optionalText(inventory)===null)return true;return this.allowFile(inventory);},
+  async projectState(root){const snapshot=await projectTrustSnapshot(root);return{...snapshot,reviewed:(await load()).projects?.[snapshot.root]===snapshot.fingerprint};},
+  async approveProject(root,fingerprint){const snapshot=await projectTrustSnapshot(root);if(snapshot.fingerprint!==fingerprint)throw Error('Project instructions changed after review.');if(!snapshot.files.length)throw Error('No project instructions to trust.');const value=await load();value.projects={...value.projects,[snapshot.root]:fingerprint};await atomicJson(file,value);},
+  async revokeProject(root){const actual=await realpath(root),value=await load();if(value.projects)delete value.projects[actual];await atomicJson(file,value);},
+  async allowProject(root){try{return(await this.projectState(root)).reviewed;}catch{return false;}},
   inventory,
  };
 }

@@ -140,7 +140,7 @@ else {
       return workExporter.export({artifact,format,filePath:result.filePath,theme:nativeTheme.shouldUseDarkColors?'dark':'light',updatedAt:snapshot.artifactUpdatedAt});
     });
     work.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:work-update',workSnapshot(value));});
-    const commandInfo=createCommandInfo({getState:()=>controller.getState()});
+    const commandInfo=createCommandInfo({extensionReview,getState:()=>controller.getState()});
     handler('musebench:command-info',async type=>{
       if(type==='skills'||type==='usage')return commandInfo(type);
       if(type==='export'){

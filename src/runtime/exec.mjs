@@ -290,10 +290,11 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
   }
   let prompt=mode==='plan'?`Plan the requested work and explain your proposed changes. Planning instructions are not an enforced read-only boundary.\n\n${text.trim()}`:text.trim();
   if(state.shellEnabled)prompt=shellPrompt(workspace,prompt,!!sessionId);
+  const trustProject=await extensionReview?.allowProject(workspace)===true;current(token);
   let prepared;try{prepared=await preparePrompt(prompt);current(token);}catch(error){await prepared?.dispose();if(token===epoch)update({status:'blocked',reason:'The request context could not be prepared. Try sending again.',permissionVerified:false});throw error;}
   const label=options.approval==='ask'?'Ask me':options.approval==='auto'?'Auto-review':'No prompts (sandboxed)';
   update({status:'running',runLimits:limits,inputAccepted:false,reason:null,failureCode:null,liveVerified:false,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,usage:null,skills:[],shellResults:[],activity:{items:[],truncated:false},cleanup:undefined,runOptions:options,permissionProfile:options.approval==='never'?null:options.approval==='auto'?':auto-review':':ask-me',permissionArguments:permissionArgs(state.shellEnabled,options.approval,sessionId),permissionDescription:(state.shellEnabled?shellDescription:fileDescription).replace('Ask me',label).replace('Each request starts an independent native run',sessionId?"Each request resumes this chat’s native session":'Each request starts an independent native run')});
-  try{current(token);const args=execArgs(workspace,'meta','',limits.steps,state.shellEnabled,options,sessionId).slice(0,-2).concat(imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,resumeSession,duration:limits.wallTimeMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
+  try{current(token);const args=execArgs(workspace,'meta','',limits.steps,state.shellEnabled,options,sessionId).slice(0,-2).concat(trustProject?['--trust-workspace']:[],imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,resumeSession,duration:limits.wallTimeMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
   return snapshot();
  }
 
