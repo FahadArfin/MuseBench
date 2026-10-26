@@ -74,6 +74,17 @@ async function harness(t){
   return{controller,runtime,calls,stopped,send,dataDir};
 }
 
+test('screenshot follows draft, queue and native image argument without embedding bytes in chat JSON',async t=>{
+ const h=await harness(t),initial=h.controller.getState(),projectId=initial.activeProject.id,taskId=initial.task.id;
+ const image=await h.controller.importImage({projectId,taskId,name:'screen.png',dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII='});
+ let state=await h.controller.dispatch({type:'saveDraft',projectId,taskId,text:'Inspect screenshot',images:[image],files:[]});assert.equal(state.error,null);assert.deepEqual(state.drafts[`${projectId}:${taskId}`].images,[image]);
+ state=await h.controller.dispatch({type:'queueMessage',text:'Inspect screenshot',images:[image]});assert.equal(state.error,null);assert.deepEqual(state.task.promptQueue[0].images,[image]);
+ state=await h.controller.dispatch({type:'resumeQueue'});assert.equal(state.error,null);
+ const args=h.calls.findLast(c=>c.args.includes('meta')).args;assert.ok(args.includes('--image'));assert.match(args[args.indexOf('--image')+1],/code-images/);assert.deepEqual(state.task.messages.find(m=>m.role==='user').images,[image]);assert.ok(!JSON.stringify(state).includes('base64'));
+ await h.controller.dispatch({type:'disconnectMuse'});await h.controller.close();
+ const reopened=await createController({dataDir:h.dataDir});try{assert.equal(reopened.getState().drafts[`${projectId}:${taskId}`].images[0].id,image.id);assert.match(await reopened.readImage({projectId,image}),/^data:image\/png/);}finally{await reopened.close();}
+});
+
 test('exec/controller accepts completion attribution only after the authoritative terminal and exit zero',async t=>{
   const h=await harness(t);const child=await h.send();
   const data=jsonl(frames());

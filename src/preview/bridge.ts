@@ -34,7 +34,8 @@ export function createPreviewBridge():MuseBenchBridge {
  const state:AppState={projectCreationRoot:'Documents/MuseBench',projects:[project],tasks:[initial,other],activeProject:project,task:initial,checkpoints:[],preview:{status:'stopped',url:null,log:'',script:null},runtime:copy(runtime),busy:false,error:null,drafts:{}};
  const code=channel(()=>state);
  function sync(){state.tasks=[...tasks.values()];return code.emit();}
- function reply(current:Task,text:string){current.messages.push({id:id(),role:'user',text,at:new Date().toISOString()},{id:id(),role:'assistant',text:'Preview reply — your message is shown here so you can review the conversation layout. No request was sent to Muse and no project files were changed.',at:new Date().toISOString()});current.updatedAt=new Date().toISOString();}
+ const imageData=new Map<string,string>();
+ function reply(current:Task,text:string,images:import('../shared/types').CodeImage[]=[]){current.messages.push({id:id(),role:'user',text,images,at:new Date().toISOString()},{id:id(),role:'assistant',text:'Preview reply — your message is shown here so you can review the conversation layout. No request was sent to Muse and no project files were changed.',at:new Date().toISOString()});current.updatedAt=new Date().toISOString();}
  async function dispatch(action:Action):Promise<AppState>{
   const current=state.task;
   switch(action.type){
@@ -42,12 +43,12 @@ export function createPreviewBridge():MuseBenchBridge {
    case 'selectProject':state.activeProject=state.projects.find(p=>p.id===action.id)??project;break;
    case 'selectTask':state.task=tasks.get(action.id)??initial;state.activeProject=state.projects.find(p=>p.id===state.task!.projectId)??project;break;
    case 'newTask':{const next=task(action.request,id(),state.activeProject?.id??project.id);next.runOptions=action.runOptions??next.runOptions;next.messages.push({id:id(),role:'assistant',text:'Preview conversation created. Messages stay in this browser tab until you reset or reload.',at:stamp});tasks.set(next.id,next);state.task=next;break;}
-   case 'queueMessage':if(current){if((current.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');if(!action.text.trim())throw Error('Enter a prompt.');(current.promptQueue??=[]).push({id:id(),text:action.text.trim(),files:copy(action.files??[]),mode:action.mode??'chat',runOptions:copy(action.runOptions??current.runOptions!),at:stamp});current.queuePaused=true;}break;
+   case 'queueMessage':if(current){if((current.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');if(!action.text.trim())throw Error('Enter a prompt.');(current.promptQueue??=[]).push({id:id(),text:action.text.trim(),files:copy(action.files??[]),images:copy(action.images??[]),mode:action.mode??'chat',runOptions:copy(action.runOptions??current.runOptions!),at:stamp});current.queuePaused=true;}break;
    case 'moveQueued':if(current)current.promptQueue=moveQueuedPrompt(current,action);break;
    case 'removeQueued':if(current)current.promptQueue=current.promptQueue?.filter(item=>item.id!==action.id);break;
    case 'pauseQueue':if(current)current.queuePaused=true;break;
-   case 'resumeQueue':if(current){const next=current.promptQueue?.shift();if(next)reply(current,next.text);current.queuePaused=true;}break;
-   case 'sendMessage':if(current)reply(current,action.text);break;
+   case 'resumeQueue':if(current){const next=current.promptQueue?.shift();if(next)reply(current,next.text,next.images);current.queuePaused=true;}break;
+   case 'sendMessage':if(current)reply(current,action.text,action.images);break;
    case 'renameTask':if(current)current.title=action.title;break;
    case 'setRunOptions':if(current)current.runOptions=copy(action.runOptions);break;
    case 'setGoal':if(current)current.goal={objective:action.objective,status:action.status};break;
@@ -56,7 +57,7 @@ export function createPreviewBridge():MuseBenchBridge {
    case 'moveSidebarItem':{const planned=planSidebarMove(state.projects,[...tasks.values()],state.sidebarOrder,action);state.sidebarOrder=planned.orders;if(action.kind==='chat'){const target=tasks.get(action.id)!;if(action.section==='project'){target.projectId=action.projectId!;if(state.task?.id===target.id)state.activeProject=state.projects.find(p=>p.id===target.projectId)!;}if(action.section==='pinned')target.pinned=true;if(action.section==='recents')target.pinned=false;}break;}
    case 'setTaskFlags':{const target=tasks.get(action.id);if(target){if(action.pinned!==undefined)target.pinned=action.pinned;if(action.archived!==undefined){if(action.archived&&!target.archived)target.archivedAt=new Date().toISOString();if(!action.archived)target.archivedAt=null;target.archived=action.archived;}if(target.archived)target.pinned=false;}break;}
    case 'deleteTask':{const target=tasks.get(action.id);if(!target?.archived)throw Error('Archive this chat first.');tasks.delete(action.id);if(state.task?.id===action.id)state.task=null;for(const key of Object.keys(state.drafts??{})){if(key.endsWith(action.id))delete state.drafts![key];}break;}
-   case 'forkTask':if(current){const index=current.messages.findIndex(m=>m.id===action.messageId&&m.role!=='system');if(index<0)throw Error('Select a sample message first.');const selected=current.messages[index],fork=copy(current);fork.id=id();fork.title=`Branch: ${current.title}`;fork.pinned=false;fork.archived=false;fork.archivedAt=null;fork.messages=fork.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({...m,id:id()}));fork.runs=[];fork.changes=[];if(selected.role==='user')(state.drafts??={})[`${fork.projectId}:${fork.id}`]={text:selected.text,files:selected.files??[],mode:'chat',updatedAt:new Date().toISOString()};tasks.set(fork.id,fork);state.task=fork;}break;
+   case 'forkTask':if(current){const index=current.messages.findIndex(m=>m.id===action.messageId&&m.role!=='system');if(index<0)throw Error('Select a sample message first.');const selected=current.messages[index],fork=copy(current);fork.id=id();fork.title=`Branch: ${current.title}`;fork.pinned=false;fork.archived=false;fork.archivedAt=null;fork.messages=fork.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({...m,id:id()}));fork.runs=[];fork.changes=[];if(selected.role==='user')(state.drafts??={})[`${fork.projectId}:${fork.id}`]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:new Date().toISOString()};tasks.set(fork.id,fork);state.task=fork;}break;
    case 'clearError':state.error=null;break;
    case 'refresh':break;
    default:return desktop();
@@ -86,9 +87,11 @@ export function createPreviewBridge():MuseBenchBridge {
  const dictation={id:null,status:'idle' as const,available:false,language:null,text:'',error:'Microphone input is available in the desktop app.'};
  return {
   windowControlsOverlay:true,
+  importCodeImage:async input=>{const match=/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(input.dataUrl);if(!match||input.dataUrl.length>11200000)throw Error('Choose an image up to 8 MB.');const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));const id=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');imageData.set(input.projectId+id,input.dataUrl);return{id,name:input.name,mime:match[1],bytes:bytes.length};},
+  readCodeImage:async input=>{const data=imageData.get(input.projectId+input.image.id);if(!data)throw Error('Screenshot unavailable');return data;},
   getState:code.read,onState:code.on,dispatch,openProjectFile:desktop,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);if(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},
   configureNotifications:async()=>({supported:false}),dictation:async command=>{if(['status','refresh','cancel','stop'].includes(command))return copy(dictation);return desktop();},onDictation:()=>()=>{},
-  saveCodeDraft:async input=>{state.drafts![`${input.projectId}:${input.taskId??'new'}`]={text:input.text,files:copy(input.files),mode:input.mode};},
+  saveCodeDraft:async input=>{state.drafts![`${input.projectId}:${input.taskId??'new'}`]={text:input.text,files:copy(input.files),images:copy(input.images??[]),mode:input.mode};},
   searchChats:async input=>copy([...tasks.values()].filter(t=>(input.includeArchived||!t.archived)&&`${t.title} ${t.messages.map(m=>m.text).join(' ')}`.toLowerCase().includes(input.query.toLowerCase())).map(t=>({...t,projectName:project.name,snippet:t.messages.at(-1)?.text??''}))),
   inspectCodeContext:async input=>({characters:input.text.length,estimatedTokens:Math.ceil(input.text.length/4),includedMessages:0,omittedMessages:0,truncatedMessages:0,fileCount:0,replayedFiles:0,limit:24000,prompt:input.text,attachments:[],files:[]}),
   commandInfo:async type=>{if(type==='skills')return {status:'ready',skills:[{id:'sample-skill',name:'clear-project-notes',title:'Clear project notes',description:'Sample skill',scope:'user'}]};if(type==='usage')return {status:'ready',message:'Browser preview does not use model credits.',rows:[{label:'Mode',value:'Sample data'}]};return desktop();},

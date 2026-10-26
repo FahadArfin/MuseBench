@@ -1,5 +1,5 @@
 import {useRef,useState,type SetStateAction} from 'react';
-import type {CodeDraft,ContextFile,MuseBenchBridge} from '../shared/types';
+import type {CodeDraft,CodeImage,ContextFile,MuseBenchBridge} from '../shared/types';
 const empty=():CodeDraft=>({text:'',files:[],mode:'chat'});
 export function useCodeDraft(bridge:MuseBenchBridge|undefined,projectId:string|undefined,taskId:string|null,drafts:Record<string,CodeDraft>|undefined,onError:(error:string)=>void){
  const key=projectId?`${projectId}:${taskId??'new'}`:'unassigned';
@@ -17,5 +17,5 @@ export function useCodeDraft(bridge:MuseBenchBridge|undefined,projectId:string|u
  const setText=(value:SetStateAction<string>)=>update({text:typeof value==='function'?value(current.current.draft.text):value});
  const setFiles=(files:ContextFile[])=>update({files});
  const setMode=(mode:'chat'|'plan')=>update({mode});
- return{message:draft.text,setMessage:setText,files:draft.files??[],setFiles,messageMode:draft.mode??'chat',setMessageMode:setMode,setDraftFor};
+ return{images:draft.images??[],setImages:(images:CodeImage[])=>update({images}),message:draft.text,setMessage:setText,files:draft.files??[],setFiles,messageMode:draft.mode??'chat',setMessageMode:setMode,setDraftFor};
 }

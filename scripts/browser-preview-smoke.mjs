@@ -45,6 +45,15 @@ try {
  while(await queued.count())await queued.getByRole('button',{name:'Remove queued prompt 1',exact:true}).click();
  await page.reload();await page.getByRole('textbox',{name:'Message Muse',exact:true}).waitFor();
 
+ await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('button',{name:'Screenshots',exact:true}).click();
+ await page.getByLabel('Attach screenshots',{exact:true}).setInputFiles({name:'screen.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64')});
+ await page.getByRole('button',{name:'Remove screen.png',exact:true}).waitFor();
+ await composer.fill('Review this screenshot');await composer.press('Alt+Enter');
+ await page.getByText('Review this screenshot · 1 screenshot',{exact:true}).waitFor();
+ await queued.getByRole('button',{name:'Edit queued prompt 1',exact:true}).click();
+ await page.getByRole('button',{name:'Remove screen.png',exact:true}).waitFor();
+ await page.screenshot({path:'artifacts/browser-preview/screenshot-attachment.png'});
+ await page.getByRole('button',{name:'Remove screen.png',exact:true}).click();await composer.fill('');
  const before=await page.evaluate(()=>window.musebench.getState());
  await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Keep this draft');
  await page.getByRole('button',{name:'Reasoning effort',exact:true}).click();

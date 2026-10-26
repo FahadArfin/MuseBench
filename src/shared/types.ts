@@ -7,7 +7,7 @@ export interface FileChange { path: string; status: 'added' | 'modified' | 'dele
 export type WorkStatus = 'queued'|'working'|'waiting'|'completed'|'failed'|'cancelled'|'interrupted';
 export interface ActivityItem {id:string;kind:'model'|'tool'|'agent';title:string;tool:string;status:WorkStatus;detail:string;output:string;truncated?:boolean;agentId?:string;}
 export interface WorkRun {id:string;promptId:string;prompt:string;runId:string|null;ownedRunIds?:string[];status:WorkStatus;startedAt:string;endedAt?:string;reason?:string;activities:ActivityItem[];truncated?:boolean;}
-export interface Message { id: string; role: 'user' | 'assistant' | 'system'; text: string; at: string; turnId?:string; outcome?:WorkStatus; files?:ContextFile[]; sources?:(ContextFile&{text:string})[]; }
+export interface Message { id: string; role: 'user' | 'assistant' | 'system'; text: string; at: string; turnId?:string; outcome?:WorkStatus; images?:CodeImage[];files?:ContextFile[]; sources?:(ContextFile&{text:string})[]; }
 export interface ShellResult { callId: string; runId: string; toolName: 'powershell'; command: string; output: string; exitCode: number; terminalStatus: 'completed' | 'failed'; terminalReason?: string; truncated: boolean; outcome: string; }
 export interface Check { id: string; script: string; command: string; status: CheckStatus; revision: string; exitCode: number | null; log: string; startedAt: string; endedAt?: string; }
 export interface Checkpoint { id: string; taskId: string; title: string; revision: string; createdAt: string; }
@@ -25,15 +25,15 @@ export type Action =
   | {type:'updatePlan';plan:string;criteria:string[]} | {type:'approvePlan'} | {type:'applyDemo'}
   | {type:'refresh'} | {type:'runCheck';script:string} | {type:'cancelCheck'}
   | {type:'startPreview';script:string} | {type:'stopPreview'} | {type:'inspectPreview';revision:string}
-  | {type:'accept';revision:string} | {type:'sendMessage';text:string;mode?:'chat'|'plan';files?:ContextFile[]}
+  | {type:'accept';revision:string} | {type:'sendMessage';text:string;mode?:'chat'|'plan';images?:CodeImage[];files?:ContextFile[]}
   | {type:'connectMuse';binary?:string} | {type:'disconnectMuse'} | {type:'runtimeDecision';decision:string}
   | {type:'clearError'}
   | {type:'setProjectInstructions';projectId:string;text:string}
-  | {type:'saveDraft';projectId:string;taskId:string|null;text:string;files?:ContextFile[];mode?:'chat'|'plan'}
+  | {type:'saveDraft';projectId:string;taskId:string|null;text:string;images?:CodeImage[];files?:ContextFile[];mode?:'chat'|'plan'}
   | {type:'deleteTask';id:string}
   | {type:'setTaskFlags';id:string;pinned?:boolean;archived?:boolean}
   | {type:'forkTask';messageId:string}
-  | {type:'queueMessage';text:string;files?:ContextFile[];mode?:'chat'|'plan';runOptions?:RunOptions}
+  | {type:'queueMessage';text:string;images?:CodeImage[];files?:ContextFile[];mode?:'chat'|'plan';runOptions?:RunOptions}
   | {type:'moveQueued';taskId:string;id:string;beforeId:string|null}
   | {type:'removeQueued';id:string} | {type:'pauseQueue'|'resumeQueue'};
 export type PersonalDestination = 'bot' | 'chat' | 'ideas' | 'goals';
@@ -78,7 +78,8 @@ export interface MuseBenchBridge {
 }
 
 export interface ContextFile {path:string;hash:string;}
-export interface CodeDraft {text:string;files:ContextFile[];mode:'chat'|'plan';updatedAt?:string;}
+export interface CodeImage {id:string;name:string;mime:string;bytes:number;}
+export interface CodeDraft {images?:CodeImage[];text:string;files:ContextFile[];mode:'chat'|'plan';updatedAt?:string;}
 export interface QueuedPrompt extends CodeDraft {id:string;runOptions:RunOptions;at:string;}
 export interface ContextSummary {characters:number;estimatedTokens:number;includedMessages:number;omittedMessages:number;truncatedMessages:number;fileCount:number;replayedFiles:number;limit:number;}
 export interface CodeContextResult extends ContextSummary {prompt:string;attachments:(ContextFile&{text:string})[];files:(ContextFile&{characters:number})[];}
@@ -86,5 +87,7 @@ export interface ChatSearchResult extends TaskSummary {projectName:string;snippe
 export interface MuseBenchBridge {
  inspectCodeContext(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[]}):Promise<CodeContextResult>;
  searchChats(input:{query:string;includeArchived:boolean}):Promise<ChatSearchResult[]>;
- saveCodeDraft(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[];mode:'chat'|'plan'}):Promise<void>;
+ importCodeImage(input:{projectId:string;taskId:string|null;name:string;dataUrl:string}):Promise<CodeImage>;
+ readCodeImage(input:{projectId:string;image:CodeImage}):Promise<string>;
+ saveCodeDraft(input:{images?:CodeImage[];projectId:string;taskId:string|null;text:string;files:ContextFile[];mode:'chat'|'plan'}):Promise<void>;
 }

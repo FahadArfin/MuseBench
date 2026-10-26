@@ -259,7 +259,7 @@ export function createExecRuntime({environment=process.env,platform=process.plat
   }finally{if(token===epoch)connecting=false;}
  }
 
- async function send({text,mode='chat',runOptions}={}) {
+ async function send({text,mode='chat',runOptions,imagePaths=[]}={}) {
   const options=validateRunOptions(runOptions);
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a message up to 64,000 characters in chat or plan mode.');
   if(connecting||closing||!state.permissionVerified||!usable.has(state.status)||owner&&!owner.closed)throw Error('Muse is blocked or uncertain. Connect a verified native runtime first.');
@@ -271,7 +271,7 @@ export function createExecRuntime({environment=process.env,platform=process.plat
   let prepared;try{prepared=await preparePrompt(prompt);current(token);}catch(error){await prepared?.dispose();if(token===epoch)update({status:'blocked',reason:'The request context could not be prepared. Try sending again.',permissionVerified:false});throw error;}
   const label=options.approval==='ask'?'Ask me':options.approval==='auto'?'Auto-review':'No prompts (sandboxed)';
   update({status:'running',reason:null,failureCode:null,liveVerified:false,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,shellResults:[],activity:{items:[],truncated:false},cleanup:undefined,runOptions:options,permissionProfile:options.approval==='never'?null:options.approval==='auto'?':auto-review':':ask-me',permissionArguments:permissionArgs(state.shellEnabled,options.approval),permissionDescription:(state.shellEnabled?shellDescription:fileDescription).replace('Ask me',label)});
-  try{current(token);const args=execArgs(workspace,'meta','',maxModelSteps,state.shellEnabled,options).slice(0,-2).concat(prepared.args);const run=begin(args,{token,model:true,duration:runTimeoutMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
+  try{current(token);const args=execArgs(workspace,'meta','',maxModelSteps,state.shellEnabled,options).slice(0,-2).concat(imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,duration:runTimeoutMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
   return snapshot();
  }
 

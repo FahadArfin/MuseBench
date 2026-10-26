@@ -1,3 +1,5 @@
+import {createImageStore} from './code-images.mjs';
+import {imageReferences} from '../shared/code-images.mjs';
 import {moveQueuedPrompt} from '../shared/queued-prompts.mjs';
 import {planSidebarMove} from '../shared/sidebar-order.mjs';
 import {projectDetails} from '../shared/create-project.mjs';
@@ -113,6 +115,7 @@ async function freePort(){const server=net.createServer();await new Promise((res
 
 export async function createController({dataDir,projectsDir,newProjectsDir,templateDir=fileURLToPath(new URL('../../templates/tea-store',import.meta.url)),runtime,checkTimeoutMs=120000,archiveNow=()=>Date.now()}={}){
   if(!dataDir)throw Error('A controller dataDir is required.');await fs.mkdir(dataDir,{recursive:true});dataDir=await fs.realpath(dataDir);
+  const imageStore=createImageStore(dataDir);
   const legacyProjectsDir=path.join(dataDir,'projects');projectsDir=projectsDir??legacyProjectsDir;
   if(!path.isAbsolute(projectsDir))throw Error('Project storage must be an absolute folder.');projectsDir=path.resolve(projectsDir);
   newProjectsDir=newProjectsDir??projectsDir;if(!path.isAbsolute(newProjectsDir))throw Error('New project storage must be an absolute folder.');newProjectsDir=path.resolve(newProjectsDir);
@@ -247,6 +250,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const validateBinding=(projectId,taskId)=>{
     if(state.activeProject?.id!==projectId||taskId!=null&&state.task?.id!==taskId)throw Error('The selected project or chat changed. Open context again.');
   };
+  const importImage=async ({projectId,taskId=null,...input})=>{validateBinding(projectId,taskId);const ref=await imageStore.import(projectId,input);validateBinding(projectId,taskId);return ref;};
+  const readImage=async ({projectId,image})=>{if(!state.projects.some(p=>p.id===projectId))throw Error('Project unavailable.');return imageStore.read(projectId,image);};
   const contextAllowed=name=>!name.split('/').some(part=>['.muse','.codex','.config','auth.json','.mcp.json'].includes(part.toLowerCase()));
   const selectedSources=async(files=[])=>{
     const refs=fileReferences(files);if(!state.activeProject)throw Error('Open a project first.');
@@ -277,7 +282,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       if(closed||state.task?.id!==taskId||!queueEligible()||museTurnPending)return;
       if(state.runtime.status!=='completed'||state.runtime.cleanup!=='confirmed'||!state.task.runtimeComplete){state.task.queuePaused=true;state.task.queueHold=true;emit();return;}
       const item=state.task.promptQueue.shift();persist();
-      try{await handle({type:'sendMessage',text:item.text,mode:item.mode,files:item.files,runOptions:item.runOptions,fromQueue:true});}
+      try{await handle({type:'sendMessage',text:item.text,mode:item.mode,files:item.files,images:item.images,runOptions:item.runOptions,fromQueue:true});}
       catch(error){state.task.promptQueue.unshift(item);state.task.queuePaused=true;state.task.queueHold=true;state.error=error.message;}finally{emit();}
     });
     queue=operation.catch(()=>{});void operation.finally(()=>{queueScheduled=false;if(!museTurnPending&&state.runtime.status==='completed'&&queueEligible())scheduleQueue();}).catch(()=>{});
@@ -370,8 +375,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'saveDraft':{
         const p=state.projects.find(p=>p.id===action.projectId);if(!p||action.taskId!=null&&taskRecords.get(action.taskId)?.projectId!==p.id)throw Error('Draft project or chat is unavailable.');
         if(typeof action.text!=='string'||action.text.length>16000||!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid draft.');
-        const key=draftKey(action.projectId,action.taskId),files=fileReferences(action.files);
-        if(!action.text&&!files.length)delete state.drafts[key];else state.drafts[key]={text:action.text,files,mode:action.mode??'chat',updatedAt:now()};break;
+        const key=draftKey(action.projectId,action.taskId),files=fileReferences(action.files),images=imageReferences(action.images);await imageStore.resolve(action.projectId,images);
+        if(!action.text&&!files.length&&!images.length)delete state.drafts[key];else state.drafts[key]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};break;
       }
       case 'moveSidebarItem':{
         requireNavigationIdle();
@@ -381,7 +386,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           const t=structuredClone(original);
           if(action.section==='project'&&t.projectId!==action.projectId){
             const destination=state.projects.find(p=>p.id===action.projectId),oldKey=draftKey(t.projectId,t.id),draft=state.drafts[oldKey];
-            if(t.promptQueue?.length||draft?.files?.length)throw Error('Remove queued messages and draft attachments before moving this chat to another project.');
+            if(t.promptQueue?.length||(draft?.files?.length||draft?.images?.length)||t.messages.some(m=>m.images?.length))throw Error('Remove queued messages and draft attachments before moving this chat to another project.');
             if(await canonicalRoot(destination.root)!==destination.root)throw Error('The destination folder changed. Reopen the project.');
             const snap=await snapshot(destination.root);
             if(state.task?.id===t.id)await navigationCleanup();
@@ -414,8 +419,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'deleteTask':await deleteArchivedChat(action.id);break;
       case 'queueMessage':{
         const t=requireTask();if(t.mode!=='muse'||t.archived)throw Error('Open an active Muse chat to queue a request.');if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
-        if(!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid conversation mode.');if((t.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');const files=fileReferences(action.files);await selectedSources(files);
-        t.promptQueue??=[];t.promptQueue.push({id:randomUUID(),text:action.text.trim(),files,mode:action.mode??'chat',runOptions:validateRunOptions(action.runOptions??t.runOptions),at:now()});
+        if(!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid conversation mode.');if((t.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');const files=fileReferences(action.files),images=imageReferences(action.images);await selectedSources(files);await imageStore.resolve(t.projectId,images);
+        t.promptQueue??=[];t.promptQueue.push({id:randomUUID(),text:action.text.trim(),files,images,mode:action.mode??'chat',runOptions:validateRunOptions(action.runOptions??t.runOptions),at:now()});
         if(!closing&&!t.queueHold&&museTurnPending&&['running','starting','submitting'].includes(state.runtime.status))t.queuePaused=false;break;
       }
       case 'moveQueued':{const t=requireTask();t.promptQueue=moveQueuedPrompt(t,action);break;}
@@ -423,13 +428,13 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'pauseQueue':{const t=requireTask();t.queuePaused=true;t.queueHold=true;break;}
       case 'resumeQueue':{
         requireNavigationIdle();const t=requireTask();if(t.archived)throw Error('Restore this archived chat first.');const item=t.promptQueue?.shift();if(!item)break;t.queuePaused=false;t.queueHold=false;
-        try{await handle({type:'sendMessage',text:item.text,mode:item.mode,files:item.files,runOptions:item.runOptions,fromQueue:true});}catch(error){t.promptQueue.unshift(item);t.queuePaused=true;t.queueHold=true;throw error;}break;
+        try{await handle({type:'sendMessage',text:item.text,mode:item.mode,files:item.files,images:item.images,runOptions:item.runOptions,fromQueue:true});}catch(error){t.promptQueue.unshift(item);t.queuePaused=true;t.queueHold=true;throw error;}break;
       }
       case 'forkTask':{
         requireNavigationIdle();const original=structuredClone(requireTask()),index=original.messages.findIndex(m=>m.id===action.messageId&&['user','assistant'].includes(m.role));if(index<0)throw Error('Choose a prompt or response to branch from.');const selected=original.messages[index];
         await startTask(original.request,original.mode==='demo'?'manual':original.mode,original.runOptions);const t=state.task;t.title=`Branch · ${original.title}`.slice(0,100);t.forkedFrom=original.id;t.goal=original.goal;
-        t.messages=original.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,at:m.at,sources:m.sources,files:m.files,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));message('system',selected.role==='assistant'?'Branched conversation through the selected response. Current project files are unchanged.':'Branched conversation. Current project files are unchanged; the selected prompt is an unsent draft.');
-        if(selected.role==='user')state.drafts[draftKey(t.projectId,t.id)]={text:selected.text,files:selected.files??[],mode:'chat',updatedAt:now()};break;
+        t.messages=original.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,at:m.at,sources:m.sources,files:m.files,images:m.images,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));message('system',selected.role==='assistant'?'Branched conversation through the selected response. Current project files are unchanged.':'Branched conversation. Current project files are unchanged; the selected prompt is an unsent draft.');
+        if(selected.role==='user')state.drafts[draftKey(t.projectId,t.id)]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:now()};break;
       }
       case 'renameTask':{requireNavigationIdle();const t=requireTask();if(typeof action.title!=='string'||!action.title.trim()||action.title.length>100)throw Error('Use a chat name up to 100 characters.');t.title=action.title.trim();break;}
       case 'setMemories':{requireNavigationIdle();if(typeof action.text!=='string'||action.text.length>1500)throw Error('Memory instructions must be at most 1,500 characters.');state.memories=action.text.trim();break;}
@@ -455,7 +460,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'sendMessage':{
         if(closing)throw Error('The app is closing. This prompt was not sent.');
         requireNavigationIdle();const t=requireTask();if(t.archived)throw Error('Restore this archived chat before sending.');if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
-        const files=fileReferences(action.files);if(!action.fromQueue&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,mode:action.mode??'chat',updatedAt:now()};const {attachments}=await selectedSources(files);
+        const files=fileReferences(action.files),images=imageReferences(action.images);const imagePaths=await imageStore.resolve(t.projectId,images);if(images.length&&t.mode!=='muse')throw Error('Screenshots require a Muse chat.');if(!action.fromQueue&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};const {attachments}=await selectedSources(files);
         if(closing)throw Error('The app is closing. This prompt was not sent.');
         const prepared=composeChatContext({task:t,project:state.activeProject,memories:state.memories,text:action.text,attachments,history:state.runtime.transport!=='msp'});
         if(t.mode==='muse'){
@@ -467,15 +472,16 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
             await runtime.connect({workspaceRoot:state.activeProject.root});state.runtime=runtime.snapshot();
           }
           if(closing)throw Error('The app is closing. This prompt was not sent.');
+          if(images.length&&state.runtime.transport!=='exec')throw Error('Screenshots require the native exec connection.');
           t.runtimeComplete=false;t.acceptedRevision=null;museTurnPending=true;
           const before=runtime.snapshot?.()??state.runtime;
-          const prompt={id:randomUUID(),role:'user',text:action.text.slice(0,16000),files,sources:attachments,at:now()};
+          const prompt={id:randomUUID(),role:'user',text:action.text.slice(0,16000),files,images,sources:attachments,at:now()};
           runtimeTurn={taskId:t.id,promptId:prompt.id,messageBaseline:runtimeMessageIds(before),previousRunId:before.runId??null,runId:null,started:false,resetSeen:false};
           t.runs=restoreRuns([...(t.runs??[]),{id:prompt.id,promptId:prompt.id,prompt:prompt.text,runId:null,status:'queued',startedAt:prompt.at,activities:[]}],{interrupt:false});
           t.messages.push(prompt);t.messages=t.messages.slice(-150);
           const {prompt:contextPrompt,...contextSummary}=prepared;t.contextSummary=contextSummary;
-          try{await runtime.send({text:contextPrompt,mode:action.mode??'chat',runOptions:restoreRunOptions(action.fromQueue?action.runOptions:t.runOptions)});}
-          catch(e){if(!runtimeTurn?.started){state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,mode:action.mode??'chat',updatedAt:now()};t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}museTurnPending=false;runtimeTurn=null;throw e;}
+          try{await runtime.send({text:contextPrompt,imagePaths,mode:action.mode??'chat',runOptions:restoreRunOptions(action.fromQueue?action.runOptions:t.runOptions)});}
+          catch(e){if(!runtimeTurn?.started){state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}museTurnPending=false;runtimeTurn=null;throw e;}
         }else{message('user',action.text);message('system','Added to the local task journal. Manual and demo messages do not call a model.');}if(!action.fromQueue&&state.drafts[draftKey(t.projectId,t.id)]?.text===action.text)delete state.drafts[draftKey(t.projectId,t.id)];break;
       }
       case 'connectMuse':if(!state.activeProject)throw Error('Open a project first.');if(!runtime)throw Error('Muse runtime unavailable in this installation.');await runtime.connect({binary:action.binary,workspaceRoot:state.activeProject.root});state.runtime=runtime.snapshot();break;
@@ -488,5 +494,5 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   if(state.task)try{const row=db.prepare('SELECT revision FROM baselines WHERE task_id=?').get(state.task.id);if(!row||row.revision!==state.task.baselineRevision)throw Error('The saved task baseline is unavailable. Start a new task.');await current();}catch(error){state.error=error.message;state.task.previewRevision=null;state.task.acceptedRevision=null;state.task.runtimeComplete=false;if(state.task.check)state.task.check.status='stale';}
   persist();
   const archiveTimer=setInterval(()=>{queue=queue.then(purgeArchived).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,inspectContext,searchChats,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(closing||closed)return Promise.reject(Error('Controller closed.'));const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,runtime?.disconnect?.()]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);unsubscribe?.();persist();closed=true;listeners.clear();db.close();})();return closePromise;}};
+  return{getState,inspectContext,searchChats,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(closing||closed)return Promise.reject(Error('Controller closed.'));const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,runtime?.disconnect?.()]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);unsubscribe?.();persist();closed=true;listeners.clear();db.close();})();return closePromise;}};
 }

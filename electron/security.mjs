@@ -1,3 +1,4 @@
+import {imageReferences} from '../src/shared/code-images.mjs';
 import {validateSidebarMove} from '../src/shared/sidebar-order.mjs';
 import {projectDetails} from '../src/shared/create-project.mjs';
 import {fileReferences} from '../src/shared/chat-context.mjs';
@@ -24,7 +25,7 @@ export function validateAction(action) {
   if (action.type==='renameTask') string('title',100);
   if (action.type==='setMemories' && (typeof action.text!=='string'||action.text.length>1500)) throw Error('Invalid memory instructions.');
   if (action.type==='setGoal' && (typeof action.objective!=='string'||action.objective.length>1000||!['active','paused'].includes(action.status))) throw Error('Invalid chat goal.');
-  if(['sendMessage','queueMessage','saveDraft'].includes(action.type)){fileReferences(action.files);if(action.fromQueue!==undefined||action.type==='sendMessage'&&action.runOptions!==undefined)throw Error('Invalid request options.');}
+  if(['sendMessage','queueMessage','saveDraft'].includes(action.type)){fileReferences(action.files);imageReferences(action.images);if(action.fromQueue!==undefined||action.type==='sendMessage'&&action.runOptions!==undefined)throw Error('Invalid request options.');}
   if(['queueMessage','saveDraft'].includes(action.type)){if(typeof action.text!=='string'||action.text.length>16000||action.type==='queueMessage'&&!action.text.trim()||action.mode!==undefined&&!['chat','plan'].includes(action.mode))throw Error('Invalid prompt or draft.');if(action.runOptions!==undefined)validateRunOptions(action.runOptions);}
   if(['saveDraft','setProjectInstructions'].includes(action.type))string('projectId',200);
   if(action.type==='saveDraft'&&action.taskId!==null)string('taskId',200);
