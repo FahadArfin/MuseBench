@@ -47,6 +47,7 @@ export function createPreviewBridge():MuseBenchBridge {
  async function dispatch(action:Action):Promise<AppState>{
   const current=state.task;
   switch(action.type){
+   case 'refreshModels':state.runtime.modelCatalog={source:'Preview sample',models:[{id:'muse-preview',label:'Muse · sample',description:'Preview catalog only. No model request is sent.',efforts:['low','medium','high'],defaultEffort:'high',isDefault:true,contextLimit:null}]};break;
    case 'createProject':{const details=projectDetails(action);if(state.projects.some(p=>p.name.toLowerCase()===details.name.toLowerCase()))throw Error('A project with this name already exists.');const next={id:id(),name:details.name,root:`Documents/MuseBench/${details.name}`,demo:false,scripts:{},instructions:details.instructions};state.projects.push(next);state.activeProject=next;state.task=null;break;}
    case 'selectProject':state.activeProject=state.projects.find(p=>p.id===action.id)??project;break;
    case 'selectTask':state.task=tasks.get(action.id)??initial;state.activeProject=state.projects.find(p=>p.id===state.task!.projectId)??project;break;

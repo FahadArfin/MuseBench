@@ -1,4 +1,4 @@
-import {runBudget,RUN_BUDGETS} from '../shared/run-options.mjs';
+import {REASONING_LEVELS,runBudget,RUN_BUDGETS} from '../shared/run-options.mjs';
 import {SkillPicker} from './SkillPicker';
 import {skillPrompt} from '../shared/slash-commands.mjs';
 import {CodeImages} from './CodeImages';
@@ -15,7 +15,7 @@ const approvals:{id:RunOptions['approval'];label:string;description:string}[]=[
  {id:'auto',label:'Auto-review',description:'Muse reviews eligible requests. Unresolved approvals stop the run.'},
  {id:'never',label:'No prompts',description:'Run without approval prompts, within the Muse sandbox.'},
 ];
-type Props={images:CodeImage[];imageProjectId:string;onRemoveImage:(id:string)=>void;onAddImages:(files:File[])=>void;uploadingImages:boolean;onRunQueue?:()=>void;onQueue?:()=>void;onContext:()=>void;onCommand:(id:string,args:string,prefix:string)=>void;onLoadSkills:()=>void;skills:MuseSkill[];skillsStatus:string;theme:string;model:string;value:string;onChange:Dispatch<SetStateAction<string>>;inputRef:RefObject<HTMLTextAreaElement|null>;onSubmit:()=>void;onChooseProject:()=>void;onStop:()=>void;onConnection:()=>void;onOptions:(options:RunOptions)=>void;options:RunOptions;taskMode:'muse'|'manual'|'demo';onTaskMode:(mode:'muse'|'manual')=>void;messageMode:'chat'|'plan';onMessageMode:(mode:'chat'|'plan')=>void;showTask:boolean;busy:boolean;running:boolean;canSend:boolean;enterToSend:boolean;active:boolean;context:string;};
+type Props={modelCatalog?:import("../shared/models.mjs").NativeModelCatalog;onRefreshModels:()=>void;images:CodeImage[];imageProjectId:string;onRemoveImage:(id:string)=>void;onAddImages:(files:File[])=>void;uploadingImages:boolean;onRunQueue?:()=>void;onQueue?:()=>void;onContext:()=>void;onCommand:(id:string,args:string,prefix:string)=>void;onLoadSkills:()=>void;skills:MuseSkill[];skillsStatus:string;theme:string;model:string;value:string;onChange:Dispatch<SetStateAction<string>>;inputRef:RefObject<HTMLTextAreaElement|null>;onSubmit:()=>void;onChooseProject:()=>void;onStop:()=>void;onConnection:()=>void;onOptions:(options:RunOptions)=>void;options:RunOptions;taskMode:'muse'|'manual'|'demo';onTaskMode:(mode:'muse'|'manual')=>void;messageMode:'chat'|'plan';onMessageMode:(mode:'chat'|'plan')=>void;showTask:boolean;busy:boolean;running:boolean;canSend:boolean;enterToSend:boolean;active:boolean;context:string;};
 export function ChatComposer(p:Props){
  const [skillsOpen,setSkillsOpen]=useState(false);
  const [menu,setMenu]=useState<'add'|'approval'|'reasoning'|null>(null);
@@ -41,6 +41,7 @@ export function ChatComposer(p:Props){
   root.current?.querySelector<HTMLElement>('.composer-popover button,.composer-popover input,.composer-popover select')?.focus();
   return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',keyboard,true);};
  },[menu]);
+ const selectedModel=p.modelCatalog?.models.find(m=>p.options.model?m.id===p.options.model:m.isDefault);
  const choose=(options:RunOptions)=>{p.onOptions(options);close();};
  return <form ref={root} className="chat-composer codex-composer" onPaste={e=>{const files=Array.from(e.clipboardData.files).filter(f=>f.type.startsWith('image/'));if(files.length&&muse&&!p.busy&&!p.uploadingImages){e.preventDefault();p.onAddImages(files);}}} onDragOver={e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault();}} onDrop={e=>{if(e.dataTransfer.files.length){e.preventDefault();if(muse&&!p.busy&&!p.uploadingImages)p.onAddImages(Array.from(e.dataTransfer.files));}}} onSubmit={event=>{event.preventDefault();if(voice.recording)return;if(!p.value.trim()&&p.onRunQueue&&!locked&&p.canSend){p.onRunQueue();return;}if(!slash.submit())p.onSubmit();}}>
   {skillsOpen&&<SkillPicker skills={p.skills} status={p.skillsStatus} onClose={()=>setSkillsOpen(false)} onChoose={skill=>{p.onChange(skillPrompt(skill,p.value));setSkillsOpen(false);p.inputRef.current?.focus();}} onManage={()=>{setSkillsOpen(false);p.onCommand('customize','',p.value);}}/>}{slash.node}<input ref={imageInput} type="file" aria-label="Attach screenshots" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={e=>{p.onAddImages(Array.from(e.target.files??[]));e.target.value='';}}/>
@@ -61,8 +62,11 @@ export function ChatComposer(p:Props){
    </div>
    {p.messageMode==='plan'&&muse&&<span className="composer-plan-tag"><Lightbulb size={12}/>Plan</span>}
    <span className="composer-spacer"/>
-   {muse&&<div className="composer-control"><button type="button" className="reasoning-chip" aria-label="Reasoning effort" aria-expanded={menu==='reasoning'} disabled={locked} onClick={e=>open('reasoning',e)}><strong>Muse</strong><span>{labels[p.options.reasoning]}</span><ChevronDown size={12}/></button>
-    {menu==='reasoning'&&<ReasoningPicker value={p.options.reasoning} onChange={reasoning=>p.onOptions({...p.options,reasoning})}/>}
+   {muse&&<div className="composer-control"><button type="button" className="reasoning-chip" aria-label="Reasoning effort" aria-expanded={menu==='reasoning'} disabled={locked} onClick={e=>open('reasoning',e)}><strong>{selectedModel?.label??p.options.model??'Muse'}</strong><span>{labels[p.options.reasoning]}</span><ChevronDown size={12}/></button>
+    {menu==='reasoning'&&<ReasoningPicker value={p.options.reasoning} levels={selectedModel?.efforts.length?selectedModel.efforts:REASONING_LEVELS} onChange={reasoning=>p.onOptions({...p.options,reasoning})}>
+      <label className="composer-mode-row"><span>Model</span><select aria-label="Muse model" value={p.options.model??''} onChange={e=>{const model=e.target.value,row=p.modelCatalog?.models.find(m=>model?m.id===model:m.isDefault);const {model:oldModel,...rest}=p.options;p.onOptions({...rest,...(model?{model}:{}),reasoning:row?.efforts.includes(p.options.reasoning)?p.options.reasoning:row?.defaultEffort??row?.efforts[0]??'high'});}}><option value="">Provider default</option>{p.modelCatalog?.models.map(m=><option key={m.id} value={m.id} disabled={!m.efforts.length}>{m.label}</option>)}</select></label>
+      {selectedModel?.description&&<p className="popover-help">{selectedModel.description}</p>}<button type="button" className="text-link" onClick={p.onRefreshModels}>{p.modelCatalog?'Refresh models':'Load installed models'}</button>
+     </ReasoningPicker>}
    </div>}
    <button type="button" className={`icon-button microphone-button ${voice.recording?'recording':''}`} aria-label={voice.recording?'Stop dictation':'Start dictation'} title={voice.recording?'Stop dictation':voice.state.available===false?'Dictation unavailable on this device':'Dictate with Windows speech recognition (on device)'} disabled={p.busy||p.running||voice.state.status==='stopping'||(!voice.recording&&voice.state.available===false)} onClick={()=>{setMenu(null);void voice.toggle();}}>{voice.recording?<Square size={14} fill="currentColor"/>:<Mic size={17}/>}</button>
    {!p.running&&p.onQueue&&<button type="button" className="icon-button" aria-label="Queue message" title="Queue for later - Alt+Enter" disabled={p.busy||voice.recording||!p.value.trim()} onClick={p.onQueue}><ListPlus size={17}/></button>}

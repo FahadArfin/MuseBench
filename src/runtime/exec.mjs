@@ -1,3 +1,5 @@
+import {readNativeModels} from './models.mjs';
+import {modelForOptions} from '../shared/models.mjs';
 import {preparePrompt} from './prompt-file.mjs';
 import {execFile} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
@@ -41,7 +43,7 @@ function permissionArgs(shellEnabled,approval='ask',sessionId=null) {
 
 function execArgs(workspace,provider,prompt,maxSteps,shellEnabled,runOptions,sessionId=null) {
  const options=validateRunOptions(runOptions);
- return ['exec','--provider',provider,'--json','--workspace',workspace,...permissionArgs(shellEnabled,options.approval,sessionId),...(provider==='meta'?['--reasoning-effort',options.reasoning]:[]),'--max-model-steps',String(maxSteps),'--',prompt];
+ return ['exec','--provider',provider,'--json','--workspace',workspace,...permissionArgs(shellEnabled,options.approval,sessionId),...(provider==='meta'?['--reasoning-effort',options.reasoning,...(options.model?['--model',options.model]:[])]:[]),'--max-model-steps',String(maxSteps),'--',prompt];
 }
 
 function shellPrompt(workspace,prompt,durable=false) {
@@ -107,11 +109,12 @@ function deadline(promise,timeoutMs,message) {
 /** The synthetic sessionId is a readiness handle used by the controller. Actual
  * native session/command/run identifiers are separate and change on every send.
  * The injected process boundary is used by contract tests, never by product UI. */
-export function createExecRuntime({durableSessions=false,environment=process.env,platform=process.platform,helperPath=defaultHelperPath,spawnProcess,stopProcess=stopNativeProcess,verifyConfiguration=checkConfiguration,extensionReview,timeoutMs=10000,runTimeoutMs=180000,maxModelSteps=8}={}) {
+export function createExecRuntime({loadModels=readNativeModels,durableSessions=false,environment=process.env,platform=process.platform,helperPath=defaultHelperPath,spawnProcess,stopProcess=stopNativeProcess,verifyConfiguration=checkConfiguration,extensionReview,timeoutMs=10000,runTimeoutMs=180000,maxModelSteps=8}={}) {
  if(platform!=='win32')throw Error('The native exec compatibility mode is supported only on Windows.');
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000||!Number.isInteger(runTimeoutMs)||runTimeoutMs<1||runTimeoutMs>3600000||!Number.isInteger(maxModelSteps)||maxModelSteps<1||maxModelSteps>128)throw Error('Invalid Muse runtime limits.');
  const env=curateEnvironment(environment),candidates=discoverMuseBinaries({environment,platform});
  const spawnNative=spawnProcess??createJobSpawner({helperPath});
+ let modelRead=null;
  let state={status:'unavailable',reason:candidates.length?'Connect to verify the native Windows sandbox and exec format.':'Install official Muse, then select its native executable.',binary:candidates[0]??null,sdkVersion:HOST_VERSION,transport:'exec',durableSessions,inputAccepted:false,sessionId:null,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,usage:null,skills:[],liveVerified:false,messages:[],shellEnabled:false,shellUnavailableReason:null,shellResults:[],activity:{items:[],truncated:false},pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,permissionDescription:fileDescription,planReadOnlyEnforced:false};
  let epoch=0,owner=null,connecting=false,workspace=null,closing=null;
  const listeners=new Set();
@@ -160,6 +163,7 @@ export function createExecRuntime({durableSessions=false,environment=process.env
     let record;try{record=JSON.parse(raw);}catch{throw Error('Muse sent malformed JSON output. Inspect partial changes before reconnecting.');}
     const value=fold.accept(record);
     const expectedSession=args.includes('--session-id')?args[args.indexOf('--session-id')+1]:null;
+    if(model&&state.runOptions?.model&&value.modelId&&value.modelId!==state.runOptions.model)throw Error('Native model identity differs from the selected model. Run stopped.');
     if(model&&expectedSession&&value.sessionId&&value.sessionId!==expectedSession)throw Error('Native output belongs to another session.');
     if(value.approvalRequested){void abort('Muse requested approval or interactive input. This native mode cannot safely answer it; the run was stopped without approval.','blocked');return;}
     if(model&&token===epoch){
@@ -262,10 +266,17 @@ export function createExecRuntime({durableSessions=false,environment=process.env
   }finally{if(token===epoch)connecting=false;}
  }
 
+ async function refreshModels(){
+  if(connecting||closing||!usable.has(state.status)||!state.permissionVerified||modelRead)throw Error('Connect an idle runtime before refreshing models.');
+  const token=epoch;modelRead=loadModels({binary:state.binary,environment:env,workspace});
+  try{const catalog=await modelRead;current(token);update({modelCatalog:catalog});return snapshot();}
+  catch(error){if(error.code==='CATALOG_CLEANUP')update({status:'unavailable',cleanup:'unconfirmed',permissionVerified:false});throw error;}finally{modelRead=null;}
+ }
  async function send({text,mode='chat',runOptions,imagePaths=[],sessionId=null,resumeSession=false}={}) {
   const options=validateRunOptions(runOptions);
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a message up to 64,000 characters in chat or plan mode.');
   if(connecting||closing||!state.permissionVerified||!usable.has(state.status)||owner&&!owner.closed)throw Error('Muse is blocked or uncertain. Connect a verified native runtime first.');
+  if(options.model||state.modelCatalog){await refreshModels();modelForOptions(state.modelCatalog,options);}
   const selectedBudget=options.budget?runBudget(options.budget):null;
   const limits={steps:selectedBudget?.steps??maxModelSteps,wallTimeMs:selectedBudget?selectedBudget.minutes*60000:runTimeoutMs,tokenBudget:null};
   const token=epoch;update({status:'checking-permissions',reason:null});
@@ -289,7 +300,7 @@ export function createExecRuntime({durableSessions=false,environment=process.env
  async function disconnect(){
   if(closing){await closing;return snapshot();}
   if(state.cleanup==='unconfirmed')return snapshot();
-  ++epoch;connecting=false;const previous=owner;
+  ++epoch;connecting=false;if(modelRead){try{await modelRead;}catch(error){if(error.code==='CATALOG_CLEANUP'){update({cleanup:'unconfirmed',permissionVerified:false,status:'unavailable'});return snapshot();}}}const previous=owner;
   if(previous)previous.stopped=true;
   update({status:'unavailable',reason:'Disconnected. Connect again to verify the native runtime.',sessionId:null,permissionVerified:false,permissionProfile:null,pending:null,liveVerified:false,cleanup:'pending'});
   closing=release(previous);const cleanup=await closing;closing=null;
@@ -297,5 +308,5 @@ export function createExecRuntime({durableSessions=false,environment=process.env
   update({cleanup,...(cleanup==='unconfirmed'?{reason:'Native shutdown could not be confirmed. Check the process before restarting MuseBench.'}:{})});return snapshot();
  }
 
- return {snapshot,subscribe(fn){if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,send,disconnect,close:disconnect,async decide(){throw Error('Interactive approval is unavailable in native mode. No approval was sent; disconnect and inspect any partial changes.');}};
+ return {snapshot,subscribe(fn){if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,refreshModels,send,disconnect,close:disconnect,async decide(){throw Error('Interactive approval is unavailable in native mode. No approval was sent; disconnect and inspect any partial changes.');}};
 }

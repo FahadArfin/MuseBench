@@ -273,3 +273,13 @@ test('explicit budget reaches native step limit and runtime deadline metadata',a
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Investigate',runOptions:{reasoning:'high',approval:'ask',budget:'extended'}});
  const args=h.calls.findLast(c=>c.args.includes('meta')).args;assert.equal(args[args.indexOf('--max-model-steps')+1],'32');const state=h.runtime.snapshot();assert.equal(state.runLimits.steps,32);assert.equal(state.runLimits.wallTimeMs,900000);assert.equal(state.runLimits.tokenBudget,null);
 });
+test('model selection revalidates efforts, forwards exact model and retains sandbox and disabled web',async t=>{
+ let calls=0;const catalog={source:'providerCatalog',models:[{id:'muse-spark-test',efforts:['low','high'],isDefault:true}]};const h=await harness(t,{loadModels:async()=>{calls++;return catalog;}});await h.connect();await h.runtime.refreshModels();
+ await assert.rejects(h.runtime.send({text:'No',runOptions:{model:'muse-spark-test',reasoning:'ultra',approval:'ask'}}),/reasoning/);assert.equal(h.calls.some(c=>c.args.includes('meta')),false);
+ await h.runtime.send({text:'Test',runOptions:{model:'muse-spark-test',reasoning:'low',approval:'ask'}});const args=h.calls.at(-1).args;assert.equal(args[args.indexOf('--model')+1],'muse-spark-test');assert.equal(args.includes('--disable-web-tools'),true);assert.equal(args.includes('--disable-sandbox'),false);assert.ok(args.includes('hooks={}'));assert.equal(calls,3);
+});
+test('disconnect during catalog lookup cannot start a later model request',async t=>{
+ let release;const h=await harness(t,{loadModels:()=>new Promise(resolve=>{release=resolve;})});await h.connect();const pending=h.runtime.send({text:'Test',runOptions:{model:'muse-spark-test',reasoning:'low',approval:'ask'}});const failed=assert.rejects(pending,/interrupted|disconnected/i);const close=h.runtime.disconnect();release({source:'providerCatalog',models:[]});await failed;await close;assert.equal(h.calls.some(c=>c.args.includes('meta')),false);
+});
+
+test('selected model mismatch fails before accepting a completed run',async t=>{const h=await harness(t,{loadModels:async()=>({models:[{id:'expected-model',efforts:['high']}]})});await h.connect();await h.runtime.send({text:'Test',runOptions:{model:'expected-model',reasoning:'high',approval:'ask'}});h.model().stdout.emit('data',Buffer.from(jsonl(records())));await tick();assert.equal(h.runtime.snapshot().status,'uncertain');assert.match(h.runtime.snapshot().reason,/identity/);});

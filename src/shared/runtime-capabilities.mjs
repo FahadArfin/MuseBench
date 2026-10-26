@@ -12,8 +12,8 @@ export function runtimeCapabilities(runtime={}) {
   row('questions','Answer agent questions',false,'Interactive user-input requests are not supported by this adapter.'),
   row('childControls','Child agent controls',false,'Activity can be displayed; child messaging and cancellation are not connected.'),
   row('compaction','Native context compaction',false,'Local context trimming does not compact the native session.'),
-  row('modelSelection','Model selection',false,'This connection uses the Muse provider default model.'),
-  row('web','Native web tools',false,'Web tools are disabled in the current execution profile.'),
+  row('modelSelection','Model selection',exec,'This connection uses the Muse provider default model.'),
+  row('web','Native web tools',false,'Native web_fetch stalled in headless validation; web tools remain disabled.'),
   row('hooks','Native hooks',false,'Hooks are disabled in the current execution profile.'),
  ];
 }

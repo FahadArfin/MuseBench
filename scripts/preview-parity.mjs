@@ -7,7 +7,7 @@ import path from 'node:path';
 import {pathToFileURL} from 'node:url';
 const output=path.resolve('artifacts/preview-parity');await mkdir(output,{recursive:true});
 const offline=`window.fetch=async(input)=>{if(String(input).includes('/__musebench_snapshots/manifest.json'))return new Response(JSON.stringify({version:1,pages:{}}),{status:200,headers:{'Content-Type':'application/json'}});throw Error('Network unavailable in parity fixtures');};`;
-const fixture=offline+(await build({stdin:{contents:"import {createPreviewBridge} from './src/preview/bridge.ts';window.musebench=createPreviewBridge();",resolveDir:process.cwd()},bundle:true,write:false,format:'iife',platform:'browser'})).outputFiles[0].text;
+const fixture=offline+(await build({stdin:{contents:"import {createPreviewBridge} from './src/preview/bridge.ts';window.musebench=createPreviewBridge();",resolveDir:process.cwd()},bundle:true,write:false,loader:{'.md':'text'},format:'iife',platform:'browser'})).outputFiles[0].text;
 const server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-parity',server:{host:'127.0.0.1',port:4322,strictPort:true},plugins:[{name:'production-renderer-fixture',configureServer(server){server.middlewares.use('/__desktop__',async(req,res)=>{const file=(req.url??'').split('?')[0];try{
  if(file==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixture);return;}
  if(file!=='/index.html'&&!/^\/assets\/[a-zA-Z0-9._-]+$/.test(file)){res.statusCode=404;res.end();return;}
