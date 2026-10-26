@@ -35,7 +35,7 @@ async function within(promise,milliseconds=1000){
   finally{clearTimeout(timer);}
 }
 
-async function harness(t,{durableSessions=false,missingSession=false}={}){
+async function harness(t,{durableSessions=false,missingSession=false,background=false}={}){
   const base=await mkdtemp(join(tmpdir(),'musebench-exec-controller-'));
   const root=join(base,'project'),profile=join(base,'profile'),binary=join(base,'injected-muse.exe');
   await mkdir(root);await mkdir(profile);
@@ -57,9 +57,10 @@ async function harness(t,{durableSessions=false,missingSession=false}={}){
     });
     return child;
   }
-  const runtime=createExecRuntime({durableSessions,platform:'win32',environment:{PATH:'',USERPROFILE:profile,SystemRoot:'C:\\Windows'},spawnProcess,stopProcess:async child=>{stopped.push(child);child.finish(1);return true;},timeoutMs:1000,runTimeoutMs:5000});
+  const factory=()=>createExecRuntime({durableSessions,platform:'win32',environment:{PATH:'',USERPROFILE:profile,SystemRoot:'C:\\Windows'},spawnProcess,stopProcess:async child=>{stopped.push(child);child.finish(1);return true;},timeoutMs:1000,runTimeoutMs:5000});
+  const runtime=factory();
   const dataDir=join(base,'data');
-  const controller=await createController({dataDir,runtime});
+  const controller=await createController({dataDir,runtime,...(background?{runtimeFactory:factory}:{})});
   t.after(async()=>{await controller.close();await runtime.close();await rm(base,{recursive:true,force:true,maxRetries:3,retryDelay:50});});
   let state=await controller.dispatch({type:'openProject',path:root});assert.equal(state.error,null);
   state=await controller.dispatch({type:'newTask',request:'Update the disposable review project',mode:'muse'});assert.equal(state.error,null);
@@ -247,4 +248,12 @@ test('branching a durable chat creates an independent native session',async t=>{
 });
 test('native output from another session never completes the bound chat',async t=>{
  const h=await harness(t,{durableSessions:true});await h.send();const call=h.calls.findLast(c=>c.args.includes('meta'));call.child.stdout.emit('data',Buffer.from(jsonl(frames())));await tick();const state=h.controller.getState();assert.equal(state.task.runtimeComplete,false);assert.match(state.runtime.reason,/another session/);assert.equal(state.task.nativeSession.status,'needs-recovery');
+});
+
+test('two native exec owners keep session events and cancellation isolated',async t=>{
+ const h=await harness(t,{durableSessions:true,background:true});await h.send();let state=h.controller.getState();const firstId=state.task.id,firstSession=state.task.nativeSession.id,first=h.calls.findLast(c=>c.args.includes('meta'));
+ const secondRoot=join(h.dataDir,'..','second');await mkdir(secondRoot);state=await h.controller.dispatch({type:'openProject',path:secondRoot});assert.equal(state.error,null);await h.controller.dispatch({type:'newTask',mode:'muse',request:'Second isolated task'});await h.send();state=h.controller.getState();const secondId=state.task.id,second=h.calls.findLast(c=>c.args.includes('meta'));assert.notEqual(second,first);assert.notEqual(state.task.nativeSession.id,firstSession);
+ first.child.stdout.emit('data',Buffer.from(jsonl(frames({sessionId:firstSession,runId:'background-native',text:'Background native result'}))));first.child.finish();await tick();assert.equal(h.controller.getState().task.id,secondId);assert.ok(!h.controller.getState().task.messages.some(m=>m.text==='Background native result'));
+ state=await h.controller.dispatch({type:'selectTask',id:firstId});assert.equal(state.error,null);assert.equal(state.task.nativeSession.status,'ready');assert.equal(state.task.runtimeComplete,true);assert.ok(state.task.messages.some(m=>m.text==='Background native result'));assert.equal(second.child.closed,false);
+ await h.controller.close();assert.equal(second.child.closed,true);
 });

@@ -31,7 +31,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const other=task('Polish the chat composer','preview-composer');
  other.messages.push({id:id(),role:'assistant',at:stamp,text:'A compact composer keeps attachments, reasoning, and approval controls close to your message. Open the menus to review their spacing.'});
  const tasks=new Map([initial,other].map(t=>[t.id,t]));
- const state:AppState={projectCreationRoot:'Documents/MuseBench',projects:[project],tasks:[initial,other],activeProject:project,task:initial,checkpoints:[],preview:{status:'stopped',url:null,log:'',script:null},runtime:copy(runtime),busy:false,error:null,drafts:{}};
+ const state:AppState={backgroundChats:true,projectCreationRoot:'Documents/MuseBench',projects:[project],tasks:[initial,other],activeProject:project,task:initial,checkpoints:[],preview:{status:'stopped',url:null,log:'',script:null},runtime:copy(runtime),busy:false,error:null,drafts:{}};
  const code=channel(()=>state);
  function sync(){state.tasks=[...tasks.values()];return code.emit();}
  const sampleWorktrees:import('../shared/types').ManagedWorktree[]=[];

@@ -41,13 +41,13 @@ else {
     const helperPath = app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchJob.exe') : path.join(root,'native','bin','MuseBenchJob.exe');
     const dataDir = app.getPath('userData');
     const extensionReview=createExtensionReview({dataDir,profile:process.env.USERPROFILE});
-    const runtime = process.platform === 'win32' ? createExecRuntime({helperPath,extensionReview,durableSessions:true}) : createRuntime();
+    const runtimeFactory = () => process.platform === 'win32' ? createExecRuntime({helperPath,extensionReview,durableSessions:true}) : createRuntime();
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.13 can stall before shell launch inside the user profile.
     // New working copies have their own location; saved originals stay put.
     const projectsDir = projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride
       : process.platform === 'win32' ? path.join(path.parse(dataDir).root,'MuseBenchWorkspaces',createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0,12)) : undefined;
-    controller = await createController({ dataDir, projectsDir, newProjectsDir: projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride : path.join(app.getPath('documents'),'MuseBench'), templateDir: path.join(root,'templates','tea-store'), runtime });
+    controller = await createController({ dataDir, projectsDir, newProjectsDir: projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride : path.join(app.getPath('documents'),'MuseBench'), templateDir: path.join(root,'templates','tea-store'), runtimeFactory });
     // Windows can redirect the app's known Roaming folder under its package
     // identity. Anchor Work's strict path checks to that trusted physical root.
     const workDataDir=await workDataDirectory(dataDir);

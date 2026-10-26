@@ -23,3 +23,5 @@
 .sidebar-drop-end.visible{border:1px dashed var(--border)}
 .sidebar-drop-end.sidebar-drop-target{border-color:#3989fa;background:color-mix(in srgb,#3989fa 12%,transparent)}
 .sidebar-move-announcement{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+
+.chat-row .chat-running{flex:0 0 auto;color:var(--accent);font-size:10px;margin-left:auto}

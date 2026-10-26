@@ -41,7 +41,7 @@ export function ChatSidebar({orders,projects,tasks,selectedId,projectId,overview
    const props=dropProps(section,destinationId,chat.id);
    return <div {...props} className={`sidebar-chat ${props.className}`} key={chat.id} draggable={!busy} onDragStart={event=>start(event,'chat',chat.id)} onDragEnd={finish}>
      <button className={`chat-row ${chat.id===selectedId&&!overview?'selected':''}`} title={`${chat.title}${chat.pinned?' · Pinned':''} · Drag to move, or Alt+Shift+Up/Down to reorder`} aria-label={chat.title} aria-description={chat.pinned?'Pinned chat. Drag to move or Alt+Shift+arrows to reorder.':'Drag to move or Alt+Shift+arrows to reorder.'} disabled={busy} onClick={()=>{if(!suppressClick.current)onChat(chat.id);}} onContextMenu={event=>open(chat,event)} onKeyDown={event=>{if(keyboardMove(event,'chat',chat.id,section,items,destinationId))return;if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')open(chat,event);}}>
-       {chat.pinned&&!chat.archived&&<Pin size={12} className="chat-pinned-icon" aria-hidden="true"/>}<span>{chat.title}</span>
+       {chat.pinned&&!chat.archived&&<Pin size={12} className="chat-pinned-icon" aria-hidden="true"/>}<span>{chat.title}</span>{chat.runtimeStatus&&['running','starting','submitting','connecting','checking-permissions'].includes(chat.runtimeStatus)&&<span className="chat-running" role="status" aria-label="Chat running">●</span>}
      </button>
      <button className="chat-options icon-button" aria-label={`Chat options for ${chat.title}`} disabled={busy} onClick={event=>open(chat,event)}><MoreHorizontal size={14}/></button>
    </div>;
