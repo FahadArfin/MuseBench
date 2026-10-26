@@ -14,9 +14,9 @@ const jsonl=values=>values.map(value=>JSON.stringify(value)).join('\n')+'\n';
 
 // These synthetic protocol frames cross the real exec fold, runtime owner and
 // controller subscription. Neither a Muse executable nor a model is invoked.
-function frames({terminal='completed',text='The requested change is complete.',reason=null,model=true}={}){
+function frames({terminal='completed',text='The requested change is complete.',reason=null,model=true,sessionId='native-session',runId='native-run'}={}){
   let sequence=0;
-  const commandId='controller-command',sessionId='native-session',runId='native-run';
+  const commandId='controller-command';
   const event=(type,kind,fields={})=>({schema_version:1,payload_schema_version:1,id:`frame-${++sequence}`,stream:{kind:'session',id:sessionId},sequence,recorded_at:1000+sequence,record_type:'event',durability:'durable',causation_id:commandId,payload_type:type,payload:{kind,command_id:commandId,...fields}});
   const run={run_stream:{kind:'run',id:runId}};
   return [
@@ -35,7 +35,7 @@ async function within(promise,milliseconds=1000){
   finally{clearTimeout(timer);}
 }
 
-async function harness(t){
+async function harness(t,{durableSessions=false,missingSession=false}={}){
   const base=await mkdtemp(join(tmpdir(),'musebench-exec-controller-'));
   const root=join(base,'project'),profile=join(base,'profile'),binary=join(base,'injected-muse.exe');
   await mkdir(root);await mkdir(profile);
@@ -51,12 +51,13 @@ async function harness(t){
       child.emit('spawn');
       if(args[0]==='--version'){child.stdout.emit('data',Buffer.from('Muse Code 1.4.13 (1.4.13-R6996.1)'));child.finish();}
       else if(args[0]==='sandbox'){child.stdout.emit('data',Buffer.from(readiness));child.finish();}
+      else if(args[0]==='export'){child.finish(missingSession?1:0);}
       else if(args[0]==='config'){child.stdout.emit('data',Buffer.from(configuration));child.finish();}
       else if(args.includes('echo')){child.stdout.emit('data',Buffer.from(jsonl(frames({model:false}))));child.finish();}
     });
     return child;
   }
-  const runtime=createExecRuntime({platform:'win32',environment:{PATH:'',USERPROFILE:profile,SystemRoot:'C:\\Windows'},spawnProcess,stopProcess:async child=>{stopped.push(child);child.finish(1);return true;},timeoutMs:1000,runTimeoutMs:5000});
+  const runtime=createExecRuntime({durableSessions,platform:'win32',environment:{PATH:'',USERPROFILE:profile,SystemRoot:'C:\\Windows'},spawnProcess,stopProcess:async child=>{stopped.push(child);child.finish(1);return true;},timeoutMs:1000,runTimeoutMs:5000});
   const dataDir=join(base,'data');
   const controller=await createController({dataDir,runtime});
   t.after(async()=>{await controller.close();await runtime.close();await rm(base,{recursive:true,force:true,maxRetries:3,retryDelay:50});});
@@ -83,6 +84,20 @@ test('screenshot follows draft, queue and native image argument without embeddin
  const args=h.calls.findLast(c=>c.args.includes('meta')).args;assert.ok(args.includes('--image'));assert.match(args[args.indexOf('--image')+1],/code-images/);assert.deepEqual(state.task.messages.find(m=>m.role==='user').images,[image]);assert.ok(!JSON.stringify(state).includes('base64'));
  await h.controller.dispatch({type:'disconnectMuse'});await h.controller.close();
  const reopened=await createController({dataDir:h.dataDir});try{assert.equal(reopened.getState().drafts[`${projectId}:${taskId}`].images[0].id,image.id);assert.match(await reopened.readImage({projectId,image}),/^data:image\/png/);}finally{await reopened.close();}
+});
+
+test('durable Code chat reuses its native session without replaying history and requires recovery after stop',async t=>{
+ const h=await harness(t,{durableSessions:true});let state=await h.controller.dispatch({type:'sendMessage',text:'Remember the first request'});assert.equal(state.error,null);
+ const sessionId=state.task.nativeSession.id,call=h.calls.findLast(c=>c.args.includes('meta'));
+ assert.equal(call.args[call.args.indexOf('--session-id')+1],sessionId);assert.ok(!call.args.includes('--no-session-log'));
+ call.child.stdout.emit('data',Buffer.from(jsonl(frames({sessionId,runId:'first-run',text:'UNIQUE_OLD_RESPONSE'}))));call.child.finish();await tick();
+ assert.equal(h.controller.getState().task.nativeSession.status,'ready');
+ state=await h.controller.dispatch({type:'sendMessage',text:'Continue with a different request'});assert.equal(state.error,null);const next=h.calls.findLast(c=>c.args.includes('meta'));
+ assert.equal(next.args[next.args.indexOf('--session-id')+1],sessionId);assert.ok(!next.args.at(-1).includes('UNIQUE_OLD_RESPONSE'));assert.ok(next.args.at(-1).includes('existing native session'));
+ assert.ok(h.calls.some(c=>c.args[0]==='export'));
+ await h.controller.dispatch({type:'disconnectMuse'});assert.equal(h.controller.getState().task.nativeSession.status,'needs-recovery');
+ state=await h.controller.dispatch({type:'sendMessage',text:'Do not silently resume'});assert.match(state.error,/Session/);
+ state=await h.controller.dispatch({type:'recoverSession',choice:'fresh'});assert.equal(state.task.nativeSession,null);
 });
 
 test('exec/controller accepts completion attribution only after the authoritative terminal and exit zero',async t=>{
@@ -208,4 +223,28 @@ test('exec/controller replaces streamed assistant claims with an empty failed te
     assert.equal(restored.task.messages.some(message=>message.text.includes('unverified assistant claim')),false,'provisional claims must not return from the persisted task journal');
     assert.equal(restored.task.runtimeComplete,false);
   }finally{await reopened.close();}
+});
+
+ test('first-turn input receipt survives restart and stop before terminal, and resumes with offset',async t=>{
+ const h=await harness(t,{durableSessions:true});await h.send();const id=h.controller.getState().task.nativeSession.id,call=h.calls.findLast(c=>c.args.includes('meta'));
+ const rows=frames({sessionId:id,runId:'first-live'}).slice(0,2);rows.push({...rows[1],id:'input-receipt',sequence:3,payload_type:'turn.input.user',payload:{kind:'turn_input_user',command_id:'controller-command',run_stream:{kind:'run',id:'first-live'},prompt:'Accepted prompt'}});
+ call.child.stdout.emit('data',Buffer.from(jsonl(rows)));assert.equal(h.controller.getState().task.nativeSession.seeded,true);
+ const reopened=await createController({dataDir:h.dataDir});assert.equal(reopened.getState().task.nativeSession.seeded,true);assert.equal(reopened.getState().task.nativeSession.status,'needs-recovery');await reopened.close();
+ await h.controller.dispatch({type:'disconnectMuse'});await h.controller.dispatch({type:'recoverSession',choice:'continue'});
+ let state=await h.controller.dispatch({type:'sendMessage',text:'Continue after stop'});assert.equal(state.error,null);const next=h.calls.findLast(c=>c.args.includes('meta'));assert.ok(next.args.at(-1).includes('existing native session'));assert.ok(h.calls.some(c=>c.args[0]==='export'));
+ const resumed=frames({sessionId:id,runId:'resumed'}).map(row=>({...row,sequence:row.sequence+20}));next.child.stdout.emit('data',Buffer.from(jsonl(resumed)));next.child.finish();await tick();assert.equal(h.controller.getState().task.nativeSession.status,'ready');
+ });
+ test('unacknowledged first-turn interruption requires a fresh session',async t=>{const h=await harness(t,{durableSessions:true});await h.send();await h.controller.dispatch({type:'disconnectMuse'});const state=await h.controller.dispatch({type:'recoverSession',choice:'continue'});assert.match(state.error,/receipt was not confirmed/);});
+
+test('missing retained native log blocks resume without launching another model',async t=>{
+ const h=await harness(t,{durableSessions:true,missingSession:true});await h.send();const id=h.controller.getState().task.nativeSession.id,call=h.calls.findLast(c=>c.args.includes('meta'));call.child.stdout.emit('data',Buffer.from(jsonl(frames({sessionId:id}))));call.child.finish();await tick();
+ const state=await h.controller.dispatch({type:'sendMessage',text:'Resume missing log'});assert.ok(state.error);assert.equal(h.calls.filter(c=>c.args.includes('meta')).length,1);assert.equal(state.task.nativeSession.id,id);
+});
+test('branching a durable chat creates an independent native session',async t=>{
+ const h=await harness(t,{durableSessions:true});await h.send();let state=h.controller.getState();const id=state.task.nativeSession.id,call=h.calls.findLast(c=>c.args.includes('meta'));call.child.stdout.emit('data',Buffer.from(jsonl(frames({sessionId:id}))));call.child.finish();await tick();state=h.controller.getState();
+ state=await h.controller.dispatch({type:'forkTask',messageId:state.task.messages.find(m=>m.role==='assistant').id});assert.equal(state.error,null);assert.ok(!state.task.nativeSession);
+ state=await h.controller.dispatch({type:'sendMessage',text:'Independent branch'});assert.equal(state.error,null);assert.notEqual(state.task.nativeSession.id,id);
+});
+test('native output from another session never completes the bound chat',async t=>{
+ const h=await harness(t,{durableSessions:true});await h.send();const call=h.calls.findLast(c=>c.args.includes('meta'));call.child.stdout.emit('data',Buffer.from(jsonl(frames())));await tick();const state=h.controller.getState();assert.equal(state.task.runtimeComplete,false);assert.match(state.runtime.reason,/another session/);assert.equal(state.task.nativeSession.status,'needs-recovery');
 });

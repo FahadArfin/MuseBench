@@ -41,7 +41,7 @@ else {
     const helperPath = app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchJob.exe') : path.join(root,'native','bin','MuseBenchJob.exe');
     const dataDir = app.getPath('userData');
     const extensionReview=createExtensionReview({dataDir,profile:process.env.USERPROFILE});
-    const runtime = process.platform === 'win32' ? createExecRuntime({helperPath,extensionReview}) : createRuntime();
+    const runtime = process.platform === 'win32' ? createExecRuntime({helperPath,extensionReview,durableSessions:true}) : createRuntime();
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.13 can stall before shell launch inside the user profile.
     // New working copies have their own location; saved originals stay put.

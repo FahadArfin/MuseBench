@@ -22,7 +22,7 @@ const BACKGROUND_CLIENT = 'muse-runtime-background-terminal';
  * finish requires the caller's confirmed process exit, never a turn boundary.
  */
 export function createExecConversationFold({
-  maxText = 200000, maxRecords = 20000, maxShellBytes = 200000, maxShellResults = 64,
+  allowSessionOffset = false, maxText = 200000, maxRecords = 20000, maxShellBytes = 200000, maxShellResults = 64,
   maxHandoffs = 4, maxActivityItems = 120, maxActivityBytes = 200000,
 } = {}) {
   const limits = { maxText, maxRecords, maxShellBytes, maxShellResults };
@@ -107,7 +107,7 @@ export function createExecConversationFold({
     if (record.stream.kind === 'exec.usage' && record.payload_type !== 'run.usage') fail('Unexpected event in the usage stream.');
     if (!Number.isSafeInteger(record.sequence) || record.sequence < 1 || recordIds.has(record.id)) fail('Duplicate record id or invalid sequence.');
     const key = `${record.stream.kind}:${record.stream.id}`;
-    if (record.sequence !== (sequences.get(key) ?? 0) + 1) fail('Non-contiguous global stream sequence.');
+    if (record.sequence !== (sequences.get(key) ?? (allowSessionOffset && record.stream.kind === 'session' ? record.sequence - 1 : 0)) + 1) fail('Non-contiguous global stream sequence.');
     return key;
   }
 

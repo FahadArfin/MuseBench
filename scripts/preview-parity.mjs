@@ -52,6 +52,9 @@ try{
  async function click(selector,label){for(const page of [browserPage,desktopPage])await page.evaluate(({selector,label})=>{const elements=[...document.querySelectorAll(selector)].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height);const element=elements.find(e=>(e.getAttribute('aria-label')||e.textContent?.trim())===label);if(!element)throw Error(`Missing visible control ${selector} ${label}`);element.click();},{selector,label});}
  async function escape(){for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));}
  await compare('code-chat');
+ await click('button','Add to chat');await click('button','Skills');await compare('skills-picker');await click('button','Close skills');
+ await click('button','Add to chat');await click('button','Worktrees');await compare('worktrees-dialog');await click('button','Close worktrees');
+ await click('button','Add to chat');await click('button','Session');await compare('session-dialog');await click('button','Close session');
  await click('button','View changes');await compare('file-changes');
  await click('summary','Choose editor for src/ProjectOverview.tsx');await compare('file-editor-menu');
  await click('button','Close details panel');

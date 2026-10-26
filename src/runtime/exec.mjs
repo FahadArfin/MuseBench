@@ -1,7 +1,8 @@
 import {preparePrompt} from './prompt-file.mjs';
 import {execFile} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {open,realpath,stat,lstat} from 'node:fs/promises';
+import {open,realpath,stat,lstat,mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import {dirname,isAbsolute,join,relative,sep} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
 import {promisify} from 'node:util';
@@ -34,17 +35,17 @@ function stderrReason(value) {
  return 'Muse failed. Inspect partial changes and use the official CLI for additional diagnostics.';
 }
 
-function permissionArgs(shellEnabled,approval='ask') {
- return [...approvalArguments(approval),'--no-session-log',...(!shellEnabled?['--disable-shell']:[]),'--disable-web-tools','--disable-reminders','--disable-request-user-input','--no-foreign-personal-context','--max-tool-output-bytes','65536','-c','hooks={}','-c','managed_hooks_path=null'];
+function permissionArgs(shellEnabled,approval='ask',sessionId=null) {
+ return [...approvalArguments(approval),...(sessionId?['--session-id',sessionId]:['--no-session-log']),...(!shellEnabled?['--disable-shell']:[]),'--disable-web-tools','--disable-reminders','--disable-request-user-input','--no-foreign-personal-context','--max-tool-output-bytes','65536','-c','hooks={}','-c','managed_hooks_path=null'];
 }
 
-function execArgs(workspace,provider,prompt,maxSteps,shellEnabled,runOptions) {
+function execArgs(workspace,provider,prompt,maxSteps,shellEnabled,runOptions,sessionId=null) {
  const options=validateRunOptions(runOptions);
- return ['exec','--provider',provider,'--json','--workspace',workspace,...permissionArgs(shellEnabled,options.approval),...(provider==='meta'?['--reasoning-effort',options.reasoning]:[]),'--max-model-steps',String(maxSteps),'--',prompt];
+ return ['exec','--provider',provider,'--json','--workspace',workspace,...permissionArgs(shellEnabled,options.approval,sessionId),...(provider==='meta'?['--reasoning-effort',options.reasoning]:[]),'--max-model-steps',String(maxSteps),'--',prompt];
 }
 
-function shellPrompt(workspace,prompt) {
- return `This is an independent MuseBench request. Use only Muse's managed powershell tool for project commands. Before project commands in every PowerShell invocation, run Set-Location -LiteralPath '${workspace.replaceAll("'","''")}' to normalize the Windows working directory. Do not start background or detached processes or use any alternative host execution method. If human approval is required or the sandbox cannot run a command, stop and explain; MuseBench cannot answer interactive approvals. Native command results do not replace MuseBench Checks or review.\n\n${prompt}`;
+function shellPrompt(workspace,prompt,durable=false) {
+ return `This is ${durable?'a continuation of this MuseBench session':'an independent MuseBench request'}. Use only Muse's managed powershell tool for project commands. Before project commands in every PowerShell invocation, run Set-Location -LiteralPath '${workspace.replaceAll("'","''")}' to normalize the Windows working directory. Do not start background or detached processes or use any alternative host execution method. If human approval is required or the sandbox cannot run a command, stop and explain; MuseBench cannot answer interactive approvals. Native command results do not replace MuseBench Checks or review.\n\n${prompt}`;
 }
 
 export async function checkConfiguration({environment,workspaceRoot,extensionReview}) {
@@ -106,12 +107,12 @@ function deadline(promise,timeoutMs,message) {
 /** The synthetic sessionId is a readiness handle used by the controller. Actual
  * native session/command/run identifiers are separate and change on every send.
  * The injected process boundary is used by contract tests, never by product UI. */
-export function createExecRuntime({environment=process.env,platform=process.platform,helperPath=defaultHelperPath,spawnProcess,stopProcess=stopNativeProcess,verifyConfiguration=checkConfiguration,extensionReview,timeoutMs=10000,runTimeoutMs=180000,maxModelSteps=8}={}) {
+export function createExecRuntime({durableSessions=false,environment=process.env,platform=process.platform,helperPath=defaultHelperPath,spawnProcess,stopProcess=stopNativeProcess,verifyConfiguration=checkConfiguration,extensionReview,timeoutMs=10000,runTimeoutMs=180000,maxModelSteps=8}={}) {
  if(platform!=='win32')throw Error('The native exec compatibility mode is supported only on Windows.');
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000||!Number.isInteger(runTimeoutMs)||runTimeoutMs<1||runTimeoutMs>180000||!Number.isInteger(maxModelSteps)||maxModelSteps<1||maxModelSteps>16)throw Error('Invalid Muse runtime limits.');
  const env=curateEnvironment(environment),candidates=discoverMuseBinaries({environment,platform});
  const spawnNative=spawnProcess??createJobSpawner({helperPath});
- let state={status:'unavailable',reason:candidates.length?'Connect to verify the native Windows sandbox and exec format.':'Install official Muse, then select its native executable.',binary:candidates[0]??null,sdkVersion:HOST_VERSION,transport:'exec',sessionId:null,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,liveVerified:false,messages:[],shellEnabled:false,shellUnavailableReason:null,shellResults:[],activity:{items:[],truncated:false},pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,permissionDescription:fileDescription,planReadOnlyEnforced:false};
+ let state={status:'unavailable',reason:candidates.length?'Connect to verify the native Windows sandbox and exec format.':'Install official Muse, then select its native executable.',binary:candidates[0]??null,sdkVersion:HOST_VERSION,transport:'exec',durableSessions,inputAccepted:false,sessionId:null,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,liveVerified:false,messages:[],shellEnabled:false,shellUnavailableReason:null,shellResults:[],activity:{items:[],truncated:false},pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,permissionDescription:fileDescription,planReadOnlyEnforced:false};
  let epoch=0,owner=null,connecting=false,workspace=null,closing=null;
  const listeners=new Set();
  const snapshot=()=>structuredClone(state);
@@ -132,9 +133,9 @@ export function createExecRuntime({environment=process.env,platform=process.plat
   return processOwner.stopPromise;
  }
 
- function begin(args,{token,model=false,probe=false,maxBytes=4*1024*1024,duration=timeoutMs}={}) {
+ function begin(args,{token,model=false,probe=false,resumeSession=false,maxBytes=4*1024*1024,duration=timeoutMs}={}) {
   current(token);if(owner&&!owner.closed)throw Error('The previous native process has not stopped.');
-  const fold=(model||probe)?createExecConversationFold():null;
+  const fold=(model||probe)?createExecConversationFold({allowSessionOffset:resumeSession}):null;
   const decoder=new StringDecoder('utf8'),messageId=randomUUID();
   let resolveResult,rejectResult,resolveClosed;
   const p={child:null,closed:false,stopped:false,settled:false,stopPromise:null,failure:null,timer:null,stdout:'',stderr:'',buffer:'',bytes:0,result:new Promise((resolve,reject)=>{resolveResult=resolve;rejectResult=reject;}),closedPromise:new Promise(resolve=>{resolveClosed=resolve;})};
@@ -158,12 +159,14 @@ export function createExecRuntime({environment=process.env,platform=process.plat
     if(!raw.trim())continue;if(raw.length>512*1024)throw Error('Muse output exceeded its record limit.');
     let record;try{record=JSON.parse(raw);}catch{throw Error('Muse sent malformed JSON output. Inspect partial changes before reconnecting.');}
     const value=fold.accept(record);
+    const expectedSession=args.includes('--session-id')?args[args.indexOf('--session-id')+1]:null;
+    if(model&&expectedSession&&value.sessionId&&value.sessionId!==expectedSession)throw Error('Native output belongs to another session.');
     if(value.approvalRequested){void abort('Muse requested approval or interactive input. This native mode cannot safely answer it; the run was stopped without approval.','blocked');return;}
     if(model&&token===epoch){
      const hadMessage=state.messages.some(item=>item.id===messageId);
      const messages=state.messages.filter(item=>item.id!==messageId);
      if(value.text||hadMessage)messages.push({id:messageId,kind:'agentMessage',text:value.text,status:'running',phase:'answer'});
-     update({nativeSessionId:value.sessionId,commandId:value.commandId,runId:value.runId,modelId:value.modelId,providerId:value.providerId,messages,activity:value.activity,ownedRunIds:value.ownedRunIds,shellResults:value.shellResults});
+     update({inputAccepted:state.inputAccepted||record.payload_type==='turn.input.user',nativeSessionId:value.sessionId,commandId:value.commandId,runId:value.runId,modelId:value.modelId,providerId:value.providerId,messages,activity:value.activity,ownedRunIds:value.ownedRunIds,shellResults:value.shellResults});
     }
    }
   }
@@ -259,19 +262,25 @@ export function createExecRuntime({environment=process.env,platform=process.plat
   }finally{if(token===epoch)connecting=false;}
  }
 
- async function send({text,mode='chat',runOptions,imagePaths=[]}={}) {
+ async function send({text,mode='chat',runOptions,imagePaths=[],sessionId=null,resumeSession=false}={}) {
   const options=validateRunOptions(runOptions);
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a message up to 64,000 characters in chat or plan mode.');
   if(connecting||closing||!state.permissionVerified||!usable.has(state.status)||owner&&!owner.closed)throw Error('Muse is blocked or uncertain. Connect a verified native runtime first.');
   const token=epoch;update({status:'checking-permissions',reason:null});
   try{await verifyConfiguration({environment:env,workspaceRoot:workspace,extensionReview});current(token);await verifyManagedConfiguration(token);current(token);await verifySandbox(token);current(token);}
   catch(error){if(token===epoch)update({status:'blocked',reason:safeReason(error.message),permissionVerified:false});throw error;}
+  if(sessionId&&resumeSession){
+   const dir=await mkdtemp(join(tmpdir(),'musebench-session-check-'));
+   try{await begin(['export','--session',sessionId,'--out',join(dir,'session.json'),'--redacted'],{token,maxBytes:65536}).result;current(token);}
+   catch{if(token===epoch)update({status:'blocked',reason:'Saved native session could not be reopened. Open Session and start fresh to continue with saved chat history.',permissionVerified:false});throw Error('Saved native session could not be reopened. Open Session and start fresh.');}
+   finally{await rm(dir,{recursive:true,force:true});}
+  }
   let prompt=mode==='plan'?`Plan the requested work and explain your proposed changes. Planning instructions are not an enforced read-only boundary.\n\n${text.trim()}`:text.trim();
-  if(state.shellEnabled)prompt=shellPrompt(workspace,prompt);
+  if(state.shellEnabled)prompt=shellPrompt(workspace,prompt,!!sessionId);
   let prepared;try{prepared=await preparePrompt(prompt);current(token);}catch(error){await prepared?.dispose();if(token===epoch)update({status:'blocked',reason:'The request context could not be prepared. Try sending again.',permissionVerified:false});throw error;}
   const label=options.approval==='ask'?'Ask me':options.approval==='auto'?'Auto-review':'No prompts (sandboxed)';
-  update({status:'running',reason:null,failureCode:null,liveVerified:false,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,shellResults:[],activity:{items:[],truncated:false},cleanup:undefined,runOptions:options,permissionProfile:options.approval==='never'?null:options.approval==='auto'?':auto-review':':ask-me',permissionArguments:permissionArgs(state.shellEnabled,options.approval),permissionDescription:(state.shellEnabled?shellDescription:fileDescription).replace('Ask me',label)});
-  try{current(token);const args=execArgs(workspace,'meta','',maxModelSteps,state.shellEnabled,options).slice(0,-2).concat(imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,duration:runTimeoutMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
+  update({status:'running',inputAccepted:false,reason:null,failureCode:null,liveVerified:false,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,shellResults:[],activity:{items:[],truncated:false},cleanup:undefined,runOptions:options,permissionProfile:options.approval==='never'?null:options.approval==='auto'?':auto-review':':ask-me',permissionArguments:permissionArgs(state.shellEnabled,options.approval,sessionId),permissionDescription:(state.shellEnabled?shellDescription:fileDescription).replace('Ask me',label).replace('Each request starts an independent native run',sessionId?"Each request resumes this chat’s native session":'Each request starts an independent native run')});
+  try{current(token);const args=execArgs(workspace,'meta','',maxModelSteps,state.shellEnabled,options,sessionId).slice(0,-2).concat(imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,resumeSession,duration:runTimeoutMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
   return snapshot();
  }
 

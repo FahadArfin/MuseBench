@@ -151,3 +151,14 @@ The UI test uses Electron itself and a disposable application data folder. No AP
 After account access and billing are ready, `npm.cmd run test:live -- --muse-bin C:\absolute\path\to\muse-bin-VERSION.exe` exercises one actual Muse edit and the complete desktop review workflow. This uses your account. Add `--connect-only` to check desktop integration and native readiness without a model request. See [LIVE-WORKFLOW.md](docs/LIVE-WORKFLOW.md) for details and reports.
 
 Add `--shell` to exercise a real sandboxed project test inside that Muse turn, its command card, the independent review check, and persistence. Add `--reasoning xhigh --approval auto` to verify selected run settings (`ask`, `auto`, `never`). Windows builds compile process-lifetime and local speech helpers using the installed .NET Framework x64 C# compiler; the packaged app includes both helpers and does not compile at runtime. `node scripts/composer-smoke.mjs` checks the composer and transcribes synthetic audio without using a microphone.
+
+## Code chat tools
+
+Use the composer’s **Add** menu for these tools in both desktop and browser preview:
+
+- **Screenshots:** paste, drop, or choose up to four PNG/JPEG/WebP images (8 MiB each). Attachments follow drafts, queued prompts, and chat history; desktop sends validated local image files to native Muse.
+- **Skills:** search the installed catalog or use shortcuts for planning, frontend delivery, Git, and workflow authoring. Availability and source diagnostics remain visible. Selecting a skill adds a request to the draft; it does not claim the runtime has loaded it.
+- **Worktrees:** create a new branch from a committed base, or reopen a retained worktree. Uncommitted source changes stay in the original folder. Dependencies, merging, and deletion remain explicit operations outside this picker.
+- **Session:** native Windows Code chats retain one Muse session per chat. Existing chats seed their history on the first request. Later requests continue that session without replaying history. Interrupted runs require Continue or Start fresh; an unconfirmed input receipt requires Start fresh. A missing native log blocks continuation rather than silently resetting context. Branching creates an independent session.
+
+The preview uses the same React components with simulated local data; it does not execute Git, call Muse, or inspect your account. Native session persistence currently applies to Windows Code chats; Work and Sites generation retain independent requests. This does not add live mid-run steering.

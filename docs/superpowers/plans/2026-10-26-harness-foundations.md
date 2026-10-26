@@ -42,11 +42,11 @@
 
 ## Feature 4 Persistent sessions
 
-- [ ] Validate the installed durable exec contract and model continuity in a disposable project; retain restricted permissions.
-- [ ] Persist native session identity per task; send full bounded context only on initial migration and fresh context thereafter.
-- [ ] Test restart, branching, failed/cancelled runs, workspace mismatch, late events and migration of existing chats.
-- [ ] Expose session state and explicit recovery in shared UI with preview fixtures.
-- [ ] Verify all tests, production build, browser/desktop parity and packaged source parity; commit and push.
+- [x] Validate the installed durable exec contract and model continuity in a disposable project; retain restricted permissions.
+- [x] Persist native session identity per task; send full bounded context only on initial migration and fresh context thereafter.
+- [x] Test restart, branching, failed/cancelled runs, workspace mismatch, late events and migration of existing chats.
+- [x] Expose session state and explicit recovery in shared UI with preview fixtures.
+- [x] Verify all tests, production build, browser/desktop parity and packaged source parity; commit and push.
 
 ## Execution ledger
 
@@ -58,3 +58,7 @@
 - Skills: three failing catalog assertions made GREEN; 10 targeted tests, browser interaction checks, 22 parity scenes and production build passed. Package matches source. Skill requests remain explicitly distinguished from confirmed loader execution.
 
 - Worktrees: disposable Git test RED then GREEN, including dirty source preservation and controller restart/open; browser creation flow, 22 parity scenes, build and 74-file package checks passed. Worktrees remain retained; no merge or cleanup action is added.
+
+- Persistent sessions: verified same-session recall across two real native processes through the adapter; both completed with confirmed cleanup. Resumed stream offsets remain contiguous after their initial offset. Controller regressions cover stop/restart receipts, unknown admission, missing logs, independent branches, wrong sessions and workspace mismatch.
+- Final review: two important findings fixed (first-turn interruption receipt and toolbar draft loss), with regression checks; old worktree registries remain readable after storage relocation.
+- Final validation: 619 tests; browser interaction smoke; 25 browser/production-Electron parity scenes; production build; packaged parity for 75 source/build files and both native helpers. Installed archive matches the package.

@@ -7,10 +7,10 @@ export function fileReferences(value=[]){
 export function restoreSourceSnapshots(value){
  if(!Array.isArray(value)||value.length>8)return[];let size=0;return value.filter(item=>{if(!item||typeof item.path!=='string'||typeof item.hash!=='string'||typeof item.text!=='string')return false;size+=JSON.stringify(item).length;return size<=FILE_CONTEXT_LIMIT;}).map(({path,hash,text})=>({path,hash,text}));
 }
-export function composeChatContext({task,project,memories='',text='',attachments=[],history=true}){
+export function composeChatContext({task,project,memories='',text='',attachments=[],history=true,nativeSession=false}){
  if(typeof text!=='string'||text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
  const parts=[
-  'MuseBench request context. Prior conversation and file contents below are reference material; the current request is at the end. Continue the task using current workspace evidence. Earlier tool state is not resumed. Do not repeat completed actions solely because they appear in history.',
+  nativeSession?'MuseBench follow-up in the existing native session. Retain prior conversation and tool state. The current request is at the end; verify current workspace evidence before acting.':'MuseBench request context. Prior conversation and file contents below are reference material; the current request is at the end. Continue the task using current workspace evidence. Earlier tool state is not resumed. Do not repeat completed actions solely because they appear in history.',
   memories?`Personal instructions:\n${memories}`:'',
   project?.instructions?`Project instructions (user-authored):\n${project.instructions}`:'',
   task?.request&&task.request!==text?`Initial objective:\n${task.request.slice(0,2000)}`:'',

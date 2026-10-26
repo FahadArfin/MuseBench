@@ -42,6 +42,14 @@ function builder() {
     text: JSON.stringify({ command: 'Get-Location', output: 'C:\\fixture', exit_code: 0, terminal_status: 'completed', truncated: false }) });
   return { rows, add, start, workflow, terminal, workflowTerminal, shell };
 }
+
+test('resumed sessions allow an initial sequence offset but still reject missing later records',()=>{
+ const b=builder();b.start();b.terminal('Done');
+ const rows=b.rows.map(row=>({...row,sequence:row.sequence+25}));
+ assert.throws(()=>createExecConversationFold().accept(rows[0]),/sequence/i);
+ const resumed=createExecConversationFold({allowSessionOffset:true});for(const row of rows)resumed.accept(row);assert.equal(resumed.finish(0).success,true);
+ const gap=createExecConversationFold({allowSessionOffset:true});gap.accept(rows[0]);assert.throws(()=>gap.accept({...rows[1],sequence:rows[1].sequence+1}),/sequence/i);
+});
 function sample({ shell = false, failedWorkflow = false } = {}) {
   const b = builder(); b.start(); b.workflow(); b.add('run.usage', { calls: 1 }); b.terminal('Started.');
   b.workflowTerminal('workflow-task-a', failedWorkflow ? 'failed' : 'completed'); b.start('b', 'muse-runtime-background-terminal');
