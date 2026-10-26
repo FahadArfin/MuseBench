@@ -1,0 +1,22 @@
+import {runBudget} from './run-options.mjs';
+const phase=(title,instructions,budget='standard')=>({title,instructions,budget});
+export const DEFAULT_WORKFLOWS=[
+ {id:'implement-verify',title:'Implement and verify',scope:['.'],checks:['Run the relevant checks and report their actual results.','Review the diff for unintended changes.'],phases:[phase('Plan','Inspect the project and propose a bounded implementation plan. Do not change files yet.'),phase('Implement','Implement the agreed objective with focused changes. Keep existing behavior compatible.','extended'),phase('Verify','Run relevant checks, inspect the diff, fix regressions and report evidence and remaining limitations. This is a self-review, not an independent reviewer.','extended')]},
+ {id:'investigate-bug',title:'Investigate a bug',scope:['.'],checks:['Record a reproducer and the evidence for the root cause.','Verify the reproducer and relevant regression checks after the fix.'],phases:[phase('Reproduce','Reproduce the problem and inspect the likely cause. Record evidence before proposing a fix.','extended'),phase('Fix','Implement one justified fix based on the evidence.','extended'),phase('Check','Re-run the reproducer and regression checks; report any unresolved behavior.')]},
+ {id:'review-change',title:'Review a change',scope:[],checks:['Report only actionable findings with file references and evidence.'],phases:[phase('Correctness','Inspect the changed code for correctness regressions. Do not edit files.','extended'),phase('Coverage and security','Review test coverage and security-sensitive boundaries. Do not edit files.','extended'),phase('Consolidate','Consolidate actionable findings, remove duplicates, and state what was not verified. Do not edit files.')]},
+ {id:'ui-parity',title:'UI parity review',scope:[],checks:['Compare desktop and browser at matching viewport sizes.','Distinguish simulated preview data from native desktop behavior.'],phases:[phase('Inspect','Identify shared UI components, preview fixtures and desktop integration points. Do not edit files.'),phase('Compare','Use available screenshot and test tools to compare both surfaces. Report missing access rather than inventing a result. Do not edit files.','extended'),phase('Report','Report concrete differences with evidence and propose targeted fixes. Do not edit files.')]}
+];
+export function validateWorkflow(value){
+ if(!value||typeof value!=='object'||Array.isArray(value)||Object.keys(value).some(k=>!['id','title','scope','checks','phases'].includes(k)))throw Error('Invalid workflow.');
+ const str=(s,n)=>typeof s==='string'&&s.trim()&&s.length<=n;
+ if(!str(value.id,100)||!/^[a-zA-Z0-9_-]+$/.test(value.id)||!str(value.title,100))throw Error('Use a workflow name up to 100 characters.');
+ if(!Array.isArray(value.scope)||value.scope.length>20||value.scope.some(p=>!str(p,200)||p.startsWith('/')||p.includes('\\')||p.includes(':')||p.split('/').some(s=>s==='..'||!s)))throw Error('Scope must contain relative project paths.');
+ if(!Array.isArray(value.checks)||!value.checks.length||value.checks.length>10||value.checks.some(s=>!str(s,500)))throw Error('Add 1–10 completion checks.');
+ if(!Array.isArray(value.phases)||!value.phases.length||value.phases.length>4)throw Error('Use 1–4 workflow phases.');
+ const phases=value.phases.map(p=>{if(!p||Object.keys(p).some(k=>!['title','instructions','budget'].includes(k))||!str(p.title,100)||!str(p.instructions,3000))throw Error('Give each phase a title and instructions (up to 3,000 characters).');runBudget(p.budget);return{title:p.title.trim(),instructions:p.instructions.trim(),budget:p.budget};});
+ return{id:value.id,title:value.title.trim(),scope:[...value.scope],checks:value.checks.map(s=>s.trim()),phases};
+}
+export function workflowPrompts(value,objective){
+ const w=validateWorkflow(value);if(typeof objective!=='string'||!objective.trim()||objective.length>3000)throw Error('Use an objective up to 3,000 characters.');
+ return w.phases.map((p,index)=>({text:`Workflow: ${w.title}\nPhase ${index+1}/${w.phases.length}: ${p.title}\nObjective: ${objective.trim()}\n\n${p.instructions}\n\nRequested writable scope: ${w.scope.length?w.scope.join(', '):'None; review only'}. This is a task instruction, not a separate filesystem sandbox. Existing permissions still apply.\n\nCompletion checks:\n${w.checks.map(s=>'- '+s).join('\n')}\n\nReport evidence and unmet checks. A completed model turn alone does not prove these checks passed.`,budget:p.budget,title:p.title,index}));
+}

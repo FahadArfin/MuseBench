@@ -1,0 +1,7 @@
+.workflow-library{width:min(650px,94vw)}
+.workflow-library label,.workflow-editor{display:grid;gap:8px;margin:12px 0}
+.workflow-library input,.workflow-library textarea,.workflow-library select{min-width:0;width:100%;background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit}
+.workflow-picker{display:flex;gap:8px;align-items:center}.workflow-picker select{flex:1}.workflow-picker button{flex-shrink:0}
+.workflow-editor fieldset{display:grid;gap:8px;border:1px solid var(--border);border-radius:8px;padding:10px}.workflow-editor legend{color:var(--muted);font-size:12px}
+.workflow-phases{padding-left:24px}.workflow-phases li{padding:8px 0}.workflow-phases span{float:right;color:var(--muted);font-size:12px}.workflow-phases p{margin:5px 0;color:var(--muted);font-size:12px;line-height:1.5}
+@media(max-width:550px){.workflow-picker{flex-wrap:wrap}.workflow-picker select{flex-basis:100%}}

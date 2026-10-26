@@ -1,3 +1,4 @@
+import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
 import {handoffText} from '../shared/context-handoff.mjs';
 import {restoreNativeSession,prepareNativeSession,settleNativeSession} from '../shared/native-session.mjs';
 import {createWorktreeService} from './worktrees.mjs';
@@ -140,6 +141,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const saved=db.prepare('SELECT json FROM app WHERE id=1').get();
   const state=saved?JSON.parse(saved.json):{projects:[],activeProject:null,task:null,checkpoints:[],preview:stopped(),runtime:missingRuntime(),busy:false,error:null};
   state.projectCreationRoot=newProjectsDir;
+  state.workflows=Array.isArray(state.workflows)?state.workflows.flatMap(w=>{try{return[validateWorkflow(w)];}catch{return[];}}).slice(0,30):structuredClone(DEFAULT_WORKFLOWS);
   state.drafts=state.drafts&&typeof state.drafts==='object'&&!Array.isArray(state.drafts)?state.drafts:{};
   state.memories=typeof state.memories==='string'?state.memories.slice(0,1500):'';
   state.preview=stopped();state.busy=false;state.error=null;state.runtime=runtime?.snapshot?.()??missingRuntime();
@@ -490,6 +492,18 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         t.updatedAt=now();taskRecords.set(t.id,structuredClone(t));db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(t),t.id);break;
       }
       case 'deleteTask':await deleteArchivedChat(action.id);break;
+      case 'saveWorkflow':{const w=validateWorkflow(action.workflow),index=state.workflows.findIndex(item=>item.id===w.id);if(index<0){if(state.workflows.length>=30)throw Error('The library holds up to 30 workflows.');state.workflows.push(w);}else state.workflows[index]=w;break;}
+      case 'deleteWorkflow':state.workflows=state.workflows.filter(w=>w.id!==action.id);break;
+      case 'queueWorkflow':{
+        const t=requireTask();if(t.id!==action.taskId)throw Error('The selected chat changed. Reopen Workflows.');if(t.archived||t.mode!=='muse')throw Error('Open an active Muse chat.');
+        if(typeof action.id!=='string'||!action.id||action.id.length>200)throw Error('Invalid workflow request.');
+        const w=state.workflows.find(w=>w.id===action.workflowId);if(!w)throw Error('Workflow no longer exists.');
+        const digest=hash(JSON.stringify({workflow:w,objective:action.objective})),receipt=t.workflowReceipts?.find(r=>r.id===action.id);
+        if(receipt){if(receipt.digest!==digest)throw Error('Workflow request changed. Reopen Workflows.');break;}
+        const prompts=workflowPrompts(w,action.objective);if((t.promptQueue??[]).length+prompts.length>5)throw Error('Make room in the queue for all workflow phases (five prompts maximum).');
+        t.promptQueue??=[];for(const p of prompts)t.promptQueue.push({id:randomUUID(),text:p.text,files:[],images:[],mode:'chat',runOptions:{...restoreRunOptions(t.runOptions),budget:p.budget},at:now(),workflow:{id:action.id,title:w.title,phase:p.title,index:p.index,total:prompts.length}});
+        t.workflowReceipts=[...(t.workflowReceipts??[]),{id:action.id,digest}].slice(-100);if(context.pending&&!t.queueHold)t.queuePaused=false;else{t.queuePaused=true;t.queueHold=true;}break;
+      }
       case 'handoffContext':{
         const source=requireTask();if(action.sourceTaskId!==source.id)throw Error('The selected source chat changed. Open the handoff again.');
         if(typeof action.id!=='string'||!action.id||action.id.length>200)throw Error('Invalid handoff identity.');

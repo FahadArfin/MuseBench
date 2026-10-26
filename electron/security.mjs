@@ -1,9 +1,10 @@
+import {validateWorkflow} from '../src/shared/workflows.mjs';
 import {imageReferences} from '../src/shared/code-images.mjs';
 import {validateSidebarMove} from '../src/shared/sidebar-order.mjs';
 import {projectDetails} from '../src/shared/create-project.mjs';
 import {fileReferences} from '../src/shared/chat-context.mjs';
 import {validateRunOptions} from '../src/shared/run-options.mjs';
-const actions = new Set(['handoffContext','recoverSession','moveSidebarItem','createWorktree','openWorktree','createProject','setProjectInstructions','saveDraft','setTaskFlags','deleteTask','forkTask','queueMessage','moveQueued','removeQueued','pauseQueue','resumeQueue','renameTask','setGoal','setMemories','openProject','selectProject','selectTask','createDemo','createCommandCopy','newTask','setRunOptions','updatePlan','approvePlan','applyDemo','refresh','runCheck','cancelCheck','startPreview','stopPreview','inspectPreview','accept','sendMessage','connectMuse','disconnectMuse','runtimeDecision','clearError']);
+const actions = new Set(['saveWorkflow','deleteWorkflow','queueWorkflow','handoffContext','recoverSession','moveSidebarItem','createWorktree','openWorktree','createProject','setProjectInstructions','saveDraft','setTaskFlags','deleteTask','forkTask','queueMessage','moveQueued','removeQueued','pauseQueue','resumeQueue','renameTask','setGoal','setMemories','openProject','selectProject','selectTask','createDemo','createCommandCopy','newTask','setRunOptions','updatePlan','approvePlan','applyDemo','refresh','runCheck','cancelCheck','startPreview','stopPreview','inspectPreview','accept','sendMessage','connectMuse','disconnectMuse','runtimeDecision','clearError']);
 export function allowedExternal(value) {
   try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.port && (['dev.meta.ai','github.com','meta-models.github.io'].includes(u.hostname) || (u.hostname === 'www.google.com' && u.pathname === '/search' && [...u.searchParams.keys()].every(key=>key==='q') && u.searchParams.getAll('q').length===1 && Boolean(u.searchParams.get('q')?.trim()) && !u.hash)); } catch { return false; }
 }
@@ -11,6 +12,9 @@ export function trustedSender(event, contents, uiURL) { return event.sender === 
 export function validateAction(action) {
   if (!action || typeof action !== 'object' || Array.isArray(action) || !actions.has(action.type) || JSON.stringify(action).length > 100000) throw Error('Invalid workspace action.');
   const string = (name,max=20000) => { if (typeof action[name] !== 'string' || !action[name].trim() || action[name].length > max) throw Error(`Invalid ${name}.`); };
+  if(action.type==='saveWorkflow')validateWorkflow(action.workflow);
+  if(action.type==='deleteWorkflow')string('id',100);
+  if(action.type==='queueWorkflow'){for(const key of ['id','taskId','workflowId'])string(key,200);string('objective',3000);}
   if(action.type==='handoffContext'){for(const key of ['id','sourceTaskId','targetTaskId'])string(key,200);string('text',8000);fileReferences(action.files);if(Object.keys(action).some(key=>!['type','id','sourceTaskId','targetTaskId','text','files'].includes(key)))throw Error('Invalid handoff fields.');}
   if(action.type==='recoverSession'&&!['continue','fresh'].includes(action.choice))throw Error('Invalid session recovery.');
   if(action.type==='moveQueued'){string('taskId',200);string('id',200);if(action.beforeId!==null)string('beforeId',200);}

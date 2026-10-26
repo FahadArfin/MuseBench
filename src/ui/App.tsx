@@ -1,3 +1,4 @@
+import {WorkflowLibrary} from './WorkflowLibrary';
 import {ContextHandoff} from './ContextHandoff';
 import {SessionDialog} from './SessionDialog';
 import {WorktreeDialog} from './WorktreeDialog';
@@ -109,7 +110,7 @@ export default function App() {
   const selectProduct = (next: 'code' | 'personal') => { setProduct(next); setMobileNav(false); requestAnimationFrame(()=>{const target=document.querySelector<HTMLButtonElement>('.sidebar:not([hidden]) .product-mode-switch [aria-pressed="true"]');if(target?.checkVisibility())target.focus({preventScroll:true});}); };
   const navigatePersonal = (destination: PersonalDestination) => { setProduct('personal'); setPersonalMode('chat'); setMobileNav(false); void personalCommand({ type: 'navigate', destination }); };
   const workModeSwitch=<div className="work-mode-switch" role="group" aria-label="Chat or Work"><button type="button" aria-label="Chat" title="Meta AI chat" aria-pressed={personalMode==='chat'} onClick={()=>navigatePersonal('chat')}><MessageSquare size={14}/><span>Chat</span></button><button type="button" aria-label="Work" title="Documents, spreadsheets, and presentations" aria-pressed={personalMode==='work'} onClick={()=>setPersonalMode('work')}><Files size={14}/><span>Work</span></button></div>;
-  const [modal, setModal] = useState<'handoff' | 'session' | 'worktrees' | 'create-project' | 'runtime' | 'settings' | 'search' | 'history' | 'command' | 'extensions' | 'context' | null>(null);
+  const [modal, setModal] = useState<'workflows' | 'handoff' | 'session' | 'worktrees' | 'create-project' | 'runtime' | 'settings' | 'search' | 'history' | 'command' | 'extensions' | 'context' | null>(null);
   const [commandView,setCommandView]=useState<CommandView>({id:'help'});
   const [skills,setSkills]=useState<MuseSkill[]>([]),[skillsStatus,setSkillsStatus]=useState('idle');
   const skillsKey=useRef(''),skillsGeneration=useRef(0);
@@ -296,6 +297,7 @@ export default function App() {
     if(id==='resume'){openSearch();setQuery(args);return;}
     if(id==='context'){if(project)setModal('context');else await openFolder('chat');return;}
     if(id==='settings'){setModal('settings');return;}
+    if(id==='workflows'){setModal('workflows');return;}
     if(id==='handoff'){setModal('handoff');return;}
     if(id==='connect'){setModal('runtime');return;}
     if(id==='disconnect'||id==='stop'){await act({type:'disconnectMuse'});return;}
@@ -454,6 +456,7 @@ export default function App() {
     <SpacesWorkspace active={codeSpaces||(product==='personal'&&personalMode==='work'&&spacesVisible&&!sitesVisible)} state={spacesState} command={spacesCommand} workItems={workState?.items??[]} workBusy={Boolean(workState?.busy)} onOpenWork={()=>{setProduct('personal');setPersonalMode('work');setSitesVisible(false);setSpacesVisible(false);setWorkHome(false);}} modeSwitch={codeSpaces?null:workModeSwitch} onNavigationOpen={revealSidebar} preferences={preferences} home={spacesHome} onHomeChange={setSpacesHome}/>
     <SitesWorkspace active={codeSites||(product==='personal'&&personalMode==='work'&&sitesVisible)} state={sitesState} command={sitesCommand} importFolder={importFolder} connect={connectHosting} pollAuth={pollAuth} workItems={workState?.items??[]} workBusy={Boolean(workState?.busy)} modeSwitch={codeSites?null:workModeSwitch} onNavigationOpen={revealSidebar} preferences={preferences} home={sitesHome} onHomeChange={setSitesHome}/>
     {modal==='extensions'&&<CustomizeDialog initialTab={customizeTab} initialQuery={customizeQuery} close={closeModal} running={customizeBlocked(state,workState,sitesState,sitesState?.generation)} onConnection={()=>setModal('runtime')} onChanged={()=>{setShortcutRevision(value=>value+1);skillsKey.current='';loadSkills();}} onPersonal={action=>{closeModal();setProduct('personal');setPersonalMode('chat');void personalCommand({type:'serviceAction',action});}}/>}
+    {modal==='workflows'&&<WorkflowLibrary state={state} busy={busy} act={act} close={closeModal}/>}
     {modal==='handoff'&&task&&<ContextHandoff source={task} tasks={state.tasks} initialText={message} files={contextFiles} busy={busy} act={act} close={closeModal}/>}
     {modal==='session'&&task&&<SessionDialog task={task} busy={busy||runtimeActive} act={act} onClose={closeModal}/> }
     {modal==='worktrees'&&project&&<WorktreeDialog project={project} busy={busy||runtimeActive} act={act} onClose={closeModal} onOpened={()=>{closeModal();setCreating(true);setView('project');}}/>}
