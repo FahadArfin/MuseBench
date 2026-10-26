@@ -1,0 +1,604 @@
+/**
+ * `MuseClient` — the SS7.1 facade's session-opening half (FR-018, T030).
+ *
+ * It turns the two v1 session verbs into correctly-shaped `session/start` /
+ * `session/resume` params and hands back a WIRED `Session`. It frames nothing
+ * and mints nothing: `Connection.command()` stamps the `commandId` from the
+ * single injected mint, so INV-013's single-minter property is preserved by
+ * DELEGATION rather than re-implemented here.
+ *
+ * IT OWNS TWO FACTS NO OTHER LAYER HOLDS, and that is why obligations (b) and
+ * (c) of T030 live here rather than on `Session`:
+ *
+ *  - WHETHER A CLOSE WAS OURS. `Connection` is duplex-generic; a transport
+ *    cannot tell a peer's hang-up from its own shutdown. SS2.13.3b counts
+ *    "process exit **or transport EOF**" as a death, so somebody has to know
+ *    the difference, and only the layer that owns `close()` does.
+ *  - WHAT AN EARLIER DEATH DISCARDED. `DiscardedSessions` is client-scoped, so
+ *    a `commandId` refusal and a withheld reattach survive the `Session` object
+ *    that died — which is exactly what "do not replay the SESSION's commandIds"
+ *    requires of a client that then opens a new session.
+ *
+ * OPTIONAL MEANS OMITTED, NEVER `null` (tdd SS1.2). Every member this module
+ * can leave unset is optional-non-nullable in the generated params, so an
+ * unset member is dropped from the frame rather than nulled. The guards below
+ * are LOOSE (`!= null`) on purpose: the types only bind strict TypeScript
+ * consumers, and a plain-JS caller reaching the built `dist` can pass an
+ * explicit `null` that a `!== undefined` guard would forward verbatim. `false
+ * != null` is true, so `excludeItems: false` still serializes.
+ *
+ * The params and the caller options are both COMPOSED from the generated
+ * types rather than restated (INV-001: narrow and compose, never restate).
+ * Composition alone does NOT stop drift, though: the guard chains below are
+ * hand-listed, so a regenerated member would be settable by a caller and then
+ * silently dropped on the way to the wire. The `AssertNever` pins next to each
+ * chain close that gap — add a member upstream and the BUILD fails here until
+ * it is forwarded (or explicitly allow-listed as unforwardable).
+ */
+
+import type { Connection } from "../connection/connection.js";
+import { initializeAnswered, spawnMspConnection } from "../connection/spawn.js";
+import type {
+  ExitClassification,
+  MuseServeChild,
+  SpawnedMspConnection,
+} from "../connection/spawn.js";
+import { MuseSessionDiscardedError, PermissionProfileNotApplied } from "../errors.js";
+import { DiscardedSessions } from "./discarded.js";
+import { isAbnormalHostDeath, readSessionDurability } from "./host-death.js";
+import type { SessionDurabilityProfile } from "./host-death.js";
+import { MspError, ProtocolError } from "../connection/connection.js";
+import { hostStartFailure } from "./host-start.js";
+import type { ApprovalFailureHandler, ApprovalHandler } from "./approval.js";
+import { Session } from "./session.js";
+import type { SessionOpening } from "./session.js";
+import type {
+  InitializeParams,
+  InitializeResult,
+  SessionResumeParams,
+  SessionResumeResult,
+  SessionStartParams,
+  SessionStartResult,
+} from "@muse-code/msp";
+
+/**
+ * The params this module builds. `commandId` is excluded because
+ * `Connection.command()` is the single minter and stamps it (INV-013).
+ */
+type StartParams = Omit<SessionStartParams, "commandId">;
+type ResumeParams = Omit<SessionResumeParams, "commandId">;
+
+/** Errors (TS2344) when `T` is inhabited — i.e. when a member is unforwarded. */
+type AssertNever<T extends never> = T;
+
+/** One inbound view notification as the connection hands it to `#route`. */
+type ViewFrame = { readonly method: string; readonly params?: unknown };
+
+/**
+ * Every `StartParams` member `startSession` forwards. `config` is temporarily
+ * excluded until the facade can pair forwarding with the required
+ * `sessionMcp` grant check.
+ */
+const START_FORWARDED = [
+  "approvalMode",
+  "providerId",
+  "sessionId",
+  "workspaceRoot",
+  "workspaceRoots",
+  "modelId",
+  "permissionProfile",
+  "recoveryMode",
+] as const;
+type _StartIsExhaustive = AssertNever<
+  Exclude<keyof StartParams, (typeof START_FORWARDED)[number] | "config">
+>;
+
+/**
+ * Every `ResumeParams` member `resumeSession` forwards. `config` has the same
+ * temporary capability-check boundary as the start facade above.
+ */
+const RESUME_FORWARDED = ["sessionId", "cursor", "excludeItems", "history", "permissionProfile", "recoveryMode"] as const;
+type _ResumeIsExhaustive = AssertNever<
+  Exclude<keyof ResumeParams, (typeof RESUME_FORWARDED)[number] | "config">
+>;
+
+/**
+ * The committed profile id a session snapshot claims, or null when the
+ * snapshot is silent (the stable bundle strips the member; absent and null
+ * both mean unknown, never applied). Structural on purpose: the stable
+ * `Session` type carries no `permissionState`, and an unknown wire shape
+ * must read as unknown rather than throw.
+ */
+function committedProfileId(snapshot: unknown): string | null {
+  if (typeof snapshot !== "object" || snapshot === null) return null;
+  const state = (snapshot as { permissionState?: unknown }).permissionState;
+  if (typeof state !== "object" || state === null) return null;
+  const id = (state as { profileId?: unknown }).profileId;
+  return typeof id === "string" ? id : null;
+}
+
+/**
+ * Caller-facing options for `session/start` (tdd SS2.5.1).
+ *
+ * `config` is excluded as well as `commandId` until the facade implements the
+ * required `sessionMcp` grant check and forwarding.
+ */
+export type StartSessionOptions = Readonly<
+  Omit<SessionStartParams, "commandId" | "config"> & {
+    /**
+     * Require the `permissionProfile` selection (TEST-42624-10): when set,
+     * the client proves the committed selection equals the requested id —
+     * from the start result's `session.permissionState`, else a
+     * `session/read` read-back — and throws `PermissionProfileNotApplied`
+     * instead of proceeding on the host default. Client-local: never sent
+     * on the wire. Setting it without `permissionProfile` is a usage error.
+     */
+    requirePermissionProfile?: boolean;
+  }
+>;
+
+/** The resume options' approval members, installed before held frames apply. */
+type ResumeApprovalHandlers = Pick<ResumeSessionOptions, "onApproval" | "onApprovalError">;
+
+/** Caller-facing options for `session/resume` (tdd SS2.5.2). */
+export type ResumeSessionOptions = Readonly<
+  Omit<SessionResumeParams, "commandId" | "config"> & {
+    /**
+     * Answers this session's approvals from its first frame, so an approval
+     * the host re-sends right after the resume reply reaches it. The same
+     * contract as `session.onApproval`, installed before the frames that
+     * arrived with the reply are applied.
+     */
+    onApproval?: ApprovalHandler;
+    /**
+     * Hears this session's approval failures from its first frame, as
+     * `session.onApprovalError` does later. A failure for an approval that
+     * arrived with the resume reply can happen before `resumeSession` returns,
+     * so only this option is sure to hear it.
+     */
+    onApprovalError?: ApprovalFailureHandler;
+  }
+>;
+
+/**
+ * Options for building a `MuseClient` around a connection you already own.
+ * `MuseClient.spawn` fills these in for you; supply them yourself only when
+ * you compose the client with your own transport and handshake.
+ */
+export interface MuseClientOptions {
+  /**
+   * The handshake's `sessionDurability`, read through `readSessionDurability`.
+   *
+   * REQUIRED, for the same reason `SessionOptions.durability` is: it decides
+   * what happens to every in-flight item and command when the host dies
+   * (SS2.13.3b), and a default would let a caller skip reading the handshake
+   * and silently inherit the wrong obligation. `MuseClient.spawn` supplies it.
+   */
+  readonly durability: SessionDurabilityProfile;
+  /**
+   * The owned host, set by `MuseClient.spawn`. A client built around a
+   * connection somebody else owns has none, and says so by omitting it — which
+   * is why `close()` falls back to closing just the connection.
+   */
+  readonly host?: SpawnedMspConnection;
+}
+
+/** What `MuseClient.spawn` needs: FR-018's `{ museBin, args?, env? }`, plus the handshake. */
+export interface MuseClientSpawnOptions {
+  readonly museBin: string;
+  readonly args?: readonly string[];
+  readonly cwd?: string;
+  /** REPLACES the child's environment (PATH included) — spread `process.env` to extend it. */
+  readonly env?: NodeJS.ProcessEnv;
+  /** Client identification, forwarded verbatim into `initialize` (SS1.4). */
+  readonly clientInfo: InitializeParams["clientInfo"];
+  /** Capability posture; absent means all defaults. */
+  readonly capabilities?: InitializeParams["capabilities"];
+  /** Raw stderr chunks, drained from process birth and never parsed (INV-010). */
+  readonly onStderr?: (chunk: string) => void;
+  /** See `MuseServeChildOptions.shutdownTimeoutMs`. */
+  readonly shutdownTimeoutMs?: number;
+}
+
+/**
+ * Your entry point to the SDK.
+ *
+ * Spawn a host with `MuseClient.spawn`, then open conversations with
+ * `startSession` or `resumeSession`. The client owns the connection: it
+ * routes every server event to the session it belongs to and reports a host
+ * death to all of them. Call `close` to shut the host down cleanly.
+ */
+export class MuseClient {
+  readonly #connection: Connection;
+  readonly #durability: SessionDurabilityProfile;
+  readonly #discarded: DiscardedSessions;
+  /** Sessions this client opened, so one death notification reaches them all. */
+  readonly #sessions = new Set<Session>();
+  /**
+   * Frames naming a session this client has not registered YET, held only
+   * while a `session/start`/`session/resume` is in flight (#49790): the host
+   * flushes the resume replay BEFORE the result, and the promise awaiting that
+   * result resumes only after the whole chunk has been routed. `#route` holds,
+   * `#openSession` drains, `#open` clears when the last open settles.
+   */
+  readonly #held = new Map<string, ViewFrame[]>();
+  #opening = 0;
+  /** The spawned host, when `spawn` built this client. */
+  readonly #child: MuseServeChild | undefined;
+  readonly #initializeResult: InitializeResult | undefined;
+  /**
+   * Set by `close()` BEFORE the connection is torn down.
+   *
+   * This flag is the entire discriminator for obligation (b): the same
+   * transport EOF is an orderly SS2.1.2 shutdown when we caused it and an
+   * abnormal death when we did not, and nothing below this layer can tell.
+   */
+  #closing = false;
+  /** Latched by an abnormal EOF, so a later `resumeSession` can be withheld. */
+  #hostDied = false;
+
+  constructor(connection: Connection, options: MuseClientOptions) {
+    this.#connection = connection;
+    this.#durability = options.durability;
+    // Client-owned, never injected: SS2.13.3b is a one-client obligation and
+    // no current consumer spans two clients over one host lineage, so a
+    // sharing knob would be declared-ahead surface (Constitution XI).
+    this.#discarded = new DiscardedSessions();
+    this.#child = options.host?.child;
+    this.#initializeResult = options.host?.initializeResult;
+    // THE ONE INBOUND PUMP (FR-018/FR-019). `Session.apply` is the only event
+    // entry point and `#connection` is private, so without this a spawn-built
+    // consumer has no way to hear a single view frame: every turn wait hangs
+    // (SS3.1.4) and `onApproval` can never fire. `Connection.onNotification`
+    // holds ONE handler — this client claims it, which is part of what
+    // "MuseClient owns the connection" means; a consumer that needs the raw
+    // feed builds around a bare `Connection` and `Session` instead.
+    this.#connection.onNotification((notification) => this.#route(notification));
+    // A question or approval still open at resume is re-sent as a
+    // `userInput/request` or `approval/request` server request (tdd SS5.6,
+    // SS5.10). Each is routed in arrival order and answered with the SS5.3.3
+    // receipt `{}`: a question as the `userInput/requested` twin it shares
+    // params with, so its session lists it, and an approval as itself, which
+    // the session routes to its approval handler. The receipt does not wait on
+    // `#route` finding the session: a request read during an open is held
+    // before that session exists. Every other server-request method keeps the
+    // `-32601` a bare `Connection` answers.
+    this.#connection.onServerRequest(async (request) => {
+      if (request.method === "userInput/request") {
+        this.#route({ method: "userInput/requested", params: request.params });
+        return {};
+      }
+      if (request.method === "approval/request") {
+        this.#route({ method: request.method, params: request.params });
+        return {};
+      }
+      throw new MspError({
+        code: -32601,
+        message: `method not found: ${request.method}`,
+        data: { kind: "methodNotFound", retryable: false },
+      });
+    });
+    // Registered at construction, not at the first session: an EOF can land
+    // before any session exists, and the flag has to be read at that moment.
+    void this.#connection.closed.then(() => this.#transportClosed());
+  }
+
+  /**
+   * Deliver one view notification to the session(s) it names.
+   *
+   * A frame naming NO session is dropped here rather than fed to every
+   * session: `Session.apply` already tolerates unknown methods, but only the
+   * frames that name a `sessionId` have an owner to route to. A frame naming
+   * an UNKNOWN session is dropped for the same reason — routing it anywhere
+   * would trip the foreign-frame throw on a session it does not belong to —
+   * UNLESS an open is in flight, when it may be that open's own session named
+   * by the server before the awaiting promise has run (#49790): then it is
+   * held for `#openSession` to fold, or for `#open` to clear.
+   */
+  #route(notification: ViewFrame): void {
+    const named = (notification.params as { sessionId?: unknown } | undefined)?.sessionId;
+    if (typeof named !== "string") return;
+    let delivered = false;
+    for (const session of this.#sessions) {
+      if (session.sessionId === named) {
+        session.apply(notification);
+        delivered = true;
+      }
+    }
+    if (delivered || this.#opening === 0) return;
+    const held = this.#held.get(named);
+    if (held === undefined) this.#held.set(named, [notification]);
+    else held.push(notification);
+  }
+
+  /**
+   * Spawn an owned host, run the SS1.4 handshake, and hand back a client whose
+   * durability profile came from that handshake (FR-018).
+   *
+   * The profile is READ rather than asked of the caller, which is the whole
+   * reason this factory exists beside the bare constructor: SS2.13.1 makes the
+   * absent/unrecognized distinction load-bearing, and a caller re-deriving it
+   * by hand is a caller that can get it wrong.
+   *
+   * Rejects with {@link MuseHostStartError} when the host is lost before the
+   * handshake completes (the binary could not be spawned, or the process
+   * ended first — exit code or signal plus the bounded stderr tail;
+   * `answeredInitialize` says whether it died after a usable answer). A host
+   * that answers with a reply the SDK refuses keeps its own error: an
+   * `MspError` for an SS1.6 refusal, or a `ProtocolError` (with the whole
+   * refused frame on `line`) for a reply the SDK cannot use, such as one with
+   * no schema fingerprint.
+   */
+  static async spawn(options: MuseClientSpawnOptions): Promise<MuseClient> {
+    const handshake = spawnMspConnection({
+      command: options.museBin,
+      ...(options.args === undefined ? {} : { args: options.args }),
+      ...(options.cwd === undefined ? {} : { cwd: options.cwd }),
+      ...(options.env === undefined ? {} : { env: options.env }),
+      ...(options.onStderr === undefined ? {} : { onStderr: options.onStderr }),
+      ...(options.shutdownTimeoutMs === undefined
+        ? {}
+        : { shutdownTimeoutMs: options.shutdownTimeoutMs }),
+    });
+    let spawned;
+    try {
+      spawned = await handshake.initialize({
+        clientInfo: options.clientInfo,
+        ...(options.capabilities === undefined ? {} : { capabilities: options.capabilities }),
+      });
+    } catch (error) {
+      // A failed handshake must not leak the process it already spawned.
+      await handshake.close().catch(() => undefined);
+      // A host that ANSWERED `initialize` is not a lost host, however it ends
+      // once we close it: its answer is the actionable error. "Answered" is
+      // evidence that a response frame came back — an SS1.6 `MspError`, or a
+      // `ProtocolError` carrying the frame the SDK refused (a malformed or
+      // version-skewed reply) — never the error's class alone (#49912).
+      // Decided before the exit is read, so our own close ladder can never
+      // dress an answer up as a death.
+      const answered =
+        error instanceof MspError || (error instanceof ProtocolError && error.line !== undefined);
+      if (answered) throw error;
+      // No refused frame: the host was lost — before answering, or after a
+      // usable answer while we sent `initialized` (the error then says so).
+      // close() ended at its observed exit (or its spawn failure), so the
+      // evidence is settled: the typed error carries the spawn error or the
+      // SS2.11 row plus the stderr tail instead of the transport's first
+      // symptom (#49791, #49912).
+      throw await hostStartFailure(handshake.child, error, handshake[initializeAnswered]());
+    }
+    return new MuseClient(spawned.connection, {
+      durability: readSessionDurability(spawned.initializeResult),
+      host: spawned,
+    });
+  }
+
+  /**
+   * The handshake result, when this client was built by `spawn`.
+   *
+   * A plain `Error`, not a typed one: reading this off a client that was not
+   * built by `spawn` is API misuse, not a protocol STATE an embedder branches
+   * on — a typed class here would send the SS2.13.3b recovery path chasing a
+   * host death that never happened.
+   */
+  get initializeResult(): InitializeResult {
+    if (this.#initializeResult === undefined) {
+      throw new Error("initializeResult is only available on a client built by MuseClient.spawn");
+    }
+    return this.#initializeResult;
+  }
+
+  /** The host's SS2.11 exit row, when this client was built by `spawn`. */
+  get exit(): Promise<ExitClassification> {
+    if (this.#child === undefined) {
+      // Plain `Error` for the same reason as `initializeResult`: API misuse,
+      // not a protocol state.
+      throw new Error("exit is only available on a client built by MuseClient.spawn");
+    }
+    return this.#child.exit;
+  }
+
+  /** The durability profile every session this client opens inherits. */
+  get durability(): SessionDurabilityProfile {
+    return this.#durability;
+  }
+
+  /** Open a new root session (tdd SS2.5.1). */
+  async startSession(options: StartSessionOptions = {}): Promise<Session> {
+    const params: StartParams = {};
+    if (options.approvalMode != null) params.approvalMode = options.approvalMode;
+    if (options.providerId != null) params.providerId = options.providerId;
+    if (options.sessionId != null) params.sessionId = options.sessionId;
+    if (options.workspaceRoot != null) params.workspaceRoot = options.workspaceRoot;
+    if (options.workspaceRoots != null) params.workspaceRoots = options.workspaceRoots;
+    if (options.modelId != null) params.modelId = options.modelId;
+    if (options.recoveryMode != null) params.recoveryMode = options.recoveryMode;
+    // The initial permission-profile selection, forwarded verbatim like the
+    // other start members (undefined stays omitted).
+    if (options.permissionProfile != null) params.permissionProfile = options.permissionProfile;
+    // TEST-42624-10: a caller that requires its selection proves it, never
+    // assuming the host default. The flag without the member is API misuse
+    // (plain Error, like the other misuse guards here), raised pre-wire.
+    const required = options.requirePermissionProfile === true;
+    if (required && options.permissionProfile == null) {
+      throw new Error(
+        "requirePermissionProfile needs permissionProfile: require the selection you pass",
+      );
+    }
+    // Keyed by the id the SERVER named, never the one the caller asked for:
+    // `sessionId` is a REQUEST on start, and a session keyed by a hopeful id
+    // would reject every one of its own events as foreign.
+    const session = await this.#open("session/start", params, (raw) => ({
+      result: raw as unknown as SessionStartResult,
+      verb: "session/start",
+    }));
+    if (!required) return session;
+    return this.#proveSelection(session, options.permissionProfile as string);
+  }
+
+  /**
+   * Prove a required start selection (TEST-42624-10): the start result's own
+   * `session.permissionState` first (absent = unknown, never applied); else a
+   * point-in-time `session/read`, which never subscribes. Only `profileId ==
+   * requested` proceeds; anything else throws `PermissionProfileNotApplied`
+   * BEFORE any turn is sent. The refused session is dropped from the client
+   * (no orphan keeps folding for an id the caller can never reach — the SDK
+   * has no set/close-by-id verb); the error's `sessionId` is the caller's
+   * handle to resume via `sessionId` or start again. A failed read-back
+   * propagates: the client still never proceeds on the default.
+   */
+  async #proveSelection(session: Session, requested: string): Promise<Session> {
+    const opening = session.opening;
+    const started =
+      opening !== undefined && opening.verb === "session/start"
+        ? committedProfileId(opening.result.session)
+        : null;
+    if (started !== null) {
+      if (started === requested) return session;
+      this.#sessions.delete(session);
+      throw new PermissionProfileNotApplied(requested, started, session.sessionId);
+    }
+    const read = await this.#connection.command("session/read", {
+      sessionId: session.sessionId,
+    });
+    const served = committedProfileId(read["session"]);
+    if (served === requested) return session;
+    this.#sessions.delete(session);
+    throw new PermissionProfileNotApplied(requested, served, session.sessionId);
+  }
+
+  /**
+   * Load an existing session and subscribe this connection to its view
+   * (tdd SS2.5.2).
+   *
+   * WITHHELD after an ephemeral host death (SS2.13.3b clause 2, "do not attempt
+   * to reattach"), and refused on THIS side of the transport: a reattach
+   * attempt that reaches the wire has already violated the clause, whatever the
+   * server answers.
+   */
+  async resumeSession(options: ResumeSessionOptions): Promise<Session> {
+    this.#assertReattachAllowed(options.sessionId);
+    const params: ResumeParams = { sessionId: options.sessionId };
+    if (options.cursor != null) params.cursor = options.cursor;
+    if (options.excludeItems != null) params.excludeItems = options.excludeItems;
+    if (options.history != null) params.history = options.history;
+    if (options.recoveryMode != null) params.recoveryMode = options.recoveryMode;
+    if (options.permissionProfile != null) params.permissionProfile = options.permissionProfile;
+    return this.#open(
+      "session/resume",
+      params,
+      (raw) => ({
+        result: raw as unknown as SessionResumeResult,
+        verb: "session/resume",
+      }),
+      { onApproval: options.onApproval, onApprovalError: options.onApprovalError },
+    );
+  }
+
+  /**
+   * Shut the host down in an orderly way (SS2.1.2); the shutdown this causes
+   * is not reported to your sessions as a host death.
+   *
+   * The EOF this close produces is NOT a death, which is what `#closing`
+   * records.
+   *
+   * `#closing` covers only the EOF; it must not swallow the EXIT ROW. When the
+   * host ignores stdin EOF, `#child.close()` escalates to SIGTERM/SIGKILL and
+   * the exit classifies as a crash — an abnormal death under SS2.13.3b no
+   * matter who started the close, and one no transport event will ever report
+   * here because `#closing` already claimed the EOF. So the classification the
+   * close itself returns is forwarded to every session: `hostExited` answers
+   * `notADeath` for `cleanShutdown`, keeping the orderly arm inert.
+   */
+  async close(): Promise<void> {
+    this.#closing = true;
+    if (this.#child !== undefined) {
+      const exit = await this.#child.close();
+      if (isAbnormalHostDeath(exit)) {
+        for (const session of this.#sessions) session.hostExited(exit);
+      }
+      return;
+    }
+    await this.#connection.close();
+  }
+
+  /**
+   * The window `#route` holds unknown-session frames for: from the request to
+   * the Session's registration. Counted, not flagged, so two concurrent opens
+   * keep it open until the LAST settles; cleared on settle so a frame that
+   * named no session this client opened is held no longer than the open it
+   * rode in with (#49790).
+   */
+  async #open(
+    verb: "session/start" | "session/resume",
+    params: StartParams | ResumeParams,
+    opening: (raw: Record<string, unknown>) => SessionOpening,
+    approvals: ResumeApprovalHandlers = {},
+  ): Promise<Session> {
+    this.#opening += 1;
+    try {
+      const opened = opening(await this.#connection.command(verb, params));
+      return this.#openSession(opened.result.session.sessionId, opened, approvals);
+    } finally {
+      this.#opening -= 1;
+      if (this.#opening === 0) this.#held.clear();
+    }
+  }
+
+  #openSession(sessionId: string, opening: SessionOpening, approvals: ResumeApprovalHandlers): Session {
+    const session = new Session({
+      connection: this.#connection,
+      discarded: this.#discarded,
+      durability: this.#durability,
+      opening,
+      sessionId,
+    });
+    // Before the held frames below: an approval re-sent with the resume reply
+    // must find the handler, and its failure the observer.
+    if (approvals.onApprovalError !== undefined) session.onApprovalError(approvals.onApprovalError);
+    if (approvals.onApproval !== undefined) session.onApproval(approvals.onApproval);
+    this.#sessions.add(session);
+    // The frames that named this session while its verb was in flight fold
+    // NOW, in arrival order — synchronously, so nothing the pump routes next
+    // can overtake them.
+    const held = this.#held.get(sessionId);
+    if (held !== undefined) {
+      this.#held.delete(sessionId);
+      for (const frame of held) session.apply(frame);
+    }
+    return session;
+  }
+
+  #assertReattachAllowed(sessionId: string): void {
+    // Two facts, both recorded by an ephemeral discharge: THIS session was
+    // discarded, or this client's own ephemeral host died (in which case there
+    // is nothing on the other end to reattach TO, whatever id is asked for).
+    if (this.#discarded.sessionIds.has(sessionId)) {
+      throw new MuseSessionDiscardedError(
+        `session ${sessionId} was discarded after an ephemeral host death; it cannot be resumed`,
+      );
+    }
+    if (this.#hostDied && !this.#survivesHostDeath()) {
+      throw new MuseSessionDiscardedError(
+        "this client's ephemeral host died; SS2.13.3b forbids reattaching to it",
+      );
+    }
+  }
+
+  #survivesHostDeath(): boolean {
+    return this.#durability.kind === "durable";
+  }
+
+  /**
+   * The transport reached EOF. If this client did not cause it, that is
+   * SS2.13.3b's second death notification (T030 obligation b) and every session
+   * this client opened discharges through the SAME `Session.hostExited` path
+   * the process exit uses — including its latch, so whichever notification
+   * arrives second replays the first one's report instead of a half delta.
+   */
+  #transportClosed(): void {
+    if (this.#closing) return;
+    this.#hostDied = true;
+    for (const session of this.#sessions) session.hostExited({ kind: "transportEof" });
+  }
+}

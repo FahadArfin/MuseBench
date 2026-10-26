@@ -1,0 +1,86 @@
+/* MuseBench identity. Keep content and semantic status colors independent. */
+:root {
+  --accent: #75b3ff;
+  --accent-fill: #0866eb;
+  --accent-fill-hover: #075bd1;
+  --accent-on-fill: #ffffff;
+  --accent-soft: #20334e;
+  --accent-line: #365e90;
+  --accent-focus: #75b3ff;
+}
+:root[data-theme="light"] {
+  --accent: #075bcd;
+  --accent-fill: #0866eb;
+  --accent-fill-hover: #0758cc;
+  --accent-on-fill: #ffffff;
+  --accent-soft: #e7f0ff;
+  --accent-line: #adc9ef;
+  --accent-focus: #0866d9;
+}
+
+.brand-button > span,
+.personal-sidebar .sidebar-connection strong { color: var(--accent); }
+.personal-sidebar .connection-avatar,
+.settings-about-mark { color: var(--accent); background: var(--accent-soft); }
+
+/* Strong blue is reserved for an action, not for every clickable surface. */
+.button.primary,
+.send-button:not(:disabled):not([aria-label^="Stop"]),
+.preference-toggle.on { background: var(--accent-fill); border-color: var(--accent-fill); color: var(--accent-on-fill); }
+.button.primary:hover:not(:disabled),
+.send-button:hover:not(:disabled):not([aria-label^="Stop"]) { background: var(--accent-fill-hover); border-color: var(--accent-fill-hover); opacity: 1; }
+.preference-toggle.on span { background: var(--accent-on-fill); color: var(--accent-fill); }
+.text-link:not(.danger),
+.markdown a,
+.sites-message a,
+.work-message a,
+.spaces-markdown a { color: var(--accent); }
+.text-link:hover:not(:disabled) { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+/* Active navigation has a quiet tint and retains its shape/label cues. */
+.rail-button.selected,
+.navigation-row.active,
+.work-mode-switch button[aria-pressed="true"],
+.settings-nav button.active,
+.theme-segments button[aria-pressed="true"],
+.work-team-filters button.selected,
+.work-artifact-tabs > button.selected,
+.work-mobile-tabs > button.selected,
+.spaces-segmented > button.selected,
+.spaces-page-tabs > button.selected,
+.sites-library-filters > button.selected,
+.sites-viewport-switch > button.selected,
+.sites-mobile-switch > button[aria-selected="true"],
+.segmented button.selected { background: var(--accent-soft); color: var(--accent); }
+.personal-navigation .navigation-row.active > svg { color: var(--accent); }
+
+.chat-row.selected,
+.personal-item-row.selected,
+.work-library-item.selected,
+.spaces-sidebar-item.selected,
+.sites-sidebar-item.selected { background: var(--accent-soft); box-shadow: inset 2px 0 var(--accent); }
+.spaces-sidebar-home.selected,
+.sites-sidebar-home.selected { color: var(--accent); background: var(--accent-soft); }
+.spaces-sidebar-home.selected > svg,
+.sites-sidebar-home.selected > svg { color: var(--accent); }
+.sites-file-list > button.selected,
+.file-tabs button.selected { color: var(--accent); background: var(--accent-soft); }
+.work-output-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+
+.stage-tabs > button.selected,
+.spaces-space-tabs > button.selected,
+.sites-tabs > button[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.stage-tabs > button.selected::after { background: var(--accent); }
+.composer-menu-row.selected:not(.approval-option),
+.slash-option.selected { background: var(--accent-soft); }
+.composer-menu-row.selected:not(.approval-option) > svg,
+.slash-option.selected > svg { color: var(--accent); }
+
+.chat-composer:focus-within,
+.sites-composer:focus-within { border-color: var(--accent-line); }
+.settings-search:focus-within { outline-color: var(--accent-focus); }
+button:focus-visible, input:focus-visible, textarea:focus-visible,
+select:focus-visible, summary:focus-visible, [tabindex]:focus-visible { outline-color: var(--accent-focus); }
+input[type="checkbox"], input[type="radio"], input[type="range"],
+.sites-work-picker input, .sites-confirm-check > input { accent-color: var(--accent-fill); }
+::selection { background: var(--accent-soft); color: var(--text); }

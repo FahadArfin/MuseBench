@@ -1,0 +1,9 @@
+.work-mode-switch{display:inline-flex;align-items:center;gap:2px;padding:3px;background:var(--surface,#232323);border:1px solid var(--border,#353535);border-radius:9px;flex-shrink:0}
+.work-spaces-navigation{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}
+.work-spaces-navigation>.work-library{flex:1;min-height:160px}
+.work-mode-switch button{border:0;background:transparent;color:var(--muted,#a4a4a4);border-radius:6px;display:flex;align-items:center;gap:7px;padding:6px 12px;font-size:12px;cursor:pointer}
+.work-mode-switch button[aria-pressed=true]{background:var(--surface-hover,#363636);color:var(--text,#eee);box-shadow:0 1px 3px #0002}
+.work-mode-switch button:hover{color:var(--text,#eee)}
+.personal-sidebar>.work-mode-switch{margin:2px 14px 16px;display:flex}
+.personal-sidebar>.work-mode-switch button{flex:1;justify-content:center}
+@media(max-width:700px){.personal-topbar .work-mode-switch{order:1}.personal-topbar .breadcrumbs{display:none}.work-mode-switch button{padding:6px 9px}}

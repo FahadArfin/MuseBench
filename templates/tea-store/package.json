@@ -1,0 +1,7 @@
+{
+  "name": "willow-and-leaf",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "node server.mjs", "test": "node --test storefront.test.mjs" }
+}

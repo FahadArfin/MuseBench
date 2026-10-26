@@ -1,0 +1,5 @@
+.navigation-history{display:flex;align-items:center;gap:2px;flex-shrink:0;app-region:no-drag;-webkit-app-region:no-drag}
+.navigation-history .icon-button{width:28px;height:28px;min-width:28px;border-radius:7px;color:var(--muted)}
+.navigation-history .icon-button:hover:not(:disabled){color:var(--text);background:var(--surface-hover)}
+.navigation-history .icon-button:disabled{opacity:.3;cursor:default}
+@media(max-width:500px){.navigation-history{gap:0}.navigation-history .icon-button{width:25px;min-width:25px}}

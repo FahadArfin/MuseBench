@@ -1,0 +1,39 @@
+{
+  "date": "2026-10-25",
+  "adapter_contract_tests": {
+    "passed": 38,
+    "failed": 0,
+    "evidence": "adapter/evidence/adapter-tests.tap"
+  },
+  "ui_regression_checks": {
+    "passed": 17,
+    "evidence": "adapter/evidence/ui-regression-results.json"
+  },
+  "liveVerified": false,
+  "native_cli_executed": false,
+  "sdk_executed": false,
+  "model_calls": 0,
+  "original_deliverables_unchanged": [
+    {
+      "name": "Patchlight-Interactive-Demo.html",
+      "bytes": 38029,
+      "sha256": "c4f74ad2c712555918ddfd4753e5eecc5acac59dda280888fe4bf8a087f27ca8"
+    },
+    {
+      "name": "Patchlight-Research-and-Codex-Handoff.md",
+      "bytes": 31742,
+      "sha256": "2f9e0671e3bd552db74ea270c703280b25ccfecc56011cbeb4ddda0ad4670640"
+    },
+    {
+      "name": "Patchlight-Source-and-Handoff.zip",
+      "bytes": 45064,
+      "sha256": "48b0a95ea113fca47f870460e3ecb8e4eb0035c829e71db2222321297676b11b"
+    }
+  ],
+  "limits": [
+    "No trusted Muse executable found on PATH",
+    "Original UI remains mocked and is not wired to adapter",
+    "Exact pinned version/schema is a candidate; no live-supported version established",
+    "Direct file URL navigation denied by browser policy; standalone UI tested through localhost"
+  ]
+}

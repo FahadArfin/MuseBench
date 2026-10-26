@@ -1,0 +1,1 @@
+{"name":"patchlight-muse-spike","version":"0.1.0","private":true,"description":"Offline visual prototype; all Muse integrations are mocked","scripts":{"start":"python3 -m http.server 4318 --bind 127.0.0.1","bundle":"node bundle.mjs","test":"node tests/ui.cjs"}}

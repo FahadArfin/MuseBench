@@ -1,0 +1,92 @@
+{
+  "name": "musebench",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local coding workspace for Muse CLI",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "electron/main.mjs",
+  "scripts": {
+    "build:icon": "node scripts/build-app-icon.mjs",
+    "preview:ui": "vite --config vite.preview.config.mjs",
+    "test:browser-preview": "node scripts/browser-preview-smoke.mjs",
+    "dev": "node scripts/dev.mjs",
+    "start": "node scripts/start.mjs",
+    "build": "node scripts/build-windows-job.mjs && node scripts/build-windows-speech.mjs && tsc --noEmit && vite build",
+    "pretest": "node scripts/build-windows-job.mjs && node scripts/build-windows-speech.mjs",
+    "test": "node --test test/*.test.mjs reference/patchlight/adapter/test/*.test.mjs",
+    "test:ui": "node scripts/smoke.mjs",
+    "test:live": "node scripts/live-smoke.mjs",
+    "package": "npm run build && electron-builder --win --dir",
+    "doctor": "node scripts/doctor.mjs",
+    "doctor:host": "node scripts/probe-muse.mjs",
+    "test:redesign": "node scripts/redesign-smoke.mjs",
+    "spaces:server": "node scripts/spaces-server.mjs",
+    "test:spaces": "node scripts/spaces-smoke.mjs",
+    "preview:snapshots": "node scripts/capture-preview-snapshots.mjs",
+    "test:preview-parity": "node scripts/preview-parity.mjs"
+  },
+  "dependencies": {
+    "@muse-code/sdk": "1.4.13",
+    "lucide-react": "^0.468.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^5.0.0",
+    "electron": "45.0.0",
+    "electron-builder": "^26.0.12",
+    "playwright": "^1.58.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
+  },
+  "build": {
+    "appId": "local.musebench.desktop",
+    "productName": "MuseBench",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "src/controller/**/*",
+      "src/work/**/*",
+      "src/spaces/**/*",
+      "src/sites/**/*",
+      "src/runtime/**/*",
+      "reference/patchlight/adapter/*.mjs",
+      "reference/patchlight/adapter/THIRD-PARTY-NOTICE.md",
+      "reference/patchlight/adapter/evidence/LICENSE",
+      "templates/**/*",
+      "package.json",
+      "src/shared/*.mjs"
+    ],
+    "extraResources": [
+      {
+        "from": "native/bin/MuseBenchJob.exe",
+        "to": "native/MuseBenchJob.exe"
+      },
+      {
+        "from": "native/bin/MuseBenchJob.build.json",
+        "to": "native/MuseBenchJob.build.json"
+      },
+      {
+        "from": "native/bin/MuseBenchSpeech.exe",
+        "to": "native/MuseBenchSpeech.exe"
+      },
+      {
+        "from": "native/bin/MuseBenchSpeech.build.json",
+        "to": "native/MuseBenchSpeech.build.json"
+      }
+    ],
+    "win": {
+      "target": "dir",
+      "icon": "electron/assets/musebench.ico",
+      "signExecutable": false
+    }
+  }
+}

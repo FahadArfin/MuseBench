@@ -1,0 +1,52 @@
+.chat-composer.codex-composer { border-radius: 23px; background: var(--surface-hover); padding: 12px 11px 8px; border-color: color-mix(in srgb,var(--border) 70%,transparent); box-shadow: none; }
+.codex-composer textarea { min-height: 52px; padding: 0 2px; font-size: 13px; line-height: 1.6; }
+.codex-composer .composer-toolbar { gap: 5px; margin-top: 5px; min-height: 32px; }
+.composer-control { position: relative; flex-shrink: 0; }
+.access-chip,.reasoning-chip { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 7px; border-radius: 7px; font-size: 12px; }
+.access-chip:hover:not(:disabled),.reasoning-chip:hover:not(:disabled) { background: color-mix(in srgb,var(--muted) 14%,transparent); }
+.access-chip { color: var(--muted); }
+.access-chip span { max-width: 125px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.access-chip.no-prompts { color: #e99145; }
+.reasoning-chip strong { font-weight: 500; }
+.reasoning-chip > span { color: var(--muted); }
+.codex-composer .send-button { width: 30px; height: 30px; }
+.codex-composer .send-button:disabled { background: var(--surface); }
+.composer-popover { position: absolute; z-index: 50; bottom: 42px; left: 0; width: 330px; max-width: calc(100vw - 44px); border: 1px solid var(--border); background: var(--surface-hover); border-radius: 15px; padding: 8px; box-shadow: 0 10px 45px #0004; text-align: left; font-size: 12px; }
+.popover-label { display: block; font-size: 11px; color: var(--muted); padding: 4px 8px 9px; }
+.composer-menu-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 34px; padding: 8px; border-radius: 10px; text-align: left; font-size: 12px; }
+.composer-menu-row svg { flex-shrink: 0; color: var(--muted); }
+.composer-menu-row > span { flex: 1; }
+.composer-menu-row:hover,.composer-menu-row.selected { background: color-mix(in srgb,var(--muted) 16%,transparent); }
+.approval-option strong { display: block; font-size: 12px; font-weight: 500; line-height: 1.6; }
+.approval-option small { display: block; font-size: 11px; color: var(--muted); line-height: 1.5; margin-top: 2px; }
+.popover-help { display: flex; align-items: flex-start; gap: 5px; color: var(--muted); font-size: 10px; line-height: 1.6; margin: 9px 8px 4px; }
+.popover-help svg { flex-shrink: 0; margin-top: 2px; }
+.composer-mode-row { display: flex; gap: 9px; align-items: center; padding: 9px 8px; }
+.composer-mode-row > span { flex: 1; }
+.composer-mode-row select,.reasoning-popover select { border: 0; border-radius: 8px; background: var(--surface); color: var(--text); padding: 5px 9px; font-size: 11px; }
+.composer-plan-tag { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 10px; }
+.reasoning-popover { width: 270px; left: auto; right: 0; padding: 14px; }
+.reasoning-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 1px 0 10px; }
+.reasoning-heading strong { display: block; color: #6ea2ff; font-size: 13px; font-weight: 550; }
+.reasoning-heading small { display: block; color: var(--muted); font-size: 11px; margin-top: 5px; }
+.reasoning-popover input[type=range] { appearance: none; width: 100%; margin: 6px 0 0; cursor: pointer; height: 30px; background: transparent; }
+.reasoning-popover input[type=range]::-webkit-slider-runnable-track { height: 8px; border-radius: 8px; background: color-mix(in srgb,var(--muted) 45%,var(--surface)); }
+.reasoning-popover input[type=range]::-webkit-slider-thumb { appearance: none; width: 28px; height: 28px; margin-top: -10px; border-radius: 50%; background: var(--text); box-shadow: 0 1px 4px #0003; }
+.effort-scale { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); margin: 0 0 12px; }
+.reasoning-popover select { width: 100%; text-align: center; }
+.reasoning-popover .popover-help { margin: 10px 0 0; }
+.microphone-button.recording { color: #ef7d77; background: color-mix(in srgb,#ef7d77 12%,transparent); }
+.dictation-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; padding: 5px 4px 9px; line-height: 1.5; }
+.dictation-status > span:nth-child(2),.dictation-status.failed > span { flex: 1; }
+.dictation-status button { margin-left: auto; text-decoration: underline; }
+.dictation-status.failed { color: #d7897f; }
+.listening-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef7d77; }
+@media(max-width:700px) {
+ .composer-region { padding-left: 14px; padding-right: 14px; }
+ .access-chip,.reasoning-chip { padding: 4px; gap: 4px; font-size: 10px; }
+ .access-chip span { max-width: 92px; }
+ .composer-toolbar .icon-button { width: 26px; }
+ .approval-popover { left: -31px; width: 320px; }
+ .reasoning-popover { right: -68px; width: 270px; }
+ .composer-plan-tag { font-size: 0; gap: 0; }
+}

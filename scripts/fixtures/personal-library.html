@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Muse library offline fixture</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#171717;color:#e5e5e5;font:14px system-ui}button,a,input,textarea{font:inherit;color:inherit}button,a{cursor:pointer}button,input,textarea{background:#252525;border:1px solid #404040;border-radius:8px;padding:10px}a{display:block;padding:12px;text-decoration:none}[data-hatch-dock]{width:72px;position:fixed;inset:0 auto 0 0;background:#222;padding:8px}[data-hatch-full-page-shell]{margin-inline-start:72px;padding:36px;min-height:100vh}header{display:flex;justify-content:space-between;align-items:center}h1{font-size:25px}h3{margin:4px 0}section{padding:12px 0}section button,section a{margin:8px;min-width:210px;text-align:left}nav[aria-label="Side chats"]{position:fixed;left:90px;top:100px;width:280px;z-index:10;background:#303030;padding:15px;border:1px solid #666;border-radius:10px}[data-hatch-shell-composer-layer]{position:fixed;bottom:24px;left:72px;right:24px;padding:24px}textarea{display:block;width:100%;min-height:100px}#fixture-selection{color:#a0d7ba}[role="dialog"]{position:fixed;inset:20%;background:#242424;padding:25px;border:1px solid #666;border-radius:12px}
+  </style>
+</head>
+<body>
+<script>
+(() => {
+  const initial = {
+    chats: [{ key: 'alpha', title: 'Design a native Muse sidebar' }, { key: 'beta', title: 'Plan the autumn garden' }, { key: 'gamma', title: 'Weekend reading list' }, { key: 'delta', title: 'A calmer morning routine' }, { key: 'epsilon', title: 'Sketch a tiny library' }, { key: 'zeta', title: 'Family trip checklist' }, { key: 'eta', title: 'Learn a new keyboard shortcut' }],
+    ideas: [{ key: 'idea-alpha', title: 'A quiet writing room' }, { key: 'idea-beta', title: 'Weekend photo walks' }],
+    goals: [{ key: 'goal-alpha', title: 'Ship my desktop app' }, { key: 'goal-beta', title: 'Read twelve books' }],
+  };
+  const read = () => JSON.parse(localStorage.getItem('fixture-library') || JSON.stringify(initial));
+  window.__fixtureLibrary = {
+    replace(kind, items) { const value = read(); value[kind] = items; localStorage.setItem('fixture-library', JSON.stringify(value)); render(); },
+    reset() { localStorage.removeItem('fixture-library'); localStorage.removeItem('fixture-signed-out'); render(); },
+    signOut() { localStorage.setItem('fixture-signed-out', 'yes'); location.href = 'https://auth.muse.ai/login'; },
+    selected: null,
+  };
+  window.__fixtureDocumentId = Math.random().toString(36).slice(2);
+  const element = (tag, attrs = {}, text) => { const node = document.createElement(tag); for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value); if (text) node.textContent = text; return node; };
+  const navigate = route => { history.pushState({}, '', route); render(false); };
+  function render(preserveDraft = true) {
+    const preservedDraft = preserveDraft ? document.querySelector('textarea')?.value || '' : '';
+    document.body.replaceChildren();
+    if (location.hostname === 'auth.muse.ai' || localStorage.getItem('fixture-signed-out') === 'yes') {
+      document.body.append(element('h1', {}, 'Sign in to Muse'), element('p', {}, 'Offline fixture authentication screen.'));
+      return;
+    }
+    if (location.hostname !== 'muse.ai') {
+      document.body.append(element('h1', {}, 'Meta AI offline fixture'), element('p', {}, 'Meta AI chat remains a separate official destination.'));
+      return;
+    }
+    const data = read();
+    const dock = element('nav', {'data-hatch-dock': '', 'aria-label': 'Muse website dock'});
+    dock.append(element('a', {href:'/', 'aria-label':'Chat', 'data-testid':'hatch-nav-chat'}, 'Chat'),element('a',{href:'/ideas','aria-label':'Ideas'},'Ideas'),element('a',{href:'/goals','aria-label':'Goals'},'Goals'));
+    const shell = element('main', {'data-hatch-full-page-shell':''});
+    const header = element('header');
+    const kind = location.pathname.startsWith('/ideas') ? 'ideas' : location.pathname.startsWith('/goals') ? 'goals' : 'chats';
+    header.append(element('h1',{},kind === 'ideas' ? 'Ideas' : kind === 'goals' ? 'Goals' : 'Muse'));
+    const switcher = element('button',{'data-testid':'hatch-chat-switcher-trigger','aria-label':'Open chats','aria-expanded':'false'},'Chats');
+    switcher.addEventListener('click', () => {
+      const existing = document.querySelector('nav[aria-label="Side chats"]');
+      if(existing) { existing.remove(); switcher.setAttribute('aria-expanded','false'); return; }
+      const nav = element('nav',{'aria-label':'Side chats'});
+      nav.append(element('a',{href:'/'},'Main conversation'));
+      for(const item of data.chats) nav.append(element('a',{href:`/thread/${item.key}`},item.title));
+      nav.append(element('a',{href:'https://example.invalid/thread/steal'},'External injected chat'),element('a',{href:'/thread/injected?token=secret'},'Unsafe query chat'),element('a',{href:'/settings'},'Settings is not a chat'));
+      document.body.append(nav); switcher.setAttribute('aria-expanded','true');
+    });
+    // Like the real side-chat page, /thread/* has no chat-switcher menu. The
+    // native app must use its observed catalog and retain each thread view.
+    if (location.pathname.startsWith('/thread/')) header.append(element('a',{href:'/', 'aria-label':'Back to main chat'},'Back to main chat'));
+    else if (location.pathname === '/') header.append(switcher);
+    shell.append(header);
+    if(kind === 'ideas') {
+      const section = element('section',{'aria-label':'Your ideas'});
+      for(const item of data.ideas) {
+        const row=element('button',{'data-pel-click':'idea_group_row_click','data-fixture-key':item.key}); row.append(element('h3',{},item.title));
+        row.addEventListener('click',()=>{window.__fixtureLibrary.selected={kind:'ideas',key:item.key};const dialog=element('div',{role:'dialog','aria-label':'Idea preview'});dialog.append(element('h2',{},item.title));const close=element('button',{'aria-label':'Close idea preview'},'Close');close.onclick=()=>{window.__fixtureLibrary.selected=null;dialog.remove();};dialog.append(close);document.body.append(dialog);});section.append(row);
+      }
+      shell.append(section);
+    } else if(kind === 'goals') {
+      const section=element('section',{'aria-label':'Your goals'});
+      for(const item of data.goals) { const link=element('a',{href:`/goals/${item.key}`});link.append(element('h3',{},item.title));section.append(link); }
+      const hostile=element('a',{href:'https://example.invalid/goals/steal'});hostile.append(element('h3',{},'External injected goal'));section.append(hostile);
+      if(data.goals.length===0) section.append(element('h2',{id:'hatch-goals-create'},'Create your first goal'));
+      shell.append(section);
+    } else {
+      const active=data.chats.find(item=>location.pathname===`/thread/${item.key}`);
+      shell.append(element('h2',{id:'fixture-selection'},active?.title || (location.pathname==='/thread/new'?'New Muse chat':'Main conversation')),element('p',{},'This is fictional offline content used to verify the native sidebar.'));
+      const composer=element('div',{'data-hatch-shell-composer-layer':''});const textarea=element('textarea',{'aria-label':'Fixture Muse message','placeholder':'Write to Muse'});textarea.value=preservedDraft;composer.append(textarea);shell.append(composer);
+    }
+    document.body.append(dock,shell);
+    document.body.querySelectorAll('a[href^="/"]').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();navigate(link.getAttribute('href'));}));
+  }
+  addEventListener('popstate',()=>render(false));
+  render();
+})();
+</script>
+</body>
+</html>

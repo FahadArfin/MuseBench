@@ -1,0 +1,158 @@
+✔ bridge defaults unavailable without explicit host-start authorization (0.991622ms)
+✔ SDK mismatch is rejected before starting a process (0.234486ms)
+✔ missing binary and explicit environment are honest unavailable states (4.054198ms)
+✔ bridge uses official serve handshake and preserves explicit environment only (3.842005ms)
+✔ schema mismatch closes host before session or turn commands (1.843338ms)
+✔ handshake timeout and failed cleanup stay explicit (6.391333ms)
+✔ host exit disables the attached adapter (1.003629ms)
+✔ exact documented candidate is eligible but never marked live-verified (0.828322ms)
+✔ unknown SDK, host, schema and sandbox each fail closed (0.186375ms)
+✔ missing runtime and malformed handshake are explicit unavailable states (0.112936ms)
+✔ unmodified official recorded transcript is rejected, not silently relabeled compatible (4.504331ms)
+✔ candidate pin matches downloaded official source schema manifest (0.292091ms)
+✔ review requires approved plan, exact revision, preview and runner evidence (1.061264ms)
+✔ agent claims cannot be recorded as test evidence (0.178964ms)
+✔ new revision or plan invalidates acceptance and evidence (0.204481ms)
+✔ failed and unfinished checks cannot permit acceptance (1.235922ms)
+✔ busy or unavailable runtime invalidates acceptance (0.27848ms)
+✔ returned snapshots cannot mutate review state (0.232373ms)
+✔ incompatible connection never starts a session (1.360897ms)
+✔ session and turn use verified command shapes without auto retry (1.215892ms)
+✔ official event sequence reaches completion with exact final text (0.734513ms)
+✔ ack and final message are not turn completion (0.524944ms)
+✔ duplicates do not double text; final object replaces partial text (0.354042ms)
+✔ foreign session events cannot affect active session (0.456223ms)
+✔ malformed or unknown terminal state fails closed (1.696281ms)
+✔ failure and cancellation remain distinct from completed (0.735234ms)
+✔ approval request is surfaced and never automatically decided (0.501319ms)
+✔ turn timeout is uncertain; late response does not revive session (12.555101ms)
+✔ host death disables sends and marks active outcome unknown (0.367011ms)
+✔ same cursor with conflicting content is not silently accepted (0.283839ms)
+✔ events arriving before command acknowledgement are drained after identity is known (0.470134ms)
+✔ input validation and concurrent-send guard prevent extra commands (0.204582ms)
+✖ session/closed with nullable cursor disables future commands (1.015267ms)
+✖ view gap before or after terminal invalidates transcript completeness (0.371869ms)
+✖ observer disconnect during startup prevents session/start (0.323106ms)
+✖ observer disconnect during submission prevents turn/start (0.256238ms)
+✖ conflicting terminal outcome cannot turn failure into completion (0.291179ms)
+✖ command id mint failure becomes unavailable without issuing a turn (0.308184ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 32
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 150.552514
+
+✖ failing tests:
+
+test at test/session.test.mjs:21:1
+✖ session/closed with nullable cursor disables future commands (1.015267ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'idle'
+  - 'unavailable'
+  
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:21:240)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'idle',
+    expected: 'unavailable',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/session.test.mjs:22:1
+✖ view gap before or after terminal invalidates transcript completeness (0.371869ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'completed'
+  - 'unavailable'
+  
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:22:418)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'completed',
+    expected: 'unavailable',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/session.test.mjs:23:1
+✖ observer disconnect during startup prevents session/start (0.323106ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:23:291)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/session.test.mjs:24:1
+✖ observer disconnect during submission prevents turn/start (0.256238ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  2 !== 1
+  
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:24:253)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 2,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/session.test.mjs:25:1
+✖ conflicting terminal outcome cannot turn failure into completion (0.291179ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'completed'
+  - 'unavailable'
+  
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:25:313)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'completed',
+    expected: 'unavailable',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/session.test.mjs:26:1
+✖ command id mint failure becomes unavailable without issuing a turn (0.308184ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'submitting'
+  - 'unavailable'
+  
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:26:235)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'submitting',
+    expected: 'unavailable',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

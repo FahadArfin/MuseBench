@@ -1,0 +1,77 @@
+{
+  "commit": "3dce908f556bd8b3dfc9cd7f28f442b0504d74a4",
+  "retrieved": "2026-10-25",
+  "executed": false,
+  "files": [
+    {
+      "local": "sdk-package.json",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/clients/sdk-ts/package.json",
+      "sha256": "7745f667754130609c257a99a0eeb8bf2e0cb88a448001a0966b207f8ca1cf64"
+    },
+    {
+      "local": "publish-anchor.json",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/publish-anchor.json",
+      "sha256": "775f4f68d836333b1cf577ec1083eecf8784d24b1dd90504ff5bb4713887a7c1"
+    },
+    {
+      "local": "upstream-README.md",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/README.md",
+      "sha256": "91f63adc76fa7aa7767865e91f7628a8ad5f863deb5fea46504a69c459a7d4e3"
+    },
+    {
+      "local": "index.ts",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/clients/sdk-ts/src/index.ts",
+      "sha256": "bff4dbc549ad094cc95c8a5e6dbb3c495e4d150c85582eb6ec893de788e61c3f"
+    },
+    {
+      "local": "host.ts",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/clients/sdk-cookbook/src/kit/host.ts",
+      "sha256": "cdb9ca6ce3fe0472e6928fb5a51d78b2732bf55fabae12294413ceeb8cf820f0"
+    },
+    {
+      "local": "connection.ts",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/clients/sdk-ts/src/connection/connection.ts",
+      "sha256": "f37ded8dd66f18ab124a4c1fde913861460ad07d489c1b14ff08aa6ad2c65ad9"
+    },
+    {
+      "local": "spawn.ts",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/clients/sdk-ts/src/connection/spawn.ts",
+      "sha256": "5ec25a4adb9dd852623f3ed98d0d23cd05f79c8e86f56935329d42858fa0849a"
+    },
+    {
+      "local": "client.ts",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/clients/sdk-ts/src/facade/client.ts",
+      "sha256": "c6d94ad3ae29fe5e05a78dd6157ded05a6f18fa2ff3b5fc930fe53614f4147a0"
+    },
+    {
+      "local": "session.ts",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/clients/sdk-ts/src/facade/session.ts",
+      "sha256": "96e5ef10e9110733c2f4ed76faef3ab6011fd2245d1c8c9c7c68981dcb67b027"
+    },
+    {
+      "local": "transcript.ndjson",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/schema/msp/transcripts/text-run-single-turn/transcript.ndjson",
+      "sha256": "33556a12662ede89d960793d92a9097996fbfd3d9220e78a1f8ff38b528079b9"
+    },
+    {
+      "local": "transcript-manifest.json",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/schema/msp/transcripts/text-run-single-turn/manifest.json",
+      "sha256": "faeabdb9760b99fb336811d4b1ecea9219f1b64c74dfacdcdd287d5779865d2f"
+    },
+    {
+      "local": "msp.schema.json",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/schema/msp/stable/msp.schema.json",
+      "sha256": "59c3c649418af35b54d4c64153210b2c77f8e0be2e47bf595a0ad33194530894"
+    },
+    {
+      "local": "schema-manifest.json",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/schema/msp/stable/manifest.json",
+      "sha256": "254e006fdd42fefabd9d4569084b38d9aa67d3962b0ff3e72065b327f3e27a3b"
+    },
+    {
+      "local": "LICENSE",
+      "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/3dce908f556bd8b3dfc9cd7f28f442b0504d74a4/LICENSE",
+      "sha256": "da6d3703ed11cbe42bd212c725957c98da23cbff1998c05fa4b3d976d1a58e93"
+    }
+  ]
+}

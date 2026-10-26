@@ -1,0 +1,25 @@
+.sidebar-chat { position: relative; }
+.sidebar-chat .chat-row { padding-right: 27px; }
+.sidebar-chat .chat-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-chat .chat-pinned-icon, .chat-context-menu .chat-pinned-icon { color: #1877f2; fill: #1877f2; flex-shrink: 0; }
+.chat-options { position: absolute; right: 3px; top: 4px; width: 24px; height: 24px; opacity: 0; color: var(--muted); }
+.sidebar-chat:hover .chat-options, .sidebar-chat:focus-within .chat-options { opacity: 1; }
+.project-chat-tabs { display: flex; gap: 3px; margin: 4px 5px 6px; }
+.project-chat-tabs button { color: var(--muted); padding: 4px 8px; font-size: 11px; border-radius: 5px; }
+.project-chat-tabs button[aria-pressed=true] { color: var(--text); background: var(--surface-hover); }
+.archive-retention { color: var(--muted); font-size: 10px; line-height: 1.6; margin: 8px 10px 12px; }
+.chat-context-menu { position: fixed; z-index: 115; width: 216px; padding: 5px; background: var(--surface-hover); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 28px #0004; }
+.chat-context-menu button { display: flex; align-items: center; gap: 9px; width: 100%; text-align: left; padding: 8px 9px; border-radius: 6px; font-size: 12px; }
+.chat-context-menu button:hover, .chat-context-menu button:focus-visible { background: var(--surface); }
+.chat-context-menu .danger, .chat-delete-actions .danger { color: var(--danger); }
+.chat-menu-retention { color: var(--muted); font-size: 11px; margin: 5px 9px 7px; }
+.chat-delete-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
+@media (hover: none) { .chat-options { opacity: 1; } }
+
+.sidebar-chat[draggable=true],.project-row[draggable=true]{cursor:grab}
+.sidebar-drop-target{box-shadow:inset 0 2px #3989fa;border-radius:4px;background:color-mix(in srgb,#3989fa 9%,transparent)}
+.sidebar-drop-section{min-height:44px}
+.sidebar-drop-end{height:8px;margin:0 10px;border:1px solid transparent;border-radius:5px}
+.sidebar-drop-end.visible{border:1px dashed var(--border)}
+.sidebar-drop-end.sidebar-drop-target{border-color:#3989fa;background:color-mix(in srgb,#3989fa 12%,transparent)}
+.sidebar-move-announcement{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

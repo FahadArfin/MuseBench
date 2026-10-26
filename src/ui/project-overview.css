@@ -1,0 +1,74 @@
+.project-overview { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.project-overview-inner { max-width: 940px; margin: 0 auto; padding: 64px 48px 48px; }
+.project-overview-heading { display: flex; align-items: center; gap: 18px; }
+.project-overview-heading h1 { margin: 0; font-size: 28px; font-weight: 550; letter-spacing: -.7px; overflow-wrap: anywhere; }
+.project-location-details { display: grid; gap: 10px; margin: 24px 0 28px; font-size: 12px; }
+.project-location-details > div { display: flex; align-items: baseline; gap: 18px; }
+.project-location-details dt { display: flex; align-items: center; gap: 8px; flex: 0 0 105px; color: var(--muted); }
+.project-location-details dd { margin: 0; min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.project-repository-link { display: inline-flex; align-items: center; gap: 5px; color: var(--accent); text-align: left; overflow-wrap: anywhere; }
+.project-repository-link:hover { text-decoration: underline; }
+.project-new-conversation { margin-bottom: 44px; }
+.composer-shell { transform-origin: top left; }
+.project-chat-tabs button { display: inline-flex; align-items: center; gap: 8px; }
+.project-chat-tabs button > span { color: var(--muted); font-size: 11px; }
+.project-overview-icon { width: 54px; height: 54px; flex-shrink: 0; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--muted); }
+.project-overview-title { flex: 1; min-width: 0; }
+.project-eyebrow { color: var(--muted); font-size: 10px; letter-spacing: 1.4px; }
+.project-overview-title h1 { margin: 5px 0 7px; font-size: 28px; font-weight: 550; letter-spacing: -.7px; overflow-wrap: anywhere; }
+.project-overview-title p { color: var(--muted); font-size: 11px; line-height: 1.6; margin: 0; overflow-wrap: anywhere; }
+.project-start-chat { flex-shrink: 0; }
+.project-introduction { color: var(--muted); font-size: 13px; line-height: 1.8; margin: 30px 0 38px; }
+.project-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 15px; }
+.project-section-heading h2 { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 550; margin: 0; }
+.project-section-heading h2 span { font-weight: 400; color: var(--muted); font-size: 11px; }
+.project-section-heading > span { font-size: 11px; color: var(--muted); }
+.project-conversation-list { border-top: 1px solid var(--border); }
+.project-conversation-row { position: relative; }
+.project-conversation-row .project-conversation { padding-right: 44px; }
+.project-conversation-options { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.project-conversations .project-chat-tabs { margin: 0; gap: 4px; }
+.project-conversations .project-chat-tabs button { font-size: 12px; padding: 7px 12px; border-radius: 7px; }
+.project-conversations .archive-retention { font-size: 12px; margin: 0 0 18px; line-height: 1.6; }
+.project-conversation { width: 100%; display: flex; align-items: center; gap: 14px; padding: 20px 10px; border-bottom: 1px solid var(--border); text-align: left; border-radius: 3px; }
+.project-conversation:hover:not(:disabled) { background: var(--surface); }
+.project-chat-icon { color: var(--muted); flex-shrink: 0; display: grid; place-items: center; }
+.project-chat-copy { flex: 1; min-width: 0; }
+.project-chat-copy strong { font-size: 13px; font-weight: 500; display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; line-height: 1.6; }
+.project-chat-copy small { display: flex; align-items: center; gap: 6px; margin-top: 5px; font-size: 10px; color: var(--muted); }
+.project-conversation time { font-size: 11px; color: var(--muted); flex-shrink: 0; }
+.project-chat-arrow { color: var(--muted); opacity: 0; flex-shrink: 0; }
+.project-conversation:hover .project-chat-arrow, .project-conversation:focus-visible .project-chat-arrow { opacity: 1; }
+.project-empty { text-align: center; padding: 45px 20px; border: 1px dashed var(--border); border-radius: 12px; color: var(--muted); }
+.project-empty h3 { color: var(--text); font-size: 15px; font-weight: 500; margin: 14px 0 8px; }
+.project-empty p { font-size: 12px; margin: 0 0 20px; }
+.project-details { margin: -12px 0 24px; color: var(--muted); font-size: 12px; }
+.project-details summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; padding: 8px 0; }
+.project-details summary::-webkit-details-marker { display: none; }
+.project-details summary > svg:last-child { margin-left: auto; }
+.project-details[open] summary > svg:last-child { transform: rotate(180deg); }
+.project-command-count { font-size: 10px; }
+.project-details p { font-size: 11px; line-height: 1.8; }
+.project-details dl { margin: 14px 0 0; border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; background: var(--surface); }
+.project-details dl > div { display: grid; grid-template-columns: minmax(70px, 1fr) minmax(0, 4fr); gap: 14px; padding: 9px 0; }
+.project-details dt { color: var(--text); overflow-wrap: anywhere; }
+.project-details dd { margin: 0; overflow-wrap: anywhere; font-size: 11px; }
+.project-row.overview-selected { background: var(--surface-hover); }
+.project-row > button.project-new-chat { flex: 0 0 26px; width: 26px; padding: 0; justify-content: center; color: var(--muted); opacity: .55; }
+.project-row:hover > button.project-new-chat, .project-row > button.project-new-chat:focus-visible { opacity: 1; }
+.project-row > button.project-new-chat:hover { color: var(--text); }
+.breadcrumbs > .project-breadcrumb { min-width: 0; max-width: 230px; flex-shrink: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; text-align: left; }
+.project-breadcrumb:hover:not(:disabled) { color: var(--text); text-decoration: underline; text-underline-offset: 4px; }
+@media (max-width: 1050px) { .project-overview-inner { padding: 38px 28px; } }
+@media (max-width: 700px) {
+  .project-overview-inner { padding: 28px 20px; }
+  .project-overview-heading { flex-wrap: wrap; gap: 14px; }
+  .project-overview-title h1 { font-size: 25px; }
+  .project-overview-icon { width: 42px; height: 42px; border-radius: 11px; }
+  .project-start-chat { width: 100%; margin-top: 8px; }
+  .project-introduction { margin: 24px 0; font-size: 12px; }
+  .project-conversation { padding: 17px 4px; gap: 10px; }
+  .project-conversation time { font-size: 9px; }
+  .project-chat-arrow { display: none; }
+  .project-chat-copy strong { font-size: 12px; }
+}

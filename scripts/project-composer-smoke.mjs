@@ -1,0 +1,37 @@
+import {_electron as electron} from 'playwright';
+import assert from 'node:assert/strict';
+import {mkdir,mkdtemp,writeFile} from 'node:fs/promises';
+import {execFileSync} from 'node:child_process';
+import path from 'node:path';
+import {createController} from '../src/controller/index.mjs';
+const variant=process.env.MUSEBENCH_EXECUTABLE?'packaged':'source';
+await mkdir('artifacts/project-composer',{recursive:true});
+const root=await mkdtemp(path.resolve('artifacts/project-composer',variant+'-')),dataDir=path.join(root,'data'),project=path.join(root,'Example project');await mkdir(project);await writeFile(path.join(project,'README.md'),'Project composer fixture');
+execFileSync('git',['init','--initial-branch=main',project],{windowsHide:true});execFileSync('git',['-C',project,'remote','add','origin','git@github.com:example/muse-project-fixture.git'],{windowsHide:true});
+const controller=await createController({dataDir});await controller.dispatch({type:'openProject',path:project});const seeded=await controller.dispatch({type:'newTask',request:'Existing conversation',mode:'manual'});const originalId=seeded.task.id;await controller.close();
+const env={...process.env,MUSEBENCH_DATA_DIR:dataDir,MUSEBENCH_PROJECTS_DIR:path.join(root,'projects')};delete env.ELECTRON_RUN_AS_NODE;delete env.MUSEBENCH_DEV;
+const app=await electron.launch({args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});const page=await app.firstWindow();page.setDefaultTimeout(12000);
+const report={variant,checks:[],errors:[]};page.on('pageerror',e=>report.errors.push(e.message));const pass=s=>{report.checks.push(s);console.log('PASS '+s);};
+const message=()=>page.getByRole('textbox',{name:'Message Muse',exact:true});const overview=page.getByRole('main',{name:'Project overview',exact:true});
+const openProject=async()=>{await page.locator('.sidebar').getByRole('button',{name:'Example project',exact:true}).click();await overview.waitFor();};
+try{
+ await page.setViewportSize({width:1440,height:1000});await message().fill('Keep the existing chat draft');await openProject();
+ assert.equal(await message().inputValue(),'');assert.equal(await overview.getByRole('button',{name:'New chat',exact:true}).count(),0);assert.equal(await overview.getByText('Project files & instructions',{exact:true}).count(),0);assert.equal(await overview.locator('.project-overview-icon,.project-introduction,.project-eyebrow').count(),0);
+ await overview.getByRole('button',{name:'example/muse-project-fixture',exact:true}).waitFor();await overview.getByText('main',{exact:true}).waitFor();assert.equal((await page.evaluate(()=>window.musebench.getState())).activeProject.repositoryUrl,'https://github.com/example/muse-project-fixture');
+ const positions=await overview.evaluate(el=>({title:el.querySelector('h1').getBoundingClientRect().top,details:el.querySelector('dl').getBoundingClientRect().top,composer:el.querySelector('textarea').getBoundingClientRect().top,chats:el.querySelector('.project-conversations').getBoundingClientRect().top}));assert(positions.title<positions.details&&positions.details<positions.composer&&positions.composer<positions.chats);
+ pass('Project name, real GitHub/local/branch details, composer, then Chats and Archived appear in order without removed elements');
+ await message().fill('Start from the project page');assert.equal((await page.evaluate(()=>window.musebench.getState())).tasks.length,1);await page.locator('.sidebar .chat-row').filter({hasText:'Existing conversation'}).first().click();await overview.waitFor({state:'hidden'});assert.equal(await message().inputValue(),'Keep the existing chat draft');await openProject();assert.equal(await message().inputValue(),'Start from the project page');
+ pass('Project drafts are separate from existing chats; typing alone creates no empty sessions');
+ await overview.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByLabel('Task mode',{exact:true}).selectOption('manual');await page.keyboard.press('Escape');
+ await page.evaluate(()=>{window.__composerMotion=[];const animate=Element.prototype.animate;Element.prototype.animate=function(frames,options){if(this.classList.contains('composer-shell'))window.__composerMotion.push({frames,options});return animate.call(this,frames,options);};});
+ await page.screenshot({path:path.join(root,'project.png')});await overview.getByRole('button',{name:'Create task',exact:true}).click();await page.locator('.user-message').getByText('Start from the project page',{exact:true}).waitFor();
+ const created=await page.evaluate(()=>window.musebench.getState());assert.equal(created.tasks.length,2);assert.notEqual(created.task.id,originalId);assert.equal(created.task.projectId,created.activeProject.id);assert.equal(await message().inputValue(),'');
+ const motion=await page.evaluate(()=>window.__composerMotion);assert.equal(motion.length,1);assert.equal(motion[0].options.duration,420);assert(motion[0].frames[0].transform.includes('translate('));await page.waitForFunction(()=>document.querySelector('.composer-shell').getAnimations().length===0);const dock=await message().boundingBox();assert(dock.y>700);await page.screenshot({path:path.join(root,'chat.png')});
+ pass('Sending creates exactly one chat in the correct project and animates the composer down to its chat position');
+ await openProject();assert.equal(await message().inputValue(),'');await page.getByRole('group',{name:'Example project chat sections',exact:true}).getByRole('button',{name:'Archived',exact:true}).click();await overview.getByRole('heading',{name:'No archived chats',exact:true}).waitFor();
+ await page.setViewportSize({width:430,height:820});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));assert(await message().isVisible());await page.screenshot({path:path.join(root,'mobile.png')});
+ pass('New-chat draft clears after creation; archive controls remain below the composer and mobile fits');
+ await page.setViewportSize({width:1440,height:1000});await page.emulateMedia({reducedMotion:'reduce'});await message().fill('Reduced motion chat');await overview.getByRole('button',{name:'Create task',exact:true}).click();await page.locator('.user-message').getByText('Reduced motion chat',{exact:true}).waitFor();assert.equal((await page.evaluate(()=>window.__composerMotion)).length,1);
+ pass('Reduced-motion preference skips the composer movement');
+ assert.deepEqual(report.errors,[]);report.status='passed';
+}catch(e){report.status='failed';report.error=String(e.stack??e);await page.screenshot({path:path.join(root,'failure.png')}).catch(()=>{});throw e;}finally{await app.close();await writeFile(path.join(root,'report.json'),JSON.stringify(report,null,2));console.log(root);}

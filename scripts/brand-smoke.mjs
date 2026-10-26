@@ -1,0 +1,35 @@
+import {_electron as electron} from 'playwright';
+import assert from 'node:assert/strict';
+import {mkdir,mkdtemp,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {resolvePersonalAppearance} from '../electron/personal-appearance.mjs';
+const variant=process.env.MUSEBENCH_EXECUTABLE?'packaged':'source';await mkdir('artifacts/brand-ui',{recursive:true});const output=await mkdtemp(path.resolve('artifacts/brand-ui',variant+'-'));
+const env={...process.env,MUSEBENCH_DATA_DIR:path.join(output,'data'),MUSEBENCH_PROJECTS_DIR:path.join(output,'projects')};delete env.ELECTRON_RUN_AS_NODE;delete env.MUSEBENCH_DEV;
+const report={variant,output,modelRequests:0,checks:[],contrast:[],errors:[]};let app,page;
+const record=value=>{report.checks.push(value);console.log('PASS '+value);};
+const shot=name=>page.screenshot({path:path.join(output,name+'.png')});
+const rgb=hex=>hex.replace('#','').match(/../g).map(v=>parseInt(v,16)/255);
+const luminance=color=>rgb(color).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
+const contrast=(a,b)=>{const x=luminance(a),y=luminance(b);return(Math.max(x,y)+.05)/(Math.min(x,y)+.05);};
+const settings=async()=>{await page.keyboard.press('Control+,');return page.getByRole('dialog',{name:'Settings',exact:true});};
+async function product(label){await page.getByRole('button',{name:label==='Meta AI'?'Muse AI':label,exact:true}).click();}
+const token=name=>page.evaluate(name=>getComputedStyle(document.documentElement).getPropertyValue(name).trim(),name);
+try{
+ app=await electron.launch({cwd:process.cwd(),args:variant==='source'?['.']:[],...(variant==='packaged'?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});page=await app.firstWindow();page.on('pageerror',e=>report.errors.push(e.message));await page.getByRole('group',{name:'Choose workspace',exact:true}).waitFor();
+ for(const theme of ['dark','light']){
+  const dialog=await settings();await dialog.getByRole('button',{name:theme==='dark'?'Dark theme':'Light theme',exact:true}).click();await shot(`${theme}-settings`);await page.keyboard.press('Escape');
+  const colors=await page.evaluate(()=>Object.fromEntries(['accent','accent-fill','accent-on-fill','accent-soft','accent-focus','text','bg','sidebar','surface-hover','success','danger'].map(key=>[key,getComputedStyle(document.documentElement).getPropertyValue('--'+key).trim()])));
+  const pairs=[['brand on sidebar','accent','sidebar',4.5],['link on surface','accent','surface-hover',4.5],['active label','accent','accent-soft',4.5],['primary label','accent-on-fill','accent-fill',4.5],['selected body text','text','accent-soft',4.5],['focus on background','accent-focus','bg',3],['focus on surface','accent-focus','surface-hover',3]];
+  for(const [name,fg,bg,min]of pairs){const ratio=contrast(colors[fg],colors[bg]);report.contrast.push({theme,name,ratio:Number(ratio.toFixed(2)),minimum:min});assert(ratio>=min,`${theme}: ${name} ${ratio}`);}
+  assert.equal(colors.accent,resolvePersonalAppearance({theme}).color.accent);assert.equal(colors['accent-fill'],resolvePersonalAppearance({theme}).color.action);assert.notEqual(colors.success,colors.accent);assert.notEqual(colors.danger,colors.accent);
+  await product('Muse Code');const wordmark=page.locator('.product-name:visible > span');const expected=await page.evaluate(hex=>{const e=document.createElement('span');e.style.color=hex;document.body.append(e);const c=getComputedStyle(e).color;e.remove();return c;},colors.accent);assert.equal(await wordmark.evaluate(e=>getComputedStyle(e).color),expected);await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Build a clear, useful workspace');await shot(`${theme}-code`);
+  await shot(`${theme}-product-switch`);await page.getByRole('button',{name:'Muse AI',exact:true}).click();assert.equal(await page.locator('.product-name:visible > span').evaluate(e=>getComputedStyle(e).color),expected);
+  await page.getByRole('group',{name:'Chat or Work'}).getByRole('button',{name:'Work',exact:true}).click();await page.getByRole('button',{name:'New work',exact:true}).click();await shot(`${theme}-work`);await page.keyboard.press('Control+b');await page.getByRole('button',{name:'Show sidebar',exact:true}).click();await page.keyboard.press('Control+k');assert.equal(await page.getByRole('textbox',{name:'Search saved work',exact:true}).evaluate(e=>e===document.activeElement),true);await page.getByRole('button',{name:'Search saved work',exact:true}).click();const footer=await page.getByRole('button',{name:'Profile menu',exact:true}).boundingBox();assert(footer&&footer.y+footer.height<=await page.evaluate(()=>innerHeight),'Work profile stays visible');
+  await page.getByRole('button',{name:/^All spaces/}).first().click();await page.getByRole('heading',{name:'Keep the work together.',exact:true}).waitFor();await shot(`${theme}-spaces`);await page.keyboard.press('Control+b');await page.getByRole('button',{name:'Open navigation',exact:true}).click();assert.equal(await page.locator('.app.sidebar-collapsed').count(),0);
+  await page.getByRole('button',{name:/^All sites/}).first().click();await page.getByRole('heading',{name:'Your next idea belongs online.',exact:true}).waitFor();await shot(`${theme}-sites`);await page.keyboard.press('Control+b');await page.getByRole('button',{name:'Open navigation',exact:true}).click();assert.equal(await page.locator('.app.sidebar-collapsed').count(),0);
+  await page.getByRole('region',{name:'Sites workspace',exact:true}).getByRole('button',{name:/Landing page A clear/}).click();const create=page.getByRole('dialog',{name:'Create a site',exact:true});await create.getByRole('textbox',{name:'Site name',exact:true}).fill(`Blue identity ${theme}`);await shot(`${theme}-primary-action`);const primary=create.getByRole('button',{name:'Create site',exact:true});assert.equal(await primary.evaluate(e=>getComputedStyle(e).backgroundColor),'rgb(8, 102, 235)');await primary.click();await page.getByRole('region',{name:'Sites workspace',exact:true}).locator('iframe').contentFrame().getByRole('heading',{name:`Blue identity ${theme}`,exact:true}).waitFor();await shot(`${theme}-studio`);
+  const siteFrame=page.frames().find(f=>f.url().startsWith('musebench-site:'));assert.equal(await siteFrame.evaluate(()=>getComputedStyle(document.documentElement).color),'rgb(24, 55, 46)');record(`${theme}: brand, primary, selection and focus contrast pass; generated website keeps its own colors`);
+ }
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setSize(430,780));await shot('narrow-sites');assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false);record('Narrow layout remains within the window');assert.equal(report.errors.length,0);report.status='passed';
+}catch(error){report.status='failed';report.failure=error.stack;console.error(error);try{await shot('failure');}catch{}process.exitCode=1;}
+finally{await app?.close().catch(()=>{});await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log('Report '+path.join(output,'report.json'));}

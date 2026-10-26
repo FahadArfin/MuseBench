@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Offline Muse rich chat fixture</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#eef0f8;color:#202640;font:18px Arial,sans-serif}button,textarea{font:inherit;color:inherit}button{cursor:pointer;border:1px solid #aeb4cf;border-radius:22px;background:#e3e6f4;padding:8px 12px}button:focus-visible,textarea:focus-visible,[contenteditable]:focus-visible{outline:2px solid #334bbb;outline-offset:3px}[data-hatch-dock]{position:fixed;inset:0 auto 0 0;width:72px;background:#d6dbf0;padding:10px;z-index:3}[data-hatch-dock] button{padding:6px;width:52px}[data-hatch-full-page-shell]{height:100%;margin-inline-start:72px}[data-hatch-pane-frame="chat"]{height:100%;display:flex;flex-direction:column}[data-hatch-chat-content]{height:100%;position:relative}[data-hatch-vt-pane="chat-feed"]{height:100%;overflow-y:auto;padding-bottom:220px}[data-hatch-chat-column]{max-width:1000px;width:calc(100% - 360px);padding-inline:32px;margin-inline:auto}[role="log"]{padding-top:30px;padding-bottom:40px}[data-message-item]{margin:0 0 24px;line-height:1.5}.hatch-chat-groupable-bubble{background:#d8ddf3;border-radius:30px;padding:18px}[data-message-role="user"] .hatch-chat-groupable-bubble{background:#485ea4;color:#fff;max-width:92%;margin-left:auto}[data-hatch-assistant-message-body]{font:18px Arial,sans-serif}.prose p{margin:0 0 14px}.prose pre{overflow:auto;margin:16px 0;background:#cdd3eb;padding:18px;border-radius:20px;line-height:1.5}.prose code{font:15px Consolas,monospace}.fixture-table-scroll{max-width:100%;overflow:auto}.prose table{border-collapse:collapse;min-width:620px;font-size:16px}.prose th,.prose td{border:1px solid #8993b9;padding:8px;text-align:left}[data-hatch-status-panel-card]{position:fixed;top:22px;right:20px;width:300px;padding:16px;background:#dfe4f6;border:1px solid #9aa6d0;border-radius:18px;z-index:1}[data-hatch-status-panel-card] h2{font-size:16px;margin:10px 0}[data-hatch-status-panel-card] p{font-size:13px;line-height:1.5}[data-hatch-status-panel-card] button{font-size:12px}[data-hatch-shell-composer-layer]{position:fixed;bottom:16px;left:72px;right:360px;z-index:4}[data-hatch-shell-composer-layer]>[data-hatch-chat-column]{width:100%;max-width:1000px}[data-hatch-composer-chrome]{background:#e1e5f3;border:1px solid #9eaacd;border-radius:30px;box-shadow:0 12px 40px #7580aa55;position:relative}[data-hatch-composer-chrome]>div{padding:12px}[data-hatch-composer-chrome] .fixture-input-wrap{position:relative;padding-left:40px;padding-right:80px}.fixture-placeholder{position:absolute;top:0;left:40px;right:80px;pointer-events:none}[data-hatch-composer-placeholder-label]{color:#737c9c}textarea[data-hatch-composer-prehydration-input],[contenteditable="true"]{width:100%;min-height:30px;resize:none;border:0;outline:none;background:transparent;padding:0;line-height:1.5;font:18px Arial,sans-serif;color:#202640}[contenteditable="true"]{white-space:pre-wrap;overflow-wrap:anywhere}[data-pel-click="chat_tap_attachment"]{position:absolute;bottom:12px;left:12px;width:32px;height:32px;padding:4px}[data-hatch-composer-action-slot]{position:absolute;bottom:12px;right:12px;display:flex;gap:4px}[data-hatch-composer-action-slot] button{width:32px;height:32px;padding:4px}.fixture-badge{font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:#596484}.fixture-approval-note{border:1px dashed #8b6396;border-radius:10px;padding:12px}.fixture-motion{animation:fixture-pulse 1.5s ease-in-out infinite}@keyframes fixture-pulse{50%{opacity:.4}}
+/* The observed official desktop pane reserves 360px for its status panel. */
+[data-hatch-vt-pane="chat-feed"]{width:calc(100% - 360px)}[data-hatch-chat-column]{width:100%}[data-hatch-shell-composer-layer]>[data-hatch-chat-column]{padding-inline:0}
+@media(max-width:700px){[data-hatch-chat-column]{width:100%;padding-inline:14px}[data-hatch-status-panel-card]{position:relative;inset:auto;width:auto;margin:20px 14px}[data-hatch-shell-composer-layer]{right:0;bottom:12px}[data-hatch-vt-pane="chat-feed"]{width:100%;padding-bottom:180px}.prose table{min-width:620px}}
+</style></head><body>
+<nav data-hatch-dock aria-label="Official Muse dock"><button aria-label="Chat">Chat</button></nav>
+<div data-hatch-full-page-shell>
+  <main data-hatch-pane-frame="chat" data-hatch-vt-pane="chat">
+    <div data-hatch-chat-content>
+      <div data-hatch-vt-pane="chat-feed">
+        <div role="log" aria-label="Chat messages" data-hatch-chat-column>
+          <p class="fixture-badge">Fictional offline fixture · No account or model requests</p>
+          <div data-message-item data-message-role="user"><div class="hatch-chat-groupable-bubble"><p class="whitespace-pre-wrap">Help me make a small desktop workspace feel calm and useful.</p></div></div>
+          <div data-message-item data-message-role="assistant"><div data-hatch-assistant-message-body><div class="hatch-chat-groupable-bubble"><div class="prose" data-hatch-markdown-streaming="false">
+            <p>A good workspace keeps the conversation readable and the controls close to where you use them.</p>
+            <ul><li>Keep your chats and projects in one familiar sidebar.</li><li>Use a restrained message column, readable code, and a composer that stays available.</li></ul>
+            <pre><code>const workspace = { theme: 'calm', sandbox: true };
+const unusuallyLongButValidLine = 'This fictional line checks that code scrolls inside its own surface instead of stretching the desktop window beyond its bounds.';
+export function start() { return workspace; }</code></pre>
+            <div class="fixture-table-scroll"><table><thead><tr><th>Surface</th><th>What matters</th><th>Expected behavior</th></tr></thead><tbody><tr><td>Conversation</td><td>Comfortable reading</td><td>Text stays selectable and wraps predictably.</td></tr><tr><td>Composer</td><td>Useful controls</td><td>Your unfinished draft survives appearance changes.</td></tr></tbody></table></div>
+            <p>You can keep the official controls while making the surrounding application consistent.</p>
+          </div></div></div></div>
+          <div data-message-item data-message-role="user"><div class="hatch-chat-groupable-bubble"><p class="whitespace-pre-wrap">Keep my drafts and leave approvals under my control.</p></div></div>
+          <div data-message-item data-message-role="assistant"><div data-hatch-assistant-message-body><div class="hatch-chat-groupable-bubble"><div class="prose" data-hatch-markdown-streaming="true"><p>Drafts stay in their existing conversation. Any requested action still uses its visible approval control.</p><span class="fixture-motion" role="status">Working…</span></div></div></div></div>
+        </div>
+        <aside data-hatch-status-panel-card aria-label="Official activity and approvals"><button type="button">Activity</button><button type="button">Approvals</button><h2>Review requested action</h2><p class="fixture-approval-note">Fictional request: open a project folder. No action has been approved.</p><button id="fixture-approval" type="button">Review approval</button></aside>
+      </div>
+    </div>
+  </main>
+</div>
+<div data-hatch-shell-composer-layer>
+  <div data-hatch-chat-column><div data-hatch-composer-root><div data-hatch-composer-input-row><div>
+    <div data-hatch-composer-chrome data-hatch-composer-variant="default" role="button" tabindex="-1">
+      <div><div class="fixture-input-wrap"><div class="fixture-placeholder"><span data-hatch-composer-placeholder-label>Message Muse</span></div><textarea data-hatch-composer-prehydration-input aria-label="Message" rows="1"></textarea></div></div>
+      <button data-pel-click="chat_tap_attachment" aria-label="Attach" type="button">+</button>
+      <div data-hatch-composer-action-slot><button data-pel-click="chat_tap_dictation" aria-label="Dictate" type="button">◉</button><button data-pel-click="chat_send_message" aria-label="Send" type="button">↑</button></div>
+    </div>
+  </div></div></div></div>
+</div>
+<script>
+(() => {
+  const state = window.__nativeChatFixture = { documentId: Math.random().toString(36).slice(2), sends: [], attachments: 0, dictations: 0, approvals: 0 };
+  const input = () => document.querySelector('textarea[data-hatch-composer-prehydration-input],[contenteditable="true"]');
+  const value = () => input().tagName === 'TEXTAREA' ? input().value : input().textContent;
+  const update = () => { document.querySelector('[data-hatch-composer-placeholder-label]').parentElement.hidden = Boolean(value()); document.querySelector('[data-pel-click="chat_send_message"]').disabled = !value().trim(); };
+  const send = () => { if (!value().trim()) return; state.sends.push(value()); if (input().tagName === 'TEXTAREA') input().value = ''; else input().textContent = ''; update(); };
+  const wire = element => { element.addEventListener('input', update); element.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send(); } }); };
+  wire(input()); update();
+  document.querySelector('[data-pel-click="chat_send_message"]').onclick = send;
+  document.querySelector('[data-pel-click="chat_tap_attachment"]').onclick = () => state.attachments++;
+  document.querySelector('[data-pel-click="chat_tap_dictation"]').onclick = () => state.dictations++;
+  document.querySelector('#fixture-approval').onclick = () => state.approvals++;
+  state.hydrateEditable = () => {
+    const current = input(), next = document.createElement('div'); next.setAttribute('contenteditable','true'); next.setAttribute('role','textbox'); next.setAttribute('aria-label','Message'); next.setAttribute('data-hatch-composer-input',''); next.textContent = value(); current.replaceWith(next); wire(next); update();
+  };
+  state.removeShell = () => document.querySelector('[data-hatch-full-page-shell]').removeAttribute('data-hatch-full-page-shell');
+})();
+</script></body></html>

@@ -1,0 +1,238 @@
+TAP version 13
+# Subtest: bridge defaults unavailable without explicit host-start authorization
+ok 1 - bridge defaults unavailable without explicit host-start authorization
+  ---
+  duration_ms: 1.341359
+  type: 'test'
+  ...
+# Subtest: SDK mismatch is rejected before starting a process
+ok 2 - SDK mismatch is rejected before starting a process
+  ---
+  duration_ms: 0.206665
+  type: 'test'
+  ...
+# Subtest: missing binary and explicit environment are honest unavailable states
+ok 3 - missing binary and explicit environment are honest unavailable states
+  ---
+  duration_ms: 4.662158
+  type: 'test'
+  ...
+# Subtest: bridge uses official serve handshake and preserves explicit environment only
+ok 4 - bridge uses official serve handshake and preserves explicit environment only
+  ---
+  duration_ms: 4.788134
+  type: 'test'
+  ...
+# Subtest: schema mismatch closes host before session or turn commands
+ok 5 - schema mismatch closes host before session or turn commands
+  ---
+  duration_ms: 1.26098
+  type: 'test'
+  ...
+# Subtest: handshake timeout and failed cleanup stay explicit
+ok 6 - handshake timeout and failed cleanup stay explicit
+  ---
+  duration_ms: 6.277935
+  type: 'test'
+  ...
+# Subtest: host exit disables the attached adapter
+ok 7 - host exit disables the attached adapter
+  ---
+  duration_ms: 0.934098
+  type: 'test'
+  ...
+# Subtest: exact documented candidate is eligible but never marked live-verified
+ok 8 - exact documented candidate is eligible but never marked live-verified
+  ---
+  duration_ms: 0.77291
+  type: 'test'
+  ...
+# Subtest: unknown SDK, host, schema and sandbox each fail closed
+ok 9 - unknown SDK, host, schema and sandbox each fail closed
+  ---
+  duration_ms: 0.222638
+  type: 'test'
+  ...
+# Subtest: missing runtime and malformed handshake are explicit unavailable states
+ok 10 - missing runtime and malformed handshake are explicit unavailable states
+  ---
+  duration_ms: 0.103332
+  type: 'test'
+  ...
+# Subtest: unmodified official recorded transcript is rejected, not silently relabeled compatible
+ok 11 - unmodified official recorded transcript is rejected, not silently relabeled compatible
+  ---
+  duration_ms: 4.262738
+  type: 'test'
+  ...
+# Subtest: candidate pin matches downloaded official source schema manifest
+ok 12 - candidate pin matches downloaded official source schema manifest
+  ---
+  duration_ms: 0.257059
+  type: 'test'
+  ...
+# Subtest: review requires approved plan, exact revision, preview and runner evidence
+ok 13 - review requires approved plan, exact revision, preview and runner evidence
+  ---
+  duration_ms: 1.427095
+  type: 'test'
+  ...
+# Subtest: agent claims cannot be recorded as test evidence
+ok 14 - agent claims cannot be recorded as test evidence
+  ---
+  duration_ms: 0.254285
+  type: 'test'
+  ...
+# Subtest: new revision or plan invalidates acceptance and evidence
+ok 15 - new revision or plan invalidates acceptance and evidence
+  ---
+  duration_ms: 0.274064
+  type: 'test'
+  ...
+# Subtest: failed and unfinished checks cannot permit acceptance
+ok 16 - failed and unfinished checks cannot permit acceptance
+  ---
+  duration_ms: 1.060545
+  type: 'test'
+  ...
+# Subtest: busy or unavailable runtime invalidates acceptance
+ok 17 - busy or unavailable runtime invalidates acceptance
+  ---
+  duration_ms: 0.424607
+  type: 'test'
+  ...
+# Subtest: returned snapshots cannot mutate review state
+ok 18 - returned snapshots cannot mutate review state
+  ---
+  duration_ms: 0.195349
+  type: 'test'
+  ...
+# Subtest: incompatible connection never starts a session
+ok 19 - incompatible connection never starts a session
+  ---
+  duration_ms: 1.33533
+  type: 'test'
+  ...
+# Subtest: session and turn use verified command shapes without auto retry
+ok 20 - session and turn use verified command shapes without auto retry
+  ---
+  duration_ms: 1.274921
+  type: 'test'
+  ...
+# Subtest: official event sequence reaches completion with exact final text
+ok 21 - official event sequence reaches completion with exact final text
+  ---
+  duration_ms: 0.715956
+  type: 'test'
+  ...
+# Subtest: ack and final message are not turn completion
+ok 22 - ack and final message are not turn completion
+  ---
+  duration_ms: 0.497755
+  type: 'test'
+  ...
+# Subtest: duplicates do not double text; final object replaces partial text
+ok 23 - duplicates do not double text; final object replaces partial text
+  ---
+  duration_ms: 0.349195
+  type: 'test'
+  ...
+# Subtest: foreign session events cannot affect active session
+ok 24 - foreign session events cannot affect active session
+  ---
+  duration_ms: 3.603686
+  type: 'test'
+  ...
+# Subtest: malformed or unknown terminal state fails closed
+ok 25 - malformed or unknown terminal state fails closed
+  ---
+  duration_ms: 1.226219
+  type: 'test'
+  ...
+# Subtest: failure and cancellation remain distinct from completed
+ok 26 - failure and cancellation remain distinct from completed
+  ---
+  duration_ms: 0.558283
+  type: 'test'
+  ...
+# Subtest: approval request is surfaced and never automatically decided
+ok 27 - approval request is surfaced and never automatically decided
+  ---
+  duration_ms: 0.644991
+  type: 'test'
+  ...
+# Subtest: turn timeout is uncertain; late response does not revive session
+ok 28 - turn timeout is uncertain; late response does not revive session
+  ---
+  duration_ms: 11.139673
+  type: 'test'
+  ...
+# Subtest: host death disables sends and marks active outcome unknown
+ok 29 - host death disables sends and marks active outcome unknown
+  ---
+  duration_ms: 0.310037
+  type: 'test'
+  ...
+# Subtest: same cursor with conflicting content is not silently accepted
+ok 30 - same cursor with conflicting content is not silently accepted
+  ---
+  duration_ms: 0.292942
+  type: 'test'
+  ...
+# Subtest: events arriving before command acknowledgement are drained after identity is known
+ok 31 - events arriving before command acknowledgement are drained after identity is known
+  ---
+  duration_ms: 0.432838
+  type: 'test'
+  ...
+# Subtest: input validation and concurrent-send guard prevent extra commands
+ok 32 - input validation and concurrent-send guard prevent extra commands
+  ---
+  duration_ms: 0.201297
+  type: 'test'
+  ...
+# Subtest: session/closed with nullable cursor disables future commands
+ok 33 - session/closed with nullable cursor disables future commands
+  ---
+  duration_ms: 0.213434
+  type: 'test'
+  ...
+# Subtest: view gap before or after terminal invalidates transcript completeness
+ok 34 - view gap before or after terminal invalidates transcript completeness
+  ---
+  duration_ms: 0.337177
+  type: 'test'
+  ...
+# Subtest: observer disconnect during startup prevents session/start
+ok 35 - observer disconnect during startup prevents session/start
+  ---
+  duration_ms: 0.18946
+  type: 'test'
+  ...
+# Subtest: observer disconnect during submission prevents turn/start
+ok 36 - observer disconnect during submission prevents turn/start
+  ---
+  duration_ms: 0.174157
+  type: 'test'
+  ...
+# Subtest: conflicting terminal outcome cannot turn failure into completion
+ok 37 - conflicting terminal outcome cannot turn failure into completion
+  ---
+  duration_ms: 0.183601
+  type: 'test'
+  ...
+# Subtest: command id mint failure becomes unavailable without issuing a turn
+ok 38 - command id mint failure becomes unavailable without issuing a turn
+  ---
+  duration_ms: 0.214877
+  type: 'test'
+  ...
+1..38
+# tests 38
+# suites 0
+# pass 38
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 141.923547

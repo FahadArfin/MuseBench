@@ -1,0 +1,103 @@
+import {_electron as electron} from 'playwright';
+import assert from 'node:assert/strict';
+import {mkdir,mkdtemp,writeFile,readFile} from 'node:fs/promises';
+import path from 'node:path';
+const root=process.cwd(),variant=process.env.MUSEBENCH_EXECUTABLE?'packaged':'source';
+const live=process.argv.includes('--live');
+await mkdir('artifacts/slash',{recursive:true});const output=await mkdtemp(path.resolve('artifacts/slash',variant+'-'));
+const env={...process.env,MUSEBENCH_DATA_DIR:path.join(output,'data'),MUSEBENCH_PROJECTS_DIR:path.join(output,'projects')};delete env.ELECTRON_RUN_AS_NODE;delete env.MUSEBENCH_DEV;
+const report={variant,live,modelRequests:0,checks:[],errors:[]};let app,page;
+const record=name=>{report.checks.push(name);console.log('PASS '+name);};
+const state=()=>page.evaluate(()=>window.musebench.getState());
+const input=()=>page.getByRole('textbox',{name:'Message Muse',exact:true});
+const menu=()=>page.getByRole('listbox',{name:'Slash commands',exact:true});
+async function until(test,timeout=20000){const end=Date.now()+timeout;while(Date.now()<end){if(await test())return;await new Promise(r=>setTimeout(r,60));}throw Error('Condition timed out');}
+async function command(text){await input().fill(text);await input().press('Control+Enter');}
+async function close(){await page.keyboard.press('Escape');}
+const shot=name=>page.screenshot({path:path.join(output,name+'.png')});
+async function launch(){app=await electron.launch({cwd:root,args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});page=await app.firstWindow();page.setDefaultTimeout(15000);page.on('pageerror',e=>report.errors.push(e.message));await input().waitFor();await page.setViewportSize({width:1440,height:900});}
+try{
+ await launch();
+ const project=path.join(output,'Example');await mkdir(project);await writeFile(path.join(project,'package.json'),'{"name":"slash-example","scripts":{}}');
+ await page.evaluate(async folder=>{await window.musebench.dispatch({type:'openProject',path:folder});await window.musebench.dispatch({type:'newTask',request:'Explain this fixture project',mode:'muse'});},project);
+ await until(async()=>Boolean((await state()).task));const original=(await state()).task;
+ await input().fill('/');await menu().waitFor();
+ assert.equal(await menu().getByRole('option').first().innerText(),'Fast\nLower reasoning effort, quicker replies');
+ await until(async()=>await menu().getByText('Bundled',{exact:true}).count()>0);
+ await shot('01-root');await page.locator('.slash-palette').screenshot({path:path.join(output,'01-menu-crop.png')});
+ record('Slash opens the screenshot-style menu with actual installed Muse skills and source labels');
+ await input().press('ArrowDown');await input().press('ArrowDown');await input().press('Enter');
+ await page.getByRole('dialog',{name:'Goal',exact:true}).waitFor();await page.getByRole('textbox',{name:'Goal',exact:true}).fill('Keep parser compatibility');await page.getByRole('button',{name:'Save',exact:true}).click();
+ await until(async()=>(await state()).task.goal?.objective==='Keep parser compatibility');assert.equal((await state()).runtime.status,'unavailable');
+ record('Keyboard selection opens a real goal editor and saves without submitting a model request');
+ await command('/goal pause');
+ await until(async()=>(await state()).task.goal?.status==='paused');
+ await command('/goal resume');await until(async()=>(await state()).task.goal?.status==='active');
+ await command('/goal');await page.getByRole('button',{name:'Pause goal',exact:true}).click();await until(async()=>(await state()).task.goal?.status==='paused');
+ await command('/goal');await page.getByRole('button',{name:'Resume goal',exact:true}).click();await until(async()=>(await state()).task.goal?.status==='active');
+ record('Goals pause and resume while preserving the objective');
+ await command('/goal\nKeep parser compatibility');await page.getByRole('dialog',{name:'Goal',exact:true}).waitFor();assert.equal(await page.getByRole('textbox',{name:'Goal',exact:true}).inputValue(),'Keep parser compatibility');await close();
+ await command('/no-such-command\nSome details');await page.getByRole('dialog',{name:'Unknown command',exact:true}).waitFor();assert.equal(await input().inputValue(),'/no-such-command\nSome details');await close();assert.equal((await state()).task.messages.filter(m=>m.role==='user').length,0);
+ record('Multiline commands open local dialogs and unknown commands never reach the model');
+ await input().fill('Keep this draft\n/reasoning');await input().press('ArrowRight');
+ await page.getByRole('listbox',{name:'reasoning commands'}).getByRole('option',{name:'Extra high',exact:true}).click();
+ await until(async()=>(await state()).task.runOptions?.reasoning==='xhigh');assert.equal(await input().inputValue(),'Keep this draft');
+ await input().fill('/reasoning high');await input().press('ArrowRight');await input().press('ArrowDown');await input().press('ArrowDown');await input().press('Enter');await until(async()=>(await state()).task.runOptions?.reasoning==='low');
+ await command('/permissions auto');await until(async()=>(await state()).task.runOptions?.approval==='auto');
+ await command('/fast');await until(async()=>(await state()).task.runOptions?.reasoning==='high');
+ await command('/fast on');await until(async()=>(await state()).task.runOptions?.reasoning==='low');
+ await command('/fast off');await until(async()=>(await state()).task.runOptions?.reasoning==='high');
+ await command('/plan');assert(await page.locator('.composer-plan-tag').isVisible());
+ await command('Keep the draft\n/plan Check the parser');assert(await page.locator('.composer-plan-tag').isVisible());assert.equal(await input().inputValue(),'Keep the draft\nCheck the parser');
+ await command('/plan off');assert.equal(await page.locator('.composer-plan-tag').count(),0);
+ record('Reasoning submenu, aliases, access, Fast preset and optional Plan update real settings without losing the preceding draft');
+ await command('/memories');await page.getByRole('textbox',{name:'Memories',exact:true}).fill('Prefer focused regression tests.');await page.getByRole('button',{name:'Save',exact:true}).click();
+ await until(async()=>(await state()).memories==='Prefer focused regression tests.');
+ await command('/rename');await page.getByRole('textbox',{name:'Rename',exact:true}).fill('Slash command fixture');await page.getByRole('button',{name:'Save',exact:true}).click();await until(async()=>(await state()).task.title==='Slash command fixture');
+ record('Memory instructions and chat rename save through the validated controller');
+ await input().fill('/skills');await input().press('Enter');const skillMenu=page.getByRole('listbox',{name:'skills commands'});await skillMenu.getByRole('option').first().click();
+ assert.match(await input().inputValue(),/^Use the Muse skill `bundled:/);assert.equal((await state()).task.messages.filter(m=>m.role==='user').length,0);
+ record('Selecting a real Muse skill inserts an editable skill request without invoking the model');
+ await command('/status');await page.getByRole('dialog',{name:'Status',exact:true}).waitFor();assert(await page.getByText(original.id,{exact:true}).isVisible());await close();
+ await command('/mcp');await page.getByRole('dialog',{name:'Customize',exact:true}).getByRole('tab',{name:'MCP servers',exact:true}).waitFor();await close();
+ await command('/model');await page.getByRole('listbox',{name:'model commands'}).getByRole('option').first().click();await page.getByRole('dialog',{name:'Model',exact:true}).waitFor();await close();
+ await command('/usage');await page.getByRole('dialog',{name:'Usage & billing',exact:true}).waitFor();await page.getByRole('button',{name:'Refresh',exact:true}).waitFor();await close();
+ record('Status shows real chat state; unavailable provider features and usage errors are explicit');
+ await command('/no-such-command');await page.getByRole('dialog',{name:'Unknown command',exact:true}).waitFor();assert.equal(await input().inputValue(),'/no-such-command');await close();
+ assert.equal((await state()).task.messages.filter(m=>m.role==='user').length,0);
+ await input().fill('/tmp/file.txt');assert.equal(await menu().count(),0);
+ await input().fill('Explain /something in prose');assert.equal(await menu().count(),0);
+ record('Unknown commands are never sent; paths and ordinary prose do not open the palette');
+ const exportPath=path.join(output,'export.md');await app.evaluate(({dialog},file)=>{dialog.showSaveDialog=async()=>({canceled:false,filePath:file});},exportPath);
+ await command('/export');await until(async()=>{try{return(await readFile(exportPath,'utf8')).includes('Explain this fixture project');}catch{return false;}});
+ record('Export writes the actual conversation only after the save picker chooses a file');
+ await command('/side');await page.getByRole('textbox',{name:'Side question'}).fill('Explore a separate approach');await page.getByRole('button',{name:'Create side chat draft'}).click();assert.match(await input().inputValue(),/Side question: Explore/);assert.equal((await state()).tasks.length,1);
+ record('Side chat creates a context-bearing draft and leaves the original saved chat intact');
+ await command('/recap');assert(!(await input().inputValue()).includes('Explain this fixture project'));
+ await command('/copy');await page.getByText('Open a saved chat first to use this command.',{exact:true}).waitFor();await close();
+ await command('/export');await page.getByText('Open a saved chat first to use this command.',{exact:true}).waitFor();await close();
+ record('New-chat recap, copy and export never use the previous hidden conversation');
+ await input().fill('/');await menu().waitFor();await input().press('Escape');assert.equal(await menu().count(),0);assert.equal(await input().inputValue(),'/');
+ await input().fill('/reasoning');await input().press('Enter');await shot('02-reasoning');await input().press('Escape');await input().press('Escape');
+ await input().fill('/theme light');await input().press('Enter');await page.waitForFunction(()=>document.documentElement.dataset.theme==='light');await input().fill('/');await shot('03-light');
+ await input().fill('/theme dark');await input().press('Enter');await page.setViewportSize({width:390,height:844});await input().fill('/');await menu().waitFor();
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));const bounds=await page.locator('.slash-palette').boundingBox();assert(bounds.x>=0&&bounds.x+bounds.width<=391&&bounds.y>=0);await shot('04-narrow');
+ record('Escape, submenus, light/dark themes and 390px layouts preserve the draft and keep the menu in view');
+ assert.equal((await state()).runtime.liveVerified,false);assert.equal(report.errors.length,0);
+ await app.close();app=null;await launch();
+ const restored=await state();assert.equal(restored.task.id,original.id);assert.equal(restored.task.title,'Slash command fixture');assert.equal(restored.task.goal.status,'active');assert.equal(restored.memories,'Prefer focused regression tests.');
+ const isolated=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().every(w=>{const p=w.webContents.getLastWebPreferences();return p.sandbox&&p.contextIsolation&&!p.nodeIntegration&&p.webSecurity;}));assert(isolated);
+ record('Restart preserves goals, memories, names and settings with Electron sandbox and isolation enabled');
+ if(live){
+  await command('/memories');await page.getByRole('textbox',{name:'Memories',exact:true}).fill('For the validation reply, include MUSEBENCH_MEMORY_OK.');await page.getByRole('button',{name:'Save',exact:true}).click();
+  await command('/goal');await page.getByRole('textbox',{name:'Goal',exact:true}).fill('For the validation reply, include MUSEBENCH_GOAL_OK.');await page.getByRole('button',{name:'Save',exact:true}).click();
+  await command('/permissions ask');await command('/reasoning low');
+  await input().fill('Reply with only the two validation markers from the saved memory instructions and active chat goal. Do not read or change files or run commands.');await page.getByRole('button',{name:'Send message',exact:true}).click();report.modelRequests++;
+  await until(async()=>{const s=await state();if(s.error)throw Error(s.error);return !s.busy&&s.task.runtimeComplete&&s.runtime.status==='completed';},150000);
+  const final=await state(),reply=final.task.messages.filter(m=>m.role==='assistant').map(m=>m.text).join('\n');
+  assert.match(reply,/MUSEBENCH_MEMORY_OK/);assert.match(reply,/MUSEBENCH_GOAL_OK/);assert.equal(final.runtime.permissionVerified,true);assert.equal(final.runtime.permissionProfile,':ask-me');assert.equal(final.runtime.cleanup,'confirmed');assert.equal(final.task.changes.length,0);assert.equal(final.task.planApproved,false);assert.equal(await input().inputValue(),'');
+  await shot('05-live');record('A real Muse reply uses saved memory and goal instructions with Ask me, native sandbox verification and confirmed cleanup');
+ }
+ assert.equal(report.errors.length,0);report.status='passed';
+}catch(error){report.status='failed';report.error=error.stack;console.error(error);process.exitCode=1;if(page&&!page.isClosed())await shot('failure').catch(()=>{});}
+finally{if(app)await app.close();report.finishedAt=new Date().toISOString();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log('Report: '+path.join(output,'report.json'));}

@@ -1,0 +1,42 @@
+OFFLINE FIXTURE DEMO — no SDK package, CLI, credentials, model, or test command is executed.
+{
+  "runtime": {
+    "status": "completed",
+    "reason": null,
+    "sessionId": "0198f0aa-1111-7000-8000-0000000000aa",
+    "turnId": "018f6a1e-9b3c-7c21-a54a-2f30bd3c9f10",
+    "mode": "plan",
+    "planReadOnlyEnforced": false,
+    "tests": "not-run",
+    "outcome": "completed",
+    "liveVerified": false,
+    "messages": [
+      {
+        "id": "0198f0ac-0001-7000-8000-000000000001",
+        "kind": "userMessage",
+        "text": "Run the agent test suite and summarize failures",
+        "revision": 1,
+        "status": "completed",
+        "phase": "finalAnswer"
+      },
+      {
+        "id": "0198f0ac-4242-7000-8000-000000000042",
+        "kind": "agentMessage",
+        "text": "All 214 tests pass except two in tbh-agent...",
+        "revision": 2,
+        "status": "completed",
+        "phase": "finalAnswer"
+      }
+    ]
+  },
+  "reviewBeforeRunnerEvidence": {
+    "plan": null,
+    "revision": null,
+    "previewRevision": null,
+    "check": null,
+    "runtime": "not-run",
+    "acceptedRevision": null
+  }
+}
+Correctly blocked: Review evidence is missing, stale, or failed
+Fixture acceptance only: {"plan":"fixture-plan-1","revision":"fixture-revision-1","previewRevision":"fixture-revision-1","check":{"revision":"fixture-revision-1","command":"fixture-only (not executed)","exitCode":0,"finished":true,"logId":"synthetic-log-1","source":"runner"},"runtime":"completed","acceptedRevision":"fixture-revision-1"}

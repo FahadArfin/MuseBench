@@ -1,0 +1,203 @@
+
+> patchlight-muse-adapter@0.2.0 test
+> node --test test/*.test.mjs
+
+✖ bridge defaults unavailable without explicit host-start authorization (1.894463ms)
+✖ SDK mismatch is rejected before starting a process (0.158193ms)
+✖ missing binary and explicit environment are honest unavailable states (0.140056ms)
+✖ bridge uses official serve handshake and preserves explicit environment only (0.241987ms)
+✖ schema mismatch closes host before session or turn commands (0.207586ms)
+✖ handshake timeout and failed cleanup stay explicit (0.150892ms)
+✖ host exit disables the attached adapter (0.172715ms)
+✔ exact documented candidate is eligible but never marked live-verified (0.761002ms)
+✔ unknown SDK, host, schema and sandbox each fail closed (0.179094ms)
+✔ missing runtime and malformed handshake are explicit unavailable states (0.133177ms)
+✔ unmodified official recorded transcript is rejected, not silently relabeled compatible (1.120742ms)
+✔ candidate pin matches downloaded official source schema manifest (0.293032ms)
+✖ review requires approved plan, exact revision, preview and runner evidence (3.644984ms)
+✖ agent claims cannot be recorded as test evidence (0.128409ms)
+✖ new revision or plan invalidates acceptance and evidence (0.090193ms)
+✖ failed and unfinished checks cannot permit acceptance (0.127988ms)
+✖ busy or unavailable runtime invalidates acceptance (0.107409ms)
+✖ returned snapshots cannot mutate review state (0.091915ms)
+✔ incompatible connection never starts a session (1.428546ms)
+✔ session and turn use verified command shapes without auto retry (1.204375ms)
+✔ official event sequence reaches completion with exact final text (0.705981ms)
+✔ ack and final message are not turn completion (0.483443ms)
+✔ duplicates do not double text; final object replaces partial text (0.341364ms)
+✔ foreign session events cannot affect active session (0.365939ms)
+✔ malformed or unknown terminal state fails closed (1.165408ms)
+✔ failure and cancellation remain distinct from completed (0.628377ms)
+✔ approval request is surfaced and never automatically decided (0.574898ms)
+✔ turn timeout is uncertain; late response does not revive session (11.441982ms)
+✔ host death disables sends and marks active outcome unknown (0.321104ms)
+✔ same cursor with conflicting content is not silently accepted (0.254005ms)
+✔ events arriving before command acknowledgement are drained after identity is known (0.367702ms)
+✔ input validation and concurrent-send guard prevent extra commands (0.269728ms)
+ℹ tests 32
+ℹ suites 0
+ℹ pass 19
+ℹ fail 13
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 123.352084
+
+✖ failing tests:
+
+test at test/bridge.test.mjs:5:1
+✖ bridge defaults unavailable without explicit host-start authorization (1.894463ms)
+  Error: SDK bridge not implemented
+      at openMuseHost (file:///workspace/muse-workspace-spike/adapter/sdk-bridge.mjs:1:44)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/bridge.test.mjs:5:120)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17)
+
+test at test/bridge.test.mjs:6:1
+✖ SDK mismatch is rejected before starting a process (0.158193ms)
+  Error: SDK bridge not implemented
+      at openMuseHost (file:///workspace/muse-workspace-spike/adapter/sdk-bridge.mjs:1:44)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/bridge.test.mjs:6:101)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+
+test at test/bridge.test.mjs:7:1
+✖ missing binary and explicit environment are honest unavailable states (0.140056ms)
+  Error: SDK bridge not implemented
+      at openMuseHost (file:///workspace/muse-workspace-spike/adapter/sdk-bridge.mjs:1:44)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/bridge.test.mjs:7:118)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/bridge.test.mjs:8:1
+✖ bridge uses official serve handshake and preserves explicit environment only (0.241987ms)
+  Error: SDK bridge not implemented
+      at openMuseHost (file:///workspace/muse-workspace-spike/adapter/sdk-bridge.mjs:1:44)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/bridge.test.mjs:8:127)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/bridge.test.mjs:9:1
+✖ schema mismatch closes host before session or turn commands (0.207586ms)
+  Error: SDK bridge not implemented
+      at openMuseHost (file:///workspace/muse-workspace-spike/adapter/sdk-bridge.mjs:1:44)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/bridge.test.mjs:9:185)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/bridge.test.mjs:10:1
+✖ handshake timeout and failed cleanup stay explicit (0.150892ms)
+  Error: SDK bridge not implemented
+      at openMuseHost (file:///workspace/muse-workspace-spike/adapter/sdk-bridge.mjs:1:44)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/bridge.test.mjs:10:127)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/bridge.test.mjs:11:1
+✖ host exit disables the attached adapter (0.172715ms)
+  Error: SDK bridge not implemented
+      at openMuseHost (file:///workspace/muse-workspace-spike/adapter/sdk-bridge.mjs:1:44)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/bridge.test.mjs:11:90)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/review.test.mjs:4:1
+✖ review requires approved plan, exact revision, preview and runner evidence (3.644984ms)
+  Error: Review boundary not implemented
+      at new ReviewPackage (file:///workspace/muse-workspace-spike/adapter/review.mjs:1:49)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:4:96)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17)
+
+test at test/review.test.mjs:5:1
+✖ agent claims cannot be recorded as test evidence (0.128409ms)
+  Error: Review boundary not implemented
+      at new ReviewPackage (file:///workspace/muse-workspace-spike/adapter/review.mjs:1:49)
+      at ready (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:3:26)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:5:70)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+
+test at test/review.test.mjs:6:1
+✖ new revision or plan invalidates acceptance and evidence (0.090193ms)
+  Error: Review boundary not implemented
+      at new ReviewPackage (file:///workspace/muse-workspace-spike/adapter/review.mjs:1:49)
+      at ready (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:3:26)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:6:78)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/review.test.mjs:7:1
+✖ failed and unfinished checks cannot permit acceptance (0.127988ms)
+  Error: Review boundary not implemented
+      at new ReviewPackage (file:///workspace/muse-workspace-spike/adapter/review.mjs:1:49)
+      at ready (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:3:26)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:7:143)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/review.test.mjs:8:1
+✖ busy or unavailable runtime invalidates acceptance (0.107409ms)
+  Error: Review boundary not implemented
+      at new ReviewPackage (file:///workspace/muse-workspace-spike/adapter/review.mjs:1:49)
+      at ready (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:3:26)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:8:141)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/review.test.mjs:9:1
+✖ returned snapshots cannot mutate review state (0.091915ms)
+  Error: Review boundary not implemented
+      at new ReviewPackage (file:///workspace/muse-workspace-spike/adapter/review.mjs:1:49)
+      at ready (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:3:26)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/review.test.mjs:9:67)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)

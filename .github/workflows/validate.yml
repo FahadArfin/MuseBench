@@ -1,0 +1,30 @@
+name: Validate desktop and preview
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm test
+      - run: npm run build
+      - run: npm run test:browser-preview
+      - run: npm run test:preview-parity
+      # These runs use only clean fixtures. Never upload local account captures.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: preview-check-reports
+          path: |
+            artifacts/browser-preview/report.json
+            artifacts/preview-parity/report.json

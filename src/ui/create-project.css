@@ -1,0 +1,12 @@
+.create-project-modal{width:520px;max-width:100%;background:var(--surface);border-radius:16px}
+.create-project-modal .modal-heading{border-bottom:0;padding-bottom:8px}
+.create-project-modal form>label{display:flex;flex-direction:column;gap:9px;font-size:13px;font-weight:600;margin:12px 0 24px}
+.create-project-modal input:not([type=file]),.create-project-modal textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface-hover);color:var(--text);font:inherit;font-size:13px;font-weight:400}
+.create-project-modal textarea{min-height:82px;resize:vertical}
+.create-project-modal input:focus,.create-project-modal textarea:focus{outline:1px solid var(--accent);border-color:var(--accent)}
+.create-project-context{font-size:13px;font-weight:600;margin-bottom:22px}.create-project-context>div{margin-bottom:10px}.create-project-context>div>span{font-weight:400;color:var(--muted);margin-left:4px}
+.create-project-context>.text-link{margin-top:8px}.create-project-context .button{font-weight:400;padding:5px 9px}
+.create-project-location{font-size:11px;color:var(--muted);line-height:1.6;margin:16px 0 24px;overflow-wrap:anywhere}.create-project-location span{display:block}
+.create-project-error{font-size:12px;color:var(--danger);margin-bottom:14px}
+.create-project-modal footer{display:flex;align-items:center;gap:8px;padding-bottom:4px}.create-project-existing{margin-right:auto;font-size:11px}
+@media(max-width:520px){.create-project-modal footer{flex-wrap:wrap}.create-project-existing{width:100%;margin-bottom:10px}}

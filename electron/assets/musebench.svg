@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <title>MuseBench</title>
+  <rect x="8" y="8" width="240" height="240" rx="54" fill="#1877f2"/>
+  <path d="M63 175V81l65 66 65-66v94" fill="none" stroke="#fff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

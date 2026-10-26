@@ -1,0 +1,17 @@
+.chat-find-anchor{position:relative;display:flex}
+.chat-find-popover{position:absolute;right:0;top:-6px;width:340px;max-width:calc(100vw - 24px);z-index:80;color:var(--text,#eee)}
+.chat-find-pill{display:flex;align-items:center;gap:6px;height:46px;border:1px solid var(--border,#303030);background:var(--bg,#171717);border-radius:28px;padding:0 12px 0 17px;box-shadow:0 8px 24px #0004}
+.chat-find-pill>svg{flex-shrink:0;color:var(--muted,#aaa)}
+.chat-find-pill input{min-width:0;flex:1;background:none;border:0;outline:0;color:inherit;font:inherit;font-size:13px;padding:0 3px;box-shadow:none}
+.chat-find-pill input:focus{outline:none;box-shadow:none}
+.chat-find-pill button,.chat-find-status button{display:grid;place-items:center;flex-shrink:0;width:25px;height:28px;padding:0;border:0;border-radius:50%;color:var(--muted,#999);background:transparent;cursor:pointer}
+.chat-find-pill button:hover,.chat-find-status button:hover{background:var(--hover,#303030);color:var(--text,#fff)}
+.chat-find-pill button[aria-pressed=true]{color:var(--text,#fff)}
+.chat-find-pill button:focus-visible,.chat-find-status button:focus-visible{outline:2px solid #398fff;outline-offset:1px}
+.chat-find-divider{height:16px;width:1px;background:var(--border,#333);margin:0 2px}
+.chat-find-status{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:6px;padding:3px 9px 3px 14px;border:1px solid var(--border,#303030);border-radius:20px;background:var(--bg,#171717);font-size:11px;color:var(--muted,#aaa);box-shadow:0 6px 16px #0002}
+.chat-find-status span{margin-right:auto}.chat-find-status button:disabled{opacity:.35;cursor:default}
+.chat-find-error{font-size:12px;background:var(--bg,#171717);padding:10px;border-radius:12px}
+::highlight(chat-find){background:#b9952855;color:inherit}::highlight(chat-find-current){background:#ffc24a;color:#161616}
+@media(max-width:600px){.chat-find-popover{position:fixed;top:90px;right:12px}}
+

@@ -1,0 +1,212 @@
+
+> patchlight-muse-adapter@0.2.0 test
+> node --test test/*.test.mjs
+
+✔ exact documented candidate is eligible but never marked live-verified (0.762123ms)
+✔ unknown SDK, host, schema and sandbox each fail closed (0.181898ms)
+✔ missing runtime and malformed handshake are explicit unavailable states (0.10191ms)
+✔ unmodified official recorded transcript is rejected, not silently relabeled compatible (1.26877ms)
+✔ candidate pin matches downloaded official source schema manifest (0.208457ms)
+✖ incompatible connection never starts a session (0.985182ms)
+✖ session and turn use verified command shapes without auto retry (0.197321ms)
+✖ official event sequence reaches completion with exact final text (0.242077ms)
+✖ ack and final message are not turn completion (0.151964ms)
+✖ duplicates do not double text; final object replaces partial text (0.172745ms)
+✖ foreign session events cannot affect active session (0.130171ms)
+✖ malformed or unknown terminal state fails closed (0.16967ms)
+✖ failure and cancellation remain distinct from completed (0.185304ms)
+✖ approval request is surfaced and never automatically decided (0.245753ms)
+✖ turn timeout is uncertain; late response does not revive session (0.272552ms)
+✖ host death disables sends and marks active outcome unknown (0.300313ms)
+✖ same cursor with conflicting content is not silently accepted (0.167226ms)
+✖ events arriving before command acknowledgement are drained after identity is known (0.136401ms)
+✖ input validation and concurrent-send guard prevent extra commands (0.137222ms)
+ℹ tests 19
+ℹ suites 0
+ℹ pass 5
+ℹ fail 14
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 65.132572
+
+✖ failing tests:
+
+test at test/session.test.mjs:7:1
+✖ incompatible connection never starts a session (0.985182ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:7:102)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.start (node:internal/test_runner/test:1242:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:387:17)
+
+test at test/session.test.mjs:8:1
+✖ session and turn use verified command shapes without auto retry (0.197321ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:8:113)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+
+test at test/session.test.mjs:9:1
+✖ official event sequence reaches completion with exact final text (0.242077ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:9:114)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:10:1
+✖ ack and final message are not turn completion (0.151964ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:10:95)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:11:1
+✖ duplicates do not double text; final object replaces partial text (0.172745ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:11:115)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:12:1
+✖ foreign session events cannot affect active session (0.130171ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:12:101)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:13:1
+✖ malformed or unknown terminal state fails closed (0.16967ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:13:143)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:14:1
+✖ failure and cancellation remain distinct from completed (0.185304ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:14:151)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:15:1
+✖ approval request is surfaced and never automatically decided (0.245753ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:15:110)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:16:1
+✖ turn timeout is uncertain; late response does not revive session (0.272552ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:16:114)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:17:1
+✖ host death disables sends and marks active outcome unknown (0.300313ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:17:101)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:18:1
+✖ same cursor with conflicting content is not silently accepted (0.167226ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:18:111)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:19:1
+✖ events arriving before command acknowledgement are drained after identity is known (0.136401ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:19:132)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/session.test.mjs:20:1
+✖ input validation and concurrent-send guard prevent extra commands (0.137222ms)
+  Error: Session adapter not implemented
+      at new MuseSessionAdapter (file:///workspace/muse-workspace-spike/adapter/session-adapter.mjs:1:54)
+      at setup (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:5:77)
+      at TestContext.<anonymous> (file:///workspace/muse-workspace-spike/adapter/test/session.test.mjs:20:115)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)

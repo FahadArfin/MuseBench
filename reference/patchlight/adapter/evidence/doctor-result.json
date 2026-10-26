@@ -1,0 +1,7 @@
+{
+  "runtime": "unavailable",
+  "candidates": [],
+  "liveVerified": false,
+  "action": "No binary executed; no credentials read.",
+  "next": "The offline adapter demo and tests work without Muse. Live integration remains unavailable."
+}

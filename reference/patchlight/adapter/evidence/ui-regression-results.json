@@ -1,0 +1,40 @@
+{
+  "date": "2026-10-25T03:15:29.914Z",
+  "browser": "154.0.8037.57",
+  "passed": 17,
+  "checks": [
+    "Plan approval gates later workflow stages",
+    "Runtime provenance visible; modal supports Escape",
+    "Plan creates a labeled simulated diff",
+    "Acceptance blocked before tests and preview",
+    "Caffeine-free preview removes caffeinated sample",
+    "Before view restores original sample",
+    "Failed check blocks acceptance even after preview",
+    "Passing checks and inspected preview permit demo acceptance",
+    "Acceptance can be undone without losing example",
+    "Chat escapes markup and clearly explains scripted behavior",
+    "Extensions are explicitly inert concepts",
+    "Reset clears state and local messages",
+    "Preview width switch works",
+    "No horizontal page overflow at 390, 768, 1024, 1440",
+    "Filter keyboard navigation and activation work",
+    "No browser JS errors or external network requests",
+    "Standalone HTML works through local HTTP server"
+  ],
+  "errors": [],
+  "externalRequests": [],
+  "blocked": [
+    {
+      "action": "Navigate directly to standalone file URL",
+      "target": "file:///workspace/muse-workspace-spike/artifacts/Patchlight-Interactive-Demo.html",
+      "status": "denied",
+      "reason": "Chromium net::ERR_BLOCKED_BY_ADMINISTRATOR",
+      "resolution": "Not retried; verified same deliverable using the normal local HTTP server. Direct file navigation remains unverified."
+    }
+  ],
+  "limitations": [
+    "Scripted provider checks are UI fixtures, not real project tests.",
+    "No Muse CLI, SDK, credentials, model calls, or backend integration tested.",
+    "Chromium only; not a complete accessibility audit."
+  ]
+}

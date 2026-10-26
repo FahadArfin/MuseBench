@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><title>Patchlight — a clearer way to build</title><link rel="stylesheet" href="styles.css"></head>
+<body>
+<a class="skip" href="#main">Skip to workspace</a>
+<div class="app">
+<aside class="rail" aria-label="Project navigation">
+ <a class="brand" href="#" aria-label="Patchlight home"><span class="mark">✳</span> Patchlight<span class="alpha">LAB</span></a>
+ <button class="new" data-action="new">＋ New idea</button>
+ <div class="rail-label">WORKSPACE <span>01</span></div>
+ <button class="project selected" data-action="project"><span class="project-icon">S</span><span>Sage & Steam<small>Demo project</small></span><span>⌄</span></button>
+ <button class="rail-item" data-action="folders"><span>▱</span> Project files <small>3</small></button>
+ <div class="rail-label session-label">SESSIONS</div>
+ <button class="session selected" data-action="session"><span class="dot"></span> A calmer collection<small>Tea filter · just now</small></button>
+ <div class="rail-bottom"><div class="little-note"><span>✧</span><p>Small changes.<br>Visible progress.</p></div><button class="rail-item" data-action="extensions"><span>⊞</span> Extensions <small>2</small></button><button class="runtime" data-action="runtime"><span class="status-dot"></span><span>Muse Code <small>Mock adapter · offline</small></span><span>↗</span></button><div class="profile"><span class="avatar">Y</span> Your workspace<span>Local demo</span></div></div>
+</aside>
+<div class="work">
+<header class="topbar"><div><span class="crumb">Sage & Steam</span><span class="slash">/</span><strong>A calmer collection</strong></div><div class="top-actions"><span class="mock-badge">MOCK PROVIDER</span><button class="text-button" data-action="reset">Reset demo ↺</button></div></header>
+<div class="workspace">
+ <section class="chat" aria-label="Agent conversation"><div class="chat-header"><h2>The conversation</h2><span class="tiny-label">01 SESSION</span></div><div class="messages" id="messages"><div class="day">YOUR IDEA, MADE CONCRETE</div><div class="message user"><div class="message-by"><span class="avatar">Y</span>You<span>Demo brief</span></div><p>Add a caffeine-free filter to the tea collection. Keep the page feeling calm and simple.</p></div><div class="message assistant"><div class="message-by"><span class="agent-avatar">✳</span>Patchlight<span>Simulated</span></div><p>Let’s make this one clear, reviewable change.</p><p>I’ll add a filter, keep the full collection one click away, and check the empty state.</p><div class="scope-note">↳ 3 example files · no checkout changes</div></div><div class="agent-update" id="agent-update" aria-live="polite">Your plan is ready to review.</div></div>
+ <form id="chat-form" class="composer"><label for="prompt">Refine your idea</label><textarea id="prompt" rows="2" maxlength="500" placeholder="What would you like to adjust?"></textarea><div><span>Scripted demo, no AI call</span><button type="submit" aria-label="Send message">↑</button></div></form>
+ <div class="chat-foot">A little less guessing. A little more clarity.</div>
+ </section>
+ <main id="main" tabindex="-1"><div class="stage-header"><div><div class="eyebrow">CHANGE 001 <span>•</span> DEMO WORKSPACE</div><h1>A calmer collection<span class="heading-dot">.</span></h1><p>From an idea to a change you understand.</p></div><button class="help-button" data-action="about" aria-label="About this prototype">?</button></div>
+ <nav class="steps" aria-label="Change workflow" id="steps"></nav><div id="stage" class="stage"></div>
+ <footer class="workspace-footer"><span><span class="status-dot"></span> Everything here is simulated</span><span>Independent concept · not affiliated with Meta</span></footer>
+ </main>
+</div></div></div>
+<dialog id="dialog"><div id="dialog-content"></div><form method="dialog"><button class="button secondary">Close</button></form></dialog><div id="toast" role="status" class="toast" hidden></div>
+<script src="app.js"></script></body></html>

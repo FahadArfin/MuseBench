@@ -1,0 +1,43 @@
+/* One continuous header across the sidebar and the active workspace. */
+:root { --chrome-height: 42px; }
+.sidebar-heading, .topbar {
+  height: var(--chrome-height);
+  min-height: var(--chrome-height);
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sidebar-heading { padding: 0 10px; gap: 5px; }
+.topbar { padding: 0 16px; gap: 10px; }
+.sidebar-heading .brand-button { font-size: 15px; gap: 6px; }
+.sidebar-heading .product-mode-switch { padding: 1px; border-radius: 7px; }
+.sidebar-heading .product-mode-switch > button { height: 26px; width: 27px; }
+.sidebar-heading .product-switcher { gap: 6px; }
+.topbar .breadcrumbs { font-size: 12px; }
+.topbar .topbar-actions { flex-shrink: 0; }
+.sidebar .new-chat { margin-top: 8px; }
+
+/* The desktop uses real Windows caption controls; browser previews have none. */
+:root[data-window-overlay="true"] .topbar {
+  padding-right: calc(100vw - env(titlebar-area-width, calc(100vw - 138px)) + 12px);
+}
+:root[data-window-overlay="true"] :is(.sidebar-heading, .topbar) {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+:root[data-window-overlay="true"] :is(.sidebar-heading, .topbar) :is(button, a, input, select, [role="tab"], [role="menu"], [role="dialog"]) {
+  -webkit-app-region: no-drag;
+}
+@media (max-width: 700px) {
+  .topbar { padding-left: 10px; gap: 6px; }
+  .topbar .breadcrumbs { font-size: 11px; gap: 6px; }
+  /* Keep the native close/minimize buttons reachable with the drawer open. */
+  :root[data-window-overlay="true"] .nav-open .sidebar,
+  :root[data-window-overlay="true"] .nav-open .nav-scrim { top: var(--chrome-height); }
+  :root[data-window-overlay="true"] .nav-open .sidebar-heading { -webkit-app-region: no-drag; }
+  :root[data-window-overlay="true"] .topbar .toolbar-button { padding-inline: 5px; }
+  :root[data-window-overlay="true"] :is(.sites-topbar, .spaces-topbar) .work-mode-switch > button {
+    width: 30px; padding: 0; justify-content: center;
+  }
+  :root[data-window-overlay="true"] :is(.sites-topbar, .spaces-topbar) .work-mode-switch > button > span { display: none; }
+}

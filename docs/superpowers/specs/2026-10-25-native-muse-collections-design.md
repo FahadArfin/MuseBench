@@ -1,0 +1,9 @@
+# Native Muse Ideas and Goals
+
+Extend the existing conversation presentation to the official Ideas and Goals pages. Keep the user's live Muse account as the source of truth, the current persistent session, retained views and native sidebar collection adapter. No duplicate local collection store or private API. This is the same removable visual integration already requested for chat.
+
+Use the observed Ideas container, grouped rows and preview markers, Goals creation heading/category controls, and collection header hooks. Match MuseBench's neutral dark/light palette, system interface font, response font/size preferences, compact section headings, bordered rows, and restrained detail dialogs. Preserve labels, action semantics, menu/disabled states, focus, scrolling, goal setup, previews, and every original handler. Style new or updated DOM automatically; original-layout mode removes all styles without reload or losing selection/drafts. Do not create, launch, complete, delete, or approve an idea/goal during live testing.
+
+Reuse finite appearance mappings. Scope presentation to recognizable official collection surfaces on exact https://muse.ai. Auth pages, separate Meta AI, unknown layouts, browser partitions, sandbox and CLI behavior remain unchanged. Keep private content and credentials out of saved artifacts. Actual account has ideas and an empty Goals collection; populated goals are fixture evidence only.
+
+Verify both themes, response preferences, responsive geometry, preview/menu/setup controls, dynamic list updates reaching the native sidebar, retained preview state across appearance/layout switches, safe origin guards and sandbox isolation. Use fictional screenshots for visual inspection; live account checks record counts/booleans only. Preserve prior validation and package, build, check exact bytes, and reopen the app.

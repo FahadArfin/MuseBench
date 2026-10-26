@@ -1,0 +1,55 @@
+
+> patchlight-muse-adapter@0.2.0 test
+> node --test test/*.test.mjs
+
+✔ bridge defaults unavailable without explicit host-start authorization (1.025482ms)
+✔ SDK mismatch is rejected before starting a process (0.143722ms)
+✔ missing binary and explicit environment are honest unavailable states (3.01808ms)
+✔ bridge uses official serve handshake and preserves explicit environment only (3.381596ms)
+✔ schema mismatch closes host before session or turn commands (1.054515ms)
+✔ handshake timeout and failed cleanup stay explicit (6.177099ms)
+✔ host exit disables the attached adapter (0.865527ms)
+✔ exact documented candidate is eligible but never marked live-verified (0.756455ms)
+✔ unknown SDK, host, schema and sandbox each fail closed (0.354904ms)
+✔ missing runtime and malformed handshake are explicit unavailable states (0.137112ms)
+✔ unmodified official recorded transcript is rejected, not silently relabeled compatible (1.310312ms)
+✔ candidate pin matches downloaded official source schema manifest (0.233194ms)
+✔ review requires approved plan, exact revision, preview and runner evidence (4.388752ms)
+✔ agent claims cannot be recorded as test evidence (0.18315ms)
+✔ new revision or plan invalidates acceptance and evidence (0.206985ms)
+✔ failed and unfinished checks cannot permit acceptance (1.429908ms)
+✔ busy or unavailable runtime invalidates acceptance (0.266643ms)
+✔ returned snapshots cannot mutate review state (0.126837ms)
+✔ incompatible connection never starts a session (1.543586ms)
+✔ session and turn use verified command shapes without auto retry (1.167531ms)
+✔ official event sequence reaches completion with exact final text (0.696206ms)
+✔ ack and final message are not turn completion (0.441451ms)
+✔ duplicates do not double text; final object replaces partial text (0.354073ms)
+✔ foreign session events cannot affect active session (0.338139ms)
+✔ malformed or unknown terminal state fails closed (1.257424ms)
+✔ failure and cancellation remain distinct from completed (0.459097ms)
+✔ approval request is surfaced and never automatically decided (0.449983ms)
+✔ turn timeout is uncertain; late response does not revive session (11.321519ms)
+✔ host death disables sends and marks active outcome unknown (0.37978ms)
+✔ same cursor with conflicting content is not silently accepted (0.330638ms)
+✔ events arriving before command acknowledgement are drained after identity is known (0.389474ms)
+✔ input validation and concurrent-send guard prevent extra commands (0.31937ms)
+✔ session/closed with nullable cursor disables future commands (0.336576ms)
+✔ view gap before or after terminal invalidates transcript completeness (0.31879ms)
+✔ observer disconnect during startup prevents session/start (0.247144ms)
+✔ observer disconnect during submission prevents turn/start (0.180486ms)
+✔ conflicting terminal outcome cannot turn failure into completion (0.183381ms)
+✔ command id mint failure becomes unavailable without issuing a turn (0.173936ms)
+ℹ tests 38
+ℹ suites 0
+ℹ pass 38
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 136.785119
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+npm notice To update run: npm install -g npm@12.2.1
+npm notice

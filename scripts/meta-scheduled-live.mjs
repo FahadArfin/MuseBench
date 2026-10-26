@@ -1,0 +1,24 @@
+import {_electron as electron} from 'playwright';
+import assert from 'node:assert/strict';
+import {writeFile,mkdir} from 'node:fs/promises';
+const env={...process.env};for(const key of ['ELECTRON_RUN_AS_NODE','MUSEBENCH_DEV','MUSEBENCH_DATA_DIR','MUSEBENCH_PROJECTS_DIR'])delete env[key];
+const packaged=process.env.MUSEBENCH_META_PACKAGED==='1',variant=packaged?'packaged':'source';
+const app=await electron.launch({...packaged?{executablePath:'release/win-unpacked/MuseBench.exe',args:[]}:{args:['.']},env});
+const report={variant,checks:[]};const pass=text=>{report.checks.push(text);console.log('PASS '+text);};
+try{
+ const page=await app.firstWindow();await page.getByRole('button',{name:'Muse AI',exact:true}).click();await page.locator('.meta-native-navigation').getByRole('button',{name:'Scheduled',exact:true}).click();
+ async function inspect(code){return app.evaluate(async({BrowserWindow},code)=>{const w=BrowserWindow.getAllWindows().find(w=>!w.getParentWindow()),v=w.contentView.children.find(v=>v.webContents&&v.getVisible());if(!v||new URL(v.webContents.getURL()).pathname!=='/scheduled')return null;return v.webContents.executeJavaScript(code);},code);}
+ for(let i=0;i<100;i++){if((await page.evaluate(()=>window.musebench.personalState())).schedules?.status==='ready')break;await page.waitForTimeout(100);}
+ const initial=(await page.evaluate(()=>window.musebench.personalState())).schedules;assert(initial.items.length>0);assert.equal(await page.locator('.scheduled-task').count(),Math.min(initial.items.length,5));pass('Live reminders and next-run details appear in the native Upcoming list');
+ const original=await inspect(`({suggested:document.body.innerText.includes('Suggested'),composer:!!document.querySelector('textarea[data-testid="composer-input"]')})`);assert(original.suggested&&original.composer);pass('Original suggestions and scheduling composer remain available');
+ await page.locator('.scheduled-task-title').first().click();
+ let editor;for(let i=0;i<20;i++){editor=await inspect(`document.querySelector('[role="dialog"]')?.innerText`);if(editor?.includes('Save'))break;await page.waitForTimeout(100);}assert(editor.includes('Recurring')&&editor.includes('Save')&&editor.includes('Delete'));pass('Task title opens the real editor for title, prompt, date, time and recurrence');
+ await inspect(`document.querySelector('[role="dialog"] button[aria-label="Close"]')?.click()`);await page.waitForTimeout(350);
+ await page.locator('.scheduled-task .icon-button').first().click();let menu;for(let i=0;i<20;i++){menu=await inspect(`[...document.querySelectorAll('[role="menuitem"]')].map(e=>e.textContent)`);if(menu?.length)break;await page.waitForTimeout(100);}assert(menu.includes('Delete')&&menu.includes('View chat'));report.pauseOffered=menu.some(text=>/pause|disable/i.test(text));pass('Task options open the official View chat and Delete controls without activating either');
+ await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(w=>!w.getParentWindow()),v=w.contentView.children.find(v=>v.webContents&&v.getVisible());v.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});v.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});});await page.waitForTimeout(250);
+ await page.getByRole('button',{name:'New task',exact:true}).click();let focused=false;for(let i=0;i<20;i++){focused=await inspect(`document.activeElement?.matches('[data-testid="composer-input"]')`);if(focused)break;await page.waitForTimeout(100);}assert.equal(focused,true);pass('New task focuses the existing scheduling chat without submitting anything');
+ await mkdir('artifacts/meta-scheduled',{recursive:true});await page.locator('.personal-sidebar').screenshot({path:`artifacts/meta-scheduled/${variant}-sidebar.png`});
+ await page.locator('.meta-native-navigation').getByRole('button',{name:'Media',exact:true}).click();await page.waitForFunction(()=>!document.querySelector('.scheduled-sidebar'));pass('Scheduled list closes when moving to another Meta AI section');
+ await page.locator('.meta-native-navigation').getByRole('button',{name:'Scheduled',exact:true}).click();for(let i=0;i<100;i++){if((await page.evaluate(()=>window.musebench.personalState())).schedules?.status==='ready')break;await page.waitForTimeout(100);}const after=(await page.evaluate(()=>window.musebench.personalState())).schedules;assert.deepEqual(after.items,initial.items);pass('Returning refreshes the list; existing reminder details remain unchanged');report.status='passed';
+}catch(error){report.status='failed';report.error=String(error.stack??error);console.error(report.error);process.exitCode=1;}
+finally{await app.close();await mkdir('artifacts/meta-scheduled',{recursive:true});await writeFile(`artifacts/meta-scheduled/${variant}.json`,JSON.stringify(report,null,2));}

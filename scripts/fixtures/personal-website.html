@@ -1,0 +1,93 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Offline personal integration fixture</title>
+<style>
+html{color-scheme:dark;font:16px 'Segoe UI',sans-serif;background:#181818;color:#eee}body{margin:0}small{color:#999}h1{font-size:28px}textarea{width:85%;height:90px;padding:14px;border:1px solid #555;background:#252525;color:#eee;border-radius:14px}a{color:#b5c8f2}button{padding:8px;border-radius:6px;margin:4px}main{padding:24px;max-width:700px}[data-hatch-dock]{position:fixed;inset:0 auto 0 0;width:180px;background:#222;padding:12px;box-sizing:border-box}[data-hatch-full-page-shell]{margin-inline-start:180px}[data-hatch-shell-composer-layer]{position:fixed;bottom:8px;left:180px;right:0;padding:8px;background:#242424}[role=dialog]{position:fixed;inset:70px 40px;background:#303030;padding:25px;border:1px solid #888;z-index:10}[role=menu]{background:#303030;padding:10px}#fixture-controls{display:flex;flex-wrap:wrap}
+</style></head><body>
+<aside data-hatch-dock>
+  <button data-testid="hatch-nav-search">Search</button>
+  <button role="button" aria-label="Feed">Feed</button>
+  <button role="button" aria-label="Library">Library</button>
+  <button data-testid="hatch-dock-more">More</button>
+  <div role="menu" hidden><button role="menuitem">Settings</button></div>
+</aside>
+<main data-hatch-full-page-shell>
+  <small>OFFLINE TEST FIXTURE — NO ACCOUNT OR MODEL REQUESTS</small>
+  <h1 id="provider"></h1><p id="fixture-path"></p>
+  <textarea aria-label="Website draft" placeholder="This draft stays in its section"></textarea>
+  <p><a id="fixture-next" href="/fixture-second">Fixture follow-up</a></p>
+  <div id="fixture-controls">
+    <button id="fixture-popup">Official authentication popup</button>
+    <button id="fixture-unknown-popup">Unknown popup</button>
+    <button id="fixture-popup-callback">Complete fixture authentication</button>
+    <button id="fixture-popup-cancel">Cancel authentication</button>
+    <button id="fixture-popup-escape">Unsupported redirect</button>
+  </div>
+  <p id="fixture-action" aria-live="polite"></p>
+</main>
+<div data-hatch-shell-composer-layer>Official composer layer</div>
+<script>
+const provider = location.hostname.includes('meta.ai') ? 'Meta AI' : 'Muse';
+document.title = provider + ' offline integration fixture';
+document.querySelector('#provider').textContent = provider;
+document.querySelector('#fixture-path').textContent = location.pathname;
+if (location.pathname === '/fixture-no-shell') {
+  for (const attribute of ['data-hatch-dock', 'data-hatch-full-page-shell', 'data-hatch-shell-composer-layer']) {
+    document.querySelector('[' + attribute + ']')?.removeAttribute(attribute);
+  }
+}
+function recordAction(action) { document.querySelector('#fixture-action').textContent = action; }
+document.querySelector('[data-testid="hatch-nav-search"]').onclick = () => recordAction('Search opened');
+document.querySelector('[aria-label="Feed"]').onclick = () => { history.pushState({}, '', '/feed'); recordAction('Feed opened'); };
+document.querySelector('[aria-label="Library"]').onclick = () => { history.pushState({}, '', '/library'); recordAction('Library opened'); };
+// Model the real server-rendered dock: the initial trigger is inert, then gets
+// replaced after document completion. Menu adapters must tolerate hydration.
+const settingsMenu = document.querySelector('[role="menu"]');
+setTimeout(() => {
+  const initial = document.querySelector('[data-testid="hatch-dock-more"]');
+  const more = initial.cloneNode(true);
+  more.setAttribute('data-fixture-hydrated', 'true');
+  initial.replaceWith(more);
+  const openMenu = () => {
+    more.setAttribute('aria-expanded', 'true');
+    settingsMenu.hidden = false;
+    document.body.append(settingsMenu);
+  };
+  more.onpointerdown = event => { if (event.button === 0 && !event.ctrlKey) openMenu(); };
+  more.onkeydown = event => { if (event.key === 'ArrowDown') openMenu(); };
+}, 900);
+document.querySelector('[role="menuitem"]').onclick = () => {
+  settingsMenu.remove();
+  document.querySelector('[data-testid="hatch-dock-more"]').setAttribute('aria-expanded', 'false');
+  document.querySelector('[role="dialog"]')?.remove();
+  const dialog = document.createElement('section'); dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-label', 'Settings');
+  dialog.innerHTML = '<h2>Settings</h2><nav><button data-active="true" data-fixture-hydrated="false">General</button><button data-active="false" data-fixture-hydrated="false">Connectors</button><button data-active="false" data-fixture-hydrated="false">Messaging channels</button></nav><p id="fixture-settings-page">General</p><button aria-label="Close official settings">Close</button>';
+  // Like the observed live Settings dialog, a tab may render before its handler
+  // is installed. Clicking that inert node is not successful tab navigation.
+  // Replace every initial button so retrying a stale element also cannot pass.
+  setTimeout(() => {
+    if (!dialog.isConnected) return;
+    for (const initial of dialog.querySelectorAll('nav button')) {
+      const button = initial.cloneNode(true);
+      button.setAttribute('data-fixture-hydrated', 'true');
+      initial.replaceWith(button);
+      button.onclick = () => {
+        for (const sibling of dialog.querySelectorAll('nav button')) sibling.setAttribute('data-active', String(sibling === button));
+        dialog.querySelector('#fixture-settings-page').textContent = button.textContent;
+      };
+    }
+  }, 650);
+  dialog.querySelector('[aria-label="Close official settings"]').onclick = () => dialog.remove();
+  document.body.append(dialog); recordAction('Settings opened');
+};
+settingsMenu.remove();
+document.querySelector('#fixture-popup').onclick = () => window.open('https://www.facebook.com/fixture-login', 'fixture-auth', 'width=600,height=650');
+document.querySelector('#fixture-unknown-popup').onclick = () => window.open('https://unsupported.example/fixture', 'fixture-unknown');
+document.querySelector('#fixture-popup-callback').onclick = () => {
+  if (window.opener) window.opener.postMessage('fixture-auth-complete', 'https://muse.ai');
+  window.close();
+};
+document.querySelector('#fixture-popup-cancel').onclick = () => window.close();
+document.querySelector('#fixture-popup-escape').onclick = () => { location.href = 'https://unsupported.example/fixture'; };
+window.addEventListener('message', event => { if (event.origin === 'https://www.facebook.com' && event.data === 'fixture-auth-complete') recordAction('Authentication callback received'); });
+</script>
+</body></html>

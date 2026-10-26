@@ -1,0 +1,25 @@
+{
+ "content_sha256": "434fbc59806940484b667c85eae7362216c5cc969c41490467b593f47d123d83",
+ "host_version": "1.4.13",
+ "repo_meta": {
+  "hand_authored": [
+   ".github/",
+   ".nojekyll",
+   "LICENSE",
+   "README.md",
+   "publish-anchor.json"
+  ],
+  "rationale": [
+   "These are repository-meta files that have no upstream counterpart: they",
+   "describe or govern THIS repository rather than the mirrored artifact, so",
+   "there is no upstream source to mirror them from. They are the sanctioned",
+   "hand-authored exception to the mirror doctrine, not drift.",
+   "A publisher that force-pushes or otherwise replaces the tree wholesale will",
+   "delete them silently and still report success. That failure mode is real and",
+   "has been observed on this repository's published branch, where an",
+   "automated publish would have dropped hand-pushed files.",
+   "Preserve these paths, or publish them from a producer that",
+   "owns them."
+  ]
+ }
+}
