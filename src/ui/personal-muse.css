@@ -121,3 +121,11 @@
 .scheduled-sidebar .scheduled-help{font-size:10px;margin-top:15px}
 
 .personal-navigation .personal-sidebar-controls{padding-bottom:0}
+.personal-service-content{display:grid;grid-template-rows:0fr;opacity:0;visibility:hidden;transition:grid-template-rows 200ms ease,opacity 150ms ease,visibility 0s linear 200ms}
+.personal-service-content.expanded{grid-template-rows:1fr;opacity:1;visibility:visible;transition:grid-template-rows 200ms ease,opacity 150ms ease,visibility 0s}
+.personal-service-inner{min-height:0;overflow:hidden}
+.personal-navigation .personal-sidebar-controls .muse-agent-shortcut{margin-bottom:0}
+.personal-service-content .personal-collection[aria-label="Muse chats"]{margin-top:8px}
+.personal-service-content .personal-recents-tools{top:12px}
+.personal-service-content .personal-tools{padding-bottom:12px}
+@media(prefers-reduced-motion:reduce){.personal-service-content,.personal-service-content.expanded{transition:none}}
