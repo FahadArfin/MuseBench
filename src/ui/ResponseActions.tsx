@@ -1,10 +1,10 @@
 import {useEffect,useRef,useState,type KeyboardEvent} from 'react';
-import {Check,Copy,GitBranch,MoreHorizontal,Square,ThumbsDown,ThumbsUp,Volume2} from 'lucide-react';
+import {Check,Copy,GitBranch,Square,ThumbsDown,ThumbsUp,Volume2} from 'lucide-react';
 import type {Message} from '../shared/types';
 import './response-actions.css';
 
 export function ResponseActions({message,chatId,branchDisabled,onBranch}:{message:Message;chatId:string;branchDisabled:boolean;onBranch:()=>void}){
- const [status,setStatus]=useState(''),[menu,setMenu]=useState<'more'|'feedback'|null>(null),[speaking,setSpeaking]=useState(false);
+ const [status,setStatus]=useState(''),[menu,setMenu]=useState<'feedback'|null>(null),[speaking,setSpeaking]=useState(false);
  const key=`musebench-response-feedback:${chatId}:${message.id}`;
  const [feedback,setFeedback]=useState<string|null>(()=>{try{return localStorage.getItem(key);}catch{return null;}});
  const root=useRef<HTMLDivElement>(null),popup=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement|null>(null),utterance=useRef<SpeechSynthesisUtterance|null>(null),speechTimer=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
@@ -26,9 +26,9 @@ export function ResponseActions({message,chatId,branchDisabled,onBranch}:{messag
   <button className="icon-button" aria-label={status==='Copied'?'Copied':'Copy message'} title="Copy message" onClick={async()=>{try{await (window.musebench?.copyText?window.musebench.copyText(message.text):navigator.clipboard.writeText(message.text));setStatus('Copied');}catch{setStatus('Copy unavailable. Select the response to copy it.');}}}>{status==='Copied'?<Check size={15}/>:<Copy size={15}/>}</button>
   <button className={`icon-button ${speaking?'selected':''}`} aria-label={speaking?'Stop reading':'Read aloud'} title={speaking?'Stop reading':'Read aloud'} aria-pressed={speaking} onClick={read}>{speaking?<Square size={14}/>:<Volume2 size={16}/>}</button>
   <button className={`icon-button ${feedback?'selected':''}`} aria-label="Response feedback" title={feedback?`${feedback==='helpful'?'Helpful':'Not helpful'} · Saved on this device`:'Response feedback'} aria-haspopup="menu" aria-expanded={menu==='feedback'} onClick={event=>{trigger.current=event.currentTarget;setMenu(menu==='feedback'?null:'feedback');}}>{feedback==='unhelpful'?<ThumbsDown size={15}/>:<ThumbsUp size={15}/>}</button>
-  <button className="icon-button" aria-label="More response actions" title="More response actions" aria-haspopup="menu" aria-expanded={menu==='more'} onClick={event=>{trigger.current=event.currentTarget;setMenu(menu==='more'?null:'more');}}><MoreHorizontal size={18}/></button>
+  <button className="icon-button" aria-label="Branch in new chat" title="Branch in new chat" disabled={branchDisabled} onClick={()=>{setMenu(null);stop();onBranch();}}><GitBranch size={15}/></button>
   {valid&&<time dateTime={date.toISOString()} title={date.toLocaleString()}>{date.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</time>}
-  {menu&&<div ref={popup} className="response-action-menu" role="menu" aria-label={menu==='more'?'More response actions':'Response feedback'} onKeyDown={navigate}>{menu==='more'?<button role="menuitem" disabled={branchDisabled} onClick={()=>{close();stop();onBranch();}}><GitBranch size={15}/>Branch in new chat</button>:<><button role="menuitemradio" aria-checked={feedback==='helpful'} onClick={()=>rate('helpful')}><ThumbsUp size={15}/>Helpful</button><button role="menuitemradio" aria-checked={feedback==='unhelpful'} onClick={()=>rate('unhelpful')}><ThumbsDown size={15}/>Not helpful</button><small>Saved on this device</small></>}</div>}
+  {menu&&<div ref={popup} className="response-action-menu" role="menu" aria-label="Response feedback" onKeyDown={navigate}><button role="menuitemradio" aria-checked={feedback==='helpful'} onClick={()=>rate('helpful')}><ThumbsUp size={15}/>Helpful</button><button role="menuitemradio" aria-checked={feedback==='unhelpful'} onClick={()=>rate('unhelpful')}><ThumbsDown size={15}/>Not helpful</button><small>Saved on this device</small></div>}
   {status&&<span className="response-action-status" role="status">{status}</span>}
  </div>;
 }
