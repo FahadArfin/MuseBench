@@ -42,7 +42,9 @@ try{
  async function click(selector,label){for(const page of [browserPage,desktopPage])await page.evaluate(({selector,label})=>{const elements=[...document.querySelectorAll(selector)].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height);const element=elements.find(e=>(e.getAttribute('aria-label')||e.textContent?.trim())===label);if(!element)throw Error(`Missing visible control ${selector} ${label}`);element.click();},{selector,label});}
  async function escape(){for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));}
  await compare('code-chat');
+ await click('button','Reasoning effort');await compare('reasoning-picker');await escape();
  await click('button','Project overview');await compare('project-overview');
+ await click('button','Reasoning effort');await compare('project-reasoning-picker');await escape();
  await click('button','Add project');await compare('create-project');await escape();
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:',',ctrlKey:true,bubbles:true})));await compare('settings');await escape();
  await click('button','Customize');await compare('customize');await escape();

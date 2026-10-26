@@ -29,6 +29,34 @@ try {
  await page.getByRole('button',{name:'Profile menu',exact:true}).click();await page.getByRole('menu',{name:'Your profile',exact:true}).getByText('Alex Morgan',{exact:true}).waitFor();await page.keyboard.press('Escape');await page.keyboard.press('Control+b');
  await page.screenshot({path:'artifacts/browser-preview/code.png'});
  const before=await page.evaluate(()=>window.musebench.getState());
+ await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Keep this draft');
+ await page.getByRole('button',{name:'Reasoning effort',exact:true}).click();
+ for(const [label,value] of [['None','none'],['Minimal','minimal'],['Low','low'],['Medium','medium'],['High','high'],['Extra high','xhigh'],['Max','max'],['Ultra','ultra']]){
+  await page.getByRole('radio',{name:label,exact:true}).check();
+  await page.waitForFunction(value=>document.querySelector('.thinking-option.selected input')?.value===value,value);
+  assert.equal((await page.evaluate(()=>window.musebench.getState())).task.runOptions.reasoning,value);
+  assert.equal(await page.getByRole('slider',{name:'Reasoning level'}).getAttribute('aria-valuetext'),label);
+ }
+ await page.getByRole('slider',{name:'Reasoning level'}).focus();await page.keyboard.press('Home');await page.keyboard.press('ArrowRight');
+ await page.waitForFunction(()=>document.querySelector('.thinking-option.selected input')?.value==='minimal');
+ await page.getByRole('button',{name:'Reset reasoning to High'}).click();
+ await page.waitForFunction(()=>document.querySelector('.thinking-option.selected input')?.value==='high');
+ assert.equal(await page.getByRole('textbox',{name:'Message Muse',exact:true}).inputValue(),'Keep this draft');
+ assert.equal((await page.evaluate(()=>window.musebench.getState())).task.messages.length,before.task.messages.length);
+ await page.screenshot({path:'artifacts/browser-preview/reasoning-dark.png'});
+ await page.getByRole('dialog',{name:'Reasoning controls'}).screenshot({path:'artifacts/browser-preview/reasoning-detail.png'});
+ await page.setViewportSize({width:390,height:844});
+ const reasoningBox=await page.getByRole('dialog',{name:'Reasoning controls'}).boundingBox();assert(reasoningBox.x>=0&&reasoningBox.x+reasoningBox.width<=390&&reasoningBox.y>=0);
+ await page.screenshot({path:'artifacts/browser-preview/reasoning-narrow.png'});
+ await page.keyboard.press('Escape');assert.equal(await page.getByRole('button',{name:'Reasoning effort',exact:true}).evaluate(el=>el===document.activeElement),true);
+ await page.setViewportSize({width:1440,height:960});
+ await page.keyboard.press('Control+,');await page.getByRole('button',{name:'Light theme',exact:true}).click();await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Reasoning effort',exact:true}).click();await page.getByRole('dialog',{name:'Reasoning controls'}).screenshot({path:'artifacts/browser-preview/reasoning-light.png'});
+ await page.locator('.topbar:visible').click({position:{x:600,y:20}});assert.equal(await page.getByRole('dialog',{name:'Reasoning controls'}).count(),0);
+ await page.keyboard.press('Control+,');await page.getByRole('button',{name:'Dark theme',exact:true}).click();await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Project overview',exact:true}).click();await page.getByRole('button',{name:'Reasoning effort',exact:true}).click();
+ const projectPicker=await page.getByRole('dialog',{name:'Reasoning controls'}).boundingBox();assert(projectPicker.y>=0&&projectPicker.y+projectPicker.height<=960);await page.screenshot({path:'artifacts/browser-preview/reasoning-project.png'});await page.keyboard.press('Escape');
+ await page.locator('.project-conversation-list').getByRole('button',{name:'Build a clearer project overview',exact:true}).click();
  await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Make the sidebar more compact');
  await page.getByRole('button',{name:'Send message',exact:true}).click();
  await page.waitForFunction(async()=>((await window.musebench.getState()).task.messages.at(-1).text).startsWith('Preview reply'));

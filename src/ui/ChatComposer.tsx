@@ -1,12 +1,11 @@
 import {useSlashPalette} from './SlashPalette';
 import type {MuseSkill} from '../shared/slash-commands.mjs';
 import {useEffect,useRef,useState,type Dispatch,type SetStateAction,type RefObject} from 'react';
-import {Paperclip,ListPlus,ArrowUp,Check,ChevronDown,FolderOpen,Lightbulb,Mic,Plus,RotateCcw,Shield,ShieldCheck,Square,Terminal,X} from 'lucide-react';
+import {Paperclip,ListPlus,ArrowUp,Check,ChevronDown,FolderOpen,Lightbulb,Mic,Plus,Shield,ShieldCheck,Square,Terminal,X} from 'lucide-react';
 import type {RunOptions} from '../shared/types';
-import {REASONING_LEVELS} from '../shared/run-options.mjs';
+import {ReasoningPicker,reasoningLabels as labels} from './ReasoningPicker';
 import {useDictation} from './useDictation';
 import './composer.css';
-const labels:Record<RunOptions['reasoning'],string>={none:'None',minimal:'Minimal',low:'Low',medium:'Medium',high:'High',xhigh:'Extra high',max:'Max',ultra:'Ultra'};
 const approvals:{id:RunOptions['approval'];label:string;description:string}[]=[
  {id:'ask',label:'Ask for approval',description:'Safe actions run. Requests needing your approval stop the run.'},
  {id:'auto',label:'Auto-review',description:'Muse reviews eligible requests. Unresolved approvals stop the run.'},
@@ -49,7 +48,7 @@ export function ChatComposer(p:Props){
    {p.messageMode==='plan'&&muse&&<span className="composer-plan-tag"><Lightbulb size={12}/>Plan</span>}
    <span className="composer-spacer"/>
    {muse&&<div className="composer-control"><button type="button" className="reasoning-chip" aria-label="Reasoning effort" aria-expanded={menu==='reasoning'} disabled={locked} onClick={e=>open('reasoning',e)}><strong>Muse</strong><span>{labels[p.options.reasoning]}</span><ChevronDown size={12}/></button>
-    {menu==='reasoning'&&<div className="composer-popover reasoning-popover" role="dialog" aria-label="Reasoning controls"><div className="reasoning-heading"><div><strong>{labels[p.options.reasoning]}</strong><small>Muse reasoning effort</small></div><button type="button" className="icon-button" aria-label="Reset reasoning to High" onClick={()=>p.onOptions({...p.options,reasoning:'high'})}><RotateCcw size={14}/></button></div><input type="range" aria-label="Reasoning level" aria-valuetext={labels[p.options.reasoning]} min={0} max={REASONING_LEVELS.length-1} step={1} value={REASONING_LEVELS.indexOf(p.options.reasoning)} onChange={e=>p.onOptions({...p.options,reasoning:REASONING_LEVELS[Number(e.target.value)]})}/><div className="effort-scale"><span>Faster</span><span>Deeper</span></div><select aria-label="Select reasoning effort" value={p.options.reasoning} onChange={e=>choose({...p.options,reasoning:e.target.value as RunOptions['reasoning']})}>{REASONING_LEVELS.map(level=><option value={level} key={level}>{labels[level]}</option>)}</select><p className="popover-help">Higher effort can take longer and use more tokens.</p></div>}
+    {menu==='reasoning'&&<ReasoningPicker value={p.options.reasoning} onChange={reasoning=>p.onOptions({...p.options,reasoning})}/>}
    </div>}
    <button type="button" className={`icon-button microphone-button ${voice.recording?'recording':''}`} aria-label={voice.recording?'Stop dictation':'Start dictation'} title={voice.recording?'Stop dictation':voice.state.available===false?'Dictation unavailable on this device':'Dictate with Windows speech recognition (on device)'} disabled={p.busy||p.running||voice.state.status==='stopping'||(!voice.recording&&voice.state.available===false)} onClick={()=>{setMenu(null);void voice.toggle();}}>{voice.recording?<Square size={14} fill="currentColor"/>:<Mic size={17}/>}</button>
    {p.running?<><button type="submit" className="send-button queue-send" aria-label="Queue message" disabled={p.busy||!p.value.trim()}><ListPlus size={15}/>Queue</button><button type="button" className="send-button" aria-label="Stop Muse" onClick={p.onStop}><Square size={14} fill="currentColor"/></button></>:<button type="submit" className="send-button" aria-label={p.showTask?'Send message':'Create task'} title="Send" disabled={!p.value.trim()||locked||(p.showTask&&!p.canSend)}><ArrowUp size={19}/></button>}
