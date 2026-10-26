@@ -34,7 +34,7 @@ try{
  await page.getByRole('button',{name:/Worked for/}).click();await page.getByText('Read file',{exact:true}).first().click();assert.match(await page.getByLabel('Read file output').first().innerText(),/# Shop/);record('Inline activity expands into the actual tool output');
  await page.getByRole('button',{name:'Toggle threads panel'}).click();await page.getByRole('tab',{name:/Tasks/}).waitFor();await screenshot('threads');
  await page.locator('.work-thread-row').first().click();await page.getByRole('button',{name:'Continue in chat'}).waitFor();assert.match(await page.locator('.work-thread-prompt').innerText(),/Improve the shop/);record('Threads lists saved requests and opens their activity details');
- await page.getByRole('button',{name:'All tasks'}).click();await page.getByRole('tab',{name:/Agents/}).click();assert.match(await page.locator('.work-threads-empty').innerText(),/No agents reported/);record('Agent view does not invent child agents');
+ await page.getByRole('button',{name:'All tasks'}).click();await page.getByRole('tab',{name:/Agents/}).click();assert.match(await page.locator('.work-threads-empty').innerText(),/No agents or workflows reported/);record('Agent view does not invent child agents');
  await page.keyboard.press('Escape');assert.equal(await page.getByRole('complementary',{name:'Work threads',exact:true}).count(),0);record('Escape closes Threads');
  const card=page.getByRole('region',{name:'Edited 2 files',exact:true});await card.waitFor();
  assert.equal(await card.locator('.changed-file-row').count(),2);

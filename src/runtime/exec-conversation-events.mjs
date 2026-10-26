@@ -74,7 +74,7 @@ export function createExecConversationFold({
       for (const workflow of workflows.values()) {
         if (workflow.ownerRunId !== run.state.runId) continue;
         append({ id: workflow.taskId, kind: 'tool', tool: 'workflow', title: workflow.title,
-          status: workflow.status, detail: workflow.detail, output: '' });
+          status: workflow.status, detail: workflow.detail, output: '', workflow:{parentRunId:workflow.ownerRunId,parallelLimit:workflow.parallelLimit} });
       }
     }
     return {
@@ -145,7 +145,7 @@ export function createExecConversationFold({
     if (unresolved().length) fail('Only one outstanding workflow continuation is supported.');
     workflowRunIds.add(value.workflowRunId); workIds.add(value.workId);
     workflows.set(value.taskId, { taskId: value.taskId, ownerCommandId: p.command_id, ownerRunId: p.run_stream.id,
-      status: 'working', detail: 'Running workflow', consumed: false,
+      status: 'working', detail: 'Running workflow', consumed: false, parallelLimit:value.maxParallelAgents,
       title: `Workflow: ${value.entryId.replace(/[_-]+/g, ' ')}`.slice(0, 160) });
   }
 

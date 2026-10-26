@@ -64,6 +64,7 @@ test('verified workflow continuation retains root attribution and renders only o
   assert.deepEqual(result.ownedRunIds, ['run-a', 'run-b']); assert.equal(result.text, 'Started.\n\nDone.');
   const workflow = result.activity.items.find(item => item.id === 'workflow-task-a');
   assert.equal(workflow.kind, 'tool'); assert.equal(workflow.status, 'completed'); assert.match(workflow.title, /readme.marker.probe/i);
+  assert.deepEqual(workflow.workflow,{parentRunId:'run-a',parallelLimit:14});
   assert.equal(workflow.output, ''); assert(!JSON.stringify(workflow).includes('work.v1.')); assert(!result.activity.items.some(item => item.kind === 'agent'));
 });
 
