@@ -1,3 +1,4 @@
+import {combineUsage} from '../shared/native-usage.mjs';
 import { createExecEventFold } from './exec-events.mjs';
 
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -82,6 +83,7 @@ export function createExecConversationFold({
       terminal: unresolved().length ? null : latest?.terminal ?? null,
       reason: latest?.reason ?? null, modelId: latest?.modelId ?? root?.modelId ?? null,
       providerId: latest?.providerId ?? root?.providerId ?? null,
+      usage: combineUsage(runs.map(run=>run.state.usage)),
       approvalRequested: runs.some(run => run.state.approvalRequested), recordCount,
       shellResults: shellResults.map(item => ({ ...item })), activity: { items, truncated },
     };

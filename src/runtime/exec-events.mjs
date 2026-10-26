@@ -1,3 +1,4 @@
+import {nativeUsage} from '../shared/native-usage.mjs';
 import {createActivityProjection} from '../shared/activity.mjs';
 const controlKinds = new Map([
   ['runtime.command.accepted', 'command_accepted'],
@@ -37,7 +38,7 @@ export function createExecEventFold({ maxText = 200000, maxRecords = 20000, maxS
   const state = {
     sessionId: null, commandId: null, runId: null, text: '', terminal: null,
     reason: null, modelId: null, providerId: null, approvalRequested: false,
-    recordCount: 0, shellResults: [],
+    recordCount: 0, shellResults: [], usage: null,
   };
   const activity = createActivityProjection();
   const sequences = new Map();
@@ -47,7 +48,7 @@ export function createExecEventFold({ maxText = 200000, maxRecords = 20000, maxS
   let started = false;
   let failure = null;
   let finished = null;
-  const detached = (value) => ({ ...value, activity: activity.snapshot(), shellResults: value.shellResults.map((result) => ({ ...result })) });
+  const detached = (value) => ({ ...value, usage: value.usage?{...value.usage}:null, activity: activity.snapshot(), shellResults: value.shellResults.map((result) => ({ ...result })) });
   const snapshot = () => detached(state);
   const fail = (message) => {
     failure ??= new Error(`Muse exec event error: ${message}`);
@@ -127,6 +128,8 @@ export function createExecEventFold({ maxText = 200000, maxRecords = 20000, maxS
         }
         state.modelId = payload.model_id;
         state.providerId = payload.provider_id;
+      } else if (type === 'run.usage') {
+        state.usage=nativeUsage(payload);
       } else if (type === 'run.output.delta') {
         if (!started) fail('Output arrived before the run started.');
         requireText(payload.text, 'Output delta');

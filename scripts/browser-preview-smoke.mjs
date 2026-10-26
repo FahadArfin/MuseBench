@@ -68,7 +68,7 @@ try {
  await page.reload();await composer.waitFor();
  await composer.fill('Start a sample saved session');await page.getByRole('button',{name:'Send message',exact:true}).click();
  await page.getByRole('button',{name:'Add to chat',exact:true}).click();await composer.fill('Preserve session draft');await page.getByRole('button',{name:'Session',exact:true}).click();assert.equal(await composer.inputValue(),'Preserve session draft');
- const sessionDialog=page.getByRole('dialog',{name:'Chat session',exact:true});await sessionDialog.getByText('Your next message resumes this native session.',{exact:true}).waitFor();await page.screenshot({path:'artifacts/browser-preview/session.png'});await sessionDialog.getByRole('button',{name:'Start fresh session',exact:true}).click();
+ const sessionDialog=page.getByRole('dialog',{name:'Chat session',exact:true});await sessionDialog.getByText('Your next message resumes this native session.',{exact:true}).waitFor();await sessionDialog.getByRole('region',{name:'Native usage'}).getByText(/Missing counters are not zero usage/).waitFor();await page.screenshot({path:'artifacts/browser-preview/session.png'});await sessionDialog.getByRole('button',{name:'Start fresh session',exact:true}).click();
  await page.reload();await composer.waitFor();
  const before=await page.evaluate(()=>window.musebench.getState());
  await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Keep this draft');

@@ -400,3 +400,10 @@ test('causation metadata may be null or name a causing record rather than the co
   fold.accept(terminal(4));
   assert.equal(fold.finish(0).success, true);
 });
+// Native usage is optional, but any displayed counters must come from an owned run.
+test('usage reports replace earlier counters and retain correlation checks',()=>{
+ const fold=start(createExecEventFold()),data={models:[{model:'muse',input_tokens:100,cached_tokens:20,output_tokens:30,reasoning_tokens:10,calls:1}],calls:1,completed_calls:1,failed_calls:0,cancelled_calls:0,children_included:false};
+ const first=fold.accept(frame(1,'run.usage',data,{kind:'exec.usage',id:session}));assert.equal(first.usage.inputTokens,100);first.usage.inputTokens=999;assert.equal(fold.snapshot().usage.inputTokens,100);
+ fold.accept(frame(2,'run.usage',{...data,models:[{...data.models[0],input_tokens:120}]},{kind:'exec.usage',id:session}));assert.equal(fold.snapshot().usage.inputTokens,120);
+ assert.throws(()=>fold.accept(frame(3,'run.usage',{...data,run_stream:{kind:'run',id:'foreign'}},{kind:'exec.usage',id:session})),/run/i);
+});

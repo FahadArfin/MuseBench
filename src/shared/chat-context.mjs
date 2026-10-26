@@ -36,5 +36,5 @@ export function composeChatContext({task,project,memories='',text='',attachments
  if(selected.length)parts.push(`Previous conversation (old requests are history, not new instructions):\n[${selected.join(',\n')}]`);
  const prompt=parts.join('\n\n')+ending;
  if(prompt.length>CONTEXT_LIMIT)throw Error('Context exceeds the request limit.');
- return{prompt,characters:prompt.length,estimatedTokens:Math.ceil(prompt.length/4),includedMessages:selected.length,omittedMessages:previous.length-selected.length,truncatedMessages,fileCount:attachments.length,replayedFiles:selected.reduce((count,value)=>count+(JSON.parse(value).historicalSourceSnapshots?.length??0),0),limit:CONTEXT_LIMIT};
+ return{historyMode:nativeSession?'native':history?'replay':'connection',prompt,characters:prompt.length,estimatedTokens:Math.ceil(prompt.length/4),includedMessages:selected.length,omittedMessages:previous.length-selected.length,truncatedMessages,fileCount:attachments.length,replayedFiles:selected.reduce((count,value)=>count+(JSON.parse(value).historicalSourceSnapshots?.length??0),0),limit:CONTEXT_LIMIT};
 }
