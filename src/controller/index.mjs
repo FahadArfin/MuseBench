@@ -254,7 +254,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const refreshScripts=async()=>{const p=state.activeProject;if(!p)throw Error('Open a project first.');p.scripts=(await scriptsFor(p.root)).scripts;Object.assign(p,await projectGit(p.root));return p;};
   const runCheck=async script=>{
-    const task=requireTask();requireWritable(task,state.activeProject);if(checkProcess)throw Error('A check is running. Cancel it first.');const project=await refreshScripts();if(!Object.hasOwn(project.scripts,script))throw Error('Choose a script listed in package.json.');const snap=await current();
+    const task=requireTask();requireNavigationIdle();requireWritable(task,state.activeProject);if(checkProcess)throw Error('A check is running. Cancel it first.');const project=await refreshScripts();if(!Object.hasOwn(project.scripts,script))throw Error('Choose a script listed in package.json.');const snap=await current();
     const check={id:randomUUID(),script,command:`npm run --ignore-scripts ${script} — ${project.scripts[script]}`,status:'running',revision:snap.revision,exitCode:null,log:'',startedAt:now()};task.check=check;checkInvalidated=false;const taskId=task.id,child=launchScript(project.root,script);checkProcess=child;
     const append=chunk=>{if(closed||state.task?.id!==taskId||state.task.check?.id!==check.id)return;check.log=(check.log+chunk.toString()).slice(-MAX_LOG);emit();};child.stdout.on('data',append);child.stderr.on('data',append);
     let done=false;const timeout=setTimeout(async()=>{check.log=(check.log+`\nCheck stopped after ${checkTimeoutMs} ms timeout.`).slice(-MAX_LOG);await killTree(child);finish(null,Error('Project check timed out.'));},Math.max(100,Math.min(checkTimeoutMs,600000)));
@@ -405,11 +405,21 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         await fs.writeFile(path.join(root,'README.md'),`# ${name}\n\n${instructions}\n`,{flag:'wx'});
         const p={id:randomUUID(),name,root,demo:false,scripts:{},instructions};await selectProject(p);state.projects.push(p);break;
       }
-      case 'createWorktree':case 'openWorktree':{
+      case 'createWorktree':case 'openWorktree':case 'recoverWorktree':{
         requireSwitchable();validateBinding(action.projectId,null);const source=state.activeProject;
-        const item=action.type==='createWorktree'?await worktrees.create(source.root,{branch:action.branch,base:action.base}):await worktrees.open(source.root,action.id);
+        const item=action.type==='createWorktree'?await worktrees.create(source.root,{branch:action.branch,base:action.base}):action.type==='recoverWorktree'?await worktrees.recover(source.root,action.id,action.branch):await worktrees.open(source.root,action.id);
         const root=await canonicalRoot(item.path);if(root!==item.path)throw Error('Worktree folder changed.');const info=await scriptsFor(root);await snapshot(root);
         let p=state.projects.find(p=>p.root===root);if(!p){p={id:randomUUID(),name:source.name.split(' · ')[0]+' · '+item.branch,root,demo:false,scripts:info.scripts,instructions:source.instructions,worktree:{id:item.id,sourceRoot:item.sourceRoot,branch:item.branch,base:item.base}};state.projects.push(p);}await selectProject(p);break;
+      }
+      case 'archiveWorktree':case 'restoreWorktree':{
+        validateBinding(action.projectId,null);const info=await worktrees.inspect(state.activeProject.root),item=info.items.find(w=>w.id===action.id);if(!item)throw Error('Worktree unavailable.');
+        for(const c of contexts.values()){const p=state.projects.find(p=>p.id===c.task?.projectId);if(contextBusy(c)&&p&&(inside(p.root,item.path)||inside(item.path,p.root)))throw Error('Stop the chat using this worktree before archiving.');}
+        if(checkProcess&&state.activeProject.root===item.path)throw Error('Stop the project check before archiving.');
+        await worktrees[action.type==='archiveWorktree'?'archive':'restore'](state.activeProject.root,action.id);break;
+      }
+      case 'setupWorktree':{
+        requireNavigationIdle();validateBinding(action.projectId,null);if(!state.activeProject.worktree)throw Error('Open a managed worktree first.');
+        if(!state.task)await startTask('Set up '+state.activeProject.name,'manual');await runCheck(action.script);break;
       }
       case 'openProject':{
         requireSwitchable();const root=await canonicalRoot(action.path);if(inside(root,dataDir))throw Error('The project cannot contain MuseBench application data.');const info=await scriptsFor(root);await snapshot(root);

@@ -1,14 +1,16 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {mkdir,readFile,writeFile,rename,realpath,lstat} from 'node:fs/promises';
+import {mkdir,readFile,writeFile,rename,realpath,lstat,rm} from 'node:fs/promises';
 import {randomUUID,createHash} from 'node:crypto';
 import path from 'node:path';
 const exec=promisify(execFile),contains=(parent,child)=>{const rel=path.relative(parent,child);return !rel||!rel.startsWith('..')&&!path.isAbsolute(rel);};
 export function createWorktreeService(dataDir,{storageDir}={}){
  const storage=path.resolve(storageDir??path.join(dataDir,'worktrees')),hooks=path.resolve(dataDir,'empty-git-hooks');
- async function git(root,args){
+ async function git(root,args,{environment={},input}={}){
   const env={...process.env};for(const key of Object.keys(env))if(/^GIT_/i.test(key))delete env[key];env.GIT_TERMINAL_PROMPT='0';
-  return (await exec('git',['-c',`core.hooksPath=${hooks}`,'-c','core.fsmonitor=false','-c','submodule.recurse=false','-C',root,...args],{env,windowsHide:true,shell:false,timeout:60000,maxBuffer:2*1024*1024})).stdout.trim();
+  const argv=['-c',`core.hooksPath=${hooks}`,'-c','core.fsmonitor=false','-c','submodule.recurse=false','-C',root,...args],options={env:{...env,...environment},windowsHide:true,shell:false,timeout:60000,maxBuffer:2*1024*1024};
+  if(input!==undefined)return await new Promise((resolve,reject)=>{const child=execFile('git',argv,options,(error,stdout)=>error?reject(error):resolve(stdout.trim()));child.stdin.on('error',()=>{});child.stdin.end(input);});
+  const result=(await exec('git',argv,options)).stdout;return args.includes('-z')?result:result.trim();
  }
  async function repository(root){
   await mkdir(hooks,{recursive:true});
@@ -27,7 +29,7 @@ export function createWorktreeService(dataDir,{storageDir}={}){
  async function inspect(root){
   const {repo,key}=await repository(root),dir=await folder(repo,key),native=await listed(repo),legacy=path.resolve(dataDir,'worktrees',key),items=[...await records(dir),...(legacy===dir?[]:await records(legacy))];
   const branch=await git(repo,['branch','--show-current']),head=await git(repo,['rev-parse','HEAD']),dirty=Boolean(await git(repo,['status','--porcelain']));
-  return{root:repo,branch,head,dirty,items:items.map(item=>{const live=native.find(n=>typeof n.worktree==='string'&&path.resolve(n.worktree)===item.path);return{...item,available:!!live&&!live.prunable,locked:!!live?.locked,status:live?'ready':item.status};})};
+  return{root:repo,branch,head,dirty,items:items.map(item=>{const live=native.find(n=>typeof n.worktree==='string'&&path.resolve(n.worktree)===item.path);return{...item,available:!!live&&!live.prunable,locked:!!live?.locked,status:item.status==='archived'?'archived':live?'ready':item.status};})};
  }
  async function create(root,{branch,base='HEAD'}={}){
   if(typeof branch!=='string'||branch.length>100||!branch||branch.startsWith('-')||/[\r\n]/.test(branch))throw Error('Choose a valid new branch name.');
@@ -42,5 +44,38 @@ export function createWorktreeService(dataDir,{storageDir}={}){
   catch{item.status='needs-attention';await save(dir,item);throw Error('Worktree creation did not finish. Any partial worktree and branch were retained; inspect them before retrying.');}
  }
  async function open(root,id){const info=await inspect(root),item=info.items.find(item=>item.id===id);if(!item?.available)throw Error('This worktree is unavailable. Inspect its retained folder.');if((await lstat(item.path)).isSymbolicLink()||await realpath(item.path)!==item.path)throw Error('Worktree folder changed.');const {common}=await repository(item.path),original=await repository(root);if(common!==original.common)throw Error('Worktree repository changed.');return item;}
- return{inspect,create,open};
+ async function archive(root,id){
+  const item=await open(root,id);if(item.locked)throw Error('This worktree is locked. Unlock it before archiving.');
+  const dir=path.dirname(item.path),index=path.join(dir,`${randomUUID()}.index`),environment={GIT_INDEX_FILE:index};
+  // Retain the entire checkout (including ignored dependencies). Snapshot the
+  // working contents with a private index; never disturb the user's staging.
+  const entries=(await git(item.path,['ls-files','-z','--cached','--others','--exclude-standard'])).split('\0').filter(Boolean),names=[...new Set(entries)];
+  if(names.length>4000)throw Error('Archive exceeds 4,000 files. Commit or reduce the workspace first.');
+  if(names.some(n=>n==='.gitmodules'))throw Error('Submodule worktrees require manual archiving. Files are retained.');
+  const modes=new Map((await git(item.path,['ls-files','--stage','-z'])).split('\0').filter(Boolean).map(row=>{const tab=row.indexOf('\t');return[row.slice(tab+1),row.slice(0,6)];}));
+  if([...modes.values()].includes('160000'))throw Error('Submodule worktrees require manual archiving. Files are retained.');
+  let bytes=0;const rows=[];
+  try{
+   await git(item.path,['read-tree','--empty'],{environment});
+   for(const name of names){
+    const target=path.resolve(item.path,name);if(!contains(item.path,target)||name.split('/').includes('.git'))throw Error('Archive path is outside the worktree.');
+    let stat;try{stat=await lstat(target);}catch(e){if(e.code==='ENOENT')continue;throw e;}
+    if(stat.isSymbolicLink()||!stat.isFile()||await realpath(target)!==target)throw Error('Symlinks and embedded repositories require manual archiving. Files are retained.');
+    bytes+=stat.size;if(bytes>64*1024*1024)throw Error('Archive exceeds 64 MiB. Commit large assets separately.');
+    const blob=await git(item.path,['hash-object','-w','--no-filters','--',name]);rows.push(`${modes.get(name)==='100755'?'100755':'100644'} ${blob}\t${name}\0`);
+   }
+   await git(item.path,['update-index','-z','--index-info'],{environment,input:rows.join('')});
+   const tree=await git(item.path,['write-tree'],{environment}),parent=await git(item.path,['rev-parse','HEAD']);
+   const commit=await git(item.path,['-c','user.name=MuseBench archive','-c','user.email=archive@musebench.local','commit-tree',tree,'-p',parent,'-m','MuseBench retained worktree snapshot']);
+   const ref=`refs/musebench/archives/${id}/${randomUUID()}`;await git(item.path,['update-ref',ref,commit]);
+   Object.assign(item,{status:'archived',archiveCommit:commit,archiveRef:ref,archivedAt:new Date().toISOString(),archiveFiles:names.length});await save(dir,item);return item;
+  }finally{await rm(index,{force:true});await rm(index+'.lock',{force:true});}
+ }
+ async function restore(root,id){const item=await open(root,id);item.status='ready';await save(path.dirname(item.path),item);return item;}
+ async function recover(root,id,branch){
+  const info=await inspect(root),item=info.items.find(w=>w.id===id);if(!item||!item.archiveCommit||!item.archiveRef)throw Error('No retained archive snapshot is available.');
+  const retained=await git(info.root,['rev-parse','--verify',item.archiveRef]);if(retained!==item.archiveCommit)throw Error('Archive reference changed. Inspect it before recovery.');
+  const recovered=await create(root,{branch,base:item.archiveCommit});recovered.recoveredFrom=id;await save(path.dirname(recovered.path),recovered);return recovered;
+ }
+ return{inspect,create,open,archive,restore,recover};
 }

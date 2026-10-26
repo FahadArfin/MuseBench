@@ -4,7 +4,7 @@ import {skillPrompt} from '../shared/slash-commands.mjs';
 import {CodeImages} from './CodeImages';
 import {useSlashPalette} from './SlashPalette';
 import type {MuseSkill} from '../shared/slash-commands.mjs';
-import {useEffect,useRef,useState,type Dispatch,type SetStateAction,type RefObject} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState,type Dispatch,type SetStateAction,type RefObject} from 'react';
 import {Paperclip,ListPlus,ArrowUp,Check,ChevronDown,FolderOpen,Lightbulb,Mic,Plus,Shield,ShieldCheck,Square,Terminal,X} from 'lucide-react';
 import type {CodeImage,RunOptions} from '../shared/types';
 import {ReasoningPicker,reasoningLabels as labels} from './ReasoningPicker';
@@ -28,6 +28,11 @@ export function ChatComposer(p:Props){
  const close=()=>{setMenu(null);opener.current?.focus();};
  const open=(kind:typeof menu,event:React.MouseEvent<HTMLButtonElement>)=>{opener.current=event.currentTarget;setMenu(menu===kind?null:kind);};
  useEffect(()=>{setMenu(null);setSkillsOpen(false);},[p.active,p.context,p.showTask]);
+ useLayoutEffect(()=>{
+  if(!menu)return;
+  const position=()=>{const popup=root.current?.querySelector<HTMLElement>('.composer-popover'),anchor=opener.current;if(!popup||!anchor)return;const box=anchor.getBoundingClientRect(),above=box.top-56,below=window.innerHeight-box.bottom-20,down=above<popup.scrollHeight&&below>above;popup.style.top=down?'42px':'';popup.style.bottom=down?'auto':'42px';popup.style.maxHeight=Math.max(100,down?below:above)+'px';popup.style.overflowY='auto';};
+  position();window.addEventListener('resize',position);return()=>window.removeEventListener('resize',position);
+ },[menu]);
  useEffect(()=>{
   if(!menu)return;
   const outside=(e:PointerEvent)=>{if(!root.current?.contains(e.target as Node))setMenu(null);};

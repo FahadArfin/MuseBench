@@ -17,6 +17,7 @@ export interface Preview { status: 'stopped' | 'starting' | 'running' | 'failed'
 export interface RuntimeState {runLimits?:{steps:number;wallTimeMs:number;tokenBudget:null};simulation?:boolean;permissionVerified?:boolean;durableSessions?:boolean; modelId?:string|null; status: string; reason: string | null; binary: string | null; sdkVersion: string; hostVersion?: string; sessionId?: string | null; liveVerified: boolean; messages?: unknown[]; pending?: unknown; transport?: 'exec' | 'msp'; shellEnabled?: boolean; shellUnavailableReason?: string | null; shellResults?: ShellResult[]; activity?:{items:ActivityItem[];truncated:boolean}; }
 export interface AppState {workflows?:import('./workflows.mjs').Workflow[];backgroundChats?:boolean; sidebarOrder?:Record<string,string[]>; projectCreationRoot?:string; drafts?:Record<string,CodeDraft>; memories?:string; projects: Project[]; tasks: TaskSummary[]; activeProject: Project | null; task: Task | null; checkpoints: Checkpoint[]; preview: Preview; runtime: RuntimeState; busy: boolean; error: string | null; }
 export type Action =
+  | {type:'archiveWorktree'|'restoreWorktree';projectId:string;id:string} | {type:'recoverWorktree';projectId:string;id:string;branch:string} | {type:'setupWorktree';projectId:string;script:string}
   | {type:'saveWorkflow';workflow:import('./workflows.mjs').Workflow} | {type:'deleteWorkflow';id:string} | {type:'queueWorkflow';id:string;taskId:string;workflowId:string;objective:string}
   | {type:'handoffContext';id:string;sourceTaskId:string;targetTaskId:string;text:string;files:ContextFile[]}
   | {type:'recoverSession';choice:'continue'|'fresh'}
@@ -97,5 +98,5 @@ export interface MuseBenchBridge {
  saveCodeDraft(input:{images?:CodeImage[];projectId:string;taskId:string|null;text:string;files:ContextFile[];mode:'chat'|'plan'}):Promise<void>;
 }
 
-export interface ManagedWorktree {id:string;path:string;branch:string;base:string;commit:string;sourceRoot:string;createdAt:string;status:string;available:boolean;locked?:boolean;}
+export interface ManagedWorktree {archiveCommit?:string;archivedAt?:string;recoveredFrom?:string;id:string;path:string;branch:string;base:string;commit:string;sourceRoot:string;createdAt:string;status:string;available:boolean;locked?:boolean;}
 export interface WorktreeState {root:string;branch:string;head:string;dirty:boolean;items:ManagedWorktree[];}
