@@ -1,4 +1,4 @@
-export interface MuseSkill {id:string;name:string;title:string;description:string;scope:string;}
+export interface MuseSkill {source?:string;activation?:string;diagnostics?:string[];available?:boolean;unavailableReason?:string;estimatedTokens?:number;id:string;name:string;title:string;description:string;scope:string;}
 export interface SlashEntry {id:string;label:string;description:string;icon:string;kind:string;aliases:string[];detail?:string;skill?:MuseSkill;}
 export interface SlashInput {name:string;args:string;prefix:string;}
 export const COMMANDS:readonly SlashEntry[];

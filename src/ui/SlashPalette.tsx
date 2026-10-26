@@ -37,7 +37,7 @@ export function useSlashPalette(p:Props){
  };
  const submit=()=>{
   const input=parseSlashSubmission(p.value);if(!input)return false;
-  const exact=findCommand(input.name),skill=p.skills.find(item=>item.name===input.name||item.id===input.name);
+  const exact=findCommand(input.name),skill=p.skills.find(item=>item.available!==false&&(item.name===input.name||item.id===input.name));
   if(open&&submenu&&entries.length){choose(entries[index]);return true;}
   if(input.args&&exact){p.onCommand(exact.id,input.args,input.prefix);setDismissed(p.value);return true;}
   if(open&&entries.length){choose(entries[index]);return true;}

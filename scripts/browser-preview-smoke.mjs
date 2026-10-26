@@ -54,6 +54,9 @@ try {
  await page.getByRole('button',{name:'Remove screen.png',exact:true}).waitFor();
  await page.screenshot({path:'artifacts/browser-preview/screenshot-attachment.png'});
  await page.getByRole('button',{name:'Remove screen.png',exact:true}).click();await composer.fill('');
+ await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('button',{name:'Skills',exact:true}).click();
+ const picker=page.getByRole('dialog',{name:'Muse skills',exact:true});await picker.getByRole('button',{name:'Plan',exact:true}).click();await picker.getByRole('button',{name:'Use skill',exact:true}).click();assert.match(await composer.inputValue(),/bundled:plan/);await composer.fill('');
+ await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('button',{name:'Skills',exact:true}).click();await picker.getByRole('textbox',{name:'Search skills'}).fill('project-sample');await picker.getByRole('button',{name:/Project skill example/}).click();await picker.getByText('Project skill trust is not supported by this connection',{exact:true}).waitFor();assert.equal(await picker.getByRole('button',{name:'Use skill',exact:true}).count(),0);await page.screenshot({path:'artifacts/browser-preview/skills.png'});await picker.getByRole('button',{name:'Close skills',exact:true}).click();
  const before=await page.evaluate(()=>window.musebench.getState());
  await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Keep this draft');
  await page.getByRole('button',{name:'Reasoning effort',exact:true}).click();

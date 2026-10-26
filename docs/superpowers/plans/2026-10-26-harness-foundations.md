@@ -29,9 +29,9 @@
 
 ## Feature 2 Skills
 
-- [ ] Test catalog normalization, diagnostics, source filtering and activation.
-- [ ] Improve `electron/command-info.mjs`, shared types and skill UI with curated installed skill shortcuts and transparent availability.
-- [ ] Match preview fixtures to shared UI; verify build and targeted tests; commit and push.
+- [x] Test catalog normalization, diagnostics, source filtering and activation.
+- [x] Improve `electron/command-info.mjs`, shared types and skill UI with curated installed skill shortcuts and transparent availability.
+- [x] Match preview fixtures to shared UI; verify build and targeted tests; commit and push.
 
 ## Feature 3 Worktrees
 
@@ -54,3 +54,5 @@
 - Ruling: implement in the current clean checkout so the existing local preview continues to represent the working sources; publish each completed feature to the configured GitHub repository.
 
 - Screenshots: storage tests RED then GREEN; 609 tests passed, browser smoke passed, 22 parity scenes passed, package verified (73 files). Image input native arguments are covered by injected runtime tests; no live model image request made.
+
+- Skills: three failing catalog assertions made GREEN; 10 targeted tests, browser interaction checks, 22 parity scenes and production build passed. Package matches source. Skill requests remain explicitly distinguished from confirmed loader execution.

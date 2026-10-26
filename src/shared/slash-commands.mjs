@@ -71,11 +71,12 @@ export function findCommand(name){return COMMANDS.find(item=>item.id===name||ite
 export function filterCommands(query='',skills=[]){
  const q=query.toLowerCase().replace(/^\//,'').trim();
  const core=COMMANDS.filter(c=>`${c.id} ${c.label} ${c.description} ${c.aliases.join(' ')}`.toLowerCase().includes(q));
- const entries=skills.filter(s=>`${s.name} ${s.title} ${s.description}`.toLowerCase().includes(q)).map(skill=>({id:`skill:${skill.id}`,label:skill.title,description:skill.description,icon:'BookOpen',kind:'skill',aliases:[skill.name],skill}));
+ const entries=skills.filter(s=>s.available!==false).filter(s=>`${s.name} ${s.title} ${s.description}`.toLowerCase().includes(q)).map(skill=>({id:`skill:${skill.id}`,label:skill.title,description:skill.description,icon:'BookOpen',kind:'skill',aliases:[skill.name],skill}));
  if(!q)return [...core.slice(0,13),...entries,...core.slice(13)];
  return [...core,...entries].sort((a,b)=>Number(b.id===q||b.aliases.includes(q))-Number(a.id===q||a.aliases.includes(q)));
 }
 export function skillPrompt(skill,draft=''){
+ if(skill?.available===false)throw Error(skill.unavailableReason||'This skill is unavailable.');
  if(!skill||typeof skill.id!=='string'||!/^[-\w:./]+$/.test(skill.id)||skill.id.length>200)throw Error('Invalid Muse skill.');
  return `Use the Muse skill \`${skill.id}\` for this request.\n\n${draft}`;
 }
