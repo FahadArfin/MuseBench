@@ -9,7 +9,7 @@ import {validateAction} from '../electron/security.mjs';
 function fakeRuntime(){
  let state={status:'unavailable',transport:'exec',permissionVerified:false,messages:[],runId:null,cleanup:'confirmed'},listeners=[],sequence=0;
  const emit=patch=>{state={...state,...patch};listeners.forEach(fn=>fn(state));};
- return {sent:[],snapshot:()=>structuredClone(state),subscribe(fn){listeners.push(fn);return()=>{listeners=listeners.filter(x=>x!==fn);};},async connect(){emit({status:'idle',permissionVerified:true});},async disconnect(){emit({status:'unavailable',permissionVerified:false,cleanup:'confirmed'});},async send(request){this.sent.push(request);emit({status:'running',runId:null,messages:[],cleanup:undefined});emit({runId:`run-${++sequence}`});},finish(text='Done',status='completed',cleanup='confirmed'){emit({status,messages:[{id:`answer-${sequence}`,kind:'agentMessage',text}],cleanup});}};
+ return {emit,sent:[],snapshot:()=>structuredClone(state),subscribe(fn){listeners.push(fn);return()=>{listeners=listeners.filter(x=>x!==fn);};},async connect(){emit({status:'idle',permissionVerified:true});},async disconnect(){emit({status:'unavailable',permissionVerified:false,cleanup:'confirmed'});},async send(request){this.sent.push(request);emit({status:'running',runId:null,messages:[],cleanup:undefined});emit({runId:`run-${++sequence}`});},finish(text='Done',status='completed',cleanup='confirmed'){emit({status,messages:[{id:`answer-${sequence}`,kind:'agentMessage',text}],cleanup});}};
 }
 async function fixture(t,{node=true}={}){
  const root=await mkdtemp(join(tmpdir(),'musebench-gaps-')),project=join(root,'project'),dataDir=join(root,'data');await mkdir(project);if(node)await writeFile(join(project,'package.json'),'{}');await writeFile(join(project,'notes.md'),'Useful project notes.');await writeFile(join(project,'.env'),'SECRET=never-send');
@@ -141,4 +141,19 @@ test('queue reordering persists and does not resume paused work',async t=>{
  assert.deepEqual(c.getState().task.promptQueue,[two,three,one]);assert.equal(c.getState().task.queuePaused,true);assert.equal(runtime.sent.length,0);
  await c.close();const reopened=await createController({dataDir,runtime:fakeRuntime()});t.after(()=>reopened.close());assert.deepEqual(reopened.getState().task.promptQueue,[two,three,one]);await reopened.close();
  for(const bad of [{taskId:1,id:'x',beforeId:null},{taskId:'t',id:'x',beforeId:42},{taskId:'t',id:'',beforeId:null}])assert.throws(()=>validateAction({type:'moveQueued',...bad}));
+});
+
+
+test('full received responses remain searchable past the renderer limit',async t=>{
+ const {c,runtime}=await fixture(t);const id=await start(c);await c.dispatch({type:'sendMessage',text:'Inspect the source'});runtime.finish('x'.repeat(17000)+' retrievedlongresponse');
+ assert.ok(c.getState().task.messages.every(m=>m.text.length<=16000));const hit=c.searchChats({query:'retrievedlongresponse'})[0];assert.equal(hit.id,id);
+ const page=c.readChatHistory({taskId:id,messageId:hit.messageId,offset:17000});assert.equal(page.messages[0].text,' retrievedlongresponse');
+});
+
+
+test('definitive asynchronous rejection restores draft and removes unaccepted history',async t=>{
+ const {c,runtime}=await fixture(t);const id=await start(c);runtime.send=async()=>runtime.emit({status:'running',runId:null,inputAccepted:false,messages:[]});
+ await c.dispatch({type:'sendMessage',text:'unacceptedquartz'});runtime.emit({status:'failed',inputAccepted:false,runId:null,cleanup:'confirmed'});
+ assert.equal(c.searchChats({query:'unacceptedquartz'}).length,0);assert.ok(Object.values(c.getState().drafts).some(d=>d.text==='unacceptedquartz'));
+ assert.ok(!c.readChatHistory({taskId:id}).messages.some(m=>m.text==='unacceptedquartz'));
 });

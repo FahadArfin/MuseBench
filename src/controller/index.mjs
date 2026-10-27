@@ -1,3 +1,4 @@
+import {createHistoryStore} from './chat-history.mjs';
 import {restoreSkillReceipts} from '../shared/skill-receipts.mjs';
 import {restoreUsage} from '../shared/native-usage.mjs';
 import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
@@ -140,6 +141,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const db=new DatabaseSync(path.join(dataDir,'musebench.sqlite'));
   db.exec('PRAGMA secure_delete=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS app(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS baselines(task_id TEXT PRIMARY KEY,revision TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,revision TEXT NOT NULL,json TEXT NOT NULL);');
+  const history=createHistoryStore(db);
   const saved=db.prepare('SELECT json FROM app WHERE id=1').get();
   const state=saved?JSON.parse(saved.json):{projects:[],activeProject:null,task:null,checkpoints:[],preview:stopped(),runtime:missingRuntime(),busy:false,error:null};
   state.projectCreationRoot=newProjectsDir;
@@ -149,11 +151,11 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   state.preview=stopped();state.busy=false;state.error=null;state.runtime=runtime?.snapshot?.()??missingRuntime();
   const taskRecords=new Map();
   for(const row of db.prepare('SELECT id,json FROM tasks ORDER BY rowid').all()){
-    try{const task=restoreTask(JSON.parse(row.json));if(task.id!==row.id)continue;taskRecords.set(row.id,task);db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(task),row.id);}catch{/* Preserve unreadable history in the database, without exposing it as a selectable task. */}
+    try{const raw=JSON.parse(row.json);if(raw.id===row.id)history.sync(raw,true);const task=restoreTask(raw);if(task.id!==row.id)continue;taskRecords.set(row.id,task);db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(task),row.id);}catch{/* Preserve unreadable history in the database, without exposing it as a selectable task. */}
   }
   if(state.task){
     const knownProject=state.projects.find(p=>p.id===state.activeProject?.id&&p.root===state.activeProject.root);
-    state.task=restoreTask(state.task,knownProject?.id);
+    history.sync(state.task,true);state.task=restoreTask(state.task,knownProject?.id);
     if(!knownProject||state.task.projectId!==knownProject.id){state.task=null;state.error='The saved task has no valid project association. Select a project to continue.';}
     else taskRecords.set(state.task.id,structuredClone(state.task));
   }
@@ -163,7 +165,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const newContext=(owner,task=null)=>({runtime:owner,task,root:null,pending:false,turn:null,messageBaseline:runtimeMessageIds(owner?.snapshot?.()),navigation:false,queueScheduled:false,unsubscribe:null});
   let context=newContext(runtime,state.task);if(state.task)contexts.set(state.task.id,context);
   const contextBusy=c=>!!c&&(c.pending||['running','starting','submitting','connecting','checking-permissions'].includes(c.runtime?.snapshot?.().status)||c.runtime?.snapshot?.().cleanup==='unconfirmed'||!!c.runtime?.snapshot?.().pending);
-  const saveRecord=t=>{if(!t)return;t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));};
+  const saveRecord=t=>{if(!t)return;history.sync(t);t.messages=t.messages.slice(-150);t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));};
   const bindContext=task=>{
     if(!runtimeFactory){contexts.clear();context.task=task;if(task)contexts.set(task.id,context);return;}
     let next=task&&contexts.get(task.id);
@@ -179,7 +181,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const summaries=()=>[...taskRecords.values()].reverse().filter(t=>state.projects.some(p=>p.id===t.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(t=>({id:t.id,projectId:t.projectId,title:t.title,mode:t.mode,createdAt:t.createdAt,updatedAt:t.updatedAt,acceptedRevision:t.acceptedRevision,runtimeBusy:contextBusy(contexts.get(t.id)),runtimeStatus:contexts.get(t.id)?.runtime?.snapshot?.().status??null,pinned:t.pinned===true,archived:t.archived===true,archivedAt:t.archivedAt??null}));
   const getState=()=>structuredClone({...state,backgroundChats:!!runtimeFactory,tasks:summaries()});
   const saveTask=()=>{
-    if(!state.task)return;context.task=state.task;
+    if(!state.task)return;history.sync(state.task);state.task.messages=state.task.messages.slice(-150);context.task=state.task;
     const previous=taskRecords.get(state.task.id);
     if(previous&&JSON.stringify({...previous,updatedAt:undefined})!==JSON.stringify({...state.task,updatedAt:undefined}))state.task.updatedAt=new Date(Math.max(Date.now(),Date.parse(previous.updatedAt)+1)).toISOString();
     taskRecords.set(state.task.id,structuredClone(state.task));
@@ -214,7 +216,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(state.task?.id===id){await navigationCleanup();state.task=null;baseline={};diffCache.clear();state.runtime=missingRuntime();}
     db.exec('BEGIN IMMEDIATE');
     try{
-      db.prepare('DELETE FROM tasks WHERE id=?').run(id);db.prepare('DELETE FROM baselines WHERE task_id=?').run(id);db.prepare('DELETE FROM checkpoints WHERE task_id=?').run(id);
+      history.deleteTask(id);db.prepare('DELETE FROM tasks WHERE id=?').run(id);db.prepare('DELETE FROM baselines WHERE task_id=?').run(id);db.prepare('DELETE FROM checkpoints WHERE task_id=?').run(id);
       const retained=contexts.get(id);if(retained){retained.unsubscribe?.();retained.unsubscribe=null;retained.task=null;contexts.delete(id);}if(context.task?.id===id)context.task=null;
       taskRecords.delete(id);delete state.drafts[draftKey(target.projectId,id)];state.checkpoints=state.checkpoints.filter(item=>item.taskId!==id);persist();db.exec('COMMIT');
     }catch(error){db.exec('ROLLBACK');Object.assign(state,previous.state);baseline=previous.baseline;taskRecords.clear();for(const [key,value] of previous.records)taskRecords.set(key,value);state.runtime=runtime?.snapshot?.()??missingRuntime();throw error;}
@@ -299,11 +301,13 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(typeof query!=='string'||query.length>200||typeof includeArchived!=='boolean')throw Error('Invalid chat search.');
     const needle=query.trim().toLocaleLowerCase();return summaries().filter(t=>includeArchived||!t.archived).flatMap(summary=>{
       const t=taskRecords.get(summary.id),project=state.projects.find(p=>p.id===t.projectId);
-      const source=[t.title,project.name,...t.messages.filter(m=>m.role!=='system').map(m=>m.text)].find(text=>text.toLocaleLowerCase().includes(needle));
-      if(source===undefined)return[];const index=needle?source.toLocaleLowerCase().indexOf(needle):0;
-      return[{...summary,projectName:project.name,snippet:source.slice(Math.max(0,index-50),index+180)}];
+      const hit=needle?history.search(t.id,query):null;
+      const source=[t.title,project.name].find(text=>text.toLocaleLowerCase().includes(needle));
+      if(!hit&&source===undefined)return[];
+      return[{...summary,projectName:project.name,snippet:hit?.snippet??source,...(hit?{messageId:hit.messageId,offset:hit.offset,at:hit.at}:{})}];
     }).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||b.updatedAt.localeCompare(a.updatedAt)).slice(0,100);
   };
+  const readChatHistory=input=>{if(!input||!taskRecords.has(input.taskId))throw Error('Chat not found.');return history.page(input);};
   const selectedContext=()=>context;
   const sendToTask=async(action,t=state.task,context=contexts.get(t?.id)??selectedContext())=>{
         const runtime=context.runtime,project=state.projects.find(p=>p.id===t?.projectId);if(!t||!project)throw Error('Chat or project unavailable.');
@@ -337,7 +341,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           const {prompt:contextPrompt,...contextSummary}=prepared;t.contextSummary=contextSummary;
           context.task=t;saveRecord(t);persist();
           try{await runtime.send({text:contextPrompt,imagePaths,...(durable?{sessionId:durable.session.id,resumeSession:Boolean(previousSession)}:{}),mode:action.mode??'chat',runOptions:restoreRunOptions(action.fromQueue?action.runOptions:t.runOptions)});}
-          catch(e){if(!context.turn?.started){t.nativeSession=previousSession;state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}context.pending=false;context.turn=null;throw e;}
+          catch(e){if(!context.turn?.started){t.nativeSession=previousSession;state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};history.remove(t.id,prompt.id);t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}context.pending=false;context.turn=null;throw e;}
         }else{t.messages.push({id:randomUUID(),role:'user',text:action.text,at:now()},{id:randomUUID(),role:'system',text:'Added to the local task journal. Manual and demo messages do not call a model.',at:now()});}if(!action.fromQueue&&state.drafts[draftKey(t.projectId,t.id)]?.text===action.text)delete state.drafts[draftKey(t.projectId,t.id)];saveRecord(t);
   };
 
@@ -367,7 +371,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       if(ownsTurn&&task.nativeSession?.id===next.nativeSessionId&&next.inputAccepted===true)task.nativeSession.seeded=true;
       if(ownsTurn){
         task.nativeUsage=restoreUsage(next.usage);task.skillReceipts=restoreSkillReceipts(next.skills);
-        for(const item of Array.isArray(next.messages)?next.messages:[]){const key=runtimeMessageKey(item);if(typeof item?.text!=='string'||context.messageBaseline.has(key)||turn.messageBaseline.has(key)||!['userMessage','agentMessage'].includes(item.kind))continue;const known=task.messages.find(m=>m.id===`runtime:${key}`);if(known){known.text=item.text.slice(0,16000);continue;}task.messages.push({id:`runtime:${key}`,role:item.kind==='userMessage'?'user':'assistant',text:item.text.slice(0,16000),turnId:turn.promptId,at:now()});task.messages=task.messages.slice(-150);}
+        for(const item of Array.isArray(next.messages)?next.messages:[]){const key=runtimeMessageKey(item);if(typeof item?.text!=='string'||context.messageBaseline.has(key)||turn.messageBaseline.has(key)||!['userMessage','agentMessage'].includes(item.kind))continue;const known=task.messages.find(m=>m.id===`runtime:${key}`);const received={id:`runtime:${key}`,role:item.kind==='userMessage'?'user':'assistant',text:item.text,turnId:turn.promptId,at:known?.at??now()};history.put(task.id,received);if(known){known.text=item.text.slice(0,16000);continue;}task.messages.push({...received,text:item.text.slice(0,16000)});task.messages=task.messages.slice(-150);}
         if(next.transport==='exec'&&next.shellEnabled===true&&Array.isArray(next.shellResults)){const owned=Array.isArray(next.ownedRunIds)&&next.ownedRunIds.includes(turn.runId)?next.ownedRunIds.slice(0,5):[turn.runId];for(const runId of owned)task.shellResults=mergeShellResults(task.shellResults,next.shellResults,runId);}
       }
       const verifiedApprovalPause=next.status==='blocked'&&next.permissionVerified===true&&next.pending?.kind==='approval'&&typeof next.sessionId==='string'&&next.pending.sessionId===next.sessionId;
@@ -384,6 +388,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         task.runs=restoreRuns(task.runs,{interrupt:false});
       }
       if(turn&&task.nativeSession&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)&&!verifiedApprovalPause)task.nativeSession=settleNativeSession(task.nativeSession,next,ownsTurn);
+      if(turn&&next.transport==='exec'&&next.inputAccepted===false&&!turn.runId&&['failed','cancelled','unavailable'].includes(next.status)&&next.cleanup==='confirmed'){
+        const rejected=task.messages.find(m=>m.id===turn.promptId);
+        if(rejected){const key=draftKey(task.projectId,task.id);if(!state.drafts[key]?.text)state.drafts[key]={text:rejected.text,files:rejected.files??[],images:rejected.images??[],mode:'chat',updatedAt:now()};history.remove(task.id,rejected.id);task.messages=task.messages.filter(m=>m.id!==rejected.id);}
+      }
       if(next.status==='completed'&&context.pending){task.runtimeComplete=ownsTurn;context.pending=false;context.turn=null;}
       if(['failed','cancelled','uncertain','unavailable'].includes(next.status)||(next.status==='blocked'&&!verifiedApprovalPause)){task.runtimeComplete=false;context.pending=false;context.turn=null;}
       if(['running','starting','submitting'].includes(next.status))task.runtimeComplete=false;
@@ -589,5 +597,5 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   if(state.task)try{const row=db.prepare('SELECT revision FROM baselines WHERE task_id=?').get(state.task.id);if(!row||row.revision!==state.task.baselineRevision)throw Error('The saved task baseline is unavailable. Start a new task.');await current();}catch(error){state.error=error.message;state.task.previewRevision=null;state.task.acceptedRevision=null;state.task.runtimeComplete=false;if(state.task.check)state.task.check.status='stale';}
   persist();
   const archiveTimer=setInterval(()=>{queue=queue.then(purgeArchived).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,inspectContext,searchChats,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(closing||closed)return Promise.reject(Error('Controller closed.'));const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();closed=true;listeners.clear();db.close();})();return closePromise;}};
+  return{getState,inspectContext,searchChats,readChatHistory,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(closing||closed)return Promise.reject(Error('Controller closed.'));const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();closed=true;listeners.clear();db.close();})();return closePromise;}};
 }

@@ -96,6 +96,7 @@ else {
     handler('musebench:code-image-read',input=>controller.readImage(input));
     handler('musebench:worktrees',input=>controller.inspectWorktrees(input));
     handler('musebench:code-context',input=>controller.inspectContext(input));
+    handler('musebench:chat-history',input=>controller.readChatHistory(input));
     handler('musebench:chat-search',input=>controller.searchChats(input));
     handler('musebench:code-draft',async input=>{const result=await controller.dispatch(validateAction({...input,type:'saveDraft'}));if(result.error)throw Error(result.error);});
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});

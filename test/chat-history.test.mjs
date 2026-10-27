@@ -89,3 +89,16 @@ test('restored task journals bound saved shell output and message text',async t=
   editDatabase(dataDir,db=>{const item=JSON.parse(db.prepare('SELECT json FROM tasks WHERE id=?').get(old.id).json);item.messages=Array.from({length:200},(_,i)=>({id:String(i),role:'assistant',text:'x'.repeat(20000),at:'2026-10-25T12:00:00.000Z'}));item.shellResults=Array.from({length:120},(_,i)=>({callId:String(i),runId:'saved-run',toolName:'powershell',command:'node test.mjs',output:'y'.repeat(70000),exitCode:0,terminalStatus:'completed',truncated:false,outcome:'success'}));db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(item),old.id);});
   const state=await (await open()).dispatch({type:'selectTask',id:old.id});assert.equal(state.error,null);assert.ok(state.task.messages.length<=150);assert.ok(state.task.messages.every(item=>item.text.length<=16000));assert.ok(state.task.shellResults.length>0&&state.task.shellResults.length<=100);assert.ok(Buffer.byteLength(JSON.stringify(state.task.shellResults))<=512*1024);assert.equal(state.task.shellResults.at(-1).truncated,true);
 });
+
+
+test('durable evidence search survives display eviction and restart, then permanent deletion',async t=>{
+ const {c,open,projects}=await fixture(t);await c.dispatch({type:'openProject',path:projects[0]});const first=await task(c,'Durable evidence');
+ await c.dispatch({type:'sendMessage',text:'Recall sapphire decision from the original requirements'});
+ for(let i=0;i<80;i++)await c.dispatch({type:'sendMessage',text:`Later turn ${i}`});
+ assert.ok(c.getState().task.messages.length<=150);assert.ok(!c.getState().task.messages.some(m=>m.text.includes('sapphire')));
+ const hit=c.searchChats({query:'sapphire'})[0];assert.equal(hit.id,first.id);assert.ok(hit.messageId);
+ assert.match(c.readChatHistory({taskId:first.id,messageId:hit.messageId}).messages[0].text,/original requirements/);
+ await c.close();const reopened=await open();assert.equal(reopened.searchChats({query:'sapphire'})[0].messageId,hit.messageId);
+ await reopened.dispatch({type:'setTaskFlags',id:first.id,archived:true});assert.equal(reopened.searchChats({query:'sapphire'}).length,0);
+ await reopened.dispatch({type:'deleteTask',id:first.id});assert.equal(reopened.searchChats({query:'sapphire',includeArchived:true}).length,0);assert.throws(()=>reopened.readChatHistory({taskId:first.id}),/not found/);
+});

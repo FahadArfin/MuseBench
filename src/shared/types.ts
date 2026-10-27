@@ -88,9 +88,11 @@ export interface CodeDraft {images?:CodeImage[];text:string;files:ContextFile[];
 export interface QueuedPrompt extends CodeDraft {workflow?:{id:string;title:string;phase:string;index:number;total:number};handoff?:{id:string;sourceTaskId:string;sourceTitle:string};id:string;runOptions:RunOptions;at:string;}
 export interface ContextSummary {historyMode?:'replay'|'native'|'connection';characters:number;estimatedTokens:number;includedMessages:number;omittedMessages:number;truncatedMessages:number;fileCount:number;replayedFiles:number;limit:number;}
 export interface CodeContextResult extends ContextSummary {prompt:string;attachments:(ContextFile&{text:string})[];files:(ContextFile&{characters:number})[];}
-export interface ChatSearchResult extends TaskSummary {projectName:string;snippet:string;}
+export interface ChatSearchResult extends TaskSummary {projectName:string;snippet:string;messageId?:string;offset?:number;at?:string;}
+export interface HistoryPage {messages:(Message&{textLength:number;offset:number;captureTruncated?:boolean})[];total:number;before:string|null;coverage:string;}
 export interface MuseBenchBridge {
  inspectCodeContext(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[]}):Promise<CodeContextResult>;
+ readChatHistory(input:{taskId:string;before?:string;messageId?:string;offset?:number;limit?:number}):Promise<HistoryPage>;
  searchChats(input:{query:string;includeArchived:boolean}):Promise<ChatSearchResult[]>;
  inspectWorktrees(input:{projectId:string}):Promise<WorktreeState>;
  importCodeImage(input:{projectId:string;taskId:string|null;name:string;dataUrl:string}):Promise<CodeImage>;
