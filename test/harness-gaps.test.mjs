@@ -277,3 +277,18 @@ test('native reporting and later child followup stay attached to the original ap
  assert.equal(c.getState().task.runs.length,1);assert.equal(c.getState().task.runtimeComplete,true);
  assert.equal(c.readChatHistory({taskId}).messages.filter(m=>m.role==='assistant').length,2);
 });
+
+
+test('composer access switches an idle connection and refuses active or stale targets',async t=>{
+ const {c,runtime}=await fixture(t);const taskId=await start(c);const connections=[];
+ const connect=runtime.connect.bind(runtime);runtime.connect=async input=>{connections.push(input);await connect();runtime.emit({fullAccess:input.fullAccess,transport:input.transport});};
+ let result=await c.dispatch({type:'setExecutionAccess',taskId,fullAccess:true});assert.equal(result.error,null);assert.equal(connections.at(-1).fullAccess,true);assert.equal(connections.at(-1).transport,'exec');
+ runtime.emit({transport:'msp',fullAccess:true});result=await c.dispatch({type:'setExecutionAccess',taskId,fullAccess:false});assert.equal(result.error,null);assert.equal(connections.at(-1).transport,'exec');assert.equal(result.runtime.fullAccess,false);
+ const count=connections.length;assert.match((await c.dispatch({type:'setExecutionAccess',taskId:'stale',fullAccess:true})).error,/chat/);
+ await c.dispatch({type:'sendMessage',text:'Busy'});assert.match((await c.dispatch({type:'setExecutionAccess',taskId,fullAccess:true})).error,/running/);assert.equal(connections.length,count);
+});
+test('execution access accepts only an explicit boolean and task identity',()=>{
+ assert.throws(()=>validateAction({type:'setExecutionAccess',taskId:'t',fullAccess:'true'}));
+ assert.throws(()=>validateAction({type:'setExecutionAccess',fullAccess:true}));
+ assert.equal(validateAction({type:'setExecutionAccess',taskId:'t',fullAccess:true}).fullAccess,true);
+});

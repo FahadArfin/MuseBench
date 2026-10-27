@@ -34,7 +34,7 @@ export type Action = {type:'saveValidationProfile';projectId:string;scripts:stri
   | {type:'createProject';name:string;goals:string;context:string}
   | {type:"renameTask";title:string} | {type:"setMemories";text:string} | {type:"setGoal";objective:string;status:"active"|"paused"}
   | {type:'openProject';path:string} | {type:'selectProject';id:string} | {type:'selectTask';id:string} | {type:'createDemo'} | {type:'createCommandCopy'}
-  | {type:'newTask';request:string;mode:'manual'|'muse'|'demo';runOptions?:RunOptions} | {type:'setRunOptions';runOptions:RunOptions}
+  | {type:'newTask';request:string;mode:'manual'|'muse'|'demo';runOptions?:RunOptions} | {type:'setRunOptions';runOptions:RunOptions} | {type:'setExecutionAccess';taskId:string;fullAccess:boolean}
   | {type:'updatePlan';plan:string;criteria:string[]} | {type:'approvePlan'} | {type:'applyDemo'}
   | {type:'refresh'} | {type:'runCheck';script:string} | {type:'cancelCheck'}
   | {type:'startPreview';script:string} | {type:'stopPreview'} | {type:'inspectPreview';revision:string}

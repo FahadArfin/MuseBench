@@ -55,3 +55,5 @@
  .reasoning-popover { right: -68px; width: 280px; }
  .composer-plan-tag { font-size: 0; gap: 0; }
 }
+
+.execution-access-option{border-top:1px solid var(--border);margin-top:5px;padding-top:10px}

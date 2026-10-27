@@ -53,6 +53,10 @@ try{
 
  async function escape(){for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));}
  await compare('code-chat');
+ await click('button','Approval access');await compare('composer-access-menu');await click('[role="menuitemcheckbox"]','Full access');await click('button','Approval access');await compare('composer-full-access');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),true);
+ await click('[role="menuitemcheckbox"]','Full access');await compare('composer-sandbox-restored');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),false);
  await click('button','Add to chat');await click('button','Workspace tools');await compare('workspace-tools');await click('summary','Input and result contract');await compare('workspace-tool-contract');await click('button','Close dialog');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',ctrlKey:true,bubbles:true})));await compare('history-search');await click('button','History');await compare('history-source');await click('button','Add excerpt to draft');await compare('history-draft');await escape();
  await click('button','Add to chat');await click('button','Skills');await compare('skills-picker');await click('button','Close skills');
@@ -109,6 +113,15 @@ try{
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>[...document.querySelectorAll('button')].find(e=>e.getAttribute('aria-label')?.startsWith('All spaces'))?.click());await compare('spaces-home');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>[...document.querySelectorAll('button')].find(e=>e.textContent?.includes('Design studio')&&e.getBoundingClientRect().width)?.click());await compare('space-editor');
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(430,820));await browserPage.setViewportSize({width:430,height:820});await compare('narrow-layout');
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(1440,960));await browserPage.setViewportSize({width:1440,height:960});
+ await click('button','Muse Code');await click('button','New chat');await click('button','Approval access');await click('[role="menuitemcheckbox"]','Full access');await compare('new-chat-full-access');
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const input=document.querySelector('textarea[aria-label="Message Muse"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'Check the selected access');input.dispatchEvent(new Event('input',{bubbles:true}));});await click('button','Create task');await compare('new-chat-full-access-applied');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),true);
+ await click('button','New chat');await click('button','Approval access');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(()=>document.querySelector('[role="menuitemcheckbox"][aria-label="Full access"]').getAttribute('aria-checked')),'false');
+ await escape();
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const input=document.querySelector('textarea[aria-label="Message Muse"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'Use sandboxed access for this chat');input.dispatchEvent(new Event('input',{bubbles:true}));});await click('button','Create task');await compare('new-chat-sandbox-default');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),false,'A new sandboxed chat must not inherit the prior connection Full access');
  assert.deepEqual(errors,[]);report.status='passed';
 }catch(error){report.status='failed';report.failure=String(error.stack??error);console.error(report.failure);process.exitCode=1;}
 finally{if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});}await browser.close();await server.close();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));}

@@ -702,6 +702,12 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         t.messages.push({id:randomUUID(),role:'user',text:action.text,at:now(),turnId:turn.promptId});const key=draftKey(t.projectId,t.id);if(state.drafts[key]?.text===action.text&&!state.drafts[key]?.files?.length&&!state.drafts[key]?.images?.length)delete state.drafts[key];saveRecord(t);break;
       }
       case 'sendMessage':pauseGoalDriver(state.task?.goal?.driver,'User input takes priority');await sendToTask(action);break;
+      case 'setExecutionAccess':{
+        requireNavigationIdle();const t=requireTask();if(action.taskId!==t.id)throw Error('The active chat changed.');if(typeof action.fullAccess!=='boolean')throw Error('Full access must be explicitly selected.');if(!runtime||!state.activeProject)throw Error('Open a project and connect Muse first.');
+        const previous=runtime.snapshot();if(previous.permissionVerified&&previous.fullAccess===action.fullAccess)break;
+        const transport=action.fullAccess&&previous.transport==='msp'?'msp':'exec',binary=previous.binary??preferredBinary??undefined;
+        await runtime.disconnect();await runtime.connect({binary,workspaceRoot:state.activeProject.root,transport,fullAccess:action.fullAccess});context.root=state.activeProject.root;state.runtime=runtime.snapshot();break;
+      }
       case 'connectMuse':if(!state.activeProject)throw Error('Open a project first.');if(!runtime)throw Error('Muse runtime unavailable in this installation.');await runtime.connect({binary:action.binary,workspaceRoot:state.activeProject.root,fullAccess:action.fullAccess,transport:action.transport});context.root=state.activeProject.root;preferredBinary=runtime.snapshot().binary??preferredBinary;state.runtime=runtime.snapshot();break;
       case 'disconnectMuse':{
         pauseGoalDriver(state.task?.goal?.driver,'Disconnected by you');if(state.task?.nativeSession?.status==='running')state.task.nativeSession.status='needs-recovery';if(state.task){state.task.queuePaused=true;state.task.queueHold=Boolean(state.task.promptQueue?.length);}

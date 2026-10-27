@@ -1,6 +1,8 @@
 # Optional Windows Full access
 
-Open Settings > Muse connection > Open Muse connection. Disconnect an existing connection, select **Full access**, and connect. The composer displays a Full access badge while that connection is active.
+Open the composer's permissions menu (normally **Ask for approval**) and toggle **Full access**. The composer chip shows **Full access** while selected. In an idle chat this reconnects Muse with the selected sandbox scope; in a new chat it applies before the first message. Access cannot change during active or unresolved work. New chats default to sandboxed access.
+
+The connection dialog still offers Full access and transport selection under Settings > Muse connection > Open Muse connection. Turning Full access off in the composer returns an interactive connection to sandboxed native exec. Enabling it retains an existing interactive transport; otherwise it uses native exec.
 
 Sandboxed is the default. Full access is selected for one connection and is not saved as a global preference. Disconnecting or creating a fresh runtime returns to the sandboxed default. Other chats do not inherit it. Approval selection remains separate: Ask for approval, Auto-review, and No prompts retain their existing meanings. The Windows exec transport still stops when an interactive approval is required.
 
