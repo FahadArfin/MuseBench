@@ -149,6 +149,8 @@ try {
  assert.equal(await page.locator('.personal-service-content.expanded').count(),0);
  assert.equal(await page.evaluate(async()=>(await window.musebench.personalState()).destination),'bot');
  await page.locator('.muse-agent-shortcut').click();
+ await page.getByRole('button',{name:'Start a side chat',exact:true}).waitFor();
+ assert.equal(await page.getByRole('region',{name:'Muse chats',exact:true}).count(),0);
  await page.getByRole('button',{name:'Ideas',exact:true}).click();
  await page.getByRole('region',{name:'Desktop website snapshot'}).waitFor();
  await page.getByRole('button',{name:'Goals',exact:true}).click();

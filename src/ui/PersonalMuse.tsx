@@ -4,7 +4,7 @@ import {NavigationButtons} from './NavigationHistory';
 import {useContext} from 'react';
 import {BrowserPreviewContext} from './BrowserPreviewContext';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject, type ReactNode } from 'react';
-import { CalendarDays, Images, Shapes, Clapperboard, ArrowLeft, ArrowRight, Bot, ChevronDown, ChevronRight, ExternalLink, Globe2, Info, Library, Lightbulb, Link2, LoaderCircle, MessageCircle, MessagesSquare, MoreHorizontal, Newspaper, PanelLeft, PanelLeftClose, RefreshCw, Search, Settings2, ShieldCheck, Smartphone, SquarePen, Target, Terminal, UserRound, X, type LucideIcon } from 'lucide-react';
+import { Plus, CalendarDays, Images, Shapes, Clapperboard, ArrowLeft, ArrowRight, Bot, ChevronDown, ChevronRight, ExternalLink, Globe2, Info, Library, Lightbulb, Link2, LoaderCircle, MessageCircle, MessagesSquare, MoreHorizontal, Newspaper, PanelLeft, PanelLeftClose, RefreshCw, Search, Settings2, ShieldCheck, Smartphone, SquarePen, Target, Terminal, UserRound, X, type LucideIcon } from 'lucide-react';
 import type { PersonalCommand, PersonalDestination, PersonalLibrary, PersonalLibraryGroup, PersonalServiceAction, PersonalState } from '../shared/types';
 import { Modal } from './WorkspacePanels';
 import './personal-muse.css';
@@ -131,8 +131,7 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
       </div>
       <p className="sr-only" id={filterId}>Filters the loaded chat, idea, and goal titles in this sidebar.</p>
       <nav aria-label="Muse collections">
-        <div className="personal-recents-tools"><button type="button" className="icon-button" aria-label="Search Muse chats" title="Search your Muse · Ctrl+K" aria-expanded={searchOpen} onClick={() => onSearchOpenChange(!searchOpen)}><Search size={15}/></button></div>
-        <PersonalCollection label="Muse chats" noun="chats" icon={MessageCircle} group={library.chats} selectedId={library.selectedId} active={destination === 'bot'} query={query} available={available.bot} onNavigate={() => onNavigate('bot')} onSelect={id => onCommand({ type: 'selectItem', id })} />
+        <button type="button" className="navigation-row" aria-label="Start a side chat" disabled={!available.bot} onClick={()=>onCommand({type:'newMuseChat'})}><Plus size={16}/><span>Start a side chat</span></button>
         <PersonalCollection label="Ideas" noun="ideas" icon={Lightbulb} group={library.ideas} selectedId={library.selectedId} active={destination === 'ideas'} query={query} available={available.ideas} onNavigate={() => onNavigate('ideas')} onSelect={id => onCommand({ type: 'selectItem', id })} />
         <PersonalCollection label="Goals" noun="goals" icon={Target} group={library.goals} selectedId={library.selectedId} active={destination === 'goals'} query={query} available={available.goals} onNavigate={() => onNavigate('goals')} onSelect={id => onCommand({ type: 'selectItem', id })} />
       </nav>
