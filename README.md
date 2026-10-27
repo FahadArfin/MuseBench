@@ -166,3 +166,9 @@ Use the composer’s **Add** menu for these tools in both desktop and browser pr
 The preview uses the same React components with simulated local data; it does not execute Git, call Muse, or inspect your account. Native session persistence currently applies to Windows Code chats; Work and Sites generation retain independent requests. This does not add live mid-run steering.
 
 Code chats can now run in the background while you navigate. Each chat owns its session, output, queue and Stop action. Up to four chats may run concurrently in separate folders/worktrees; overlapping checkout roots cannot run simultaneously. Closing MuseBench stops its owned processes; interrupted native sessions require recovery on restart. The connection dialog lists supported capabilities. Composer Add → Task budget offers Standard (3 min/8 steps), Extended (15 min/32 steps), and Deep (45 min/96 steps); these are not token spending caps.
+
+### Interactive Full access connection
+
+Windows Code chats can opt into **Your Muse connection → Interactive · Full access**. The official `serve --disable-sandbox` host runs with your Windows account permissions, while MuseBench still verifies the pinned SDK/CLI contract and the separate Ask me approval profile. The default remains native exec. Disconnect before changing transport; this opt-in is connection-scoped.
+
+During an interactive run, Enter sends a correction to the existing turn; **Alt+Enter** queues a later prompt. MuseBench binds corrections to the exact active turn and checks the native acknowledgement without automatic retries. A rejected or uncertain correction remains in your draft. Interactive mode currently requires the default model, Ask for approval, text input and no exec budget preset. Reconnecting starts a new native session seeded from the app conversation; exec saved sessions are separate.

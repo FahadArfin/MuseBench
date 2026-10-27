@@ -14,9 +14,9 @@ const str = v => typeof v==='string' && v.length>0;
 export class MuseSessionAdapter {
  #connection; #state; #messages=new Map(); #seen=new Map(); #buffer=[];
  #epoch=0; #timeout; #listeners=new Set(); #maxEvents; #maxText;
- constructor({connection,sdkVersion,initializeResult,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
+ constructor({connection,sdkVersion,initializeResult,fullAccess=false,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
   this.#connection=connection;this.#timeout=timeoutMs;this.#maxEvents=maxEvents;this.#maxText=maxText;
-  const gate=compatibility({sdkVersion,initializeResult});
+  const gate=compatibility({sdkVersion,initializeResult,fullAccess});
   this.#state={status:gate.available&&connection?'ready':'unavailable',reason:connection?gate.reason:'runtime-unavailable',sessionId:null,turnId:null,mode:null,planReadOnlyEnforced:false,tests:'not-run',outcome:null,liveVerified:false};
   if(this.#state.status==='unavailable')return;
   if(!['command','mintCommandId','onNotification','onServerRequest','onProtocolError'].every(k=>typeof connection[k]==='function')){this.disconnect('invalid-sdk-connection');return;}
@@ -54,7 +54,7 @@ export class MuseSessionAdapter {
  }
  async send({text,mode='chat'}={}){
   if(!usable.has(this.#state.status))throw Error('Session cannot accept a turn in its current state');
-  if(typeof text!=='string'||!text.trim()||text.length>20000||!['chat','plan'].includes(mode))throw Error('Invalid turn input');
+  if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Invalid turn input');
   const epoch=++this.#epoch;
   this.#state.status='submitting';this.#state.mode=mode;this.#state.outcome=null;this.#state.turnId=null;this.#state.reason=null;
   this.#messages.clear();this.#seen.clear();this.#buffer=[];this.#emit();

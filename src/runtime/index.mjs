@@ -128,7 +128,7 @@ export function createRuntime({environment=process.env,platform=process.platform
  const candidates=discoverMuseBinaries({environment,platform});
  const childEnvironment=curateEnvironment(environment);
  let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
- let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
+ let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
  const listeners=new Set();
  const snapshot=()=>structuredClone(state);
  const emit=()=>{for(const fn of listeners){try{fn(snapshot());}catch{/* A renderer observer is never a protocol authority. */}}};
@@ -140,7 +140,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   if(terminalUnavailable){pending=null;blockedReason=null;}
   if(s.pending&&!pending){pending={kind:s.pending.approvalId?'approval':'input',...s.pending};pendingRevision++;}
   const status=terminalUnavailable?s.status:blockedReason?'blocked':connecting&&s.status==='idle'?'checking-permissions':s.status;
-  update({status,reason:terminalUnavailable?s.reason:blockedReason??s.reason,sessionId:s.sessionId,messages:s.messages,pending:displayPending(pending,pendingRevision),permissionVerified:terminalUnavailable?false:state.permissionVerified});
+  update({status,reason:terminalUnavailable?s.reason:blockedReason??s.reason,sessionId:s.sessionId,turnId:s.turnId,runId:s.turnId,nativeSessionId:s.sessionId,inputAccepted:!!s.turnId,sessionSeeded:state.sessionSeeded||!!s.turnId,cleanup:['completed','failed','cancelled'].includes(status)?'confirmed':undefined,liveVerified:state.liveVerified||status==='completed',messages:s.messages,pending:displayPending(pending,pendingRevision),permissionVerified:terminalUnavailable?false:state.permissionVerified});
  };
  const release=async()=>{
   const old=owner;owner=null;
@@ -154,7 +154,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   const token=++epoch;connecting=false;sending=false;deciding=false;blockedReason=null;pending=null;
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('disconnected');adapter=null;
   closing=Promise.resolve().then(release);
-  update({status:'unavailable',reason,sessionId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:'pending'});
+  update({status:'unavailable',reason,fullAccess:false,sessionSeeded:false,sessionId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:'pending'});
   const cleanup=await closing;closing=null;
   if(token===epoch)update({cleanup,...(cleanup==='unconfirmed'?{reason:'Muse shutdown could not be confirmed. Check the native process before reconnecting.'}:{})});
   return snapshot();
@@ -206,7 +206,7 @@ export function createRuntime({environment=process.env,platform=process.platform
  }
 
  async function connect({binary=state.binary,workspaceRoot,fullAccess=false}={}) {
-  if(fullAccess!==false)throw Error('Full access is currently supported by the Windows native exec connection only.');
+  if(typeof fullAccess!=='boolean')throw Error('Full access must be explicitly selected.');
   if(owner||connecting)throw Error('Disconnect the current Muse session before connecting again.');
   if(closing||state.cleanup==='pending')throw Error('Wait for Muse shutdown to finish before reconnecting.');
   if(state.cleanup==='unconfirmed')throw Error('Muse shutdown is unconfirmed. Restart MuseBench after checking the native process.');
@@ -214,7 +214,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   if(platform==='win32'&&!binary.toLowerCase().endsWith('.exe'))throw Error('Select the native muse.exe, not a .cmd or PowerShell installer/launcher.');
   if(typeof workspaceRoot!=='string'||!isAbsolute(workspaceRoot))throw Error('Select an absolute project workspace first.');
   const token=++epoch;connecting=true;blockedReason=null;pending=null;
-  update({status:'connecting',reason:'Checking the selected Muse installation.',binary,sessionId:null,messages:[],pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
+  update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,sessionSeeded:false,steering:null,sessionId:null,messages:[],pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
   let openedSession;
   try{
    binary=await realpath(binary);workspace=await realpath(workspaceRoot);assertCurrent(token);
@@ -224,18 +224,18 @@ export function createRuntime({environment=process.env,platform=process.platform
    const version=await bounded(probeVersion(binary,{environment:childEnvironment,timeoutMs}),timeoutMs);assertCurrent(token);
    if(version!==TARGET.hostVersion)throw Error(`Muse version mismatch: this app requires ${TARGET.hostVersion}.`);
    update({binary,hostVersion:version});assertCurrent(token);
-   const handshake=sdk.spawnMspConnection({command:binary,args:['serve'],cwd:workspace,env:{...childEnvironment},shutdownTimeoutMs:timeoutMs});
+   const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),'--disable-request-user-input','-c','hooks={}','-c','managed_hooks_path=null'],cwd:workspace,env:{...childEnvironment},shutdownTimeoutMs:timeoutMs});
    owner=handshake;
    const host=await bounded(handshake.initialize({clientInfo:{name:'musebench',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:false}}),timeoutMs);assertCurrent(token);
    owner=host;
-   const gate=compatibility({sdkVersion,initializeResult:host.initializeResult});
+   const gate=compatibility({sdkVersion,initializeResult:host.initializeResult,fullAccess});
    if(!gate.available)throw Error(gate.reason==='sandbox-unverified'?sandboxFailureReason(host.initializeResult,platform):`Muse compatibility check failed: ${gate.reason}.`);
    const raw=host.connection;
    if(!raw||!['request','command','mintCommandId','onNotification','onServerRequest','onProtocolError'].every(name=>typeof raw[name]==='function'))throw Error('The Muse SDK connection is incomplete.');
    const connection={
     mintCommandId:()=>raw.mintCommandId(),
     command:async(method,params,options)=>{
-     const actual=method==='session/start'?{...params,permissionProfile:':ask-me',approvalMode:'onRequest'}:params;
+     const actual=method==='session/start'?{...params,permissionProfile:':ask-me',approvalMode:'onRequest'}:method==='turn/start'?{...params,reasoningEffort:state.runOptions?.reasoning??'high'}:params;
      const result=await raw.command(method,actual,options);
      if(method==='session/start')openedSession=result?.session;
      return result;
@@ -256,7 +256,7 @@ export function createRuntime({environment=process.env,platform=process.platform
      return await fn(request);
     }),
    };
-   adapter=new MuseSessionAdapter({connection,sdkVersion,initializeResult:host.initializeResult,timeoutMs});
+   adapter=new MuseSessionAdapter({connection,sdkVersion,initializeResult:host.initializeResult,fullAccess,timeoutMs});
    unsubscribe=adapter.subscribe(syncAdapter);
    Promise.resolve(host.exited).then(()=>{if(token===epoch&&owner===host)void disconnect('Muse exited. Inspect any partial workspace changes, then reconnect.');},()=>{if(token===epoch&&owner===host)void disconnect('Muse host state is unknown. Inspect workspace changes before reconnecting.');});
    if(host.initializeResult.experimentalApi!==true)return await closePermissionGate();
@@ -274,7 +274,7 @@ export function createRuntime({environment=process.env,platform=process.platform
    assertCurrent(token);
    if(!provesAskMe(openedSession,workspace,adapter.snapshot().sessionId))return await closePermissionGate();
    connecting=false;
-   update({status:'idle',reason:null,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
+   update({status:'idle',reason:null,steeringSupported:true,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate. This connection owns a new native session.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
    return snapshot();
   }catch(error){
    if(token===epoch){
@@ -288,11 +288,11 @@ export function createRuntime({environment=process.env,platform=process.platform
 
  async function send({text,mode='chat',runOptions}={}) {
   const options=validateRunOptions(runOptions);
-  if(options.model||options.reasoning!=='high'||options.approval!=='ask'||options.budget&&options.budget!=='standard')throw Error('These run options require the Windows native exec connection.');
-  if(typeof text!=='string'||!text.trim()||text.length>20000||!['chat','plan'].includes(mode))throw Error('Enter a message up to 20,000 characters and a supported chat or plan mode.');
+  if(options.model||options.approval!=='ask'||options.budget)throw Error('Interactive mode currently requires Ask for approval, the default model and no exec budget preset.');
+  if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a prepared request up to 64,000 characters and a supported chat or plan mode.');
   if(!owner||!adapter||connecting||sending||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
   const token=epoch;sending=true;
-  update({status:'checking-permissions',reason:null});
+  update({status:'checking-permissions',reason:null,runOptions:options,steering:null});
   try{
    assertCurrent(token);
    let session;
@@ -331,5 +331,13 @@ export function createRuntime({environment=process.env,platform=process.platform
   }finally{if(token===epoch)deciding=false;}
  }
 
- return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,decide,close:()=>disconnect()};
+ async function steer({text,expectedTurnId}={}){
+  if(typeof text!=='string'||!text.trim()||text.length>16000)throw Error('Use a correction up to 16,000 characters.');
+  if(steering||state.steering?.status==='unknown')throw Error('Inspect the previous steering outcome before sending another correction.');
+  if(!owner||!state.permissionVerified||state.status!=='running'||pending||!expectedTurnId||adapter.snapshot().turnId!==expectedTurnId)throw Error('The target turn is no longer running or needs your attention.');
+  const token=epoch,sessionId=state.sessionId,commandId=owner.connection.mintCommandId();steering=true;update({steering:{commandId,turnId:expectedTurnId,status:'submitting'}});
+  try{const ack=await bounded(owner.connection.command('turn/steer',{sessionId,expectedTurnId,input:[{type:'text',text}]},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack?.turnId!==expectedTurnId||ack.status!=='accepted')throw Error('Steering acknowledgement could not be verified.');update({steering:{commandId,turnId:expectedTurnId,status:'accepted'}});return snapshot();}
+  catch(error){if(token===epoch)update({steering:{commandId,turnId:expectedTurnId,status:error.code===-32030?'rejected':'unknown'}});throw error;}finally{steering=false;}
+ }
+ return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,steer,decide,close:()=>disconnect()};
 }

@@ -32,6 +32,19 @@ async function harness(t,options={}) {
  return {runtime,root,binary,calls,host,sdk,session,emit:frame=>notification(frame),request:frame=>serverRequest(frame),exit:resolveExit,connect:()=>runtime.connect({binary,workspaceRoot:root})};
 }
 
+test('interactive Full access retains schema and Ask me verification while relaxing only sandbox availability',async t=>{
+ const h=await harness(t);h.host.initializeResult.sandboxAvailability='unavailable';await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,fullAccess:true});assert.equal(h.runtime.snapshot().permissionVerified,true);assert.equal(h.runtime.snapshot().fullAccess,true);assert.ok(h.calls.find(c=>c.method==='spawn').spec.args.includes('--disable-sandbox'));await h.runtime.disconnect();assert.equal(h.runtime.snapshot().fullAccess,false);
+});
+
+test('live steering uses exact turn identity once and verifies the acknowledgement',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Original'});const original=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>{if(method==='turn/steer'){h.calls.push({method,params,opts});return{commandId:opts.commandId,status:'accepted',turnId:params.expectedTurnId};}return original(method,params,opts);};
+ await assert.rejects(h.runtime.steer({text:'Correction',expectedTurnId:'different'}),/turn/i);await h.runtime.steer({text:'Correction',expectedTurnId:'turn-one'});const calls=h.calls.filter(c=>c.method==='turn/steer');assert.equal(calls.length,1);assert.equal(calls[0].params.expectedTurnId,'turn-one');assert.equal(calls[0].opts.maxAttempts,1);assert.equal(h.runtime.snapshot().steering.status,'accepted');
+});
+
+test('ambiguous steering acknowledgement remains unknown and is never resent',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Original'});let count=0;h.host.connection.command=async()=>{count++;return{status:'accepted',turnId:'another',commandId:'wrong'};};await assert.rejects(h.runtime.steer({text:'Correction',expectedTurnId:'turn-one'}));assert.equal(count,1);assert.equal(h.runtime.snapshot().steering.status,'unknown');
+});
+
 test('missing binary is actionable and never loads or starts an SDK',async()=>{
  let loaded=false;const runtime=createRuntime({environment:{PATH:''},loadSdk:async()=>{loaded=true;throw Error('must not load');}});
  assert.equal(runtime.snapshot().status,'unavailable');assert.equal(runtime.snapshot().binary,null);
@@ -270,4 +283,8 @@ test('repeated disconnect cannot turn unconfirmed shutdown into permission to re
  await h.runtime.disconnect();assert.equal(h.runtime.snapshot().cleanup,'unconfirmed');
  await h.runtime.disconnect();assert.equal(h.runtime.snapshot().cleanup,'unconfirmed');
  await assert.rejects(h.connect(),/unconfirmed|shutdown/i);
+});
+
+test('interactive request accepts the same bounded prepared context as exec',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Context '.repeat(7000)});assert.equal(h.runtime.snapshot().status,'running');
 });

@@ -8,7 +8,7 @@ export function runtimeCapabilities(runtime={}) {
   row('images','Screenshot input',exec,'Screenshot transport requires the native exec connection.'),
   row('shell','Agent shell commands',exec&&runtime.shellEnabled===true||msp,runtime.shellUnavailableReason||'Shell commands are unavailable for this connection.'),
   row('approvals','Interactive approvals',msp,'Exec stops when human approval is required. It cannot submit an approval response.'),
-  row('steering','Live steering',false,'Requires a validated interactive connection with exact-turn steering support.'),
+  row('steering','Live steering',msp&&runtime.steeringSupported===true,'Requires a validated interactive connection with exact-turn steering support.'),
   row('questions','Answer agent questions',false,'Interactive user-input requests are not supported by this adapter.'),
   row('childControls','Child agent controls',false,'Activity can be displayed; child messaging and cancellation are not connected.'),
   row('compaction','Native context compaction',false,'Local context trimming does not compact the native session.'),

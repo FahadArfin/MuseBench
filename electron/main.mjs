@@ -19,6 +19,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createController } from '../src/controller/index.mjs';
+import {createCodeRuntime} from '../src/runtime/selector.mjs';
 import { createRuntime } from '../src/runtime/index.mjs';
 import { createExecRuntime } from '../src/runtime/exec.mjs';
 import { allowedExternal, trustedSender, validateAction } from './security.mjs';
@@ -41,7 +42,7 @@ else {
     const helperPath = app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchJob.exe') : path.join(root,'native','bin','MuseBenchJob.exe');
     const dataDir = app.getPath('userData');
     const extensionReview=createExtensionReview({dataDir,profile:process.env.USERPROFILE});
-    const runtimeFactory = () => process.platform === 'win32' ? createExecRuntime({helperPath,extensionReview,durableSessions:true}) : createRuntime();
+    const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({helperPath,extensionReview,durableSessions:true}) : createRuntime();
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.13 can stall before shell launch inside the user profile.
     // New working copies have their own location; saved originals stay put.

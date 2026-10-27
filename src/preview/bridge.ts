@@ -25,7 +25,7 @@ const stamp='2026-10-26T14:00:00.000Z';
 const copy=<T,>(value:T):T=>structuredClone(value);
 const id=()=>crypto.randomUUID();
 const desktop=async():Promise<never>=>{throw new Error('This action needs the MuseBench desktop app. Browser preview uses sample data only.');};
-const runtime:RuntimeState={simulation:true,transport:'exec',fullAccess:false,status:'ready',reason:'Browser preview · No model or shell connection',binary:null,sdkVersion:'Preview',modelId:'Muse · sample',liveVerified:false};
+const runtime:RuntimeState={interactiveAvailable:true,simulation:true,transport:'exec',fullAccess:false,status:'ready',reason:'Browser preview · No model or shell connection',binary:null,sdkVersion:'Preview',modelId:'Muse · sample',liveVerified:false};
 function task(title:string,taskId:string=id(),projectId='preview-project'):Task {
  return {id:taskId,projectId,title,mode:'muse',createdAt:stamp,updatedAt:stamp,acceptedRevision:null,request:title,plan:'',criteria:[],planApproved:false,baselineRevision:'sample-before',revision:'sample-after',changes:[],messages:[{id:id(),role:'user',text:title,at:stamp}],shellResults:[],check:null,previewRevision:null,runtimeComplete:true,runOptions:{reasoning:'high',approval:'ask'},runs:[]};
 }
@@ -61,7 +61,7 @@ export function createPreviewBridge():MuseBenchBridge {
 
    case 'continueGoal':if(current?.goal){current.goal.driver=newGoalDriver(action);pauseGoalDriver(current.goal.driver,'Preview: no native runs are dispatched.');}break;
    case 'pauseGoalContinuation':pauseGoalDriver(current?.goal?.driver,'Paused by you');break;
-   case 'connectMuse':state.runtime={...state.runtime,fullAccess:action.fullAccess===true,status:'ready',sessionId:'preview-connection',permissionVerified:true,shellEnabled:true,reason:'Browser preview - Simulated connection; no commands run'};break;
+   case 'connectMuse':state.runtime={...state.runtime,interactiveAvailable:true,transport:action.transport??state.runtime.transport,steeringSupported:action.transport==='msp',fullAccess:action.fullAccess===true,status:'ready',sessionId:'preview-connection',permissionVerified:true,shellEnabled:true,reason:'Browser preview - Simulated connection; no commands run'};break;
    case 'disconnectMuse':state.runtime={...state.runtime,fullAccess:false,shellEnabled:false,status:'unavailable',sessionId:null,permissionVerified:false,reason:'Browser preview - Disconnected'};break;
    case 'proposeLesson':{if(state.activeProject)proposeLesson(state.activeProject,{id:id(),title:action.title,text:action.text,applicability:action.applicability,sourceTaskId:action.taskId,sourceMessageId:action.messageId,revision:'sample-after',validation:null});break;}
    case 'decideLesson':{if(state.activeProject)decideLesson(state.activeProject,action.id,action.decision);break;}
@@ -86,7 +86,8 @@ export function createPreviewBridge():MuseBenchBridge {
    case 'removeQueued':if(current)current.promptQueue=current.promptQueue?.filter(item=>item.id!==action.id);break;
    case 'pauseQueue':if(current)current.queuePaused=true;break;
    case 'resumeQueue':if(current){const next=current.promptQueue?.[0];if(next&&missingChecks(current,current.revision,next.requiredChecks??[]).length)throw Error('Run passing checks for this revision before this workflow phase.');current.promptQueue?.shift();if(next)reply(current,next.text,next.images);current.queuePaused=true;}break;
-   case 'sendMessage':if(current)reply(current,action.text,action.images);break;
+   case 'steerMessage':if(current){current.messages.push({id:id(),role:'user',text:action.text,at:stamp});state.runtime.steering={status:'accepted',commandId:id(),turnId:action.expectedTurnId};}break;
+   case 'sendMessage':if(current){reply(current,action.text,action.images);if(state.runtime.transport==='msp')state.runtime={...state.runtime,status:'running',turnId:'preview-turn',steeringSupported:true};}break;
    case 'renameTask':if(current)current.title=action.title;break;
    case 'setRunOptions':if(current)current.runOptions=copy(action.runOptions);break;
    case 'setGoal':if(current)current.goal={objective:action.objective,status:action.status};break;
