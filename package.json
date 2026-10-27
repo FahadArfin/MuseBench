@@ -13,7 +13,7 @@
     "dev": "node scripts/dev.mjs",
     "start": "node scripts/start.mjs",
     "build": "node scripts/build-windows-job.mjs && node scripts/build-windows-speech.mjs && tsc --noEmit && vite build",
-    "pretest": "node scripts/build-windows-job.mjs && node scripts/build-windows-speech.mjs",
+    "pretest": "node -e \"require('electron')\" && node scripts/build-windows-job.mjs && node scripts/build-windows-speech.mjs",
     "test": "node --test --test-concurrency=4 test/*.test.mjs reference/patchlight/adapter/test/*.test.mjs",
     "test:ui": "node scripts/smoke.mjs",
     "test:live": "node scripts/live-smoke.mjs",
