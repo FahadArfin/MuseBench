@@ -18,7 +18,7 @@ export function createHistoryStore(db){
   const prior=old?JSON.parse(old.metadata):{};
   const preserve=snapshot&&old; // Window saves update metadata, never replace canonical text.
   const text=preserve?old.text:m.text.slice(0,CAP);
-  const metadata=JSON.stringify({...prior,id:m.id,role:m.role,at:prior.at??m.at,turnId:m.turnId,outcome:m.outcome,captureTruncated:preserve?prior.captureTruncated:m.text.length>CAP});
+  const metadata=JSON.stringify({...prior,id:m.id,role:m.role,at:prior.at??m.at,turnId:m.turnId,outcome:m.outcome??prior.outcome,captureTruncated:preserve?prior.captureTruncated:m.text.length>CAP});
   if(old?.text===text&&old.metadata===metadata)return;
   db.exec('SAVEPOINT history_write');
   try{

@@ -16,7 +16,7 @@ Delivery order and status:
 8. Complete — bounded goal continuation with user priority.
 9. Complete — focused reviewer contracts and explicit integration.
 10. Complete — app-owned tool discovery; native semantic tools remain conditional on supported execution.
-11. In progress — performance measurements and justified event/UI improvements.
+11. Complete — performance measurements and justified event/UI improvements.
 12. Complete — runtime capability contracts and conformance tests.
 
 For each item: inspect existing behavior; write meaningful failing tests; implement shared controller/bridge/UI behavior; verify focused regressions, build and applicable browser parity; review; commit and push before the next item. Keep evidence and limitations here. Current clean checkout serves the live preview; changes integrate here without replacing user data.
@@ -49,3 +49,5 @@ Feature 8 delivered: opt-in goal continuation with 1–8 rounds, 1–60 minute d
 Feature 9 delivered: independent correctness/test/investigator chats with source and checkout revision contracts, matching managed-worktree selection, Ask for approval, standard per-run limits, three review slots per parent, partial reported usage aggregation, owned-review cancellation and recursion refusal in app orchestration. Structured evidence is validated and added only to an empty parent draft after explicit integration and fresh revision checks. No automatic patching, sending, or read-only filesystem claim. Evidence: 695 tests; 50 shared preview/desktop parity scenes; package verified. Native review execution remains conditional on the same blocked host, covered here with injected runtimes.
 
 Feature 10 delivered: searchable Workspace tools directory and /tools command with scoped availability, progressively disclosed input/result contracts and links into existing permission-checked controls. Compiler/linter diagnostics remain in the validation feature. Native semantic navigation and dynamic model-tool loading are explicitly unavailable; no speculative server installation or frontend-as-model-tool claim. Evidence: 696 tests, 52 parity scenes, production package verified.
+
+Feature 11 delivered: measured controller progress coalescing (40 ms), bounded latest-state delivery, immediate lifecycle/input acceptance/pending/terminal flush, unchanged durable source capture, and redundant receipt/history-write avoidance. Synthetic four-chat benchmark: 11,443 ms and 204 full snapshots before; 326–342 ms and four snapshots after, with final control-aware run 341 ms. See docs/HARNESS-PERFORMANCE-2026-10-26.md for methodology and limits; renderer paint/RSS and native model speed are not measured claims. Evidence: 698 tests and 52 desktop/browser parity scenes; production package verified. Final independent review is underway before release closeout.
