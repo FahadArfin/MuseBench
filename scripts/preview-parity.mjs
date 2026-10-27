@@ -18,7 +18,7 @@ const server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'
 const browser=await chromium.launch({ignoreDefaultArgs:['--hide-scrollbars']});let app;
 const errors=[],report={checks:[],errors,status:'running'};
 try{
- const browserPage=await browser.newPage({viewport:{width:1440,height:960},timezoneId:'America/New_York'});
+ const browserPage=await browser.newPage({viewport:{width:1440,height:960},timezoneId:Intl.DateTimeFormat().resolvedOptions().timeZone});
  const env={...process.env,MUSEBENCH_PARITY_DATA:await mkdtemp(path.join(output,'profile-'))};delete env.ELECTRON_RUN_AS_NODE;
  app=await electron.launch({args:['scripts/preview-parity-electron.mjs'],env});
  await app.evaluate(async({BrowserWindow})=>{const window=new BrowserWindow({width:1440,height:960,useContentSize:true,show:false,backgroundColor:'#181818',...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{height:42,color:'#181818',symbolColor:'#eeeeee'}}:{}),webPreferences:{backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}});void window.loadURL('http://127.0.0.1:4322/__desktop__/index.html');});
@@ -30,6 +30,8 @@ try{
  for(let i=0;i<100;i++){if(await desktopPage.evaluate(()=>!!document.querySelector('button[aria-label="Profile menu"]')))break;await desktopPage.waitForTimeout(100);}
  const measure=page=>page.evaluate(()=>[...document.querySelectorAll('#root button,#root input,#root textarea,#root h1,#root h2,#root .topbar,#root .sidebar,#root [role="dialog"]')].filter(element=>!element.closest('.personal-browser-slot')&&element.getBoundingClientRect().width>0&&element.getBoundingClientRect().height>0).map(element=>{const r=element.getBoundingClientRect(),s=getComputedStyle(element);return {tag:element.tagName,label:element.getAttribute('aria-label')||element.textContent?.trim(),class:element.className,box:[r.x,r.y,r.width,r.height].map(n=>Math.round(n*10)/10),font:s.font,color:s.color,background:s.backgroundColor,border:s.borderRadius};}));
  async function compare(name){
+  const zones=await Promise.all([browserPage,desktopPage].map(page=>page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone)));
+  assert.equal(zones[0],zones[1],'Parity fixtures must use the same host time zone');report.timezone=zones[0];
   // Windows can clamp hidden native windows to the runner's physical display.
   // Compare the same real content viewport, including narrow-window scenes.
   const [width,height]=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getContentSize());
