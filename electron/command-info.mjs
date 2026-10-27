@@ -1,3 +1,4 @@
+import {normalizeAllowance} from '../src/shared/account-usage.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import path from 'node:path';
@@ -36,7 +37,7 @@ export function createCommandInfo({getState,extensionReview,run=promisify(execFi
   try{
    const {stdout}=await run(binary,args,{windowsHide:true,shell:false,timeout:15000,maxBuffer:1024*1024,encoding:'utf8'});
    const parsed=JSON.parse(stdout);
-   return type==='skills'?{status:'ready',skills:normalizeSkills(parsed,{transport:state.runtime?.transport,projectTrusted})}:{status:'ready',rows:usageSummary(parsed)};
+   return type==='skills'?{status:'ready',skills:normalizeSkills(parsed,{transport:state.runtime?.transport,projectTrusted})}:{status:'ready',rows:usageSummary(parsed),usage:normalizeAllowance(parsed)};
   }catch{return{status:'unavailable',message:type==='usage'?'Muse could not refresh your allowance. Check your official CLI sign-in or open Meta billing.':'Muse could not load its skill catalog. Check the selected CLI and try again.',skills:[]};}
  };
 }

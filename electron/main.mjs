@@ -1,3 +1,4 @@
+import {createBillingReader} from './billing-reader.mjs';
 import {createOnboarding} from './onboarding.mjs';
 import {createFileEditor} from './file-editor.mjs';
 import {createWorkspaceMcpConfig} from './workspace-mcp-config.mjs';
@@ -165,9 +166,13 @@ else {
       return workExporter.export({artifact,format,filePath:result.filePath,theme:nativeTheme.shouldUseDarkColors?'dark':'light',updatedAt:snapshot.artifactUpdatedAt});
     });
     work.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:work-update',workSnapshot(value));});
+    const billingReader=createBillingReader({BrowserWindow,session,parent:window});
+    window.on('closed',()=>billingReader.close());
     const commandInfo=createCommandInfo({extensionReview,getState:()=>controller.getState()});
     handler('musebench:command-info',async type=>{
-      if(type==='skills'||type==='usage')return commandInfo(type);
+      if(type==='billing'){billingReader.open();return{status:'ready'};}
+      if(type==='usage'){const [result,billing]=await Promise.all([commandInfo(type),billingReader.read()]);return{...result,usage:{...(result.usage??{windows:[]}),billing,checkedAt:new Date().toISOString()}};}
+      if(type==='skills')return commandInfo(type);
       if(type==='export'){
         const transcript=exportTranscript(controller.getState());
         const result=await dialog.showSaveDialog(window,{title:'Export chat',defaultPath:'MuseBench-chat.md',filters:[{name:'Markdown',extensions:['md']}]});

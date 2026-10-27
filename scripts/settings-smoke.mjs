@@ -56,7 +56,7 @@ try{
  record('Memory save is disabled for a pending-approval state without changing instructions');
 
  await category('Skills');await dialog().getByText('Install or select the official Muse CLI in Connection settings.').waitFor();
- await category('Usage & billing');await dialog().getByRole('button',{name:'Refresh allowance'}).click();await dialog().getByText('Install or select the official Muse CLI in Connection settings.').waitFor();
+ await category('Usage & billing');await dialog().getByRole('button',{name:'Refresh usage'}).click();await dialog().getByText('Install or select the official Muse CLI in Connection settings.').waitFor();
  await category('Voice');await until(async()=>(await page.evaluate(()=>window.musebench.dictation('status'))).available!==null);assert.notEqual((await page.evaluate(()=>window.musebench.dictation('status'))).status,'listening');await shot('06-voice');
  await category('Data & privacy');assert.equal(await dialog().getByRole('button',{name:'Export Markdown'}).isDisabled(),true);
  await category('Muse connection');await dialog().getByRole('button',{name:'Open Muse connection'}).click();await page.getByRole('dialog',{name:'Your Muse connection'}).waitFor();await page.keyboard.press('Escape');

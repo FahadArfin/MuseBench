@@ -1,3 +1,5 @@
+import {useAccountUsage} from './AccountUsage';
+import {usageHeadline} from '../shared/account-usage.mjs';
 import './avatar-picker.css';
 import {useEffect,useLayoutEffect,useRef,useState,type KeyboardEvent} from 'react';
 import {createPortal} from 'react-dom';
@@ -17,6 +19,7 @@ export function ProfileAvatar({profile,size=23}:{profile?:AccountProfile|null;si
 }
 
 export function ProfileMenu({open,onOpenChange,onAction,compact=false,profile}:Props){
+ const {usage,loading}=useAccountUsage(open);
  const name=profile?.displayName.trim()||'Your account';
  const avatar=<ProfileAvatar profile={profile}/>;
  const trigger=useRef<HTMLButtonElement>(null),menu=useRef<HTMLDivElement>(null);
@@ -49,7 +52,7 @@ export function ProfileMenu({open,onOpenChange,onAction,compact=false,profile}:P
   {open&&createPortal(<div ref={menu} id="workspace-profile-menu" className="profile-popover" role="menu" aria-label="Your profile" style={position} onKeyDown={key}>
    <button type="button" role="menuitem" tabIndex={-1} className="profile-menu-heading" aria-label={`View profile for ${name}`} onClick={()=>choose('profile')}>{avatar}<div><strong>{name}</strong><small>View profile</small></div><ChevronDown size={14} className="profile-menu-arrow"/></button>
    <div className="profile-menu-divider" role="separator"/>
-   <button type="button" role="menuitem" tabIndex={-1} onClick={()=>choose('usage')}><Gauge size={17}/><span>Usage</span></button>
+   <button type="button" role="menuitem" aria-label="Usage" tabIndex={-1} onClick={()=>choose('usage')}><Gauge size={17}/><span>Usage</span><small>{loading?'Checking...':`${usage?.simulation?'Sample · ':''}${usageHeadline(usage)}`}</small></button>
    <button type="button" role="menuitem" tabIndex={-1} onClick={()=>choose('settings')}><Settings size={17}/><span>Settings</span><kbd>Ctrl+,</kbd></button>
    <button type="button" role="menuitem" tabIndex={-1} onClick={()=>choose('help')}><CircleHelp size={17}/><span>Help</span></button>
   </div>,document.body)}

@@ -22,13 +22,22 @@ try {
  await page.getByRole('group',{name:'Choose workspace'}).waitFor({timeout:30000});
  assert.equal(await page.getByRole('button',{name:'Muse AI',exact:true}).getAttribute('aria-pressed'),'true');
  await page.getByRole('button',{name:'Muse Code',exact:true}).click();
+ await page.getByRole('button',{name:'Profile menu',exact:true}).click();
+ await page.getByRole('menuitem',{name:'Usage',exact:true}).getByText('Sample · 9% left').waitFor();
+ await page.getByRole('menuitem',{name:'Usage',exact:true}).click();
+ const usagePanel=page.getByRole('region',{name:'Account usage',exact:true});
+ await usagePanel.getByText('$18.25 spent',{exact:true}).waitFor();
+ assert.equal(await usagePanel.getByRole('progressbar',{name:'Weekly remaining'}).getAttribute('value'),'9');
+ await page.screenshot({path:'artifacts/browser-preview/account-usage.png'});
+ await page.keyboard.press('Escape');
+
  await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('combobox',{name:'Task budget',exact:true}).selectOption('extended');assert.equal((await page.evaluate(()=>window.musebench.getState())).task.runOptions.budget,'extended');await page.getByRole('combobox',{name:'Task budget',exact:true}).selectOption('standard');await page.getByRole('button',{name:'Muse connection',exact:true}).click();
  const connection=page.getByRole('dialog',{name:'Your Muse connection',exact:true});await connection.getByText('Connection capabilities',{exact:true}).click();await connection.getByText('Live steering',{exact:false}).waitFor();await connection.getByText('Semantic workspace tools',{exact:false}).waitFor();assert.equal(await connection.locator('[data-status="simulated"]').count(),12);await page.screenshot({path:'artifacts/browser-preview/capabilities.png'});await connection.getByRole('button',{name:'Close dialog',exact:true}).click();
  assert.equal(await page.locator('.browser-preview-banner').count(),0);assert.equal(await page.getByRole('button',{name:'Toggle review panel'}).count(),0);assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);
  assert.equal((await page.locator('.sidebar:not([hidden]) .sidebar-chrome').boundingBox()).y,0);
  assert(await page.getByText('Build a clearer project overview',{exact:true}).count()>0);
  assert.equal(await page.getByRole('button',{name:'Profile menu',exact:true}).innerText(),'Alex Morgan');
- await page.getByRole('button',{name:'Profile menu',exact:true}).click();await page.getByRole('menu',{name:'Your profile',exact:true}).getByText('Alex Morgan',{exact:true}).waitFor();assert.deepEqual(await page.getByRole('menu',{name:'Your profile',exact:true}).getByRole('menuitem').allTextContents(),['Alex MorganView profile','Usage','SettingsCtrl+,','Help']);await page.screenshot({path:'artifacts/browser-preview/profile-menu.png'});await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'Profile menu',exact:true}).click();await page.getByRole('menu',{name:'Your profile',exact:true}).getByText('Alex Morgan',{exact:true}).waitFor();assert.deepEqual(await page.getByRole('menu',{name:'Your profile',exact:true}).getByRole('menuitem').allTextContents(),['Alex MorganView profile','UsageSample · 9% left','SettingsCtrl+,','Help']);await page.screenshot({path:'artifacts/browser-preview/profile-menu.png'});await page.keyboard.press('Escape');
  await page.keyboard.press('Control+b');assert.equal(await page.getByRole('button',{name:'Profile menu',exact:true}).isVisible(),true);assert.equal(await page.getByRole('button',{name:'Profile menu',exact:true}).innerText(),'');
  await page.screenshot({path:'artifacts/browser-preview/collapsed-profile.png'});
  await page.getByRole('button',{name:'Profile menu',exact:true}).click();await page.getByRole('menu',{name:'Your profile',exact:true}).getByText('Alex Morgan',{exact:true}).waitFor();await page.keyboard.press('Escape');await page.keyboard.press('Control+b');
