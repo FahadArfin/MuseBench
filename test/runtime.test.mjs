@@ -288,3 +288,11 @@ test('repeated disconnect cannot turn unconfirmed shutdown into permission to re
 test('interactive request accepts the same bounded prepared context as exec',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Context '.repeat(7000)});assert.equal(h.runtime.snapshot().status,'running');
 });
+
+test('native compaction waits for terminal evidence and blocks sends until it arrives',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'A turn'});h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});const original=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>method==='session/compact'?{status:'accepted',commandId:opts.commandId}:original(method,params,opts);
+ await assert.rejects(h.runtime.compact({sessionId:'wrong',turnId:'turn-one'}));await h.runtime.compact({sessionId:'session-one',turnId:'turn-one'});assert.equal(h.runtime.snapshot().compaction.status,'accepted');await assert.rejects(h.runtime.send({text:'Too early'}));h.emit({method:'item/completed',params:{sessionId:'session-one',viewCursor:'compact-done',item:{itemId:'compaction-1',kind:'compaction',turnId:'turn-one',trigger:'manual',revision:2,status:'completed',outcome:'compacted'}}});assert.equal(h.runtime.snapshot().compaction.status,'compacted');assert.equal(h.runtime.snapshot().operationBusy,false);await h.runtime.send({text:'Continue'});
+});
+test('disconnect during compaction ack never updates a new owner',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'A turn'});h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});let resolve;h.host.connection.command=async()=>new Promise(r=>resolve=r);const operation=h.runtime.compact({sessionId:'session-one',turnId:'turn-one'});await h.runtime.disconnect();resolve({commandId:'0198f0ab-9999-7000-8000-000000000001',status:'accepted'});await assert.rejects(operation,/interrupted/);assert.equal(h.runtime.snapshot().compaction.status,'unknown');assert.equal(h.runtime.snapshot().permissionVerified,false);
+});

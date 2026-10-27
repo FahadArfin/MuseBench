@@ -57,6 +57,7 @@ function restoreTask(record,knownProjectId){
   if(!task.projectId&&knownProjectId)task.projectId=knownProjectId;
   const validDate=value=>typeof value==='string'&&Number.isFinite(Date.parse(value));
   task.steeringReceipts=(Array.isArray(task.steeringReceipts)?task.steeringReceipts:[]).filter(r=>r&&['commandId','turnId','status','text','at'].every(k=>typeof r[k]==='string')).slice(-20).map(r=>({...r,text:r.text.slice(0,16000)}));
+  task.compactionReceipts=(Array.isArray(task.compactionReceipts)?task.compactionReceipts:[]).filter(r=>r&&['commandId','turnId','sessionId','status'].every(k=>typeof r[k]==='string')).slice(-20).map(r=>['submitting','accepted'].includes(r.status)?{...r,status:'unknown',reason:'The app restarted before native completion was observed. This request will not be replayed.'}:r);
   task.nativeSession=restoreNativeSession(task.nativeSession);task.nativeUsage=restoreUsage(task.nativeUsage);task.skillReceipts=restoreSkillReceipts(task.skillReceipts);
   task.messages=(Array.isArray(task.messages)?task.messages:[]).filter(item=>item&&typeof item.id==='string'&&['user','assistant','system'].includes(item.role)&&typeof item.text==='string').slice(-150).map(item=>({...item,contextTruncated:item.contextTruncated===true||item.text.length>16000,text:item.text.slice(0,16000),sources:restoreSourceSnapshots(item.sources)}));
   task.runs=restoreRuns(task.runs);
@@ -176,7 +177,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const contexts=new Map();let preferredBinary=runtime?.snapshot?.().binary??null;
   const newContext=(owner,task=null)=>({runtime:owner,task,root:null,pending:false,turn:null,messageBaseline:runtimeMessageIds(owner?.snapshot?.()),navigation:false,queueScheduled:false,unsubscribe:null});
   let context=newContext(runtime,state.task);if(state.task)contexts.set(state.task.id,context);
-  const contextBusy=c=>!!c&&(c.pending||['running','starting','submitting','connecting','checking-permissions'].includes(c.runtime?.snapshot?.().status)||c.runtime?.snapshot?.().cleanup==='unconfirmed'||!!c.runtime?.snapshot?.().pending);
+  const contextBusy=c=>!!c&&(c.pending||['running','starting','submitting','connecting','checking-permissions'].includes(c.runtime?.snapshot?.().status)||c.runtime?.snapshot?.().operationBusy||c.runtime?.snapshot?.().cleanup==='unconfirmed'||!!c.runtime?.snapshot?.().pending);
   const saveRecord=t=>{if(!t)return;history.sync(t);t.messages=t.messages.slice(-150);t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));};
   const bindContext=task=>{
     if(!runtimeFactory){contexts.clear();context.task=task;if(task)contexts.set(task.id,context);return;}
@@ -419,6 +420,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const onRuntime=(event,owner)=>{
     const selected=owner===selectedContext(),context=owner,runtime=owner.runtime,task=owner.task;
     if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;if(selected)state.runtime=structuredClone(next);
+    if(task&&next.compaction?.commandId){task.compactionReceipts=[...(task.compactionReceipts??[]).filter(r=>r.commandId!==next.compaction.commandId),structuredClone(next.compaction)].slice(-20);saveRecord(task);}
     if(task?.mode==='muse'&&!context.navigation){
       const turn=context.pending&&context.turn?.taskId===task.id?context.turn:null;
       if(turn&&['running','starting','submitting'].includes(next.status)){
@@ -684,6 +686,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(state.runtime.status==='blocked'||state.runtime.status==='uncertain'){await runtime?.disconnect?.();state.runtime=runtime?.snapshot?.()??state.runtime;}
         if(action.choice==='fresh')t.nativeSession=null;else if(t.nativeSession){if(!t.nativeSession.seeded)throw Error('Native input receipt was not confirmed before interruption. Start a fresh session to avoid replaying an uncertain request.');t.nativeSession={...t.nativeSession,status:'ready'};}break;
       }
+      case 'compactSession':{const t=requireTask(),r=runtime?.snapshot?.();if(action.taskId!==t.id||!r?.compactionSupported||context.pending||checkProcess)throw Error('Finish the active request before compacting.');pauseGoalDriver(t.goal?.driver,'Manual compaction');await runtime.compact({sessionId:action.sessionId,turnId:action.turnId});break;}
       case 'steerMessage':{
         const t=requireTask(),r=runtime?.snapshot?.();if(action.taskId!==t.id||!context.pending||!context.turn||!r?.steeringSupported||r.turnId!==action.expectedTurnId)throw Error('The target turn changed or does not support steering.');
         if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a correction up to 16,000 characters.');

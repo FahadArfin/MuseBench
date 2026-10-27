@@ -157,7 +157,7 @@ export default function App() {
   const hasSession = Boolean(state?.runtime.sessionId);
   const runtimeBlocked = ['blocked', 'uncertain', 'unavailable', 'closed', 'error', 'failed'].includes(state?.runtime.status ?? '') || Boolean(state?.runtime.pending);
   const connected = !runtimeBlocked && (hasSession || state?.runtime.status === 'connected' || state?.runtime.status === 'ready');
-  const canSend = Boolean(showTask && !busy && !runtimeActive && !state?.runtime.pending&&!task?.archived);
+  const canSend = Boolean(showTask && !busy && !runtimeActive && !state?.runtime.pending&&!state?.runtime.operationBusy&&!task?.archived);
   useEffect(() => {
     if (!bridge) return;
     let active = true;
@@ -459,7 +459,7 @@ export default function App() {
     {modal==='extensions'&&<CustomizeDialog initialTab={customizeTab} initialQuery={customizeQuery} close={closeModal} running={customizeBlocked(state,workState,sitesState,sitesState?.generation)} onConnection={()=>setModal('runtime')} onChanged={()=>{setShortcutRevision(value=>value+1);skillsKey.current='';loadSkills();}} onPersonal={action=>{closeModal();setProduct('personal');setPersonalMode('chat');void personalCommand({type:'serviceAction',action});}}/>}
     {modal==='workflows'&&<WorkflowLibrary state={state} busy={busy} act={act} close={closeModal}/>}
     {modal==='handoff'&&task&&<ContextHandoff source={task} tasks={state.tasks} initialText={message} files={contextFiles} busy={busy} act={act} close={closeModal}/>}
-    {modal==='session'&&task&&<SessionDialog task={task} projects={state.projects} busy={busy||runtimeActive} act={act} onClose={closeModal}/> }
+    {modal==='session'&&task&&<SessionDialog runtime={state.runtime} task={task} projects={state.projects} busy={busy||runtimeActive} act={act} onClose={closeModal}/> }
     {modal==='worktrees'&&project&&<WorktreeDialog appState={state} project={project} busy={busy||runtimeActive} act={act} onClose={closeModal} onOpened={()=>{closeModal();setCreating(true);setView('project');}}/>}
     {modal==='context'&&project&&<CodeContext task={showTask?task:null} project={project} taskId={showTask?task!.id:null} text={message} files={contextFiles} onFiles={setContextFiles} act={act} busy={busy||runtimeActive} close={closeModal}/>}
     {modal === 'runtime' && <RuntimeDialog state={state} busy={busy} act={act} close={closeModal} onError={setLocalError} />}{modal === 'settings' && <SettingsDialog openCustomize={()=>openCustomize()} state={state} busy={busy||runtimeActive||Boolean(state.runtime.pending)} act={act} openPersonal={destination=>{closeModal();navigatePersonal(destination);}} preferences={preferences} onChange={setPreferences} close={closeModal} openConnection={() => setModal('runtime')} />}{modal === 'history' && <CheckpointDialog state={state} act={act} close={closeModal} />}

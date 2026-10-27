@@ -24,9 +24,9 @@
 - [x] Verify real native shell turn absorbs a correction in the same turn; verify stale target rejected. Run full tests/build/parity, commit and push.
 
 ## 2. Native compaction
-- [ ] Pin schemas and write tests for admission/terminal ordering, no-op, failure, wrong command and interruption.
-- [ ] Add runtime compaction state, controller/IPC action and shared Session dialog controls with no transcript deletion.
-- [ ] Run native compaction against an owned real session and verify terminal result; tests/build/parity, commit and push.
+- [x] Pin schemas and write tests for admission/terminal ordering, no-op, failure, wrong command and interruption.
+- [x] Add runtime compaction state, controller/IPC action and shared Session dialog controls with no transcript deletion.
+- [x] Run native compaction against an owned real session and verify terminal result; tests/build/parity, commit and push.
 
 ## 3. Child controls
 - [ ] Pin supported child operations and test observed identity, attempt/revision guards, refusal and uncertain receipts.
@@ -37,3 +37,5 @@
 - [ ] Independent final review, fixes, verified production package/install, clean GitHub sync. Keep user data and previous install backup.
 
 Feature 1 evidence: 717 tests; 54 browser/packaged-renderer parity scenes; real native same-turn steering applied with confirmed host shutdown. Review fixed history budget, transport-session ownership and durable unknown steering receipts. The first full-suite run had an unrelated HTTP oversized-body connection reset; focused and full reruns passed.
+
+Feature 2 evidence: 724 tests; 56 shared-renderer parity scenes; real compaction 28,134 to 20,832 native tokens, local transcript preserved, subsequent turn retained the cobalt marker. Review fixed interrupted receipt restoration. The protocol supplies no compaction command identity in view items: serialized idle-only dispatch binds the first new manual item for the exact owned turn, then follows its revision.

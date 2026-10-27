@@ -1,3 +1,4 @@
+import {createCompactionTracker} from './compaction.mjs';
 import {validateRunOptions} from '../shared/run-options.mjs';
 import {execFile} from 'node:child_process';
 import {readFile, realpath, stat} from 'node:fs/promises';
@@ -129,15 +130,17 @@ export function createRuntime({environment=process.env,platform=process.platform
  const childEnvironment=curateEnvironment(environment);
  let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
+ const compaction=createCompactionTracker();let compactionTimer;
  const listeners=new Set();
  const snapshot=()=>structuredClone(state);
  const emit=()=>{for(const fn of listeners){try{fn(snapshot());}catch{/* A renderer observer is never a protocol authority. */}}};
  const update=patch=>{state={...state,...patch};emit();};
+ const syncCompaction=()=>{const receipt=compaction.snapshot();if(!compaction.pending())clearTimeout(compactionTimer);update({compaction:receipt,operationBusy:compaction.pending()});};
  const block=(reason,invalidatePermissions=true)=>{blockedReason=reason;update({status:'blocked',reason,...(invalidatePermissions?{permissionVerified:false}:{}),pending:displayPending(pending,pendingRevision)});};
  const assertCurrent=token=>{if(token!==epoch)throw Error('Muse connection was interrupted or disconnected.');};
  const syncAdapter=s=>{
   const terminalUnavailable=['unavailable','uncertain','closed'].includes(s.status);
-  if(terminalUnavailable){pending=null;blockedReason=null;}
+  if(terminalUnavailable){pending=null;blockedReason=null;clearTimeout(compactionTimer);compaction.interrupt('Connection lost before compaction was confirmed.');syncCompaction();}
   if(s.pending&&!pending){pending={kind:s.pending.approvalId?'approval':'input',...s.pending};pendingRevision++;}
   const status=terminalUnavailable?s.status:blockedReason?'blocked':connecting&&s.status==='idle'?'checking-permissions':s.status;
   update({status,reason:terminalUnavailable?s.reason:blockedReason??s.reason,sessionId:s.sessionId,turnId:s.turnId,runId:s.turnId,nativeSessionId:s.sessionId,inputAccepted:!!s.turnId,sessionSeeded:state.sessionSeeded||!!s.turnId,cleanup:['completed','failed','cancelled'].includes(status)?'confirmed':undefined,liveVerified:state.liveVerified||status==='completed',messages:s.messages,pending:displayPending(pending,pendingRevision),permissionVerified:terminalUnavailable?false:state.permissionVerified});
@@ -151,6 +154,7 @@ export function createRuntime({environment=process.env,platform=process.platform
  const disconnect=async(reason='Disconnected. Connect again to start a new Muse session.')=>{
   if(closing){await closing;return snapshot();}
   if(!owner&&!connecting&&state.cleanup==='unconfirmed')return snapshot();
+  clearTimeout(compactionTimer);compaction.interrupt('Disconnected before compaction was confirmed.');syncCompaction();
   const token=++epoch;connecting=false;sending=false;deciding=false;blockedReason=null;pending=null;
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('disconnected');adapter=null;
   closing=Promise.resolve().then(release);
@@ -186,6 +190,7 @@ export function createRuntime({environment=process.env,platform=process.platform
  function observe(frame) {
   if(!frame?.params||frame.params.sessionId!==state.sessionId)return;
   const p=frame.params;
+  if(['item/started','item/updated','item/completed'].includes(frame.method)&&p.item?.kind==='compaction'){compaction.observe(p.item);syncCompaction();}
   if(['session/permissionProfileChanged','session/approvalModeChanged'].includes(frame.method)){
    block('Muse permissions changed. Disconnect and reconnect to verify the selected profile before continuing.');
    // A blocked approval can still belong to an active turn. Stop on every
@@ -213,7 +218,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   if(typeof binary!=='string'||!isAbsolute(binary))throw Error('Select an absolute path to a trusted official Muse native binary.');
   if(platform==='win32'&&!binary.toLowerCase().endsWith('.exe'))throw Error('Select the native muse.exe, not a .cmd or PowerShell installer/launcher.');
   if(typeof workspaceRoot!=='string'||!isAbsolute(workspaceRoot))throw Error('Select an absolute project workspace first.');
-  const token=++epoch;connecting=true;blockedReason=null;pending=null;
+  const token=++epoch;connecting=true;blockedReason=null;pending=null;compaction.reset();syncCompaction();
   update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,sessionSeeded:false,steering:null,sessionId:null,messages:[],pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
   let openedSession;
   try{
@@ -274,7 +279,7 @@ export function createRuntime({environment=process.env,platform=process.platform
    assertCurrent(token);
    if(!provesAskMe(openedSession,workspace,adapter.snapshot().sessionId))return await closePermissionGate();
    connecting=false;
-   update({status:'idle',reason:null,steeringSupported:true,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate. This connection owns a new native session.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
+   update({status:'idle',reason:null,steeringSupported:true,compactionSupported:true,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate. This connection owns a new native session.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
    return snapshot();
   }catch(error){
    if(token===epoch){
@@ -290,7 +295,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   const options=validateRunOptions(runOptions);
   if(options.model||options.approval!=='ask'||options.budget)throw Error('Interactive mode currently requires Ask for approval, the default model and no exec budget preset.');
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a prepared request up to 64,000 characters and a supported chat or plan mode.');
-  if(!owner||!adapter||connecting||sending||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
+  if(!owner||!adapter||connecting||sending||compaction.pending()||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
   const token=epoch;sending=true;
   update({status:'checking-permissions',reason:null,runOptions:options,steering:null});
   try{
@@ -339,5 +344,12 @@ export function createRuntime({environment=process.env,platform=process.platform
   try{const ack=await bounded(owner.connection.command('turn/steer',{sessionId,expectedTurnId,input:[{type:'text',text}]},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack?.turnId!==expectedTurnId||ack.status!=='accepted')throw Error('Steering acknowledgement could not be verified.');update({steering:{commandId,turnId:expectedTurnId,status:'accepted'}});return snapshot();}
   catch(error){if(token===epoch)update({steering:{commandId,turnId:expectedTurnId,status:error.code===-32030?'rejected':'unknown'}});throw error;}finally{steering=false;}
  }
- return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,steer,decide,close:()=>disconnect()};
+ async function compact({sessionId,turnId}={}){
+  if(!owner||!adapter||!state.permissionVerified||connecting||sending||steering||pending||!usable.has(state.status)||sessionId!==state.sessionId||!turnId||turnId!==state.turnId)throw Error('Finish the current turn and use this connection’s latest session before compacting.');
+  const token=epoch,commandId=owner.connection.mintCommandId();compaction.start({sessionId,turnId,commandId});syncCompaction();
+  compactionTimer=setTimeout(()=>{if(token===epoch){compaction.interrupt('Compaction completion was not observed. Inspect this session before reconnecting; the request is never retried automatically.');syncCompaction();}},120000);compactionTimer.unref?.();
+  try{const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();}
+  catch(error){if(token===epoch){if(error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
+ }
+ return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,steer,compact,decide,close:()=>disconnect()};
 }
