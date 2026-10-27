@@ -55,6 +55,10 @@ export function createPreviewBridge():MuseBenchBridge {
  async function dispatch(action:Action):Promise<AppState>{
   const current=state.task;
   switch(action.type){
+   case 'createReviewer':if(current){const child=task('Review · '+action.question);child.reviewContract={parentTaskId:current.id,parentProjectId:current.projectId,sourceRevision:'sample-after',inputRevision:'sample-after',role:action.role,question:action.question,budget:'standard',createdAt:stamp};child.messages.push({id:id(),role:'assistant',text:JSON.stringify({findings:[],unresolved:['Preview only. No independent native review was executed.']}),at:stamp});child.runtimeComplete=true;current.reviewChildren=[...(current.reviewChildren??[]),child.id];tasks.set(child.id,child);state.task=child;}break;
+   case 'integrateReview':if(current?.reviewContract){const parent=tasks.get(current.reviewContract.parentTaskId);if(parent){(state.drafts??={})[`${parent.projectId}:${parent.id}`]={text:'Simulated review: no native execution. Review the example findings before sending.',files:[],images:[],mode:'chat',updatedAt:stamp};state.task=parent;}}break;
+   case 'cancelReviewers':break;
+
    case 'continueGoal':if(current?.goal){current.goal.driver=newGoalDriver(action);pauseGoalDriver(current.goal.driver,'Preview: no native runs are dispatched.');}break;
    case 'pauseGoalContinuation':pauseGoalDriver(current?.goal?.driver,'Paused by you');break;
    case 'proposeLesson':{if(state.activeProject)proposeLesson(state.activeProject,{id:id(),title:action.title,text:action.text,applicability:action.applicability,sourceTaskId:action.taskId,sourceMessageId:action.messageId,revision:'sample-after',validation:null});break;}

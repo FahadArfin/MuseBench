@@ -14,8 +14,8 @@ Delivery order and status:
 6. Complete — reviewed project lessons and skill promotion.
 7. Complete — durable execution/delivery receipts and unknown outcomes.
 8. Complete — bounded goal continuation with user priority.
-9. In progress — focused reviewer contracts and explicit integration.
-10. Pending — app-owned tool discovery; native semantic tools remain conditional on supported execution.
+9. Complete — focused reviewer contracts and explicit integration.
+10. In progress — app-owned tool discovery; native semantic tools remain conditional on supported execution.
 11. Pending — performance measurements and justified event/UI improvements.
 12. Complete — runtime capability contracts and conformance tests.
 
@@ -45,3 +45,5 @@ Feature 6 delivered: explicit lesson proposals with source chat/message/revision
 Feature 7 delivered: independent SQLite execution intents, dispatch/acceptance/native identity/result receipts, restart recovery to unknown, and separate suppressed/submitted/shown/failed/unsupported notification delivery. No notification callback dispatches work; unsupported process/version facts remain unknown. The session inspector shares receipts in preview and desktop. Evidence: 687 tests, 45 parity scenes, 96 packaged source/build files and helpers verified. OS shown means notification visibility, not user reading or external side-effect success. Meta-hosted schedules remain outside this controller.
 
 Feature 8 delivered: opt-in goal continuation with 1–8 rounds, 1–60 minute deadline, settled execution receipt requirement, revision-bound validation between runs, repair prompts from bounded diagnostics, repeated failure stop, user queue/message priority, authoritative pause and restart/navigation disarming. A deadline disconnects an active owned run and cancels its check; cleanup uncertainty remains visible. Passing checks pauses for human review rather than claiming subjective goal completion. Evidence: 692 tests; 47 parity scenes; 97 packaged files and native helpers verified. Actual native goal runs remain host-blocked; controller tests use injected runtimes and real local check processes.
+
+Feature 9 delivered: independent correctness/test/investigator chats with source and checkout revision contracts, matching managed-worktree selection, Ask for approval, standard per-run limits, three review slots per parent, partial reported usage aggregation, owned-review cancellation and recursion refusal in app orchestration. Structured evidence is validated and added only to an empty parent draft after explicit integration and fresh revision checks. No automatic patching, sending, or read-only filesystem claim. Evidence: 695 tests; 50 shared preview/desktop parity scenes; package verified. Native review execution remains conditional on the same blocked host, covered here with injected runtimes.

@@ -1,3 +1,4 @@
+import {reviewPrompt,parseReview} from '../shared/reviewer-contracts.mjs';
 import {newGoalDriver,goalDecision,pauseGoalDriver} from '../shared/goal-driver.mjs';
 import {createExecutionLedger} from './execution-ledger.mjs';
 import {proposeLesson,decideLesson} from '../shared/project-lessons.mjs';
@@ -8,7 +9,7 @@ import {createOutputStore} from './output-artifacts.mjs';
 import {validateCheckScripts,missingChecks,checkDiagnostics} from '../shared/validation.mjs';
 import {createHistoryStore} from './chat-history.mjs';
 import {restoreSkillReceipts} from '../shared/skill-receipts.mjs';
-import {restoreUsage} from '../shared/native-usage.mjs';
+import {restoreUsage,combineUsage} from '../shared/native-usage.mjs';
 import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
 import {handoffText} from '../shared/context-handoff.mjs';
 import {restoreNativeSession,prepareNativeSession,settleNativeSession} from '../shared/native-session.mjs';
@@ -189,7 +190,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(other.some(c=>{const root=state.projects.find(p=>p.id===c.task?.projectId)?.root;return root&&(inside(root,project.root)||inside(project.root,root));}))throw Error('Another chat is using this checkout. Wait for it to stop, or create an isolated worktree.');
   };
   const summaries=()=>[...taskRecords.values()].reverse().filter(t=>state.projects.some(p=>p.id===t.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(t=>({id:t.id,projectId:t.projectId,title:t.title,mode:t.mode,createdAt:t.createdAt,updatedAt:t.updatedAt,acceptedRevision:t.acceptedRevision,runtimeBusy:contextBusy(contexts.get(t.id)),runtimeStatus:contexts.get(t.id)?.runtime?.snapshot?.().status??null,pinned:t.pinned===true,archived:t.archived===true,archivedAt:t.archivedAt??null}));
-  const getState=()=>structuredClone({...state,task:state.task?{...state.task,executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries()});
+  const getState=()=>structuredClone({...state,task:state.task?{...state.task,reviewUsage:combineUsage((state.task.reviewChildren??[]).map(id=>taskRecords.get(id)?.nativeUsage??null)),executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries()});
   const saveTask=()=>{
     if(!state.task)return;history.sync(state.task);state.task.messages=state.task.messages.slice(-150);context.task=state.task;
     const previous=taskRecords.get(state.task.id);
@@ -610,6 +611,20 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       }
       case 'renameTask':{requireNavigationIdle();const t=requireTask();if(typeof action.title!=='string'||!action.title.trim()||action.title.length>100)throw Error('Use a chat name up to 100 characters.');t.title=action.title.trim();break;}
       case 'setMemories':{requireNavigationIdle();if(typeof action.text!=='string'||action.text.length>1500)throw Error('Memory instructions must be at most 1,500 characters.');state.memories=action.text.trim();break;}
+      case 'createReviewer':{
+        requireNavigationIdle();const parent=requireTask();if(action.parentTaskId!==parent.id)throw Error('Parent chat changed.');if(!runtimeFactory)throw Error('Independent review needs background runtime support.');if(parent.reviewContract)throw Error('Reviewer chats cannot recursively delegate.');if((parent.reviewChildren??[]).length>=3)throw Error('This parent has used its three review slots (up to 9 minutes / 24 steps).');if(checkProcess||contextBusy(context))throw Error('Finish the current work first.');
+        const project=state.activeProject,target=state.projects.find(p=>p.id===action.projectId);if(!target||target.id!==project.id&&target.worktree?.sourceRoot!==(project.worktree?.sourceRoot??project.root))throw Error('Choose this project or its managed worktree.');
+        const snap=await current(),input=await snapshot(target.root);if(input.revision!==snap.revision)throw Error('The review checkout does not match the source revision. Refresh the worktree or review this idle checkout.');const prompt=reviewPrompt({role:action.role,question:action.question,sourceRevision:snap.revision});
+        pauseGoalDriver(parent.goal?.driver,'Independent review started');parent.queuePaused=true;parent.queueHold=!!parent.promptQueue?.length;saveRecord(parent);const contract={parentTaskId:parent.id,parentProjectId:project.id,sourceRevision:snap.revision,inputRevision:input.revision,role:action.role,question:action.question,budget:'standard',createdAt:now()};
+        if(target.id!==project.id)await selectProject(target,null);await startTask('Review · '+action.question,'muse',{...restoreRunOptions(parent.runOptions),approval:'ask',budget:'standard'});const reviewer=state.task;reviewer.reviewContract=contract;parent.reviewChildren=[...(parent.reviewChildren??[]),reviewer.id];saveRecord(parent);saveRecord(reviewer);await sendToTask({type:'sendMessage',text:prompt});break;
+      }
+      case 'integrateReview':{
+        requireNavigationIdle();const child=requireTask(),contract=child.reviewContract;if(!contract||action.taskId!==child.id)throw Error('Review chat changed.');if(!child.runtimeComplete||executions.list(child.id)[0]?.result!=='completed')throw Error('Wait for a confirmed reviewer result.');const parent=taskRecords.get(contract.parentTaskId),project=state.projects.find(p=>p.id===contract.parentProjectId);if(!parent||!project||parent.archived)throw Error('Parent chat is unavailable.');if(contextBusy(contexts.get(parent.id)))throw Error('Wait for the parent run to finish.');if((await snapshot(project.root)).revision!==contract.sourceRevision||(await current()).revision!==contract.inputRevision)throw Error('Review is stale: source or review files changed. Start a fresh review.');
+        const answer=child.messages.findLast(m=>m.role==='assistant');if(answer?.contextTruncated)throw Error('Review output was shortened. Ask for a smaller structured report.');const report=parseReview(answer?.text);const key=draftKey(project.id,parent.id);if(state.drafts[key]?.text)throw Error('The parent already has a draft. Save or send it before integrating this review.');const reviewText=`Independent ${contract.role} findings from chat ${child.id}, revision ${contract.sourceRevision}. Review these claims before applying changes.\n\n${JSON.stringify(report,null,2)}`;if(reviewText.length>16000)throw Error('Review is too large for a draft. Ask for a shorter structured report.');state.drafts[key]={text:reviewText,files:[],images:[],mode:'chat',updatedAt:now()};contract.integratedAt=now();saveRecord(child);await selectProject(project,parent.id);break;
+      }
+      case 'cancelReviewers':{
+        const parent=requireTask();for(const id of parent.reviewChildren??[]){const child=contexts.get(id);if(child?.pending)await child.runtime?.disconnect?.();}break;
+      }
       case 'continueGoal':{
         requireNavigationIdle();const t=requireTask();if(!t.goal?.objective||t.mode!=='muse')throw Error('Save a goal in a Muse chat first.');if(contextBusy(context)||checkProcess||t.promptQueue?.length)throw Error('Finish active work and queued prompts first.');validateCheckScripts(state.activeProject.validationScripts);t.goal.driver=newGoalDriver(action);t.goal.status='active';saveRecord(t);const owner=context,ticket=t.goal.driver.id;clearTimeout(owner.goalDeadline);owner.goalDeadline=setTimeout(async()=>{const d=owner.task?.goal?.driver;if(closing||closed||!d?.armed||d.id!==ticket)return;pauseGoalDriver(d,'Time budget reached');saveRecord(owner.task);try{if(owner===selectedContext())await cancelCheck();if(owner.pending)await owner.runtime?.disconnect?.();}catch(error){d.reason+='; cleanup needs review: '+error.message;}if(!closed){saveRecord(owner.task);emit();}},action.minutes*60000);owner.goalDeadline.unref?.();scheduleGoal(context);break;
       }
