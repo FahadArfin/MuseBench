@@ -30,6 +30,11 @@ try{
  for(let i=0;i<100;i++){if(await desktopPage.evaluate(()=>!!document.querySelector('button[aria-label="Profile menu"]')))break;await desktopPage.waitForTimeout(100);}
  const measure=page=>page.evaluate(()=>[...document.querySelectorAll('#root button,#root input,#root textarea,#root h1,#root h2,#root .topbar,#root .sidebar,#root [role="dialog"]')].filter(element=>!element.closest('.personal-browser-slot')&&element.getBoundingClientRect().width>0&&element.getBoundingClientRect().height>0).map(element=>{const r=element.getBoundingClientRect(),s=getComputedStyle(element);return {tag:element.tagName,label:element.getAttribute('aria-label')||element.textContent?.trim(),class:element.className,box:[r.x,r.y,r.width,r.height].map(n=>Math.round(n*10)/10),font:s.font,color:s.color,background:s.backgroundColor,border:s.borderRadius};}));
  async function compare(name){
+  // Windows can clamp hidden native windows to the runner's physical display.
+  // Compare the same real content viewport, including narrow-window scenes.
+  const [width,height]=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getContentSize());
+  await browserPage.setViewportSize({width,height});
+  report.viewports??={};report.viewports[name]={width,height};
   // Wait for layout/motion, not requests to external services.
   await Promise.all([browserPage,desktopPage].map(page=>page.waitForTimeout(250)));
   for(const page of [browserPage,desktopPage]){
