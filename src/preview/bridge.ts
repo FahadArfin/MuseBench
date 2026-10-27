@@ -1,3 +1,4 @@
+import {validateHooks} from '../shared/native-hooks.mjs';
 import uiSkill from '../../templates/musebench-skills/musebench-ui-parity/SKILL.md?raw';
 import runtimeSkill from '../../templates/musebench-skills/musebench-runtime-check/SKILL.md?raw';
 import releaseSkill from '../../templates/musebench-skills/musebench-release-check/SKILL.md?raw';
@@ -100,6 +101,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const sites:SitesState={items:[site],activeId:null,site:null,files:[],versions:[],previewUrl:null,hosting:{connected:false,accountName:null,teams:[],teamId:null,oauthAvailable:false,authPending:false},busy:false,operation:null,error:null,notice:null,generation:null};
  const siteChannel=channel(()=>sites);
  function selectSite(key:string){sites.site=sites.items.find(i=>i.id===key)??site;sites.activeId=sites.site.id;sites.files=Object.entries(siteFiles).map(([path,text])=>({path,bytes:new TextEncoder().encode(text).length,sha1:'sample',mime:'text/html'}));sites.previewUrl=`data:text/html;charset=utf-8,${encodeURIComponent(siteFiles['index.html'])}`;}
+ const hookProjects=new Map<string,NonNullable<CustomizeState['hooks']>>();
  const customize:CustomizeState={available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only'}],plugins:[],servers:[]};
  const dictation={id:null,status:'idle' as const,available:false,language:null,text:'',error:'Microphone input is available in the desktop app.'};
  return {
@@ -165,6 +167,8 @@ export function createPreviewBridge():MuseBenchBridge {
    return siteChannel.emit();
   },
   customize:async command=>{
+   const hookRoot=state.activeProject?.root;if(hookRoot&&!hookProjects.has(hookRoot))hookProjects.set(hookRoot,{root:hookRoot,revision:'preview-hooks',items:[]});customize.hooks=hookRoot?hookProjects.get(hookRoot):null;
+   if(command.type==='saveHooks'){if(command.root!==state.activeProject?.root||command.revision!==customize.hooks?.revision||!command.reviewed)throw Error('Project hooks changed. Refresh and review again.');customize.hooks={root:command.root,revision:id(),items:validateHooks(command.hooks)};hookProjects.set(command.root,customize.hooks);return{state:copy(customize),message:'Sample project hooks saved. No commands run in preview.'};}
    if(['reviewProject','approveProject','revokeProject'].includes(command.type))return {state:copy(customize),projectReview:{root:state.activeProject?.root??project.root,fingerprint:'Preview sample',reviewed:command.type==='approveProject',files:[{path:'AGENTS.md',text:'Preview sample: keep shared desktop and browser controls in sync.'}]}};
    if(command.type==='preparePackSkill'){
     const item=MUSEBENCH_SKILL_PACK.find(item=>item.id===command.id);if(!item)throw Error('Unknown skill.');

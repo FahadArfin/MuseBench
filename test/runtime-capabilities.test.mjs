@@ -6,8 +6,8 @@ test('capability report requires verified connection and never treats observed o
  assert.equal(get({transport:'exec',durableSessions:true},'sessions').status,'disconnected');
  const ready={transport:'exec',status:'idle',permissionVerified:true,durableSessions:true,shellEnabled:true};
  assert.equal(get(ready,'sessions').status,'available');
- assert.equal(get(ready,'images').status,'available');assert.equal(get(ready,'modelSelection').status,'available');
- for(const id of ['steering','questions','childControls','compaction','web','hooks']){assert.equal(get(ready,id).status,'unavailable');assert.ok(get(ready,id).reason);}
+ assert.equal(get(ready,'hooks').status,'available');assert.equal(get(ready,'images').status,'available');assert.equal(get(ready,'modelSelection').status,'available');
+ for(const id of ['steering','questions','childControls','compaction','web']){assert.equal(get(ready,id).status,'unavailable');assert.ok(get(ready,id).reason);}
  assert.equal(get({...ready,permissionVerified:false},'shell').status,'disconnected');
  assert.equal(get({...ready,durableSessions:false},'sessions').status,'unavailable');
 });

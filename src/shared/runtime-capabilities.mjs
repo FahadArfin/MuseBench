@@ -14,6 +14,6 @@ export function runtimeCapabilities(runtime={}) {
   row('compaction','Native context compaction',false,'Local context trimming does not compact the native session.'),
   row('modelSelection','Model selection',exec,'This connection uses the Muse provider default model.'),
   row('web','Native web tools',false,'Native web_fetch stalled in headless validation; web tools remain disabled.'),
-  row('hooks','Native hooks',false,'Hooks are disabled in the current execution profile.'),
+  row('hooks','Reviewed project hooks',exec,'Reviewed app-owned hooks require the native exec connection.'),
  ];
 }

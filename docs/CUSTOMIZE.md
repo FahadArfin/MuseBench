@@ -28,3 +28,12 @@ Capabilities were checked against installed Muse 1.4.13-R6996.1 `skills --help`,
 - All native smoke tests use a disposable profile. No real account configuration, provider prompt or remote OAuth login was used.
 - Electron UI coverage includes four tabs, real installation through the file picker, skill creation, MCP consent and persistence, keyboard navigation, light/dark themes and 390px layout.
 - Existing slash, Settings and sidebar/navigation UI checks passed. Packaged verification and screenshots are recorded under artifacts/customize-ui and artifacts/personal-package-verification.json.
+
+
+## Reviewed project hooks
+
+Customize > Hooks stores project-specific commands in MuseBench, separate from native global/managed/project hook files. Before saving, review each command and its referenced scripts and accept Windows-account access: hooks run outside the agent tool sandbox and approval flow. Never include credentials. Each save is bound to the current project and configuration revision; changes reset the consent checkbox, and running or unresolved tasks block editing.
+
+The supported events are UserPromptSubmit (Before prompt) and Stop (Before finish). Up to six one-line commands are allowed, each with a 1–30 second native timeout. Disable or remove a row and save to revoke it for future Code runs. Timeouts/failures can allow a turn to continue, and native process cleanup can take longer than the hook timeout. Stop Muse cancels the entire owned process tree. Hooks are not a security boundary. Async, approval-grant, global and managed configuration are not enabled by this feature.
+
+The browser preview uses the same editor and simulates saving; it never executes a hook. Native echo-provider probes confirmed both events, global-hook exclusion by per-run configuration, timeout behavior, and cancellation with confirmed process cleanup. No model request was made by these probes. [Native hook behavior](https://meta-models.github.io/muse-code-sdk/next/guides/extend/hooks/).

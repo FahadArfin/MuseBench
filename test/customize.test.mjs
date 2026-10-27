@@ -8,6 +8,13 @@ const api=await import('../electron/customize.mjs').catch(()=>({}));
 const policy=await import('../src/runtime/extension-review.mjs').catch(()=>({}));
 import {customizeBlocked} from '../src/shared/customize-policy.mjs';
 test('Customize exposes its finite setup service',()=>assert.equal(typeof api.createCustomize,'function'));
+test('hook setup requires explicit review, current project revision and no active task',async()=>{
+ const f=await fixture();let active=false;const service=api.createCustomize({getState:()=>({activeProject:{root:f.root},runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,isActive:()=>active,run:async()=>({stdout:'{"skills":[],"plugins":[]}'})});
+ const before=(await service.snapshot()).hooks,command={type:'saveHooks',root:before.root,revision:before.revision,hooks:[{id:'check',event:'Stop',command:'echo checked',timeout:2,enabled:true}]};
+ await assert.rejects(service.dispatch(command),/review/i);await assert.rejects(service.dispatch({...command,reviewed:true,root:'another'}),/project changed/);
+ active=true;await assert.rejects(service.dispatch({...command,reviewed:true}),/running task/);active=false;
+ const result=await service.dispatch({...command,reviewed:true});assert.deepEqual(result.state.hooks.items,command.hooks);await assert.rejects(service.dispatch({...command,reviewed:true}),/changed/);await service.close();
+});
 async function fixture(){
  const root=await mkdtemp(path.join(tmpdir(),'musebench-customize-'));
  const profile=path.join(root,'profile'),dataDir=path.join(root,'app');

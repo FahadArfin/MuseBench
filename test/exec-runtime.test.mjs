@@ -27,6 +27,15 @@ test('reasoning and approval selections reach each native run without disabling 
   assert(argv.includes('--disable-web-tools'));assert(argv.includes('hooks={}'));
  }
 });
+
+test('reviewed project hooks reach only model runs, with native sandbox and global-hook exclusion retained',async t=>{
+ const hooks={UserPromptSubmit:[{hooks:[{type:'command',commandWindows:'echo reviewed',timeout:3}]}]};let root;
+ const h=await harness(t,{extensionReview:{allowProject:async()=>false,nativeHooks:async value=>{root=value;return hooks;}}});await h.connect();assert.ok(h.calls.at(-1).args.includes('hooks={}'));
+ await h.runtime.send({text:'Go'});assert.equal(root,h.root);assert.ok(h.runtime.snapshot().permissionArguments.includes('hooks='+JSON.stringify(hooks)));const args=h.calls.at(-1).args;assert.ok(args.includes('hooks='+JSON.stringify(hooks)));assert.ok(args.includes('managed_hooks_path=null'));assert.ok(!args.includes('--disable-sandbox'));assert.ok(!args.includes('--trust-workspace'));
+});
+test('unreadable project hooks block preflight without leaving a phantom running task',async t=>{
+ const h=await harness(t,{extensionReview:{allowProject:async()=>false,nativeHooks:async()=>{throw Error('Project hook review is unreadable');}}});await h.connect();await assert.rejects(h.runtime.send({text:'Go'}),/unreadable/);assert.equal(h.runtime.snapshot().status,'blocked');assert.equal(h.runtime.snapshot().permissionVerified,false);assert.equal(h.calls.some(c=>c.args.includes('meta')),false);
+});
 test('invalid run options are rejected before any native request starts',async t=>{
  const h=await harness(t);await h.connect();const count=h.calls.length;
  for(const runOptions of [{reasoning:'invented',approval:'ask'},{reasoning:'high',approval:'unrestricted'},{reasoning:'high',approval:'ask',sandbox:false}])await assert.rejects(h.runtime.send({text:'Explain',runOptions}),/option|reasoning|approval/i);
