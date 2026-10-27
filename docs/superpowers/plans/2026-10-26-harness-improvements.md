@@ -1,5 +1,7 @@
 # Open-source harness improvements delivery
 
+> Later native-control delivery and retries supersede the historical blocker notes below. See [current remaining inventory](../../REMAINING-FEATURES-2026-10-26.md).
+
 Approved scope: implement the unblocked recommendations in `docs/OPEN-SOURCE-HARNESS-COMPARISON-2026-10-26.md`, with a tested commit and GitHub push per feature. Native-host limitations do not block app-owned work.
 
 Architecture: retain Electron, SQLite, the controller, and shared React UI. Browser preview implements the same typed bridge with explicitly simulated data. Do not replace Muse, assume unsupported native controls, or represent simulations as execution evidence.

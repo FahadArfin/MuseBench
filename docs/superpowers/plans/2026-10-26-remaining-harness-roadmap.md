@@ -1,5 +1,7 @@
 # Remaining harness roadmap implementation plan
 
+> Historical execution ledger. See [current remaining inventory](../../REMAINING-FEATURES-2026-10-26.md) for delivered native controls and latest retry evidence; unchecked original milestones are not a current blocker list.
+
 > Use superpowers:executing-plans to implement and verify each feature, then push its commit.
 
 **Goal:** Complete the remaining approved research roadmap with functional controls, shared desktop/preview UI, and explicit native capability boundaries.

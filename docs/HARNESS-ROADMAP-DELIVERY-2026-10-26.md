@@ -1,5 +1,7 @@
 # Harness roadmap delivery — 26 October 2026
 
+> Historical delivery snapshot. For current blockers and successful retries, see [Remaining features and retry results](REMAINING-FEATURES-2026-10-26.md). Interactive steering/compaction, child messaging/interruption, Full-access web, and native questions have since shipped.
+
 Implementation is delivered through `661f4fd`. The roadmap is **not fully complete**: Windows interactive-host and native web execution blockers remain. The first four features (screenshots, skill discovery, worktree creation and persistent sessions) preceded this batch.
 
 ## Delivered and pushed feature by feature
