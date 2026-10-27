@@ -51,3 +51,16 @@ Local package/install receipts are `artifacts/personal-package-verification.json
 No sandbox bypass, QA-only workflow execution, invented child controls or fake completion receipt is enabled. App workflow queues and context handoffs remain useful but do not claim to be native parallel orchestration or peer messaging. Broad native saved trust and arbitrary managed/project hook configuration remain excluded; the delivered project trust and app-owned hooks are explicit, narrower paths.
 
 Relevant upstream references: [Windows interactive-host issue 107](https://github.com/meta-models/muse-code-sdk/issues/107), [hook execution rules](https://meta-models.github.io/muse-code-sdk/next/guides/extend/hooks/), and [workflow child controls](https://meta-models.github.io/muse-code-sdk/next/generated/msp/methods/workflow-childcontrol/).
+
+## Native blocker revalidation — 26 October, 8:20 PM Eastern
+
+Rechecked against source commit `8354aa5`; no product capability was enabled by this revalidation.
+
+- The npm registry still advertises SDK `1.4.13` as latest. The installed native executable remains `1.4.13-R6996.1`, SHA-256 `239c993cedc3768a99103a90b2f7e3d560375036104980e30227ffebf9de0303`.
+- At `2026-10-27T00:18:19Z`, the sessionless host probe again found every Windows sandbox readiness flag true, but MSP initialization returned `sandboxAvailability: unavailable` and no reason. Schema compatibility matched; host shutdown was confirmed. This probe made no model request and created no session.
+- Upstream issue 107 remains open. Its only comment corroborates the mismatch on an earlier release; no supported remedy is posted there. The current release notes do not establish that this Windows host problem is fixed.
+- A separate real-model probe began at `2026-10-27T00:19:38Z` in a disposable workspace outside the user profile. It requested one `web_fetch` of `https://example.com`, retained Ask me and sandbox enforcement, and disabled shell and file writes. The native event stream recorded `tool:web_fetch` with `allow:self_mediated_network_approval`, but no answer arrived before the 60-second run deadline. The adapter reported an uncertain outcome; cancellation cleanup and subsequent disconnect cleanup were both confirmed.
+
+The web probe enabled web only for its owned diagnostic child; the production adapter still disables it. This evidence supports keeping native web unavailable, not changing the sandbox or retrying possible effects blindly. Native steering, interactive requests, compaction and child controls still need a working supported interactive host before end-to-end acceptance can pass.
+
+Local receipts: `artifacts/muse-install/verification.json`, `artifacts/roadmap-revalidation/web.json`, and the isolated probe source `artifacts/recheck-native-web.mjs`. These contain machine-specific diagnostic evidence and remain ignored. No feature completion, desktop release or new parity result is claimed in this revalidation.
