@@ -705,7 +705,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'setExecutionAccess':{
         requireNavigationIdle();const t=requireTask();if(action.taskId!==t.id)throw Error('The active chat changed.');if(typeof action.fullAccess!=='boolean')throw Error('Full access must be explicitly selected.');if(!runtime||!state.activeProject)throw Error('Open a project and connect Muse first.');
         const previous=runtime.snapshot();if(previous.permissionVerified&&previous.fullAccess===action.fullAccess)break;
-        const transport=action.fullAccess&&previous.transport==='msp'?'msp':'exec',binary=previous.binary??preferredBinary??undefined;
+        const transport=action.fullAccess&&previous.transport==='msp'?'msp':'exec',binary=(previous.permissionVerified?previous.binary:preferredBinary)??previous.binary??undefined;
         await runtime.disconnect();await runtime.connect({binary,workspaceRoot:state.activeProject.root,transport,fullAccess:action.fullAccess});context.root=state.activeProject.root;state.runtime=runtime.snapshot();break;
       }
       case 'connectMuse':if(!state.activeProject)throw Error('Open a project first.');if(!runtime)throw Error('Muse runtime unavailable in this installation.');await runtime.connect({binary:action.binary,workspaceRoot:state.activeProject.root,fullAccess:action.fullAccess,transport:action.transport});context.root=state.activeProject.root;preferredBinary=runtime.snapshot().binary??preferredBinary;state.runtime=runtime.snapshot();break;

@@ -292,3 +292,10 @@ test('execution access accepts only an explicit boolean and task identity',()=>{
  assert.throws(()=>validateAction({type:'setExecutionAccess',fullAccess:true}));
  assert.equal(validateAction({type:'setExecutionAccess',taskId:'t',fullAccess:true}).fullAccess,true);
 });
+test('composer access keeps the selected executable across fresh chat runtimes',async t=>{
+ const {c,runtime,runtimes}=await fixture(t,{background:true});await start(c);
+ runtime.emit({binary:'C:/trusted/muse.exe'});await c.dispatch({type:'connectMuse',binary:'C:/trusted/muse.exe'});
+ const taskId=await start(c),fresh=runtimes.at(-1);fresh.emit({binary:'C:/old-path/muse.exe',permissionVerified:false});
+ let input;fresh.connect=async value=>{input=value;fresh.emit({status:'idle',permissionVerified:true,binary:value.binary,fullAccess:value.fullAccess});};
+ const result=await c.dispatch({type:'setExecutionAccess',taskId,fullAccess:false});assert.equal(result.error,null);assert.equal(input.binary,'C:/trusted/muse.exe');
+});
