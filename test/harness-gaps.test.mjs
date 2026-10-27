@@ -253,8 +253,8 @@ test('steering preserves the active run and draft on rejection, then records adm
  const projectId=c.getState().activeProject.id;await c.dispatch({type:'saveDraft',projectId,taskId,text:'Correction'});let s=await c.dispatch({type:'steerMessage',taskId,expectedTurnId:'turn-active',text:'Correction'});assert.match(s.error,/Stale/);assert.equal(s.drafts[`${projectId}:${taskId}`].text,'Correction');s=await c.dispatch({type:'steerMessage',taskId,expectedTurnId:'turn-active',text:'Correction'});assert.equal(s.error,null);assert.equal(s.task.runs.length,1);assert.equal(s.task.messages.at(-1).text,'Correction');assert.equal(runtime.sent.length,1);
 });
 
-test('switching to interactive retires the old exec session and replays history once',async t=>{
- const {c,runtime}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'First session context'});runtime.finish('Keep this answer.');runtime.emit({transport:'msp',sessionSeeded:false});await c.dispatch({type:'sendMessage',text:'Interactive follow-up'});assert.match(runtime.sent.at(-1).text,/Keep this answer/);assert.equal(c.getState().task.nativeSession,null);runtime.finish('Interactive answer');runtime.emit({sessionSeeded:true});await c.dispatch({type:'sendMessage',text:'One more'});assert.doesNotMatch(runtime.sent.at(-1).text,/Interactive answer/);assert.match(runtime.sent.at(-1).text,/existing native session/);
+test('legacy non-durable interactive connection seeds app history once',async t=>{
+ const {c,runtime}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'First session context'});runtime.finish('Keep this answer.');runtime.emit({transport:'msp',sessionSeeded:false});await c.dispatch({type:'sendMessage',text:'Interactive follow-up'});assert.match(runtime.sent.at(-1).text,/Keep this answer/);assert.equal(c.getState().task.nativeSession??null,null);runtime.emit({rootTurnId:'legacy-root',turnId:'legacy-root',inputAccepted:true,status:'running'});runtime.finish('Interactive answer');runtime.emit({sessionSeeded:true});await c.dispatch({type:'sendMessage',text:'One more'});assert.doesNotMatch(runtime.sent.at(-1).text,/Interactive answer/);assert.match(runtime.sent.at(-1).text,/existing native session/);
 });
 
 test('uncertain steering preserves a durable receipt and draft without inventing a user turn',async t=>{
@@ -305,7 +305,7 @@ test('composer access keeps the selected executable across fresh chat runtimes',
 });
 test('native question pauses retain run attribution through the answer and completion',async t=>{
  const {c,runtime}=await fixture(t);const taskId=await start(c);await c.dispatch({type:'sendMessage',text:'Ask me a question'});const runId=c.getState().task.runs[0].id;
- runtime.emit({transport:'msp',sessionId:'s',permissionVerified:true,status:'blocked',pending:{kind:'input',sessionId:'s'}});
+ runtime.emit({transport:'msp',sessionId:'s',rootTurnId:runtime.snapshot().runId,permissionVerified:true,status:'blocked',pending:{kind:'input',sessionId:'s'}});
  assert.equal(c.getState().task.runs[0].id,runId);runtime.answerInput=async()=>runtime.emit({status:'running',pending:null});
  assert.match((await c.dispatch({type:'answerInput',taskId:'wrong'})).error,/another chat/);
  assert.equal((await c.dispatch({type:'answerInput',taskId})).error,null);runtime.finish('Your answer was applied');

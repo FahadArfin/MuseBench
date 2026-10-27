@@ -20,3 +20,11 @@ test('preview and legacy MSP capabilities describe actual adapter boundaries',()
  assert.equal(get(msp,'steering').status,'unavailable');
  assert.equal(get({status:'idle'},'sessions').status,'unavailable');
 });
+test('native MSP capabilities require explicit adapter support and verified permissions',()=>{
+ const state={transport:'msp',status:'idle',permissionVerified:true,durableSessions:true,imagesSupported:true,modelsSupported:true,hooksSupported:true,workspaceTools:true};
+ for(const id of ['sessions','images','modelSelection','hooks','workspaceTools']){
+  assert.equal(get(state,id).status,'available');
+  assert.equal(get({...state,permissionVerified:false},id).status,'disconnected');
+ }
+ assert.equal(get({...state,workspaceTools:false},'workspaceTools').status,'unavailable');
+});

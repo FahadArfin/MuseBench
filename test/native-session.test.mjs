@@ -9,3 +9,13 @@ test('native session migration seeds history once and never crosses roots or int
  const interrupted=restoreNativeSession(next.session);assert.equal(interrupted.status,'needs-recovery');assert.throws(()=>prepareNativeSession(interrupted,'C:\\project'),/Session/);
  const wrong=settleNativeSession(first.session,{status:'completed',cleanup:'confirmed',nativeSessionId:'wrong'},true);assert.equal(wrong.status,'needs-recovery');assert.equal(wrong.seeded,false);
 });
+test('MSP identity and access survive restore and cannot migrate to a different root, transport or host session',()=>{
+ const value={id:'native-session-owned',root:'C:\\project',transport:'msp',seeded:true,status:'ready',fullAccess:true,workspaceTools:true};
+ assert.deepEqual(restoreNativeSession(value),value);
+ const connection={transport:'msp',nativeSessionId:value.id};
+ assert.equal(prepareNativeSession(value,value.root,connection).history,false);
+ assert.throws(()=>prepareNativeSession(value,'C:\\another-project',connection),/folder/);
+ assert.throws(()=>prepareNativeSession(value,value.root,{transport:'exec'}),/transport/);
+ assert.throws(()=>prepareNativeSession(value,value.root,{...connection,nativeSessionId:'foreign-session'}),/changed/);
+ assert.throws(()=>prepareNativeSession(null,value.root,{transport:'msp'}),/changed/);
+});

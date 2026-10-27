@@ -24,3 +24,30 @@ test('observer disconnect during startup prevents session/start',async()=>{const
 test('observer disconnect during submission prevents turn/start',async()=>{const {adapter:a,port:p}=await setup();a.subscribe(s=>{if(s.status==='submitting')a.disconnect('controller-disconnected');});await assert.rejects(a.send({text:'hello'}));assert.equal(p.calls.length,1);});
 test('conflicting terminal outcome cannot turn failure into completion',async()=>{const {adapter:a,port:p}=await setup();await a.send({text:'hello'});const f=event('turn/completed');f.params.terminal='failed';p.emit(f);f.params.viewCursor='different-opaque-cursor';f.params.terminal='completed';p.emit(f);assert.equal(a.snapshot().status,'unavailable');assert.equal(a.snapshot().reason,'conflicting-terminal');});
 test('command id mint failure becomes unavailable without issuing a turn',async()=>{const {adapter:a,port:p}=await setup();p.mintCommandId=()=>{throw Error('id generation failed');};await assert.rejects(a.send({text:'hello'}));assert.equal(a.snapshot().status,'unavailable');assert.equal(a.snapshot().reason,'command-id-unavailable');assert.equal(p.calls.length,1);});
+
+function restoreResult(patch={}){return {session:{...sessionResult.session,activeTurnId:null,turnCount:1},viewCursor:'',pendingRequests:[],history:{mode:'inline',items:[{itemId:'old',kind:'agentMessage',turnId:'old-turn',text:'Retained answer',revision:1,status:'completed'}],snapshot:null},...patch};}
+test('native restore uses the exact session and preserves history without submitting it',async()=>{
+ const p=new FixturePort(),a=new MuseSessionAdapter({connection:p,...descriptor()});p.command=async(method,params,options)=>{p.calls.push({method,params,options});return restoreResult();};
+ await a.open(root,{sessionId:sessionResult.session.sessionId});assert.equal(p.calls[0].method,'session/resume');assert.equal(p.calls[0].params.sessionId,sessionResult.session.sessionId);assert.equal(p.calls[0].options.maxAttempts,1);assert.equal(a.snapshot().restoration.status,'restored');assert.equal(a.snapshot().restoration.viewCursor,'');assert.equal(a.snapshot().restoredMessages[0].text,'Retained answer');assert.deepEqual(a.snapshot().messages,[]);assert.equal(p.calls.length,1);
+});
+test('native restore refuses identity mismatch, missing history and unsupported snapshots',async()=>{
+ for(const patch of [{session:{...sessionResult.session,sessionId:'other'}},{history:{mode:'none',noneReason:'projectionUnavailable',items:null,snapshot:null}},{history:{mode:'snapshot',items:null,snapshot:{schemaVersion:99,state:{items:[]}}}}]){
+  const p=new FixturePort(),a=new MuseSessionAdapter({connection:p,...descriptor()});p.command=async()=>restoreResult(patch);await assert.rejects(a.open(root,{sessionId:sessionResult.session.sessionId}));assert.equal(a.snapshot().status,'uncertain');
+ }
+});
+test('native restore recovers an active turn and folds its later completion',async()=>{
+ const p=new FixturePort(),a=new MuseSessionAdapter({connection:p,...descriptor()});p.command=async()=>restoreResult({session:{...sessionResult.session,status:'running',activeTurnId:turnAck.turnId,turnCount:1}});
+ await a.open(root,{sessionId:sessionResult.session.sessionId});assert.equal(a.snapshot().status,'running');assert.equal(a.snapshot().turnId,turnAck.turnId);p.emit(event('turn/completed'));assert.equal(a.snapshot().status,'completed');
+});
+test('native restore cannot reattach ephemeral sessions',async()=>{
+ const p=new FixturePort(),d=descriptor();d.initializeResult.sessionDurability='ephemeral';const a=new MuseSessionAdapter({connection:p,...d});await assert.rejects(a.open(root,{sessionId:sessionResult.session.sessionId}),/durab|ephemeral/i);assert.equal(p.calls.length,0);
+});
+
+test('restored native queue blocks new input and adopts only its observed queued turn',async()=>{
+ const p=new FixturePort(),a=new MuseSessionAdapter({connection:p,...descriptor()});p.command=async()=>restoreResult({history:{mode:'snapshot',snapshot:{schemaVersion:1,viewCursor:'',state:{items:[],queuedTurns:[{turnId:'native-queued'}],activeTurn:null}}}});
+ await a.open(root,{sessionId:sessionResult.session.sessionId});await assert.rejects(a.send({text:'Do not overlap'}),/queued/);assert.equal(a.snapshot().status,'idle');
+ p.emit({method:'turn/started',params:{sessionId:sessionResult.session.sessionId,turnId:'native-queued',commandId:'existing-queue-command',viewCursor:'queued-start'}});assert.equal(a.snapshot().status,'running');assert.equal(a.snapshot().rootTurnId,'native-queued');assert.deepEqual(a.snapshot().restoration.queuedTurnIds,[]);
+});
+test('adapter transports ordered validated image parts and rejects invalid payloads before dispatch',async()=>{
+ const {adapter:a,port:p}=await setup();const picture={type:'image',mediaType:'image/png',base64Data:Buffer.from('png bytes').toString('base64')};await assert.rejects(a.send({text:'Describe',images:[{...picture,base64Data:'!'}]}),/image/i);assert.equal(p.calls.length,1);await a.send({text:'Describe',images:[picture]});assert.deepEqual(p.calls[1].params.input,[{type:'text',text:'Describe'},picture]);
+});

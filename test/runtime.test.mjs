@@ -43,12 +43,12 @@ async function harness(t,options={}) {
  await writeFile(binary,'not executable: process boundary is injected');
  t.after(()=>rm(root,{recursive:true,force:true}));
  const calls=[]; let notification=()=>{}, serverRequest=()=>{}, resolveExit;
- const session=()=>({sessionId:'session-one',workspaceRoot:root,status:'idle',approvalMode:{mode:'onRequest',source:'sessionOverride',lastCommandId:null},permissionState:permissions()});
+ const session=()=>({sessionId:'session-one',workspaceRoot:root,status:'idle',activeTurnId:null,turnCount:0,providerId:'meta',modelId:'muse-spark-1.2',approvalMode:{mode:'onRequest',source:'sessionOverride',lastCommandId:null},permissionState:permissions()});
  const host={initializeResult:{serverInfo:{name:'muse-session-server',version:'1.4.13'},schema:{version:1,fingerprint:pin},sandboxAvailability:'available',experimentalApi:true},exited:new Promise(resolve=>{resolveExit=resolve;}),close:async()=>{calls.push({method:'close'});return {code:0,signal:null};}};
  host.connection={
   mintCommandId:()=> '0198f0ab-9999-7000-8000-000000000001',
   onNotification:fn=>{notification=fn;},onServerRequest:fn=>{serverRequest=fn;},onProtocolError:()=>{},
-  request:async(method,params)=>{calls.push({method,params});if(method==='permissionProfile/list')return {profiles:[{profileId:':ask-me',label:'Ask me',available:true,reviewerAuthority:'human'}]};if(method==='session/read')return {session:session()};throw Error('Unexpected request '+method);},
+  request:async(method,params)=>{calls.push({method,params});if(method==='permissionProfile/list')return {profiles:[{profileId:':ask-me',label:'Ask me',available:true,reviewerAuthority:'human'}]};if(method==='model/list')return nativeCatalog();if(method==='session/read')return {session:session()};throw Error('Unexpected request '+method);},
   command:async(method,params,opts)=>{calls.push({method,params,opts});if(method==='session/start')return {session:session(),viewCursor:'start-1'};if(method==='turn/start')return {commandId:opts.commandId,status:'accepted',disposition:'started',startedNewTurn:true,turnId:'turn-one'};if(method==='approval/decide')return {terminal:true};throw Error('Unexpected command '+method);}
  };
  const sdk={EXPECTED_SCHEMA_FINGERPRINT:pin,spawnMspConnection:spec=>{calls.push({method:'spawn',spec});return {initialize:async params=>{calls.push({method:'initialize',params});return host;},close:host.close};}};
@@ -209,7 +209,7 @@ test('explicit connect verifies Ask me and explicit send streams the authoritati
 
 test('changed or missing permission proof prevents the next model turn',async t=>{
  const h=await harness(t);await h.connect();
- h.host.connection.request=async()=>({session:{...h.session(),permissionState:{...permissions(),axes:{...permissions().axes,filesystem:'unrestricted'}}}});
+ h.host.connection.request=async method=>method==='model/list'?nativeCatalog():({session:{...h.session(),permissionState:{...permissions(),axes:{...permissions().axes,filesystem:'unrestricted'}}}});
  await assert.rejects(h.runtime.send({text:'Change a file'}),/permission/i);
  assert.equal(h.runtime.snapshot().status,'blocked');assert.equal(h.calls.some(c=>c.method==='turn/start'),false);
 });
@@ -417,4 +417,61 @@ test('pending request collection bounds resource use without deciding requests',
  assert.equal(h.runtime.snapshot().pendingRequests.length,32);
  await h.request({method:'userInput/request',params:{...inputRequest(),userInputId:'overflow'}});
  assert.equal(h.runtime.snapshot().status,'unavailable');assert.equal(h.calls.some(c=>['approval/decide','userInput/answer'].includes(c.method)),false);
+});
+
+const restoredNative=(h,patch={})=>({session:{...h.session(),activeTurnId:null,turnCount:1,providerId:'meta',modelId:'muse-spark-1.2'},viewCursor:'restore-head',pendingRequests:[],history:{mode:'inline',items:[],snapshot:null},...patch});
+test('runtime restores a native session with no fresh start or history replay',async t=>{
+ const h=await harness(t);const original=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>{if(method==='session/resume'){h.calls.push({method,params,opts});return restoredNative(h);}return original(method,params,opts);};
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,sessionId:'session-one'});const s=h.runtime.snapshot();assert.equal(s.restoration.status,'restored');assert.equal(s.sessionSeeded,true);assert.equal(s.durableSessions,true);assert.equal(s.permissionVerified,true);assert.equal(h.calls.some(c=>c.method==='session/start'||c.method==='turn/start'),false);
+});
+test('runtime buffers independent resume requests until identity and permission verification',async t=>{
+ const h=await harness(t);h.host.connection.command=async(method)=>{assert.equal(method,'session/resume');for(const id of ['early-one','early-two'])await h.request({method:'userInput/request',params:{...inputRequest(),userInputId:id}});return restoredNative(h,{session:{...h.session(),status:'running',activeTurnId:'turn-one',turnCount:1,providerId:'meta',modelId:'muse-spark-1.2'},pendingRequests:['early-one','early-two'].map(userInputId=>({kind:'userInput',userInputId,viewCursor:'q'}))});};
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,sessionId:'session-one'});assert.equal(h.runtime.snapshot().status,'blocked');assert.deepEqual(h.runtime.snapshot().pendingRequests.map(p=>p.userInputId),['early-one','early-two']);assert.equal(h.runtime.snapshot().permissionVerified,true);assert.equal(h.calls.some(c=>c.method==='userInput/answer'),false);
+});
+test('restored question settlement before payload clears its pointer without resurrecting the request',async t=>{
+ const h=await harness(t);h.host.connection.command=async()=>{h.emit({method:'userInput/settled',params:{sessionId:'session-one',userInputId:'question-one',outcome:'timedOut'}});return restoredNative(h,{session:{...h.session(),status:'running',activeTurnId:'turn-one',turnCount:1},pendingRequests:[{kind:'userInput',userInputId:'question-one',viewCursor:'q'}]});};
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,sessionId:'session-one'});assert.equal(h.runtime.snapshot().status,'running');assert.equal(h.runtime.snapshot().pending,null);assert.equal(h.runtime.snapshot().inputResponse,null);await h.request({method:'userInput/request',params:inputRequest()});assert.equal(h.runtime.snapshot().status,'running');assert.deepEqual(h.runtime.snapshot().pendingRequests,[]);assert.equal(h.calls.some(c=>c.method==='userInput/answer'),false);
+});
+test('pending native restore exposes an explicit request reissue wait until settlement',async t=>{
+ const h=await harness(t);h.host.connection.command=async()=>restoredNative(h,{session:{...h.session(),status:'running',activeTurnId:'turn-one',turnCount:1},pendingRequests:[{kind:'userInput',userInputId:'question-one',viewCursor:'q'}]});
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,sessionId:'session-one'});assert.equal(h.runtime.snapshot().status,'blocked');assert.equal(h.runtime.snapshot().pending,null);assert.equal(h.runtime.snapshot().restoringRequests,1);assert.equal(h.runtime.snapshot().rootTurnId,'turn-one');h.emit({method:'userInput/settled',params:{sessionId:'session-one',userInputId:'question-one',outcome:'timedOut'}});assert.equal(h.runtime.snapshot().restoringRequests,0);assert.equal(h.runtime.snapshot().status,'running');
+});
+test('runtime rejects a restored session with missing model routing or wrong workspace',async t=>{
+ for(const change of [{modelId:null},{workspaceRoot:'wrong'}]){const h=await harness(t);h.host.connection.command=async()=>restoredNative(h,{session:{...restoredNative(h).session,...change}});await assert.rejects(h.runtime.connect({binary:h.binary,workspaceRoot:h.root,sessionId:'session-one'}));assert.equal(h.runtime.snapshot().permissionVerified,false);}
+});
+test('runtime reads screenshot bytes into native image input without trusting extensions',async t=>{
+ const h=await harness(t);await h.connect();const file=join(h.root,'image.png');await writeFile(file,Buffer.from('89504e470d0a1a0a00000000','hex'));await h.runtime.send({text:'Describe',imagePaths:[file]});const call=h.calls.find(c=>c.method==='turn/start');assert.equal(call.params.input[1].type,'image');assert.equal(call.params.input[1].mediaType,'image/png');assert.equal(call.params.input[1].base64Data,Buffer.from('89504e470d0a1a0a00000000','hex').toString('base64'));
+});
+test('runtime rejects malformed and aggregate oversized images before a native turn',async t=>{
+ for(const bytes of [Buffer.from('not an image'),Buffer.concat([Buffer.from('89504e470d0a1a0a','hex'),Buffer.alloc(7*1024*1024)])]){const h=await harness(t);await h.connect();const file=join(h.root,'image.png');await writeFile(file,bytes);await assert.rejects(h.runtime.send({text:'Describe',imagePaths:[file]}),/image|screenshot|MiB/i);assert.equal(h.calls.some(c=>c.method==='turn/start'),false);assert.equal(h.runtime.snapshot().status,'idle');}
+});
+const nativeCatalog=()=>({providerId:'meta',profileId:null,source:'bundledCatalog',models:[{providerId:'meta',profileId:null,modelId:'muse-spark-1.2',displayLabel:'Spark',variants:['low','high'],isDefault:true}]});
+test('runtime selects only a current native Meta model and verifies it before sending',async t=>{
+ const h=await harness(t);await h.connect();const request=h.host.connection.request,command=h.host.connection.command;let selected=false;h.host.connection.request=async(method,params)=>{if(method==='model/list')return nativeCatalog();if(method==='session/read')return {session:{...h.session(),providerId:'meta',modelId:selected?'muse-spark-1.2':'previous'}};return request(method,params);};h.host.connection.command=async(method,params,opts)=>{if(method==='session/setModel'){h.calls.push({method,params,opts});selected=true;return {commandId:opts.commandId,status:'accepted'};}return command(method,params,opts);};
+ await h.runtime.send({text:'Hello',runOptions:{reasoning:'low',approval:'ask',model:'muse-spark-1.2'}});assert.equal(h.runtime.snapshot().modelId,'muse-spark-1.2');assert.equal(h.calls.find(c=>c.method==='session/setModel').params.model.providerId,'meta');assert.equal(h.calls.filter(c=>c.method==='turn/start').length,1);
+});
+test('runtime refuses unlisted model or unconfirmed model change without a turn',async t=>{
+ for(const wrong of [false,true]){const h=await harness(t);await h.connect();const request=h.host.connection.request;h.host.connection.request=async(method,params)=>method==='model/list'?nativeCatalog():method==='session/read'?{session:{...h.session(),providerId:'meta',modelId:'previous'}}:request(method,params);h.host.connection.command=async(method,params,opts)=>{h.calls.push({method,params,opts});return {status:'accepted',commandId:opts.commandId};};await assert.rejects(h.runtime.send({text:'Hello',runOptions:{reasoning:'low',approval:'ask',model:wrong?'missing':'muse-spark-1.2'}}));assert.equal(h.calls.some(c=>c.method==='turn/start'),false);}
+});
+test('Provider default resets an earlier model selection using the current native catalog',async t=>{
+ const h=await harness(t);await h.connect();let selected='earlier-explicit';const request=h.host.connection.request,command=h.host.connection.command;
+ h.host.connection.request=async(method,params)=>method==='model/list'?nativeCatalog():method==='session/read'?{session:{...h.session(),modelId:selected}}:request(method,params);
+ h.host.connection.command=async(method,params,opts)=>{if(method==='session/setModel'){h.calls.push({method,params,opts});selected=params.model.modelId;return {commandId:opts.commandId,status:'accepted'};}return command(method,params,opts);};
+ await h.runtime.refreshModels();await h.runtime.send({text:'Use provider default',runOptions:{reasoning:'low',approval:'ask'}});assert.equal(h.calls.find(c=>c.method==='session/setModel')?.params.model.modelId,'muse-spark-1.2');assert.equal(h.runtime.snapshot().modelId,'muse-spark-1.2');assert.equal(h.calls.filter(c=>c.method==='turn/start').length,1);
+});
+test('Provider default resolves the native catalog again after reconnect clears it',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.disconnect();let selected='earlier-explicit';const request=h.host.connection.request,command=h.host.connection.command;
+ h.host.connection.request=async(method,params)=>method==='model/list'?nativeCatalog():method==='session/read'?{session:{...h.session(),modelId:selected}}:request(method,params);
+ h.host.connection.command=async(method,params,opts)=>{if(method==='session/resume')return restoredNative(h,{session:{...h.session(),modelId:selected}});if(method==='session/setModel'){h.calls.push({method,params,opts});selected=params.model.modelId;return {commandId:opts.commandId,status:'accepted'};}return command(method,params,opts);};
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,sessionId:'session-one'});assert.equal(h.runtime.snapshot().modelCatalog,undefined);await h.runtime.send({text:'Use provider default after reconnect',runOptions:{reasoning:'low',approval:'ask'}});assert.equal(selected,'muse-spark-1.2');assert.equal(h.calls.find(c=>c.method==='session/setModel')?.params.model.modelId,'muse-spark-1.2');assert.equal(h.calls.filter(c=>c.method==='turn/start').length,1);
+});
+test('workspace MCP is supplied by trusted factory only after the sessionMcp grant',async t=>{
+ for(const granted of [false,true]){const h=await harness(t,{workspaceMcp:root=>({transport:'stdio',command:'node',args:['gateway',root]})});h.host.initializeResult.grantedCapabilities=granted?['sessionMcp']:[];const operation=h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true});if(!granted){await assert.rejects(operation,/sessionMcp|capability/i);assert.equal(h.calls.some(c=>c.method==='session/start'),false);}else{await operation;assert.equal(h.calls.find(c=>c.method==='session/start').params.config.mcpServers.musebench_workspace.args.at(-1),h.root);}assert.deepEqual(h.calls.find(c=>c.method==='initialize').params.capabilities.requestedCapabilities,['sessionMcp']);}
+});
+test('startup permission projection is reconciled by read-back without treating it as a later policy change',async t=>{
+ const h=await harness(t),command=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>{if(method==='session/start')h.emit({method:'session/approvalModeChanged',params:{sessionId:'session-one',viewCursor:'startup-mode',mode:'onRequest',commandId:opts.commandId}});return command(method,params,opts);};await h.connect();assert.equal(h.runtime.snapshot().status,'idle');assert.equal(h.runtime.snapshot().permissionVerified,true);assert.ok(h.calls.some(c=>c.method==='session/read'));
+});
+test('interactive host receives only the project-bound reviewed hooks and trust decision',async t=>{
+ const hooks={UserPromptSubmit:[{hooks:[{type:'command',commandWindows:'Write-Output reviewed',timeout:2}]}]};let reviewedRoot;
+ const h=await harness(t,{extensionReview:{allowProject:async root=>{reviewedRoot=root;return true;},nativeHooks:async root=>{assert.equal(root,reviewedRoot);return hooks;}}});await h.connect();const args=h.calls.find(c=>c.method==='spawn').spec.args;assert.ok(args.includes('--trust-workspace'));assert.ok(args.includes('hooks='+JSON.stringify(hooks)));assert.ok(args.includes('managed_hooks_path=null'));
 });

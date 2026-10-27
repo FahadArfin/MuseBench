@@ -3,8 +3,9 @@ import {childWorking} from '../shared/child-actions.mjs';
 import {createChildTracker} from './children.mjs';
 import {createCompactionTracker} from './compaction.mjs';
 import {validateRunOptions} from '../shared/run-options.mjs';
+import {normalizeModels,modelForOptions} from '../shared/models.mjs';
 import {execFile} from 'node:child_process';
-import {readFile, realpath, stat} from 'node:fs/promises';
+import {readFile, realpath, stat, open, lstat} from 'node:fs/promises';
 import {realpathSync, statSync, openSync, fstatSync, readSync, closeSync} from 'node:fs';
 import {createRequire} from 'node:module';
 import {delimiter, dirname, isAbsolute, join} from 'node:path';
@@ -127,7 +128,7 @@ function displayPending(value,revision) {
 
 /** One process/session owner. Startup and model submission are separate explicit
  * actions. Injection replaces the external process boundary for contract tests. */
-export function createRuntime({environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,timeoutMs=10000}={}) {
+export function createRuntime({environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,workspaceMcp,extensionReview,timeoutMs=10000}={}) {
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000)throw Error('Invalid runtime timeout.');
  const candidates=discoverMuseBinaries({environment,platform});
  const childEnvironment=curateEnvironment(environment);
@@ -135,12 +136,13 @@ export function createRuntime({environment=process.env,platform=process.platform
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
  const deferredInputs=new Map(),settledInputs=new Set(),settledApprovals=new Set();
  const requests=new Map(),inputResponses=new Map(),approvalAttempts=new Set();
+ const restoreAwaiting=new Set();let openingEvents=[],nativeCatalog=null,modelReading=false;
  const requestKey=p=>p.kind+':'+(p.kind==='approval'?p.approvalId:p.userInputId);
  const pendingView=()=>[...requests.values()].map(({value,revision})=>displayPending(value,revision));
  const refreshPending=()=>{const first=requests.values().next().value;pending=first?.value??null;pendingRevision=first?.revision??pendingRevision;};
  const clearPending=()=>{requests.clear();pending=null;};
  const putPending=value=>{const key=requestKey(value),old=requests.get(key);if(!old||JSON.stringify(old.value)!==JSON.stringify(value))requests.set(key,{value:structuredClone(value),revision:++revisionCounter});refreshPending();};
- const removePending=key=>{requests.delete(key);refreshPending();blockedReason=pending?'Muse is waiting for your decision or answer.':null;};
+ const removePending=key=>{requests.delete(key);restoreAwaiting.delete(key);refreshPending();blockedReason=pending?'Muse is waiting for your decision or answer.':restoreAwaiting.size?'Restoring pending native requests.':null;};
  const publishInput=receipt=>{inputResponses.set(receipt.userInputId,receipt);while(inputResponses.size>128){const old=[...inputResponses.keys()].find(id=>!requests.has('input:'+id));if(!old)break;inputResponses.delete(old);}update({inputResponse:receipt,inputResponses:[...inputResponses.values()]});};
  let revisionCounter=0;
  let awaitingChildReport=false,lastTerminal=null;
@@ -164,7 +166,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   const childrenActive=children.snapshot().items.some(childWorking)||childWork.size>0;
   const childrenBusy=childrenActive||awaitingChildReport;
   const status=terminalUnavailable?s.status:blockedReason?'blocked':connecting&&s.status==='idle'?'checking-permissions':terminal&&childrenBusy?'running':s.status;
-  update({status,childrenBusy,childWorkPending:childWork.size,foregroundActive:s.status==='running',rootTurnId:s.rootTurnId,ownedTurnIds:s.ownedTurnIds,ownedRunIds:s.ownedTurnIds,reason:terminalUnavailable?s.reason:blockedReason??s.reason,sessionId:s.sessionId,turnId:s.turnId,runId:s.turnId,nativeSessionId:s.sessionId,inputAccepted:!!s.turnId,sessionSeeded:state.sessionSeeded||!!s.turnId,cleanup:['completed','failed','cancelled'].includes(status)?'confirmed':undefined,liveVerified:state.liveVerified||status==='completed',messages:s.messages,pending:displayPending(pending,pendingRevision),permissionVerified:terminalUnavailable?false:state.permissionVerified});
+  update({status,childrenBusy,childWorkPending:childWork.size,foregroundActive:s.status==='running',rootTurnId:s.rootTurnId,ownedTurnIds:s.ownedTurnIds,ownedRunIds:s.ownedTurnIds,reason:terminalUnavailable?s.reason:blockedReason??s.reason,sessionId:s.sessionId,turnId:s.turnId,runId:s.turnId,nativeSessionId:s.sessionId,inputAccepted:!!s.turnId,sessionSeeded:state.sessionSeeded||!!s.turnId||s.restoration?.status==='restored',restoration:s.restoration??null,restoringRequests:restoreAwaiting.size,restoredMessages:s.restoredMessages??[],viewCursor:s.viewCursor,cleanup:['completed','failed','cancelled'].includes(status)?'confirmed':undefined,liveVerified:state.liveVerified||status==='completed',messages:s.messages,pending:displayPending(pending,pendingRevision),permissionVerified:terminalUnavailable?false:state.permissionVerified});
  };
  const release=async()=>{
   const old=owner;owner=null;
@@ -208,7 +210,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   if(value.kind==='input'&&(!inputPrompt(value)||value.turnId!==adapter.snapshot().turnId)){void disconnect('Unsupported or stale native question. No answer was sent.');return false;}
   if(!['approval','input'].includes(value.kind)||typeof (value.approvalId??value.userInputId)!=='string'||(value.approvalId??value.userInputId).length>200||JSON.stringify(value).length>262144||!requests.has(requestKey(value))&&requests.size>=32){void disconnect('Native request limit or invalid identity. No decision was sent.');return false;}
   const previous=requests.get(requestKey(value))?.value;if(value.kind==='approval'&&Number.isInteger(previous?.currentRequirementId?.sourceIndex)&&value.currentRequirementId?.sourceIndex<previous.currentRequirementId.sourceIndex)return false;
-  putPending(value);return true;
+  restoreAwaiting.delete(requestKey(value));putPending(value);return true;
  }
 
  function observe(frame) {
@@ -240,26 +242,31 @@ export function createRuntime({environment=process.env,platform=process.platform
    settledInputs.add(p.userInputId);
    const request=requests.get('input:'+p.userInputId)?.value??deferredInputs.get(p.userInputId);
    deferredInputs.delete(p.userInputId);
+   // A restored pointer may settle before its full request is reissued.
+   removePending('input:'+p.userInputId);
    if(request){
     const previous=inputResponses.get(p.userInputId)??{};
     const receipt={...previous,sessionId:request.sessionId,userInputId:request.userInputId,turnId:request.turnId,prompt:structuredClone(request),status:'settled',outcome:p.outcome};
     if(p.outcome==='answered')try{validateInputAnswers(request,{...request,revision:1,operation:'answer',answers:p.answers});receipt.confirmedAnswers=structuredClone(p.answers);}catch{/* Invalid settlement is never replayed as a confirmed answer. */}
-    removePending('input:'+p.userInputId);
-    publishInput(receipt);syncAdapter(adapter.snapshot());
+    publishInput(receipt);
    }
+   syncAdapter(adapter.snapshot());
   }
  }
 
- async function connect({binary=state.binary,workspaceRoot,fullAccess=false}={}) {
+ async function connect({binary=state.binary,workspaceRoot,fullAccess=false,sessionId=null,workspaceTools=false}={}) {
   if(typeof fullAccess!=='boolean')throw Error('Full access must be explicitly selected.');
+  if(typeof workspaceTools!=='boolean'||workspaceTools&&typeof workspaceMcp!=='function')throw Error('Reviewed workspace tools are unavailable.');
+  if(sessionId!==null&&(typeof sessionId!=='string'||!sessionId||sessionId.length>200))throw Error('Invalid native session identity.');
   if(owner||connecting)throw Error('Disconnect the current Muse session before connecting again.');
   if(closing||state.cleanup==='pending')throw Error('Wait for Muse shutdown to finish before reconnecting.');
   if(state.cleanup==='unconfirmed')throw Error('Muse shutdown is unconfirmed. Restart MuseBench after checking the native process.');
   if(typeof binary!=='string'||!isAbsolute(binary))throw Error('Select an absolute path to a trusted official Muse native binary.');
   if(platform==='win32'&&!binary.toLowerCase().endsWith('.exe'))throw Error('Select the native muse.exe, not a .cmd or PowerShell installer/launcher.');
   if(typeof workspaceRoot!=='string'||!isAbsolute(workspaceRoot))throw Error('Select an absolute project workspace first.');
-  const token=++epoch;connecting=true;blockedReason=null;clearPending();deferredInputs.clear();settledInputs.clear();settledApprovals.clear();inputResponses.clear();approvalAttempts.clear();update({inputResponse:null,inputResponses:[]});compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();uncertainChildren.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0,childReceipts:[]});syncCompaction();
-  update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,sessionSeeded:false,steering:null,sessionId:null,messages:[],pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
+  const preserveReceipts=sessionId&&state.nativeSessionId===sessionId;
+  const token=++epoch;connecting=true;blockedReason=null;clearPending();restoreAwaiting.clear();openingEvents=[];nativeCatalog=null;deferredInputs.clear();if(!preserveReceipts){settledInputs.clear();settledApprovals.clear();inputResponses.clear();approvalAttempts.clear();uncertainChildren.clear();update({inputResponse:null,inputResponses:[],childReceipts:[],steering:null});}compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0});syncCompaction();
+  update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,workspaceTools,sessionSeeded:false,sessionId:null,messages:[],restoredMessages:[],restoration:null,modelCatalog:undefined,modelId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
   let openedSession;
   try{
    binary=await realpath(binary);workspace=await realpath(workspaceRoot);assertCurrent(token);
@@ -269,34 +276,46 @@ export function createRuntime({environment=process.env,platform=process.platform
    const version=await bounded(probeVersion(binary,{environment:childEnvironment,timeoutMs}),timeoutMs);assertCurrent(token);
    if(version!==TARGET.hostVersion)throw Error(`Muse version mismatch: this app requires ${TARGET.hostVersion}.`);
    update({binary,hostVersion:version});assertCurrent(token);
-   const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),'-c','hooks={}','-c','managed_hooks_path=null'],cwd:workspace,env:{...childEnvironment},shutdownTimeoutMs:timeoutMs});
+   const trustProject=await extensionReview?.allowProject(workspace)===true;assertCurrent(token);
+   const hooks=await extensionReview?.nativeHooks(workspace)??{};assertCurrent(token);
+   const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),...(trustProject?['--trust-workspace']:[]),'-c','hooks='+JSON.stringify(hooks),'-c','managed_hooks_path=null'],cwd:workspace,env:{...childEnvironment},shutdownTimeoutMs:timeoutMs});
    owner=handshake;
-   const host=await bounded(handshake.initialize({clientInfo:{name:'musebench',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:true}}),timeoutMs);assertCurrent(token);
+   const host=await bounded(handshake.initialize({clientInfo:{name:'musebench',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:true,...(workspaceTools?{requestedCapabilities:['sessionMcp']}:{})}}),timeoutMs);assertCurrent(token);
    owner=host;
    const gate=compatibility({sdkVersion,initializeResult:host.initializeResult,fullAccess});
    if(!gate.available)throw Error(gate.reason==='sandbox-unverified'?sandboxFailureReason(host.initializeResult,platform):`Muse compatibility check failed: ${gate.reason}.`);
    const raw=host.connection;
    if(!raw||!['request','command','mintCommandId','onNotification','onServerRequest','onProtocolError'].every(name=>typeof raw[name]==='function'))throw Error('The Muse SDK connection is incomplete.');
+   let sessionConfig,openingCommandId;
+   if(workspaceTools){
+    if(!host.initializeResult.grantedCapabilities?.includes('sessionMcp'))throw Error('Native host did not grant the sessionMcp capability.');
+    const server=await workspaceMcp(workspace);assertCurrent(token);
+    if(server?.transport!=='stdio'||typeof server.command!=='string'||!server.command||!Array.isArray(server.args)||server.args.some(a=>typeof a!=='string')||JSON.stringify(server).length>16384)throw Error('Invalid trusted workspace MCP configuration.');
+    sessionConfig={mcpServers:{musebench_workspace:structuredClone(server)}};
+   }
+   const holdOpening=entry=>{if(openingEvents.length>=128)throw Error('Native startup event limit reached.');openingEvents.push(structuredClone(entry));};
+   let notificationHandler;
+   const routeNotification=frame=>{if(openingCommandId&&frame.params?.commandId===openingCommandId&&['session/approvalModeChanged','session/permissionProfileChanged'].includes(frame.method))return;observe(frame);if(!['approval/requested','approval/updated','approval/resolved','userInput/requested','userInput/settled'].includes(frame.method))notificationHandler(frame);};
+   const routeRequest=request=>{
+    if(request.params?.sessionId!==state.sessionId)throw Error('Foreign request during native restoration.');
+    if(!receivePending({kind:request.method==='approval/request'?'approval':'input',...request.params}))return {};
+    block(pending.kind==='approval'?'Muse is waiting for your decision. Review the requested action and choose a one-time response.':'Muse is waiting for your answer.',false);return {};
+   };
    const connection={
     mintCommandId:()=>raw.mintCommandId(),
     command:async(method,params,options)=>{
-     const actual=method==='session/start'?{...params,permissionProfile:':ask-me',approvalMode:'onRequest'}:method==='turn/start'?{...params,reasoningEffort:state.runOptions?.reasoning??'high'}:params;
+     const actual=method==='session/start'?{...params,permissionProfile:':ask-me',approvalMode:'onRequest',...(sessionConfig?{config:sessionConfig}:{})}:method==='session/resume'?{...params,...(sessionConfig?{config:sessionConfig}:{})}:method==='turn/start'?{...params,reasoningEffort:state.runOptions?.reasoning??'high'}:params;
+     if(['session/start','session/resume'].includes(method)){openingCommandId=options?.commandId??raw.mintCommandId();options={...options,commandId:openingCommandId};}
      const result=await raw.command(method,actual,options);
-     if(method==='session/start')openedSession=result?.session;
+     if(['session/start','session/resume'].includes(method))openedSession=result?.session;
      return result;
     },
-    onNotification:fn=>raw.onNotification(frame=>{
-     observe(frame);
-     // Runtime owns interactive approval state. Keep the preserved message
-     // adapter running so it can fold the continuation after explicit consent.
-     if(!['approval/requested','approval/updated','approval/resolved','userInput/requested','userInput/settled'].includes(frame.method))fn(frame);
-    }),
+    onNotification:fn=>{notificationHandler=fn;raw.onNotification(frame=>{if(connecting){try{holdOpening({kind:'notification',frame});}catch(error){void disconnect(error.message);}return;}routeNotification(frame);});},
     onProtocolError:fn=>raw.onProtocolError(fn),
     onServerRequest:fn=>raw.onServerRequest(async request=>{
+     if(connecting&&['approval/request','userInput/request'].includes(request.method)){holdOpening({kind:'request',frame:request});return {};}
      if(request.params?.sessionId===state.sessionId&&['approval/request','userInput/request'].includes(request.method)){
-      if(!receivePending({kind:request.method==='approval/request'?'approval':'input',...request.params}))return {};
-      block(pending.kind==='approval'?'Muse is waiting for your decision. Review the requested action and choose a one-time response.':'Muse is waiting for your answer.',false);
-      return {}; // Protocol receipt only; the user decides in a separate action.
+      return routeRequest(request); // Protocol receipt only; the user decides separately.
      }
      return await fn(request);
     }),
@@ -311,15 +330,18 @@ export function createRuntime({environment=process.env,platform=process.platform
    assertCurrent(token);
    const profile=catalog?.profiles?.find(p=>p?.profileId===':ask-me'&&p.available===true&&p.reviewerAuthority==='human');
    if(!profile)return await closePermissionGate();
-   await adapter.open(workspace);assertCurrent(token);
-   if(!provesAskMe(openedSession,workspace,adapter.snapshot().sessionId)){
-    try{openedSession=(await bounded(raw.request('session/read',{sessionId:adapter.snapshot().sessionId}),timeoutMs))?.session;}
-    catch{assertCurrent(token);return await closePermissionGate();}
-   }
+   await adapter.open(workspace,{sessionId});assertCurrent(token);
+   if(sessionId&&(openedSession?.providerId!=='meta'||typeof openedSession.modelId!=='string'||!openedSession.modelId))throw Error('Restored native session has no supported Meta model route. No turn was sent.');
+   try{const current=(await bounded(raw.request('session/read',{sessionId:adapter.snapshot().sessionId}),timeoutMs))?.session;if(sessionId&&(current?.modelId!==openedSession.modelId||current?.providerId!==openedSession.providerId))throw Error('Restored model routing changed during verification.');openedSession=current;}
+   catch{assertCurrent(token);return await closePermissionGate();}
    assertCurrent(token);
    if(!provesAskMe(openedSession,workspace,adapter.snapshot().sessionId))return await closePermissionGate();
+   for(const p of adapter.snapshot().restoration?.pendingRequests??[])restoreAwaiting.add((p.kind==='approval'?'approval:':'input:')+(p.approvalId??p.userInputId));
+   if(restoreAwaiting.size)blockedReason='Restoring pending native requests.';
+   for(const item of adapter.snapshot().restoredChildren??[])children.observe(item);
    connecting=false;
-   update({status:'idle',reason:null,questionsSupported:true,steeringSupported:true,compactionSupported:true,childControlsSupported:true,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate. This connection owns a new native session.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
+   update({questionsSupported:true,steeringSupported:true,compactionSupported:true,childControlsSupported:true,imagesSupported:true,modelsSupported:true,hooksSupported:true,durableSessions:host.initializeResult.sessionDurability===undefined||host.initializeResult.sessionDurability==='durable',modelId:openedSession?.modelId??null,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
+   const held=openingEvents;openingEvents=[];for(const entry of held){assertCurrent(token);if(entry.kind==='request')routeRequest(entry.frame);else routeNotification(entry.frame);}assertCurrent(token);syncChildren();syncAdapter(adapter.snapshot());assertCurrent(token);
    return snapshot();
   }catch(error){
    if(token===epoch){
@@ -331,12 +353,33 @@ export function createRuntime({environment=process.env,platform=process.platform
   }finally{if(token===epoch)connecting=false;}
  }
 
- async function send({text,mode='chat',runOptions}={}) {
+ async function refreshModels(){
+  if(!owner||connecting||sending||modelReading||!usable.has(state.status)||!state.permissionVerified)throw Error('Connect an idle runtime before refreshing models.');
+  const token=epoch;modelReading=true;
+  try{const value=await bounded(owner.connection.request('model/list',{sessionId:state.sessionId}),timeoutMs);assertCurrent(token);const catalog=normalizeModels(value);nativeCatalog=value;update({modelCatalog:catalog});return catalog;}finally{if(token===epoch)modelReading=false;}
+ }
+ async function readImages(paths){
+  if(!Array.isArray(paths)||paths.length>4)throw Error('Attach up to four screenshots.');let total=0;const images=[];
+  for(const path of paths){
+   if(typeof path!=='string'||!isAbsolute(path)||(await lstat(path)).isSymbolicLink())throw Error('Screenshot file is unavailable.');
+   const handle=await open(path,'r');try{
+    const info=await handle.stat();if(!info.isFile()||info.size<8||info.size>7*1024*1024||total+info.size>7*1024*1024)throw Error('Interactive screenshots must total at most 7 MiB.');
+    const buffer=Buffer.alloc(info.size+1);const {bytesRead}=await handle.read(buffer,0,buffer.length,0);if(bytesRead!==info.size)throw Error('Screenshot changed while reading.');const bytes=buffer.subarray(0,bytesRead);total+=bytesRead;
+    const mediaType=bytes.subarray(0,8).equals(Buffer.from('89504e470d0a1a0a','hex'))?'image/png':bytes[0]===255&&bytes[1]===216&&bytes[2]===255?'image/jpeg':bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP'?'image/webp':null;
+    if(!mediaType)throw Error('Invalid screenshot image. Choose PNG, JPEG or WebP.');images.push({type:'image',mediaType,base64Data:bytes.toString('base64')});
+   }finally{await handle.close();}
+  }return images;
+ }
+ async function send({text,mode='chat',runOptions,imagePaths=[]}={}) {
   const options=validateRunOptions(runOptions);
-  if(options.model||options.approval!=='ask'||options.budget)throw Error('Interactive mode currently requires Ask for approval, the default model and no exec budget preset.');
+  if(options.approval!=='ask'||options.budget)throw Error('Interactive mode requires Ask for approval and no exec budget preset.');
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a prepared request up to 64,000 characters and a supported chat or plan mode.');
   if(!owner||!adapter||connecting||sending||state.childrenBusy||compaction.pending()||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
-  const token=epoch;sending=true;
+  if(modelReading)throw Error('Wait for the native model catalog.');
+  const token=epoch;const images=await readImages(imagePaths);assertCurrent(token);
+  await refreshModels();assertCurrent(token);
+  const selectedModel=modelForOptions(state.modelCatalog,options);
+  if(sending||blockedReason||!usable.has(state.status))throw Error('The session changed before submission.');sending=true;
   update({status:'checking-permissions',reason:null,runOptions:options,steering:null});
   try{
    assertCurrent(token);
@@ -345,7 +388,15 @@ export function createRuntime({environment=process.env,platform=process.platform
    catch{assertCurrent(token);block(permissionReason);throw Error(permissionReason);}
    assertCurrent(token);
    if(blockedReason||!provesAskMe(session,workspace,state.sessionId)){block(permissionReason);throw Error(permissionReason);}
-   await adapter.send({text:text.trim(),mode});assertCurrent(token);
+   if(selectedModel){
+    const row=nativeCatalog?.models?.find(r=>r.modelId===selectedModel.id&&r.providerId==='meta'&&r.profileId===nativeCatalog.profileId);if(!row)throw Error('Chosen model is unavailable.');
+    if(session.modelId!==row.modelId||session.providerId!==row.providerId){
+     const commandId=owner.connection.mintCommandId();
+     try{const result=await bounded(owner.connection.command('session/setModel',{sessionId:state.sessionId,model:{modelId:row.modelId,providerId:row.providerId,...(row.profileId?{profileId:row.profileId}:{})}},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(result?.commandId!==commandId||result.status!=='accepted')throw Error('Native model change was not confirmed.');session=(await bounded(owner.connection.request('session/read',{sessionId:state.sessionId}),timeoutMs))?.session;assertCurrent(token);if(session?.modelId!==row.modelId||session?.providerId!==row.providerId||!provesAskMe(session,workspace,state.sessionId))throw Error('Native model selection did not match its read-back.');}
+     catch(error){if(token===epoch)block('Native model selection is uncertain. Reconnect and verify it before sending.',false);throw error;}
+    }update({modelId:row.modelId});
+   }
+   await adapter.send({text:text.trim(),mode,images});assertCurrent(token);
    for(const [id,request] of deferredInputs){deferredInputs.delete(id);if(receivePending(request))block('Muse is waiting for your answer.',false);}
    return snapshot();
   }finally{if(token===epoch)sending=false;}
@@ -366,7 +417,7 @@ export function createRuntime({environment=process.env,platform=process.platform
    choice=pending.availableChoices?.find(c=>c.choiceId===selected.choiceId&&c.scope==='once'&&['approved','denied','abort'].includes(c.decision));
   }
   if(!choice||typeof choice.choiceId!=='string'||requirement?.approvalId!==pending.approvalId||!Number.isInteger(requirement.sourceIndex)||requirement.sourceIndex<0)throw Error('Muse did not offer a supported one-time choice. Disconnect to stop this session.');
-  const attempt=`${pending.approvalId}:${pendingRevision}`;if(approvalAttempts.has(attempt))throw Error('The previous approval is pending or already submitted.');approvalAttempts.add(attempt);
+  const attempt=`${pending.approvalId}:${requirement.sourceIndex}`;if(approvalAttempts.has(attempt))throw Error('The previous approval is pending or already submitted.');approvalAttempts.add(attempt);
   const token=epoch;deciding=true;
   try{
    await bounded(owner.connection.command('approval/decide',{sessionId:state.sessionId,approvalId:pending.approvalId,choiceId:choice.choiceId,requirementId:structuredClone(requirement)},{maxAttempts:1}),timeoutMs);
@@ -421,5 +472,5 @@ export function createRuntime({environment=process.env,platform=process.platform
   try{const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();}
   catch(error){if(token===epoch){if(error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
  }
- return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,steer,compact,childControl,answerInput,decide,close:()=>disconnect()};
+ return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,answerInput,decide,close:()=>disconnect()};
 }
