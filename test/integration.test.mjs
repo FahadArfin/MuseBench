@@ -12,11 +12,11 @@ test('a controller-owned Muse turn survives an explicit one-time approval and re
   const project=path.join(base,'project');await mkdir(project);await writeFile(path.join(project,'package.json'),'{"name":"integration","scripts":{}}');
   const binary=path.join(base,'muse.exe');await writeFile(binary,'fixture boundary: never executed');
   let notify=()=>{},serverRequest=()=>{},counter=0;const commands=[];
-  const session=()=>({sessionId:'session-integration',workspaceRoot:project,status:'idle',approvalMode:{mode:'onRequest'},permissionState:{profileId:':ask-me',reviewerAuthority:'human',reviewerAttached:false,axes:{filesystem:'sandboxed',network:'off',approval:'onRequest',reviewer:'human'}}});
+  const session=()=>({sessionId:'session-integration',workspaceRoot:project,status:'idle',providerId:'meta',modelId:'fixture-model',approvalMode:{mode:'onRequest'},permissionState:{profileId:':ask-me',reviewerAuthority:'human',reviewerAttached:false,axes:{filesystem:'sandboxed',network:'off',approval:'onRequest',reviewer:'human'}}});
   const connection={
     mintCommandId:()=>`command-${++counter}`,
     onNotification:fn=>{notify=fn;},onServerRequest:fn=>{serverRequest=fn;},onProtocolError:()=>{},
-    request:async method=>method==='permissionProfile/list'?{profiles:[{profileId:':ask-me',available:true,reviewerAuthority:'human'}]}:{session:session()},
+    request:async method=>method==='permissionProfile/list'?{profiles:[{profileId:':ask-me',available:true,reviewerAuthority:'human'}]}:method==='model/list'?{providerId:'meta',profileId:null,source:'providerCatalog',models:[{providerId:'meta',profileId:null,modelId:'fixture-model',isDefault:true,variants:['high'],defaultReasoningEffort:'high'}]}:{session:session()},
     command:async(method,params,options)=>{commands.push({method,params});if(method==='session/start')return{session:session(),viewCursor:'start'};if(method==='turn/start')return{commandId:options.commandId,status:'accepted',disposition:'started',startedNewTurn:true,turnId:'turn-integration'};if(method==='approval/decide')return{terminal:true};throw Error(method);},
   };
   const host={connection,initializeResult:{serverInfo:{version:TARGET.hostVersion},schema:{version:TARGET.schemaVersion,fingerprint:TARGET.fingerprint},sandboxAvailability:'available',experimentalApi:true},exited:new Promise(()=>{}),close:async()=>({code:0,signal:null})};
