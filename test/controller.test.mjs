@@ -328,3 +328,21 @@ test('chat goals and explicit memories persist and accompany only subsequent Mus
  await live.dispatch({type:'setMemories',text:''});await live.dispatch({type:'setGoal',objective:'',status:'active'});
  await live.dispatch({type:'sendMessage',text:'No extra context'});assert.ok(sent[2].endsWith('Current request:\nNo extra context'));assert.ok(!sent[2].includes('Prefer focused tests.'));assert.ok(!sent[2].includes('Keep the parser compatible'));
 });
+
+
+test('validation profiles execute sequentially, retain revision receipts and stop on failure',async t=>{
+ const {controller:c}=await fixture(t,{test:'node -e "process.exit(0)"',lint:'node -e "process.exit(0)"',broken:'node -e "process.exit(1)"'});
+ const projectId=c.getState().activeProject.id;
+ assert.equal((await c.dispatch({type:'saveValidationProfile',projectId,scripts:['test','lint']})).error,null);
+ await c.dispatch({type:'runValidation'});
+ const settle=async()=>{for(let i=0;i<300;i++){const s=c.getState();if(s.task.validationRun.status!=='running')return s;await new Promise(r=>setTimeout(r,20));}assert.fail('Validation timeout');};
+ let s=await settle();assert.equal(s.task.validationRun.status,'passed');assert.deepEqual(s.task.checkReceipts.map(r=>r.script),['test','lint']);assert.ok(s.task.checkReceipts.every(r=>r.revision===s.task.revision&&r.status==='passed'));
+ await c.dispatch({type:'saveValidationProfile',projectId,scripts:['broken','lint']});await c.dispatch({type:'runValidation'});s=await settle();assert.equal(s.task.validationRun.status,'failed');assert.equal(s.task.checkReceipts.at(-1).script,'broken');assert.equal(s.task.validationRun.index,0);
+});
+test('validation stops on source changes and cancelled validation never continues',async t=>{
+ const {controller:c}=await fixture(t,{mutate:'node -e "require(\'fs\').writeFileSync(\'new.txt\',\'changed\')"',later:'node -e "process.exit(0)"',slow:'node -e "setTimeout(()=>{},10000)"'});const projectId=c.getState().activeProject.id;
+ await c.dispatch({type:'saveValidationProfile',projectId,scripts:['mutate','later']});await c.dispatch({type:'runValidation'});
+ for(let i=0;i<300&&c.getState().task.validationRun.status==='running';i++)await new Promise(r=>setTimeout(r,20));
+ assert.equal(c.getState().task.validationRun.status,'stale');assert.equal(c.getState().task.validationRun.index,0);
+ await c.dispatch({type:'saveValidationProfile',projectId,scripts:['slow','later']});await c.dispatch({type:'runValidation'});await c.dispatch({type:'cancelCheck'});assert.equal(c.getState().task.validationRun.status,'cancelled');
+});

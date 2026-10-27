@@ -7,8 +7,8 @@ Architecture: retain Electron, SQLite, the controller, and shared React UI. Brow
 Delivery order and status:
 
 1. Complete — durable message history, source excerpts, paging and indexed search.
-2. In progress — validation profiles, revision-bound phase gates and diagnostics.
-3. Pending — recoverable captured output with explicit limits and retrieval.
+2. Complete — validation profiles, revision-bound phase gates and diagnostics.
+3. In progress — recoverable captured output with explicit limits and retrieval.
 4. Pending — context inspector and source receipts.
 5. Pending — selected-file checkpoint restore, redo and conflicts.
 6. Pending — reviewed project lessons and skill promotion.
@@ -17,7 +17,7 @@ Delivery order and status:
 9. Pending — focused reviewer contracts and explicit integration.
 10. Pending — app-owned tool discovery; native semantic tools remain conditional on supported execution.
 11. Pending — performance measurements and justified event/UI improvements.
-12. In progress — runtime capability contracts and conformance tests.
+12. Complete — runtime capability contracts and conformance tests.
 
 For each item: inspect existing behavior; write meaningful failing tests; implement shared controller/bridge/UI behavior; verify focused regressions, build and applicable browser parity; review; commit and push before the next item. Keep evidence and limitations here. Current clean checkout serves the live preview; changes integrate here without replacing user data.
 
@@ -29,3 +29,6 @@ Files: new history store and tests; controller persistence, runtime ingestion an
 
 
 Feature 1 delivered: durable app-received messages, portable term index with literal Unicode substring fallback, 20-message history pages and 12,000-character source excerpts, draft inclusion, legacy coverage and deletion. Per-message capture limit is 1,048,576 characters and is disclosed when reached. Native history not delivered by the adapter cannot be reconstructed. Evidence: 662 tests passed; production build and package passed; 34 desktop/browser parity scenes including history search/source/draft passed; 89 packaged files and both native helpers matched source. Installed update verified all 76 distribution files, retaining a sibling backup and profile data. Normal installed startup was not tested. Independent review found and resolved literal/Unicode matching, draft excerpt sizing and asynchronous unaccepted-prompt cleanup issues.
+
+
+Feature 2 delivered: saved project validation profiles (1–8 package scripts), sequential execution, exact-revision check receipts, stop on failure/cancellation/source mutation, workflow required-check gates on manual and automatic dispatch, profile-aware checkpoint acceptance, and bounded compiler diagnostics. No model-generated completion assertion opens a gate. Repairs remain explicit user-directed runs; the later bounded goal driver can consume these receipts. Independent review resolved old-pass reuse during a rerun and multi-script typing. Evidence: 668 tests passed; production package/build and 37 parity scenes passed, including profile state and typed required checks; 90 packaged files and native helpers match source. One unrelated HTTP rejection test failed once with fetch failed and passed both its isolated retry and the complete rerun.

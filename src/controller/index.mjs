@@ -1,3 +1,4 @@
+import {validateCheckScripts,missingChecks} from '../shared/validation.mjs';
 import {createHistoryStore} from './chat-history.mjs';
 import {restoreSkillReceipts} from '../shared/skill-receipts.mjs';
 import {restoreUsage} from '../shared/native-usage.mjs';
@@ -52,6 +53,7 @@ function restoreTask(record,knownProjectId){
   task.runs=restoreRuns(task.runs);
   for(const item of task.messages){const run=task.runs.find(r=>r.promptId===(item.turnId??item.id));if(run)item.outcome=run.status;else if(['queued','working','waiting'].includes(item.outcome))item.outcome='interrupted';}
   task.pinned=task.pinned===true;task.archived=task.archived===true;task.archivedAt=task.archived?(Number.isFinite(Date.parse(task.archivedAt))?task.archivedAt:now()):null;
+  task.checkReceipts=Array.isArray(task.checkReceipts)?task.checkReceipts.filter(c=>c&&typeof c.script==='string'&&typeof c.revision==='string').slice(-40):[];if(task.validationRun?.status==='running')task.validationRun.status='cancelled';
   task.promptQueue=Array.isArray(task.promptQueue)?task.promptQueue.filter(q=>q&&typeof q.id==='string'&&typeof q.text==='string'&&q.text.length<=16000).slice(0,5):[];task.queuePaused=true;task.queueHold=task.promptQueue.length>0;
   task.goal=task.goal&&typeof task.goal.objective==='string'?{objective:task.goal.objective.slice(0,1000),status:task.goal.status==='paused'?'paused':'active'}:null;
   task.createdAt=validDate(task.createdAt)?task.createdAt:task.messages.find(item=>validDate(item.at))?.at??now();
@@ -201,7 +203,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     task.changes=changes(baseline,snap.files,diffCache);return snap;
   };
   const stopPreview=async()=>{previewToken=null;const child=previewProcess;previewProcess=null;await killTree(child);state.preview=stopped();};
-  const cancelCheck=async()=>{const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';state.task.check.endedAt=now();persist();}await killTree(child);};
+  const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';state.task.check.endedAt=now();persist();}await killTree(child);};
   const cleanup=async(disconnect=true)=>{await cancelCheck();await stopPreview();if(disconnect)await runtime?.disconnect?.();};
   const requireNavigationIdle=()=>{if(context.pending||['running','starting','submitting','connecting','checking-permissions'].includes(state.runtime.status))throw Error('Finish or disconnect the running Muse turn before switching projects or tasks.');};
   const navigationCleanup=async()=>{
@@ -263,7 +265,14 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     let done=false;const timeout=setTimeout(async()=>{check.log=(check.log+`\nCheck stopped after ${checkTimeoutMs} ms timeout.`).slice(-MAX_LOG);await killTree(child);finish(null,Error('Project check timed out.'));},Math.max(100,Math.min(checkTimeoutMs,600000)));
     const finish=(code,error)=>{if(done)return;done=true;clearTimeout(timeout);queue=queue.then(async()=>{
       if(closed||state.task?.id!==taskId||state.task.check?.id!==check.id)return;if(checkProcess===child)checkProcess=null;if(error)check.log=(check.log+'\n'+error.message).slice(-MAX_LOG);check.exitCode=code;check.endedAt=now();
-      if(check.status!=='cancelled')try{const latest=await current();check.status=checkInvalidated||latest.revision!==check.revision?'stale':code===0?'passed':'failed';}catch(e){check.status='stale';state.error=e.message;}emit();
+      if(check.status!=='cancelled')try{const latest=await current();check.status=checkInvalidated||latest.revision!==check.revision?'stale':code===0?'passed':'failed';}catch(e){check.status='stale';state.error=e.message;}
+      task.checkReceipts=[...(task.checkReceipts??[]),{...check,log:check.log.slice(-8000)}].slice(-40);
+      const validation=task.validationRun;
+      if(validation?.status==='running'){
+        if(check.status!=='passed'||check.revision!==validation.revision)validation.status=check.status==='passed'?'stale':check.status;
+        else if(validation.index+1<validation.scripts.length){validation.index++;try{await runCheck(validation.scripts[validation.index]);}catch(error){validation.status='failed';state.error=error.message;}}
+        else validation.status='passed';
+      }emit();
     }).catch(e=>{if(!closed){state.error=e.message;emit();}});};child.once('error',e=>finish(null,e));child.once('close',code=>finish(code));
   };
   const startPreview=async script=>{
@@ -313,7 +322,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         const runtime=context.runtime,project=state.projects.find(p=>p.id===t?.projectId);if(!t||!project)throw Error('Chat or project unavailable.');
         let runtimeState=runtime?.snapshot?.()??missingRuntime();
         if(closing)throw Error('The app is closing. This prompt was not sent.');
-        if(runtimeFactory){if(contextBusy(context))throw Error('This chat already has a running or unresolved request.');}else requireNavigationIdle();if(t.mode==='muse')requireWritable(t,project);if(t.archived)throw Error('Restore this archived chat before sending.');if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
+        if(runtimeFactory){if(contextBusy(context))throw Error('This chat already has a running or unresolved request.');}else requireNavigationIdle();if(t.mode==='muse')requireWritable(t,project);if(t.archived)throw Error('Restore this archived chat before sending.');if(t.validationRun?.status==='running')throw Error('Wait for validation or cancel it first.');if(action.fromQueue&&action.requiredChecks?.length){const snap=await snapshot(project.root);const missing=missingChecks(t,snap.revision,validateCheckScripts(action.requiredChecks));if(missing.length)throw Error('Run passing checks for this revision before this workflow phase: '+missing.join(', '));}if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
         const files=fileReferences(action.files),images=imageReferences(action.images);const imagePaths=await imageStore.resolve(t.projectId,images);if(images.length&&t.mode!=='muse')throw Error('Screenshots require a Muse chat.');if(!action.fromQueue&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};const {attachments}=await selectedSources(files,project);
         if(closing)throw Error('The app is closing. This prompt was not sent.');
         const prepared=composeChatContext({task:t,project:project,memories:state.memories,text:action.text,attachments,history:runtimeState.transport!=='msp'});
@@ -522,7 +531,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         const digest=hash(JSON.stringify({workflow:w,objective:action.objective})),receipt=t.workflowReceipts?.find(r=>r.id===action.id);
         if(receipt){if(receipt.digest!==digest)throw Error('Workflow request changed. Reopen Workflows.');break;}
         const prompts=workflowPrompts(w,action.objective);if((t.promptQueue??[]).length+prompts.length>5)throw Error('Make room in the queue for all workflow phases (five prompts maximum).');
-        t.promptQueue??=[];for(const p of prompts)t.promptQueue.push({id:randomUUID(),text:p.text,files:[],images:[],mode:'chat',runOptions:{...restoreRunOptions(t.runOptions),budget:p.budget},at:now(),workflow:{id:action.id,title:w.title,phase:p.title,index:p.index,total:prompts.length}});
+        t.promptQueue??=[];for(const p of prompts)t.promptQueue.push({id:randomUUID(),text:p.text,files:[],images:[],mode:'chat',runOptions:{...restoreRunOptions(t.runOptions),budget:p.budget},at:now(),...(p.requiredChecks?.length?{requiredChecks:p.requiredChecks}:{}),workflow:{id:action.id,title:w.title,phase:p.title,index:p.index,total:prompts.length}});
         t.workflowReceipts=[...(t.workflowReceipts??[]),{id:action.id,digest}].slice(-100);if(context.pending&&!t.queueHold)t.queuePaused=false;else{t.queuePaused=true;t.queueHold=true;}break;
       }
       case 'handoffContext':{
@@ -550,7 +559,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'pauseQueue':{const t=requireTask();t.queuePaused=true;t.queueHold=true;break;}
       case 'resumeQueue':{
         requireNavigationIdle();const t=requireTask();if(t.archived)throw Error('Restore this archived chat first.');const item=t.promptQueue?.shift();if(!item)break;t.queuePaused=false;t.queueHold=false;
-        try{await handle({type:'sendMessage',text:item.text,mode:item.mode,files:item.files,images:item.images,runOptions:item.runOptions,fromQueue:true});}catch(error){t.promptQueue.unshift(item);t.queuePaused=true;t.queueHold=true;throw error;}break;
+        try{await handle({type:'sendMessage',text:item.text,mode:item.mode,files:item.files,images:item.images,runOptions:item.runOptions,requiredChecks:item.requiredChecks,fromQueue:true});}catch(error){t.promptQueue.unshift(item);t.queuePaused=true;t.queueHold=true;throw error;}break;
       }
       case 'forkTask':{
         requireNavigationIdle();const original=structuredClone(requireTask()),index=original.messages.findIndex(m=>m.id===action.messageId&&['user','assistant'].includes(m.role));if(index<0)throw Error('Choose a prompt or response to branch from.');const selected=original.messages[index];
@@ -570,13 +579,19 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(!source.includes('/* MUSEBENCH_FILTER: false */')&&!source.includes('/* MUSEBENCH_FILTER: true */'))throw Error('Tutorial source changed. Start a fresh tutorial.');await fs.writeFile(target,source.replace('/* MUSEBENCH_FILTER: false */\nconst FILTER_ENABLED = false;','/* MUSEBENCH_FILTER: true */\nconst FILTER_ENABLED = true;'));t.runtimeComplete=true;message('assistant','Demo edit applied: caffeine controls now filter the real product collection. Inspect the diff, start the preview and run the project test.');await current();break;
       }
       case 'refresh':if(state.task)await current();if(state.activeProject)await refreshScripts();state.runtime=runtime?.snapshot?.()??state.runtime;break;
+      case 'saveValidationProfile':{
+        requireNavigationIdle();validateBinding(action.projectId,null);const scripts=validateCheckScripts(action.scripts);const p=await refreshScripts();if(scripts.some(name=>!Object.hasOwn(p.scripts,name)))throw Error('Choose scripts listed in package.json.');if(state.task?.validationRun?.status==='running')throw Error('Cancel validation before changing the profile.');p.validationScripts=scripts;state.projects.find(item=>item.id===p.id).validationScripts=scripts;break;
+      }
+      case 'runValidation':{
+        requireNavigationIdle();const t=requireTask(),p=await refreshScripts();if(checkProcess)throw Error('A check is already running.');const scripts=validateCheckScripts(p.validationScripts);if(scripts.some(name=>!Object.hasOwn(p.scripts,name)))throw Error('A profile script was removed. Update the profile.');const snap=await current();t.validationRun={scripts,revision:snap.revision,index:0,status:'running'};try{await runCheck(scripts[0]);}catch(error){t.validationRun.status='failed';throw error;}break;
+      }
       case 'runCheck':await runCheck(action.script);break;
       case 'cancelCheck':await cancelCheck();break;
       case 'startPreview':await startPreview(action.script);break;
       case 'stopPreview':await stopPreview();if(state.task)state.task.previewRevision=null;break;
       case 'inspectPreview':{const snap=await current();if(action.revision!==snap.revision)throw Error('Revision changed. Inspect the current files.');if(state.preview.status!=='running'||!previewProcess)throw Error('Start the local preview before marking it inspected.');state.task.previewRevision=snap.revision;break;}
       case 'accept':{
-        const snap=await current(),t=state.task;if(action.revision!==snap.revision)throw Error('Revision changed. Inspect and check the current files.');if(!t.planApproved)throw Error('Approve the plan first.');if(!t.runtimeComplete)throw Error('The Muse turn must complete, or explicitly approve a manual work plan.');if(t.previewRevision!==snap.revision||state.preview.status!=='running')throw Error('Inspect the running preview for this exact revision.');if(t.check?.status!=='passed'||t.check.revision!==snap.revision)throw Error('A passing check for this exact revision is required.');
+        const snap=await current(),t=state.task;const missing=missingChecks(t,snap.revision,state.activeProject.validationScripts??[]);if(missing.length)throw Error('Validation profile needs passing checks for this revision: '+missing.join(', '));if(action.revision!==snap.revision)throw Error('Revision changed. Inspect and check the current files.');if(!t.planApproved)throw Error('Approve the plan first.');if(!t.runtimeComplete)throw Error('The Muse turn must complete, or explicitly approve a manual work plan.');if(t.previewRevision!==snap.revision||state.preview.status!=='running')throw Error('Inspect the running preview for this exact revision.');if(t.check?.status!=='passed'||t.check.revision!==snap.revision)throw Error('A passing check for this exact revision is required.');
         const verified=await current();if(verified.revision!==snap.revision)throw Error('Files changed while accepting. Repeat preview and checks.');if(!t.runtimeComplete||state.preview.status!=='running'||t.previewRevision!==verified.revision||t.check?.status!=='passed'||t.check.revision!==verified.revision)throw Error('Review evidence changed while accepting. Repeat preview and checks.');if(t.acceptedRevision===snap.revision)break;
         const checkpoint={id:randomUUID(),taskId:t.id,title:t.title,revision:snap.revision,createdAt:now()};db.exec('BEGIN IMMEDIATE');try{db.prepare('INSERT INTO checkpoints(id,task_id,revision,json) VALUES(?,?,?,?)').run(checkpoint.id,t.id,snap.revision,JSON.stringify({...checkpoint,files:verified.files}));state.checkpoints.unshift(checkpoint);t.acceptedRevision=snap.revision;persist();db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}message('system',`Local checkpoint saved for revision ${snap.revision.slice(0,12)}.`);break;
       }

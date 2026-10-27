@@ -157,3 +157,11 @@ test('definitive asynchronous rejection restores draft and removes unaccepted hi
  assert.equal(c.searchChats({query:'unacceptedquartz'}).length,0);assert.ok(Object.values(c.getState().drafts).some(d=>d.text==='unacceptedquartz'));
  assert.ok(!c.readChatHistory({taskId:id}).messages.some(m=>m.text==='unacceptedquartz'));
 });
+
+
+test('workflow phase gates hold both manual dequeue and automatic continuation',async t=>{
+ const {c,runtime}=await fixture(t);const taskId=await start(c);
+ await c.dispatch({type:'saveWorkflow',workflow:{id:'gated',title:'Gated',scope:[],checks:['Tests pass'],phases:[{title:'Review',instructions:'Review only',budget:'standard',requiredChecks:['test']}]}});
+ await c.dispatch({type:'queueWorkflow',id:'gated-request',taskId,workflowId:'gated',objective:'Review current revision'});
+ const before=runtime.sent.length;const s=await c.dispatch({type:'resumeQueue'});assert.match(s.error,/passing checks/);assert.equal(runtime.sent.length,before);assert.equal(s.task.promptQueue.length,1);
+});

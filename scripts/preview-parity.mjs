@@ -56,6 +56,9 @@ try{
  await click('button','Add to chat');await click('button','Skills');await compare('skills-picker');await click('button','Close skills');
  await click('button','Add to chat');await click('button','Worktrees');await compare('worktrees-dialog');await click('button','Close worktrees');
  await click('button','Add to chat');await click('button','Session');await compare('session-dialog');await click('button','Close session');
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const input=document.querySelector('textarea[aria-label="Message Muse"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'/checks');input.dispatchEvent(new Event('input',{bubbles:true}));});
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.querySelector('[role="option"][title^="/checks"]')?.click());await compare('validation-profile');
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const checkbox=document.querySelector('.validation-profile input[type="checkbox"]');if(!checkbox)throw Error('Missing validation profile');checkbox.click();});await click('button','Save profile');await click('button','Run profile');await compare('validation-passed');await click('button','Close details panel');
  await click('button','View changes');await compare('file-changes');
  await click('summary','Choose editor for src/ProjectOverview.tsx');await compare('file-editor-menu');
  await click('button','Close details panel');
@@ -64,7 +67,8 @@ try{
  for(let index=0;index<3;index++)await click('button','Remove queued prompt 1');
 
  await click('button','Reasoning effort');await compare('reasoning-picker');await click('button','Load installed models');await compare('native-model-catalog');await escape();
- await click('button','Add to chat');await click('button','Workflows');await compare('workflow-library');await click('button','Edit');await compare('workflow-editor');await click('button','Close dialog');
+ await click('button','Add to chat');await click('button','Workflows');await compare('workflow-library');await click('button','Edit');await compare('workflow-editor');
+ for(const page of [browserPage,desktopPage]){for(const character of 'test,lint'){await page.evaluate(character=>{const input=document.querySelector('input[aria-label="Phase 1 required checks"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,input.value+character);input.dispatchEvent(new Event('input',{bubbles:true}));},character);await page.waitForTimeout(20);}assert.equal(await page.evaluate(()=>document.querySelector('input[aria-label="Phase 1 required checks"]').value),'test, lint');}await compare('workflow-required-checks');await click('button','Close dialog');
  await click('button','Project overview');await compare('project-overview');
  await click('button','Reasoning effort');await compare('project-reasoning-picker');await escape();
  await click('button','Add project');await compare('create-project');await escape();

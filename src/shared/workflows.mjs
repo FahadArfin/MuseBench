@@ -1,3 +1,4 @@
+import {validateCheckScripts} from './validation.mjs';
 import {runBudget} from './run-options.mjs';
 const phase=(title,instructions,budget='standard')=>({title,instructions,budget});
 export const DEFAULT_WORKFLOWS=[
@@ -13,10 +14,10 @@ export function validateWorkflow(value){
  if(!Array.isArray(value.scope)||value.scope.length>20||value.scope.some(p=>!str(p,200)||p.startsWith('/')||p.includes('\\')||p.includes(':')||p.split('/').some(s=>s==='..'||!s)))throw Error('Scope must contain relative project paths.');
  if(!Array.isArray(value.checks)||!value.checks.length||value.checks.length>10||value.checks.some(s=>!str(s,500)))throw Error('Add 1–10 completion checks.');
  if(!Array.isArray(value.phases)||!value.phases.length||value.phases.length>4)throw Error('Use 1–4 workflow phases.');
- const phases=value.phases.map(p=>{if(!p||Object.keys(p).some(k=>!['title','instructions','budget'].includes(k))||!str(p.title,100)||!str(p.instructions,3000))throw Error('Give each phase a title and instructions (up to 3,000 characters).');runBudget(p.budget);return{title:p.title.trim(),instructions:p.instructions.trim(),budget:p.budget};});
+ const phases=value.phases.map(p=>{if(!p||Object.keys(p).some(k=>!['title','instructions','budget','requiredChecks'].includes(k))||!str(p.title,100)||!str(p.instructions,3000))throw Error('Give each phase a title and instructions (up to 3,000 characters).');runBudget(p.budget);return{title:p.title.trim(),instructions:p.instructions.trim(),budget:p.budget,...(p.requiredChecks?.length?{requiredChecks:validateCheckScripts(p.requiredChecks)}:{})};});
  return{id:value.id,title:value.title.trim(),scope:[...value.scope],checks:value.checks.map(s=>s.trim()),phases};
 }
 export function workflowPrompts(value,objective){
  const w=validateWorkflow(value);if(typeof objective!=='string'||!objective.trim()||objective.length>3000)throw Error('Use an objective up to 3,000 characters.');
- return w.phases.map((p,index)=>({text:`Workflow: ${w.title}\nPhase ${index+1}/${w.phases.length}: ${p.title}\nObjective: ${objective.trim()}\n\n${p.instructions}\n\nRequested writable scope: ${w.scope.length?w.scope.join(', '):'None; review only'}. This is a task instruction, not a separate filesystem sandbox. Existing permissions still apply.\n\nCompletion checks:\n${w.checks.map(s=>'- '+s).join('\n')}\n\nReport evidence and unmet checks. A completed model turn alone does not prove these checks passed.`,budget:p.budget,title:p.title,index}));
+ return w.phases.map((p,index)=>({text:`Workflow: ${w.title}\nPhase ${index+1}/${w.phases.length}: ${p.title}\nObjective: ${objective.trim()}\n\n${p.instructions}\n\nRequested writable scope: ${w.scope.length?w.scope.join(', '):'None; review only'}. This is a task instruction, not a separate filesystem sandbox. Existing permissions still apply.\n\nCompletion checks:\n${w.checks.map(s=>'- '+s).join('\n')}\n\nReport evidence and unmet checks. A completed model turn alone does not prove these checks passed.`,budget:p.budget,title:p.title,index,...(p.requiredChecks?.length?{requiredChecks:p.requiredChecks}:{})}));
 }
