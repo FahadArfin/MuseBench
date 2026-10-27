@@ -294,13 +294,33 @@ test('a late approval cannot revive an uncertain turn or authorize work',async t
  assert.equal(h.runtime.snapshot().permissionVerified,false);
 });
 
-test('overlapping approvals stop the session instead of losing a pending request',async t=>{
+test('concurrent questions and approvals retain independent revisions and settle out of order',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Inspect modules'});
- const approval=id=>({method:'approval/request',params:{sessionId:'session-one',approvalId:id,currentRequirementId:{approvalId:id,sourceIndex:0},availableChoices:[]}});
- await h.request(approval('first'));await h.request(approval('second'));
- await new Promise(resolve=>setImmediate(resolve));
- assert.equal(h.runtime.snapshot().status,'unavailable');assert.equal(h.runtime.snapshot().pending,null);
- assert.equal(h.calls.some(c=>c.method==='close'),true);
+ const approval=id=>({method:'approval/request',params:{sessionId:'session-one',approvalId:id,currentRequirementId:{approvalId:id,sourceIndex:0},availableChoices:[{choiceId:'allow',scope:'once',decision:'approved'}]}});
+ await h.request(approval('first'));await h.request({method:'userInput/request',params:inputRequest()});await h.request(approval('second'));
+ assert.equal(h.runtime.snapshot().status,'blocked');assert.equal(h.runtime.snapshot().pendingRequests.length,3);assert.equal(h.calls.some(c=>c.method==='close'),false);
+ const [first,question,second]=h.runtime.snapshot().pendingRequests;
+ const original=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>method==='userInput/answer'?{commandId:opts.commandId,userInputId:params.userInputId,status:'accepted'}:original(method,params,opts);
+ await h.runtime.decide(second.availableChoices[0].decisionToken);
+ await assert.rejects(h.runtime.decide(second.availableChoices[0].decisionToken),/pending|submitted/);
+ await h.runtime.answerInput({...question,operation:'answer',answers:[{questionId:'color',selectedLabel:'Blue'}]});
+ h.emit({method:'approval/resolved',params:{sessionId:'session-one',approvalId:'second'}});
+ h.emit({method:'userInput/settled',params:{sessionId:'session-one',userInputId:question.userInputId,outcome:'answered',answers:[{questionId:'color',selectedLabel:'Blue'}]}});
+ assert.equal(h.runtime.snapshot().pendingRequests.length,1);assert.equal(h.runtime.snapshot().pending.revision,first.revision);
+ await h.runtime.decide(first.availableChoices[0].decisionToken);h.emit({method:'approval/resolved',params:{sessionId:'session-one',approvalId:'first'}});
+ assert.equal(h.runtime.snapshot().status,'running');assert.deepEqual(h.runtime.snapshot().pendingRequests,[]);
+ await h.request(approval('second'));assert.equal(h.runtime.snapshot().pending,null);
+});
+
+test('answer uncertainty remains per request even after another answer settles',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Ask'});
+ for(const id of ['uncertain','other'])await h.request({method:'userInput/request',params:{...inputRequest(),userInputId:id}});
+ const [a,b]=h.runtime.snapshot().pendingRequests;
+ h.host.connection.command=async(method,params,opts)=>({commandId:params.userInputId==='uncertain'?'wrong':opts.commandId,userInputId:params.userInputId,status:'accepted'});
+ await assert.rejects(h.runtime.answerInput({...a,operation:'cancel'}));await h.runtime.answerInput({...b,operation:'cancel'});
+ h.emit({method:'userInput/settled',params:{sessionId:'session-one',userInputId:'other',outcome:'cancelled'}});
+ await assert.rejects(h.runtime.answerInput({...a,operation:'cancel'}),/pending|submitted/);
+ assert.equal(h.runtime.snapshot().inputResponses.find(r=>r.userInputId==='uncertain').status,'unknown');
 });
 
 test('repeated disconnect cannot turn unconfirmed shutdown into permission to reconnect',async t=>{
@@ -389,4 +409,12 @@ test('known child admission rejection releases a pending launch without inventin
  h.host.connection.command=async()=>{throw Object.assign(Error('subagent_state_ineligible'),{code:-32030});};
  await assert.rejects(h.runtime.childControl({sessionId:'session-one',itemId:'child',revision:1,action:'followupTask',body:'More'}),/ineligible/);
  assert.equal(h.runtime.snapshot().status,'completed');assert.equal(h.runtime.snapshot().childrenBusy,false);assert.equal(h.runtime.snapshot().childReceipts.at(-1).status,'rejected');
+});
+
+test('pending request collection bounds resource use without deciding requests',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Ask'});
+ for(let i=0;i<32;i++)await h.request({method:'userInput/request',params:{...inputRequest(),userInputId:'q'+i}});
+ assert.equal(h.runtime.snapshot().pendingRequests.length,32);
+ await h.request({method:'userInput/request',params:{...inputRequest(),userInputId:'overflow'}});
+ assert.equal(h.runtime.snapshot().status,'unavailable');assert.equal(h.calls.some(c=>['approval/decide','userInput/answer'].includes(c.method)),false);
 });

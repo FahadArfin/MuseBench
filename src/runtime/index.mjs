@@ -133,14 +133,23 @@ export function createRuntime({environment=process.env,platform=process.platform
  const childEnvironment=curateEnvironment(environment);
  let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
- const deferredInputs=new Map(),settledInputs=new Set();
+ const deferredInputs=new Map(),settledInputs=new Set(),settledApprovals=new Set();
+ const requests=new Map(),inputResponses=new Map(),approvalAttempts=new Set();
+ const requestKey=p=>p.kind+':'+(p.kind==='approval'?p.approvalId:p.userInputId);
+ const pendingView=()=>[...requests.values()].map(({value,revision})=>displayPending(value,revision));
+ const refreshPending=()=>{const first=requests.values().next().value;pending=first?.value??null;pendingRevision=first?.revision??pendingRevision;};
+ const clearPending=()=>{requests.clear();pending=null;};
+ const putPending=value=>{const key=requestKey(value),old=requests.get(key);if(!old||JSON.stringify(old.value)!==JSON.stringify(value))requests.set(key,{value:structuredClone(value),revision:++revisionCounter});refreshPending();};
+ const removePending=key=>{requests.delete(key);refreshPending();blockedReason=pending?'Muse is waiting for your decision or answer.':null;};
+ const publishInput=receipt=>{inputResponses.set(receipt.userInputId,receipt);while(inputResponses.size>128){const old=[...inputResponses.keys()].find(id=>!requests.has('input:'+id));if(!old)break;inputResponses.delete(old);}update({inputResponse:receipt,inputResponses:[...inputResponses.values()]});};
+ let revisionCounter=0;
  let awaitingChildReport=false,lastTerminal=null;
  const children=createChildTracker(),childCommands=new Set(),uncertainChildren=new Set(),childWork=new Map();
  const compaction=createCompactionTracker();let compactionTimer;
  const listeners=new Set();
  const snapshot=()=>structuredClone(state);
  const emit=()=>{for(const fn of listeners){try{fn(snapshot());}catch{/* A renderer observer is never a protocol authority. */}}};
- const update=patch=>{state={...state,...patch};emit();};
+ const update=patch=>{state={...state,...patch,pendingRequests:pendingView()};emit();};
  const syncChildren=()=>{const view=children.snapshot();if(usable.has(adapter?.snapshot().status)&&view.items.some(childWorking))awaitingChildReport=true;for(const [key,target] of childWork){const i=view.items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&childWorking(i))childWork.delete(key);}update({children:view,childrenBusy:view.items.some(childWorking)||childWork.size>0||awaitingChildReport,childWorkPending:childWork.size});if(adapter)syncAdapter(adapter.snapshot());};
  const interruptChildCommands=()=>update({childReceipts:(state.childReceipts??[]).map(r=>r.status==='submitting'?{...r,status:'unknown',reason:'Connection lost before command admission was confirmed.'}:r)});
  const syncCompaction=()=>{const receipt=compaction.snapshot();if(!compaction.pending())clearTimeout(compactionTimer);update({compaction:receipt,operationBusy:compaction.pending()});};
@@ -148,8 +157,8 @@ export function createRuntime({environment=process.env,platform=process.platform
  const assertCurrent=token=>{if(token!==epoch)throw Error('Muse connection was interrupted or disconnected.');};
  const syncAdapter=s=>{
   const terminalUnavailable=['unavailable','uncertain','closed'].includes(s.status);
-  if(terminalUnavailable){pending=null;blockedReason=null;interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Connection lost before compaction was confirmed.');syncCompaction();}
-  if(s.pending&&!pending){pending={kind:s.pending.approvalId?'approval':'input',...s.pending};pendingRevision++;}
+  if(terminalUnavailable){clearPending();blockedReason=null;interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Connection lost before compaction was confirmed.');syncCompaction();}
+  if(s.pending&&!pending){putPending({kind:s.pending.approvalId?'approval':'input',...s.pending});}
   const terminal=['completed','failed','cancelled'].includes(s.status)?`${s.turnId}:${s.status}`:null;
   if(terminal&&terminal!==lastTerminal){for(const [key,target] of childWork){const i=children.snapshot().items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&!childWorking(i))childWork.delete(key);}lastTerminal=terminal;awaitingChildReport=children.snapshot().items.some(childWorking)||childWork.size>0;}
   const childrenActive=children.snapshot().items.some(childWorking)||childWork.size>0;
@@ -167,7 +176,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   if(closing){await closing;return snapshot();}
   if(!owner&&!connecting&&state.cleanup==='unconfirmed')return snapshot();
   interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Disconnected before compaction was confirmed.');syncCompaction();
-  const token=++epoch;connecting=false;sending=false;deciding=false;blockedReason=null;pending=null;
+  const token=++epoch;connecting=false;sending=false;deciding=false;blockedReason=null;clearPending();
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('disconnected');adapter=null;
   closing=Promise.resolve().then(release);
   update({status:'unavailable',reason,fullAccess:false,sessionSeeded:false,sessionId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:'pending'});
@@ -177,7 +186,7 @@ export function createRuntime({environment=process.env,platform=process.platform
  };
 
  const closePermissionGate=async()=>{
-  const token=epoch;blockedReason=permissionReason;pending=null;
+  const token=epoch;blockedReason=permissionReason;clearPending();
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('permissions-unverified');adapter=null;
   closing=Promise.resolve().then(release);
   update({status:'blocked',reason:permissionReason,permissionVerified:false,sessionId:null,pending:null,cleanup:'pending'});
@@ -187,7 +196,7 @@ export function createRuntime({environment=process.env,platform=process.platform
  };
 
  function receivePending(value) {
-  if(value.kind==='input'&&settledInputs.has(value.userInputId))return false;
+  if(value.kind==='input'&&settledInputs.has(value.userInputId)||value.kind==='approval'&&settledApprovals.has(value.approvalId))return false;
   if(value.kind==='input'&&state.permissionVerified&&adapter?.snapshot().status==='submitting'){
    if(!inputPrompt(value)||deferredInputs.size>=32){void disconnect('Unsupported native question sequence.');return false;}
    deferredInputs.set(value.userInputId,structuredClone(value));return false;
@@ -196,13 +205,10 @@ export function createRuntime({environment=process.env,platform=process.platform
    void disconnect('An approval or input request arrived after the turn became inactive or uncertain. The session was stopped; inspect partial changes before reconnecting.');
    return false;
   }
-  const same=pending?.kind===value.kind&&(value.kind==='approval'?pending.approvalId===value.approvalId:pending.userInputId===value.userInputId);
-  if(pending&&!same){
-   void disconnect('Muse sent overlapping approval or input requests. This version cannot reconcile them; the session was stopped without deciding either request.');
-   return false;
-  }
   if(value.kind==='input'&&(!inputPrompt(value)||value.turnId!==adapter.snapshot().turnId)){void disconnect('Unsupported or stale native question. No answer was sent.');return false;}
-  if(!same||JSON.stringify(pending)!==JSON.stringify(value)){pending=structuredClone(value);pendingRevision++;}return true;
+  if(!['approval','input'].includes(value.kind)||typeof (value.approvalId??value.userInputId)!=='string'||(value.approvalId??value.userInputId).length>200||JSON.stringify(value).length>262144||!requests.has(requestKey(value))&&requests.size>=32){void disconnect('Native request limit or invalid identity. No decision was sent.');return false;}
+  const previous=requests.get(requestKey(value))?.value;if(value.kind==='approval'&&Number.isInteger(previous?.currentRequirementId?.sourceIndex)&&value.currentRequirementId?.sourceIndex<previous.currentRequirementId.sourceIndex)return false;
+  putPending(value);return true;
  }
 
  function observe(frame) {
@@ -219,25 +225,27 @@ export function createRuntime({environment=process.env,platform=process.platform
   if(frame.method==='approval/requested'){
    if(!receivePending({kind:'approval',...p}))return;
    block('Muse is waiting for your decision. Review the requested action and choose a one-time response.',false);
-  }else if(frame.method==='approval/updated'&&pending?.approvalId===p.approvalId){
-   pending={...pending,...structuredClone(p)};pendingRevision++;update({pending:displayPending(pending,pendingRevision)});
-  }else if(frame.method==='approval/resolved'&&pending?.approvalId===p.approvalId){
-   pending=null;blockedReason=null;syncAdapter(adapter.snapshot());
-  }else if(frame.method==='userInput/requested'){
+  }else if(frame.method==='approval/updated'&&requests.has('approval:'+p.approvalId)){
+   const current=requests.get('approval:'+p.approvalId).value;
+   if(receivePending({...current,...structuredClone(p),kind:'approval'}))update({pending:displayPending(pending,pendingRevision)});
+  }else if(frame.method==='approval/resolved'){
+   if(typeof p.approvalId!=='string'||p.approvalId.length>200)return;
+   if(settledApprovals.size>=4096){void disconnect('Native approval history limit reached.');return;}
+   settledApprovals.add(p.approvalId);removePending('approval:'+p.approvalId);syncAdapter(adapter.snapshot());  }else if(frame.method==='userInput/requested'){
    if(!receivePending({kind:'input',...p}))return;
    block('Muse is waiting for your answer.',false);
   }else if(frame.method==='userInput/settled'){
    if(typeof p.userInputId!=='string'||p.userInputId.length>200)return;
    if(settledInputs.size>=4096&&!settledInputs.has(p.userInputId)){void disconnect('Native question history limit reached. Reconnect before continuing.');return;}
    settledInputs.add(p.userInputId);
-   const request=pending?.kind==='input'&&pending.userInputId===p.userInputId?pending:deferredInputs.get(p.userInputId);
+   const request=requests.get('input:'+p.userInputId)?.value??deferredInputs.get(p.userInputId);
    deferredInputs.delete(p.userInputId);
    if(request){
-    const previous=state.inputResponse?.userInputId===p.userInputId?state.inputResponse:{};
+    const previous=inputResponses.get(p.userInputId)??{};
     const receipt={...previous,sessionId:request.sessionId,userInputId:request.userInputId,turnId:request.turnId,prompt:structuredClone(request),status:'settled',outcome:p.outcome};
     if(p.outcome==='answered')try{validateInputAnswers(request,{...request,revision:1,operation:'answer',answers:p.answers});receipt.confirmedAnswers=structuredClone(p.answers);}catch{/* Invalid settlement is never replayed as a confirmed answer. */}
-    if(pending?.userInputId===p.userInputId){pending=null;blockedReason=null;}
-    update({inputResponse:receipt});syncAdapter(adapter.snapshot());
+    removePending('input:'+p.userInputId);
+    publishInput(receipt);syncAdapter(adapter.snapshot());
    }
   }
  }
@@ -250,7 +258,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   if(typeof binary!=='string'||!isAbsolute(binary))throw Error('Select an absolute path to a trusted official Muse native binary.');
   if(platform==='win32'&&!binary.toLowerCase().endsWith('.exe'))throw Error('Select the native muse.exe, not a .cmd or PowerShell installer/launcher.');
   if(typeof workspaceRoot!=='string'||!isAbsolute(workspaceRoot))throw Error('Select an absolute project workspace first.');
-  const token=++epoch;connecting=true;blockedReason=null;pending=null;deferredInputs.clear();settledInputs.clear();update({inputResponse:null});compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();uncertainChildren.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0,childReceipts:[]});syncCompaction();
+  const token=++epoch;connecting=true;blockedReason=null;clearPending();deferredInputs.clear();settledInputs.clear();settledApprovals.clear();inputResponses.clear();approvalAttempts.clear();update({inputResponse:null,inputResponses:[]});compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();uncertainChildren.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0,childReceipts:[]});syncCompaction();
   update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,sessionSeeded:false,steering:null,sessionId:null,messages:[],pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
   let openedSession;
   try{
@@ -344,6 +352,9 @@ export function createRuntime({environment=process.env,platform=process.platform
  }
 
  async function decide(decision) {
+  let selected;if(decision!=='deny')try{selected=JSON.parse(decision);}catch{throw Error('Unsupported decision. Choose a current one-time response.');}
+  const entry=decision==='deny'?requests.values().next().value:requests.get('approval:'+selected?.approvalId);
+  const pending=entry?.value,pendingRevision=entry?.revision;
   if(deciding)throw Error('An approval decision is already in progress.');
   if(!state.permissionVerified||!['running','submitting'].includes(adapter?.snapshot().status))throw Error('The approval is no longer active or its permission state is uncertain. Disconnect before continuing.');
   if(!owner||pending?.kind!=='approval'||pending.sessionId!==state.sessionId)throw Error('There is no current approval request to deny.');
@@ -351,17 +362,16 @@ export function createRuntime({environment=process.env,platform=process.platform
   let choice;
   if(decision==='deny')choice=pending.availableChoices?.find(c=>c.decision==='denied'&&c.scope==='once')??pending.availableChoices?.find(c=>c.decision==='abort'&&c.scope==='once');
   else{
-   let selected;
-   try{selected=JSON.parse(decision);}catch{throw Error('Unsupported decision. Choose a currently offered one-time response.');}
    if(selected?.sessionId!==pending.sessionId||selected.approvalId!==pending.approvalId||selected.sourceIndex!==requirement?.sourceIndex||selected.revision!==pendingRevision)throw Error('This approval choice is stale because the request changed. Review its current details.');
    choice=pending.availableChoices?.find(c=>c.choiceId===selected.choiceId&&c.scope==='once'&&['approved','denied','abort'].includes(c.decision));
   }
   if(!choice||typeof choice.choiceId!=='string'||requirement?.approvalId!==pending.approvalId||!Number.isInteger(requirement.sourceIndex)||requirement.sourceIndex<0)throw Error('Muse did not offer a supported one-time choice. Disconnect to stop this session.');
+  const attempt=`${pending.approvalId}:${pendingRevision}`;if(approvalAttempts.has(attempt))throw Error('The previous approval is pending or already submitted.');approvalAttempts.add(attempt);
   const token=epoch;deciding=true;
   try{
    await bounded(owner.connection.command('approval/decide',{sessionId:state.sessionId,approvalId:pending.approvalId,choiceId:choice.choiceId,requirementId:structuredClone(requirement)},{maxAttempts:1}),timeoutMs);
    assertCurrent(token);
-   if(choice.decision==='approved')return snapshot(); // Still blocked until approval/resolved.
+   if(decision!=='deny')return snapshot(); // Each explicit choice waits for its own approval/resolved.
    return await disconnect('Denial sent and the session closed. Inspect partial changes before reconnecting.');
   }catch(error){
    if(token===epoch)await disconnect('The approval outcome is unknown. The session was closed; inspect partial changes before reconnecting.');
@@ -370,17 +380,18 @@ export function createRuntime({environment=process.env,platform=process.platform
  }
 
  async function answerInput(input={}){
+  const entry=requests.get('input:'+input.userInputId),pending=entry?.value,pendingRevision=entry?.revision;
   if(!owner||!state.permissionVerified||!['running','submitting'].includes(adapter?.snapshot().status)||pending?.kind!=='input')throw Error('There is no active native question.');
   if(input.sessionId!==state.sessionId||input.userInputId!==pending.userInputId||input.turnId!==pending.turnId||input.revision!==pendingRevision)throw Error('The question changed. Review the current request.');
   if(input.operation==='engage'){validateInputAnswers(pending,input);owner.connection.notify('userInput/engaged',{sessionId:pending.sessionId,userInputId:pending.userInputId});return snapshot();}
-  if(deciding||state.inputResponse?.userInputId===pending.userInputId&&['submitting','accepted','unknown'].includes(state.inputResponse.status))throw Error('The previous answer is pending or already submitted.');
+  if(deciding||['submitting','accepted','unknown'].includes(inputResponses.get(pending.userInputId)?.status))throw Error('The previous answer is pending or already submitted.');
   validateInputAnswers(pending,input);
-  const token=epoch,commandId=owner.connection.mintCommandId(),request=structuredClone(pending),receipt={commandId,sessionId:request.sessionId,turnId:request.turnId,userInputId:request.userInputId,prompt:request,operation:input.operation,submittedAnswers:structuredClone(input.answers??[]),status:'submitting'};deciding=true;update({inputResponse:receipt});
+  const token=epoch,commandId=owner.connection.mintCommandId(),request=structuredClone(pending),receipt={commandId,sessionId:request.sessionId,turnId:request.turnId,userInputId:request.userInputId,prompt:request,operation:input.operation,submittedAnswers:structuredClone(input.answers??[]),status:'submitting'};deciding=true;publishInput(receipt);
   try{
    const ack=await bounded(owner.connection.command(input.operation==='cancel'?'userInput/cancel':'userInput/answer',{sessionId:request.sessionId,userInputId:request.userInputId,...(input.operation==='answer'?{answers:structuredClone(input.answers)}:{})},{commandId,maxAttempts:1}),timeoutMs);
    assertCurrent(token);if(ack?.commandId!==commandId||ack?.userInputId!==request.userInputId||ack.status!=='accepted')throw Error('Question acknowledgement could not be verified.');
-   if(pending?.userInputId===request.userInputId)update({inputResponse:{...receipt,status:'accepted'}});return snapshot();
-  }catch(error){if(token===epoch&&pending?.userInputId===request.userInputId)update({inputResponse:{...receipt,status:error.code===-32057?'rejected':'unknown'}});throw error;}finally{if(token===epoch)deciding=false;}
+   if(requests.has('input:'+request.userInputId))publishInput({...receipt,status:'accepted'});return snapshot();
+  }catch(error){if(token===epoch&&requests.has('input:'+request.userInputId))publishInput({...receipt,status:error.code===-32057?'rejected':'unknown'});throw error;}finally{if(token===epoch)deciding=false;}
  }
 
  async function steer({text,expectedTurnId}={}){

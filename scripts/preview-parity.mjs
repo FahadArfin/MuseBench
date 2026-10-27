@@ -135,6 +135,9 @@ try{
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.inputResponse.outcome),'answered');
  await click('button','Close dialog');
  for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'sendMessage',text:'/preview-question'});});await click('button','Muse has a question. Answer to continue.');await click('button','Decline to answer');await compare('native-question-declined');
+ for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'sendMessage',text:'/preview-questions'});});await compare('native-concurrent-questions');
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const select=document.querySelector('select[aria-label="Pending requests"]');select.value='input:preview-question-two';select.dispatchEvent(new Event('change',{bubbles:true}));});await compare('native-second-question');await click('button','Decline to answer');await compare('native-question-still-pending');for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.pendingRequests.length),1);await click('button','Decline to answer');
+
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.inputResponse.outcome),'cancelled');
  await click('button','Close dialog');
  for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.appUpdate('check');});
