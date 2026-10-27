@@ -60,6 +60,8 @@ Use **Edit & resend** on an earlier prompt to prepare an editable draft in the c
 
 See the [feature gap research](docs/FEATURE-GAP-RESEARCH.md) for the seven additions, primary sources and deferred prerequisites.
 
+The [open-source harness comparison](docs/OPEN-SOURCE-HARNESS-COMPARISON-2026-10-26.md) evaluates Pi, OpenCode, Hermes and DeepSeek Harness against MuseBench's current implementation, with twelve proposed improvements, pinned sources, runtime boundaries and an evaluation plan.
+
 ## Meta AI and your personal Muse
 
 ### Chat / Work
