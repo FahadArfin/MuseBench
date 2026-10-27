@@ -1,5 +1,5 @@
 import {createContext,useContext,useEffect,useState} from 'react';
-import {ArrowUpCircle,Download,LoaderCircle,RefreshCw} from 'lucide-react';
+import {Download,LoaderCircle,RefreshCw} from 'lucide-react';
 import type {AppUpdateCommand,AppUpdateState} from '../shared/types';
 import './app-updates.css';
 const initial:AppUpdateState={version:'',status:'idle',availableVersion:null,percent:0,lastChecked:null,error:null};
@@ -14,7 +14,7 @@ export function UpdateToolbar(){
  const {state,command,open}=useContext(AppUpdatesContext);
  if(!['available','downloading','downloaded','installing'].includes(state.status))return null;
  const label=state.status==='available'?'Download update':state.status==='downloaded'?'Restart to update':state.status==='installing'?'Installing update':`Downloading update: ${state.percent}%`;
- return <button className="icon-button app-update-indicator" title={label} aria-label={state.status==='downloaded'?'Review downloaded update':label} onClick={()=>{open();if(state.status==='available')void command('download');}}>{['downloading','installing'].includes(state.status)?<LoaderCircle size={17} className="spin"/>:<ArrowUpCircle size={18}/>}</button>;
+ return <button className="icon-button app-update-indicator" title={label} aria-label={state.status==='downloaded'?'Review downloaded update':label} onClick={()=>{open();if(state.status==='available')void command('download');}}>{['downloading','installing'].includes(state.status)?<LoaderCircle size={17} className="spin"/>:<Download size={18}/>}</button>;
 }
 export function AppUpdatePanel(){
  const {state,command}=useContext(AppUpdatesContext),working=['checking','downloading','installing','restart-required'].includes(state.status);
