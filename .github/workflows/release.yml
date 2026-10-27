@@ -23,6 +23,10 @@ jobs:
         with:
           node-version: 22.14.0
           cache: npm
+      - name: Use canonical Windows temporary paths
+        shell: pwsh
+        run: |
+          node -e "const fs=require('node:fs'); const p=fs.realpathSync(process.env.RUNNER_TEMP); console.log(JSON.stringify({original:process.env.TEMP,canonical:p})); fs.appendFileSync(process.env.GITHUB_ENV, 'TEMP='+p+'\nTMP='+p+'\n');"
       - run: npm ci
       - run: npx playwright install chromium
       - id: version
