@@ -29,6 +29,19 @@ try {
  await usagePanel.getByText('$18.25 spent',{exact:true}).waitFor();
  assert.equal(await usagePanel.getByRole('progressbar',{name:'Weekly remaining'}).getAttribute('value'),'9');
  await page.screenshot({path:'artifacts/browser-preview/account-usage.png'});
+ await page.getByRole('tab',{name:'Analytics',exact:true}).click();
+ const analytics=page.getByRole('region',{name:'Usage analytics',exact:true});
+ await analytics.getByText('Preview · Sample activity',{exact:true}).waitFor();
+ assert.equal(await analytics.locator('.analytics-bar-column').count(),7);
+ await page.screenshot({path:'artifacts/browser-preview/usage-analytics.png'});
+ await analytics.getByRole('button',{name:'30d',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelectorAll('.analytics-bar-column').length===30);
+ await analytics.getByRole('button',{name:'Previous analytics period'}).click();
+ await analytics.getByRole('button',{name:'Next analytics period'}).waitFor();
+ await page.waitForFunction(()=>!document.querySelector('[aria-label="Next analytics period"]').disabled);
+ await page.setViewportSize({width:430,height:820});await page.screenshot({path:'artifacts/browser-preview/usage-analytics-mobile.png'});
+ assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.setViewportSize({width:1440,height:960});
+
  await page.keyboard.press('Escape');
 
  await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('combobox',{name:'Task budget',exact:true}).selectOption('extended');assert.equal((await page.evaluate(()=>window.musebench.getState())).task.runOptions.budget,'extended');await page.getByRole('combobox',{name:'Task budget',exact:true}).selectOption('standard');await page.getByRole('button',{name:'Muse connection',exact:true}).click();

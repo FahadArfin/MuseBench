@@ -1,0 +1,9 @@
+# Local activity analytics
+
+Usage & billing has Overview and Analytics tabs in the shared browser/desktop renderer. Analytics provides 7/30-day UTC ranges, previous/next periods, stacked daily counts, accessible daily tables, top chats, tool-name and skill-name breakdowns, and trends.
+
+The native controller persists lightweight metadata into analytics_events in its existing SQLite database before message trimming. Idempotent keys identify messages, run activity items, and confirmed read_skill receipts. Data includes timestamps, task IDs, tool/skill identifiers and chat titles; it copies no prompts, responses or tool arguments. No telemetry endpoint or upload is added. Deletes and archive expiration use the existing chat deletion transaction and remove analytics too. Archived chats remain included until deleted.
+
+This currently covers Muse Code chats only. Demo/manual tasks are excluded. Messages are recorded user messages; inherited fork context is excluded. Tool calls and Sub-Agent activity mean distinct observed activity entries, not successful operations or bills. Skill reads require an existing native receipt. Activity/skill dates use the parent turn start because per-item timestamps are not retained. The store backfills retained task records; older trimmed messages/activity cannot be recovered, and the UI explicitly states coverage may be incomplete. Unknown model or plugin ownership is not guessed.
+
+No allocation of account subscription percentages or credits to individual chats is possible from the current Meta data source. These charts do not estimate billing from activity counts. Browser preview uses deterministic, labelled sample activity. Plan usage history, website/Work activity and model-level historical breakdowns remain unavailable until trustworthy event sources are wired in.

@@ -1,3 +1,4 @@
+import {UsageAnalytics} from './UsageAnalytics';
 import {useCallback,useEffect,useState} from 'react';
 import {money,usageHeadline,type AccountUsage} from '../shared/account-usage.mjs';
 import './account-usage.css';
@@ -9,7 +10,7 @@ export function useAccountUsage(active=true){
  void load();const timer=setInterval(()=>void load(),300000);const focus=()=>void load();window.addEventListener('focus',focus);return()=>{live=false;clearInterval(timer);window.removeEventListener('focus',focus);};},[active,refreshId]);
  return {usage,loading,message,refresh};
 }
-export function AccountUsagePanel(){
+function AccountUsageOverview(){
  const {usage,loading,message,refresh}=useAccountUsage();const [error,setError]=useState('');
  const external=(url:string)=>void window.musebench!.openExternal(url).catch(()=>setError('Could not open the official page.'));const b=usage?.billing;
  return <section className="account-usage" aria-label="Account usage">
@@ -21,3 +22,5 @@ export function AccountUsagePanel(){
  {message&&<p className="usage-note" role="status">{message}</p>}<div className="usage-actions"><button className="button" disabled={loading} onClick={refresh}>Refresh usage</button><button className="button" onClick={()=>void window.musebench!.commandInfo('billing').then(()=>setError(usage?.simulation?'Preview only. No account connection is made.':'Meta billing opened. Sign in if needed, keep the page open, then refresh usage.')).catch(()=>setError('Could not open Meta billing.'))}>Connect Meta billing</button></div>
  {error&&<p className="usage-note" role="status">{error}</p>}{usage?.checkedAt&&<p className="usage-note">Checked {new Date(usage.checkedAt).toLocaleTimeString()} · Updates every 5 minutes while open</p>}</section>;
 }
+
+export function AccountUsagePanel(){const [tab,setTab]=useState<'overview'|'analytics'>('overview');return <><div className="usage-tabs" role="tablist" aria-label="Usage and billing sections">{(['overview','analytics'] as const).map(id=><button type="button" role="tab" key={id} aria-selected={tab===id} onClick={()=>setTab(id)}>{id==='overview'?'Overview':'Analytics'}</button>)}</div><div role="tabpanel" aria-label={tab==='overview'?'Overview':'Analytics'}>{tab==='overview'?<AccountUsageOverview/>:<UsageAnalytics/>}</div></>;}

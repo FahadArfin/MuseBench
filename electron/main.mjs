@@ -169,6 +169,7 @@ else {
     const billingReader=createBillingReader({BrowserWindow,session,parent:window});
     window.on('closed',()=>billingReader.close());
     const commandInfo=createCommandInfo({extensionReview,getState:()=>controller.getState()});
+    handler('musebench:analytics',options=>controller.readAnalytics({days:options?.days,offset:options?.offset}));
     handler('musebench:command-info',async type=>{
       if(type==='billing'){billingReader.open();return{status:'ready'};}
       if(type==='usage'){const [result,billing]=await Promise.all([commandInfo(type),billingReader.read()]);return{...result,usage:{...(result.usage??{windows:[]}),billing,checkedAt:new Date().toISOString()}};}

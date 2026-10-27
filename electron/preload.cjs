@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   workExport: format => ipcRenderer.invoke('musebench:work-export', format),
   onWorkState: callback => { const listener = (_event, state) => callback(state); ipcRenderer.on('musebench:work-update', listener); return () => ipcRenderer.removeListener('musebench:work-update', listener); },
   configureNotifications: value => ipcRenderer.invoke('musebench:notifications', value),
+  analytics: options => ipcRenderer.invoke('musebench:analytics', options),
   commandInfo: type => ipcRenderer.invoke('musebench:command-info', type),
   inspectCodeContext: input => ipcRenderer.invoke('musebench:code-context',input),
   inspectCheckpoint: input => ipcRenderer.invoke('musebench:checkpoint',input),

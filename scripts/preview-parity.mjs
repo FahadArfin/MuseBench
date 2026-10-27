@@ -67,6 +67,8 @@ try{
 
  async function escape(){for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));}
  await compare('default-muse-ai');
+ await click('button','Profile menu');await click('button','Usage');await click('button','Analytics');await compare('usage-analytics-week');await click('button','30d');await compare('usage-analytics-month');await escape();
+
  await click('button','Muse Code');
  await compare('code-chat');
  await click('button','Approval access');await compare('composer-access-menu');await click('[role="menuitemcheckbox"]','Full access');await click('button','Approval access');await compare('composer-full-access');
