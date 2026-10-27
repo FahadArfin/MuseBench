@@ -1,3 +1,4 @@
+import {createOnboarding} from './onboarding.mjs';
 import {createFileEditor} from './file-editor.mjs';
 import {createWorkspaceMcpConfig} from './workspace-mcp-config.mjs';
 import {createAppUpdates,createUpdateShutdown,updateBlocked} from './app-updates.mjs';
@@ -180,6 +181,9 @@ else {
       if(type==='close'){window.close();return{status:'ready'};}
       throw Error('Unsupported command.');
     });
+    const onboarding=createOnboarding({getBinary:()=>controller.getState().runtime.binary,getRuntime:()=>controller.getState().runtime,personal});
+    handler('musebench:onboarding',command=>onboarding.command(command));
+    window.once('closed',()=>onboarding.close());
     handler('musebench:personal-state',()=>personal.snapshot());
     handler('musebench:personal',async command=>{if(command?.type==='layout'&&command.visible)await dictation.stop(true);const result=await personal.dispatch(command);if(command?.type==='appearance')nativeTheme.themeSource=result.appearance.theme;return result;});
     handler('musebench:dictation',command=>{if(command==='start'&&!window.isFocused())throw Error('Focus MuseBench to start dictation.');return dictation.dispatch(command);});

@@ -34,6 +34,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:browser-preview
+      - run: npm run test:onboarding-preview
       - run: npm run test:catalog-preview
       - run: npm run test:preview-parity
       - run: npx electron-builder --win nsis --publish never

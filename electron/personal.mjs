@@ -1,3 +1,4 @@
+import {readPersonalAuth} from './personal-auth.mjs';
 import {readMetaSchedules,activateMetaSchedule,scheduledDocument} from './meta-schedules.mjs';
 import {runMetaAction,dismissMetaSearch} from './meta-navigation.mjs';
 import {readAgentProfile} from './personal-agent.mjs';
@@ -27,10 +28,37 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   let selectedDocument = null;
   let agentProfile = null;
   let schedules = null, scheduleReading = false, scheduleTimer = null;
-  let extraEntrySequence = 0;
+  let extraEntrySequence = 0, setupLoginWindow = null, knownLogin = 'unknown';
   const alive = entry => Boolean(entry && !entry.contents.isDestroyed());
   const current = () => activeEntry;
 
+  async function checkLogin(){
+    if(closed)return {status:'unknown'};
+    if(setupLoginWindow&&!setupLoginWindow.isDestroyed()){
+      const status=await readPersonalAuth(setupLoginWindow.webContents);
+      if(status==='ready'){knownLogin='ready';setupLoginWindow.close();const entry=current();if(alive(entry))entry.contents.reload();return {status:'ready'};}
+      return {status:status==='required'?'required':'unknown',message:'Complete sign-in in the account window.'};
+    }
+    const entry=alive(current())?current():selectDestination('bot');
+    let status=await readPersonalAuth(entry.contents);
+    if(status==='unknown'&&entry.slot!=='bot'&&alive(entries.get('bot')))status=await readPersonalAuth(entries.get('bot').contents);
+    if(status!=='unknown')knownLogin=status;
+    return {status:knownLogin};
+  }
+  async function openLogin(){
+    if(closed)return;
+    if(setupLoginWindow&&!setupLoginWindow.isDestroyed()){setupLoginWindow.show();setupLoginWindow.focus();return;}
+    const entry=alive(current())?current():selectDestination('bot'),owner=getServiceSession('muse');
+    const target=personalTarget(destination==='chat'?'chat':'bot');
+    const login=new BrowserWindow({parent:window,width:620,height:800,minWidth:390,minHeight:600,show:false,autoHideMenuBar:true,title:'Sign in to Muse',webPreferences:remotePreferences(owner.webSession)});
+    const loginContents=login.webContents;
+    setupLoginWindow=login;owner.owned.add(loginContents);
+    guardContents(login.webContents,()=>inform('This sign-in redirect is not supported.'));
+    login.webContents.setWindowOpenHandler(details=>openHandler({...entry,contents:login.webContents},owner,details));
+    login.once('ready-to-show',()=>{if(!closed&&!login.isDestroyed()){login.show();login.focus();}});
+    login.once('closed',()=>{owner.owned.delete(loginContents);setupLoginWindow=null;if(!closed&&alive(entry))entry.contents.reload();});
+    await login.loadURL(target);
+  }
   function snapshot() {
     const entry = current(), contents = alive(entry) ? entry.contents : null;
     return {
@@ -91,6 +119,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     if (alive(entry)) entry.contents.close({ waitForBeforeUnload: false });
   }
   function clearLibrary(preserveEntry = null) {
+    knownLogin='unknown';
     libraryGeneration++; libraryEstablished = false; selectedDocument = null; agentProfile = null; catalog.reset();
     // Additional chat/draft documents belong to this account. Preserve an
     // authentication opener until its flow finishes; dispose the other copies.
@@ -466,7 +495,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   window.on('resize', resize); window.on('close', close);
   function close() {
     if (closed) return;
-    closed = true; clearTimeout(scheduleTimer); requestedVisible = false; cancelActions(); clearLibrary(); clearTimeout(libraryTimer); libraryTimer = null;
+    closed = true; if(setupLoginWindow&&!setupLoginWindow.isDestroyed())setupLoginWindow.destroy(); clearTimeout(scheduleTimer); requestedVisible = false; cancelActions(); clearLibrary(); clearTimeout(libraryTimer); libraryTimer = null;
     for (const popup of popups) {
       try { if (!popup.window.isDestroyed()) popup.window.destroy(); } catch { /* Native teardown may already have disposed the child. */ }
       if (!popup.contents.isDestroyed()) popup.contents.close({ waitForBeforeUnload: false });
@@ -483,5 +512,5 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     localContents.removeListener('did-start-navigation', localNavigation); localContents.removeListener('render-process-gone', hide); localContents.removeListener('destroyed', hide); localContents.removeListener('zoom-changed', resize);
     window.removeListener('resize', resize); window.removeListener('close', close);
   }
-  return { snapshot, dispatch, hide, close };
+  return { snapshot, dispatch, hide, close, checkLogin, openLogin };
 }

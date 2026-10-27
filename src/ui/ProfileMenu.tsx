@@ -1,6 +1,7 @@
+import './avatar-picker.css';
 import {useEffect,useLayoutEffect,useRef,useState,type KeyboardEvent} from 'react';
 import {createPortal} from 'react-dom';
-import {ChevronDown,CircleHelp,Bot,Gauge,Settings} from 'lucide-react';
+import {ChevronDown,CircleHelp,Gauge,Settings} from 'lucide-react';
 import type {AccountProfile} from '../shared/types';
 import './profile-menu.css';
 
@@ -9,8 +10,10 @@ type Props={open:boolean;onOpenChange:(open:boolean)=>void;onAction:(action:Prof
 
 export function ProfileAvatar({profile,size=23}:{profile?:AccountProfile|null;size?:number}){
  const seed=profile?.avatarSeed||profile?.displayName||'musebench';
- const variant=Array.from(seed).reduce((hash,char)=>(Math.imul(hash,31)+char.codePointAt(0)!)>>>0,0)%4;
- return <span className={`profile-avatar profile-avatar-${variant}`} aria-hidden="true"><Bot size={size} strokeWidth={1.8}/></span>;
+ const palette=['#2479ce','#7954ba','#bb528a','#cb684f','#a77526','#39896b','#287e88','#398ea7','#4b5ab2','#925d95','#586977','#a28a68'];
+ const match=/^mascot-(\d+)$/.exec(seed),variant=match?Number(match[1])%palette.length:Array.from(seed).reduce((hash,char)=>(Math.imul(hash,31)+char.codePointAt(0)!)>>>0,0)%palette.length;
+ const photo=profile?.avatarImage&&/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(profile.avatarImage)&&profile.avatarImage.length<500000?profile.avatarImage:null;
+ return <span className="profile-avatar" style={{background:palette[variant]}} aria-hidden="true">{photo?<img src={photo} alt=""/>:<svg className="muse-mascot" width={size} height={size} viewBox="0 0 64 72"><path d="M10 65V30C10 15 19 6 32 6s22 9 22 24v35" fill="#f5eddd" stroke="#fff" strokeWidth="3"/><path d="M16 32c0-12 6-19 16-19s16 7 16 19v10c0 12-7 18-16 18S16 54 16 42Z" fill="#e9d7bb"/><ellipse cx="24" cy="35" rx="2" ry="2.7" fill="#392e28"/><ellipse cx="40" cy="35" rx="2" ry="2.7" fill="#392e28"/><path d="M28 43q4 4 8 0" fill="none" stroke="#745344" strokeWidth="2" strokeLinecap="round"/><ellipse cx="21" cy="42" rx="3" ry="1.6" fill="#dfac95" opacity=".65"/><ellipse cx="43" cy="42" rx="3" ry="1.6" fill="#dfac95" opacity=".65"/></svg>}</span>;
 }
 
 export function ProfileMenu({open,onOpenChange,onAction,compact=false,profile}:Props){

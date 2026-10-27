@@ -1,3 +1,4 @@
+import {AvatarPicker} from './AvatarPicker';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowLeft,ArrowUpRight,Check,FolderCode,LockKeyhole,Pencil,Plug} from 'lucide-react';
 import type {AccountProfile,Project,TaskSummary} from '../shared/types';
@@ -14,7 +15,7 @@ function EditProfile({profile,onSave,close}:{profile:AccountProfile;onSave:(valu
  const [draft,setDraft]=useState(profile),[error,setError]=useState('');
  return <Modal title="Edit profile" close={close} className="profile-edit"><form onSubmit={event=>{event.preventDefault();try{onSave({...draft,displayName:draft.displayName.trim(),handle:draft.handle?.trim().replace(/^@/,'')});close();}catch{setError('Your profile could not be saved on this device. Please try again.');}}}>
   <p>Personalize your profile on this device.</p>
-  <fieldset><legend>Profile picture</legend><div className="profile-avatar-options">{['muse-0','muse-1','muse-2','muse-3'].map((seed,i)=><button type="button" key={seed} aria-label={`Blue mascot ${i+1}`} aria-pressed={draft.avatarSeed===seed} onClick={()=>setDraft({...draft,avatarSeed:seed})}><ProfileAvatar profile={{...draft,avatarSeed:seed}} size={28}/>{draft.avatarSeed===seed&&<Check size={12}/>}</button>)}</div></fieldset>
+  <AvatarPicker value={draft} onChange={setDraft}/>
   <label>Display name<input data-autofocus required maxLength={60} value={draft.displayName} onChange={e=>setDraft({...draft,displayName:e.target.value})}/></label>
   <label>Handle<input maxLength={30} pattern="[a-zA-Z0-9_.-]*" title="Use letters, numbers, underscores, dots or hyphens" placeholder="your-name" value={draft.handle||''} onChange={e=>setDraft({...draft,handle:e.target.value})}/></label>
   <label>Bio<textarea maxLength={160} rows={3} placeholder="What are you building?" value={draft.bio||''} onChange={e=>setDraft({...draft,bio:e.target.value})}/></label>

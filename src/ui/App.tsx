@@ -1,3 +1,4 @@
+import {Onboarding,useOnboarding} from './Onboarding';
 import {TypedText} from './TypedText';
 import {AppUpdatesContext,AppUpdatePanel,UpdateToolbar,useAppUpdates} from './AppUpdates';
 import {WorkflowLibrary} from './WorkflowLibrary';
@@ -119,6 +120,10 @@ export default function App() {
   const skillsKey=useRef(''),skillsGeneration=useRef(0);
   const profileReturn=useRef({product,view});
   const {profile:accountProfile,save:saveProfile}=useLocalProfile(personalState?.profile);
+  const onboarding=useOnboarding();
+  const setupReady=Boolean(accountProfile.setupComplete||(accountProfile.sample&&!new URLSearchParams(location.search).has('setup')));
+  const needsSetup=onboarding.state?.[product==='code'?'code':'personal'].status!=='ready'||!setupReady;
+  useEffect(()=>{if(needsSetup)void personalCommand({type:'layout',visible:false});},[needsSetup,personalCommand]);
   const [creating, setCreating] = useState(false);
   const [stage, setStage] = useState<'changes'|'preview'|'checks'>('changes');
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -252,8 +257,9 @@ export default function App() {
       else if (letter === 'b') { event.preventDefault(); toggleSidebar(); }
       else if (letter === 'n' && !modal) { event.preventDefault(); if(product==='personal'&&personalMode==='work'){setSitesVisible(false);setSpacesVisible(false);setWorkHome(true);setMobileNav(false);}else if (product === 'personal') personalSidebarCommand(personalDestination==='chat'?{type:'metaAction',action:'newChat'}:{type:'newMuseChat'}); else newChat(); }
     };
-    window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
-  }, [busy, runtimeActive, modal, mobileNav, setPreferences, product, personalMode, personalDestination, personalCommand, project?.id]);
+    const guardedKey=(event:KeyboardEvent)=>{if(!needsSetup)key(event);};
+    window.addEventListener('keydown', guardedKey); return () => window.removeEventListener('keydown', guardedKey);
+  }, [needsSetup, busy, runtimeActive, modal, mobileNav, setPreferences, product, personalMode, personalDestination, personalCommand, project?.id]);
   useEffect(() => bridge?.onPersonalShortcut?.(shortcut => {
     if (shortcut === 'code') { setProduct('code'); setView('project'); setCreating(false); setReviewOpen(false); setModal(null); setMobileNav(false); }
     else if (shortcut === 'k' && !modal) focusPersonalFilter();
@@ -394,6 +400,7 @@ export default function App() {
   useEffect(()=>bridge?.onPersonalShortcut?.(shortcut=>{if(shortcut==='back')navigationHistory.go(-1);else if(shortcut==='forward')navigationHistory.go(1);}),[bridge,navigationHistory.go]);
   if (!bridge) return <main className="browser-fallback"><Terminal size={32} /><h1>MuseBench desktop</h1><p>Open the Windows application to work with your local projects and Muse.</p></main>;
   if (!state) return <main className="loading"><LoaderCircle className="spin" size={24} /><p>Opening MuseBench…</p>{localError && <p role="alert">{localError}</p>}</main>;
+  if(needsSetup)return <Onboarding product={product} onProduct={setProduct} state={onboarding.state} error={onboarding.error} command={onboarding.command} profile={accountProfile} onSave={saveProfile}/>;
   const tasks = (state.tasks ?? []).filter(t=>!t.archived).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||b.updatedAt.localeCompare(a.updatedAt));
   const filteredTasks = tasks.filter(item => `${item.title} ${state.projects.find(p => p.id === item.projectId)?.name ?? ''}`.toLowerCase().includes(query.toLowerCase()));
   const filteredProjects = state.projects.filter(item => `${item.name} ${item.root}`.toLowerCase().includes(query.toLowerCase()));

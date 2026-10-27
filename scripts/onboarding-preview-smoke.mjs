@@ -1,0 +1,16 @@
+import {createServer} from 'vite';
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+import {mkdir} from 'node:fs/promises';
+const server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-onboarding',server:{host:'127.0.0.1',port:4326,strictPort:true}});await server.listen();
+const browser=await chromium.launch();const page=await browser.newPage({viewport:{width:1200,height:1000}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+try{
+ await page.goto('http://127.0.0.1:4326/preview.html?setup=1');await page.getByRole('button',{name:'Log in to Muse AI',exact:true}).waitFor();assert.equal(await page.locator('.sidebar').count(),0);
+ await page.getByRole('button',{name:'Muse Code',exact:true}).click();await page.getByRole('button',{name:'View subscriptions',exact:true}).waitFor();await mkdir('artifacts/onboarding',{recursive:true});await page.screenshot({path:'artifacts/onboarding/login.png'});
+ await page.getByRole('button',{name:'Log in to Muse Code',exact:true}).click();const finish=page.getByRole('button',{name:'Continue to Muse Code',exact:true});await finish.waitFor();assert.equal(await finish.isDisabled(),true);assert.equal(await page.getByRole('button',{name:/mascot$/}).count(),12);
+ await page.getByRole('button',{name:'Rose mascot',exact:true}).click();assert.equal(await finish.isEnabled(),true);await page.screenshot({path:'artifacts/onboarding/avatars.png'});
+ const png=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=480;c.height=320;const ctx=c.getContext('2d');ctx.fillStyle='#287cff';ctx.fillRect(0,0,240,320);ctx.fillStyle='#ffe1ac';ctx.fillRect(240,0,240,320);return c.toDataURL().split(',')[1];});
+ await page.locator('input[type=file]').setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:Buffer.from(png,'base64')});await page.getByRole('button',{name:'Use photo',exact:true}).waitFor();await page.getByRole('slider',{name:'Zoom',exact:true}).fill('1.5');await page.getByRole('slider',{name:'Horizontal position',exact:true}).fill('75');await page.screenshot({path:'artifacts/onboarding/crop.png'});await page.getByRole('button',{name:'Use photo',exact:true}).click();await finish.click();await page.getByRole('button',{name:'Profile menu',exact:true}).waitFor();assert.equal(await page.locator('.profile-trigger img').count(),2);
+ await page.reload();await page.getByRole('button',{name:'Log in to Muse AI',exact:true}).waitFor();assert.equal(await page.locator('.sidebar').count(),0);await page.getByRole('button',{name:'Log in to Muse AI',exact:true}).click();await page.getByRole('button',{name:'Profile menu',exact:true}).waitFor();assert.equal(await page.locator('.profile-trigger img').count(),2);
+ await page.setViewportSize({width:390,height:844});await page.reload();await page.getByRole('button',{name:'Log in to Muse AI',exact:true}).waitFor();assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'artifacts/onboarding/mobile.png'});assert.deepEqual(errors,[]);console.log('PASS mandatory sign-in, required avatar, crop staging, persistence and mobile setup');
+}finally{await browser.close();await server.close();}

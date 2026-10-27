@@ -23,6 +23,8 @@ function harness(options = {}) {
     show() { this.shown = true; }
     focus() { this.focused = true; }
     setTitle(value) { this.title = value; }
+    loadURL(value) { return this.webContents.loadURL(value); }
+    close() { this.destroy(); }
     destroy() { this.destroyed = true; this.webContents.close(); this.emit('closed'); }
   }
   class View {
@@ -635,4 +637,14 @@ test('auth redirects do not wait for app controls, and shutdown releases pending
   const pending = h.browser.dispatch({ type: 'serviceAction', action: 'settings' });
   h.browser.close(); await pending;
   assert.equal(h.actions.length, 0); assert.equal(contents.isDestroyed(), true);
+});
+
+test('mandatory sign-in uses the same isolated session and closes only after a ready account',async()=>{
+ const h=harness();assert.equal((await h.browser.checkLogin()).status,'unknown');
+ await h.browser.openLogin();const popup=h.popups[0];assert.equal(popup.webContents.getURL(),'https://muse.ai/');
+ assert.equal(popup.options.webPreferences.session,h.views[0].options.webPreferences.session);
+ assert.equal(popup.options.webPreferences.nodeIntegration,false);assert.equal(popup.options.webPreferences.sandbox,true);assert.equal(popup.options.webPreferences.preload,undefined);
+ popup.webContents.executeJavaScript=async()=> 'required';assert.equal((await h.browser.checkLogin()).status,'required');assert.equal(popup.destroyed,false);
+ await h.browser.openLogin();assert.equal(h.popups.length,1);
+ popup.webContents.executeJavaScript=async()=> 'ready';assert.equal((await h.browser.checkLogin()).status,'ready');assert.equal(popup.destroyed,true);h.browser.close();
 });

@@ -55,7 +55,7 @@ export interface PersonalLibraryGroup { status: 'idle' | 'loading' | 'ready' | '
 export interface PersonalLibrary { chats: PersonalLibraryGroup; ideas: PersonalLibraryGroup; goals: PersonalLibraryGroup; selectedId: string | null; }
 export interface PersonalAppearance { theme: 'dark' | 'light'; textSize: 'small' | 'medium' | 'large'; font: 'system' | 'mono'; reducedMotion: boolean; }
 // Frontend auth contract: clear on logout/account switch; no display name is inferred from the OS.
-export interface AccountProfile { displayName: string; avatarSeed?: string; sample?: boolean; handle?: string; bio?: string; }
+export interface AccountProfile { displayName: string; avatarSeed?: string; avatarImage?: string; setupComplete?: boolean; sample?: boolean; handle?: string; bio?: string; }
 export interface PersonalSchedules {status: 'ready'|'loading'|'unavailable';items:{id:string;title:string;timing:string;ambiguous:boolean}[];}
 export interface PersonalState { schedules?:PersonalSchedules|null; agentProfile?:{name:string;avatar:string|null}|null; profile?: AccountProfile | null; destination: PersonalDestination; loading: boolean; origin: string; error: string | null; canGoBack: boolean; canGoForward: boolean; visible: boolean; available: Record<PersonalDestination, boolean>; compact: boolean; notice: string | null; authenticating: boolean; authWindowOpen: boolean; library: PersonalLibrary; appearance?: PersonalAppearance; }
 export type PersonalServiceAction = 'search' | 'feed' | 'library' | 'settings' | 'connections' | 'whatsapp';
@@ -128,3 +128,8 @@ export interface SemanticQuery {projectId:string;operation:'definition'|'referen
 export interface SemanticLocation {path:string;line:number;column:number;endLine:number;endColumn:number;}
 export interface SemanticResult {operation:SemanticQuery['operation'];path:string;line:number;column:number;items:SemanticLocation[];hover:(SemanticLocation&{display:string;documentation:string})|null;truncated:boolean;snapshot:string;scope:{files:number;bytes:number;entries:number;skipped:{symlinks:number;directories:number};config:string;standardLibrary:boolean;excludedDirectories:string[]};engine:string;elapsedMs:number;}
 export interface MuseBenchBridge {semanticNavigate(input:SemanticQuery):Promise<SemanticResult>;}
+
+export interface SignInState {status:'ready'|'required'|'pending'|'unknown';message?:string;method?:'api'|'subscription';loginUrl?:string;userCode?:string}
+export interface OnboardingState {code:SignInState;personal:SignInState;simulation?:boolean}
+export type OnboardingCommand={type:'status'|'loginCode'|'loginPersonal'|'cancel'}|{type:'apiKey';key:string};
+export interface MuseBenchBridge {onboarding(command:OnboardingCommand):Promise<OnboardingState>}

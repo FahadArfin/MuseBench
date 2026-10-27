@@ -19,7 +19,7 @@ try{
  assert.equal(await page.locator('.activity-cell').count(),371);await page.getByText('Not connected',{exact:true}).waitFor();
  pass('Profile menu opens the full page with actual saved-chat counts and honest unavailable token usage');
  await page.getByRole('button',{name:'Edit profile',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Edit profile',exact:true});
- await dialog.getByLabel('Display name',{exact:true}).fill('Taylor Example');await dialog.getByLabel('Handle',{exact:true}).fill('taylor.example');await dialog.getByLabel('Bio',{exact:true}).fill('Building thoughtful tools.');await dialog.getByRole('button',{name:'Blue mascot 3',exact:true}).click();await dialog.getByRole('button',{name:'Save profile',exact:true}).click();
+ await dialog.getByLabel('Display name',{exact:true}).fill('Taylor Example');await dialog.getByLabel('Handle',{exact:true}).fill('taylor.example');await dialog.getByLabel('Bio',{exact:true}).fill('Building thoughtful tools.');await dialog.getByRole('button',{name:'Rose mascot',exact:true}).click();await dialog.getByRole('button',{name:'Save profile',exact:true}).click();
  await page.getByRole('heading',{name:'Taylor Example',exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Profile menu',exact:true}).innerText(),'Taylor Example');
  await page.reload();await openProfile();await page.getByRole('heading',{name:'Taylor Example',exact:true}).waitFor();await page.getByText('@taylor.example',{exact:true}).waitFor();await page.getByText('Building thoughtful tools.',{exact:true}).waitFor();
  pass('Profile edits persist across reload and update the sidebar name and avatar');
