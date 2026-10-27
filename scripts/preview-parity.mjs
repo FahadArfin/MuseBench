@@ -55,6 +55,7 @@ try{
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',ctrlKey:true,bubbles:true})));await compare('history-search');await click('button','History');await compare('history-source');await click('button','Add excerpt to draft');await compare('history-draft');await escape();
  await click('button','Add to chat');await click('button','Skills');await compare('skills-picker');await click('button','Close skills');
  await click('button','Add to chat');await click('button','Worktrees');await compare('worktrees-dialog');await click('button','Close worktrees');
+ await click('button','Add to chat');await click('button','Files & project context');await click('[role="tab"]','What Muse receives');await compare('context-receipt');await click('button','Close dialog');
  await click('button','Add to chat');await click('button','Session');await compare('session-dialog');await click('button','Close session');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const input=document.querySelector('textarea[aria-label="Message Muse"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'/checks');input.dispatchEvent(new Event('input',{bubbles:true}));});
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.querySelector('[role="option"][title^="/checks"]')?.click());await compare('validation-profile');

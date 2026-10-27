@@ -7,7 +7,7 @@ export interface FileChange { path: string; status: 'added' | 'modified' | 'dele
 export type WorkStatus = 'queued'|'working'|'waiting'|'completed'|'failed'|'cancelled'|'interrupted';
 export interface ActivityItem {workflow?:{parentRunId:string;parallelLimit:number};id:string;kind:'model'|'tool'|'agent';title:string;tool:string;status:WorkStatus;detail:string;output:string;truncated?:boolean;agentId?:string;}
 export interface WorkRun {id:string;promptId:string;prompt:string;runId:string|null;ownedRunIds?:string[];status:WorkStatus;startedAt:string;endedAt?:string;reason?:string;activities:ActivityItem[];truncated?:boolean;}
-export interface Message { id: string; role: 'user' | 'assistant' | 'system'; text: string; at: string; turnId?:string; outcome?:WorkStatus; images?:CodeImage[];files?:ContextFile[]; sources?:(ContextFile&{text:string})[]; }
+export interface Message { contextTruncated?:boolean; id: string; role: 'user' | 'assistant' | 'system'; text: string; at: string; turnId?:string; outcome?:WorkStatus; images?:CodeImage[];files?:ContextFile[]; sources?:(ContextFile&{text:string})[]; }
 export interface ShellResult { callId: string; runId: string; toolName: 'powershell'; command: string; output: string; exitCode: number; terminalStatus: 'completed' | 'failed'; terminalReason?: string; truncated: boolean; outcome: string; }
 export interface Check { id: string; script: string; command: string; status: CheckStatus; revision: string; exitCode: number | null; log: string; startedAt: string; endedAt?: string; }
 export interface Checkpoint { id: string; taskId: string; title: string; revision: string; createdAt: string; }
@@ -86,7 +86,8 @@ export interface ContextFile {path:string;hash:string;}
 export interface CodeImage {id:string;name:string;mime:string;bytes:number;}
 export interface CodeDraft {images?:CodeImage[];text:string;files:ContextFile[];mode:'chat'|'plan';updatedAt?:string;}
 export interface QueuedPrompt extends CodeDraft {requiredChecks?:string[];workflow?:{id:string;title:string;phase:string;index:number;total:number};handoff?:{id:string;sourceTaskId:string;sourceTitle:string};id:string;runOptions:RunOptions;at:string;}
-export interface ContextSummary {historyMode?:'replay'|'native'|'connection';characters:number;estimatedTokens:number;includedMessages:number;omittedMessages:number;truncatedMessages:number;fileCount:number;replayedFiles:number;limit:number;}
+export interface ContextReceipt {version:number;promptHash:string;revision:string|null;historyMode:string;nativeContext:string;messages:{id:string;role:string;truncated:boolean}[];sources:{path:string;hash:string;characters:number}[];instructions:{personal:string|null;project:string|null};characters:number;}
+export interface ContextSummary {receipt?:ContextReceipt;historyMode?:'replay'|'native'|'connection';characters:number;estimatedTokens:number;includedMessages:number;omittedMessages:number;truncatedMessages:number;fileCount:number;replayedFiles:number;limit:number;}
 export interface CodeContextResult extends ContextSummary {prompt:string;attachments:(ContextFile&{text:string})[];files:(ContextFile&{characters:number})[];}
 export interface ChatSearchResult extends TaskSummary {projectName:string;snippet:string;messageId?:string;offset?:number;at?:string;}
 export interface HistoryPage {messages:(Message&{textLength:number;offset:number;captureTruncated?:boolean})[];total:number;before:string|null;coverage:string;}

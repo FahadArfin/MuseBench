@@ -9,8 +9,8 @@ Delivery order and status:
 1. Complete — durable message history, source excerpts, paging and indexed search.
 2. Complete — validation profiles, revision-bound phase gates and diagnostics.
 3. Complete — recoverable captured output with explicit limits and retrieval.
-4. In progress — context inspector and source receipts.
-5. Pending — selected-file checkpoint restore, redo and conflicts.
+4. Complete — context inspector and source receipts.
+5. In progress — selected-file checkpoint restore, redo and conflicts.
 6. Pending — reviewed project lessons and skill promotion.
 7. Pending — durable execution/delivery receipts and unknown outcomes.
 8. Pending — bounded goal continuation with user priority.
@@ -35,3 +35,5 @@ Feature 2 delivered: saved project validation profiles (1–8 package scripts), 
 
 
 Feature 3 delivered: captured check output before display truncation, owned native shell-output captures, head/tail/paging/exact search in a shared viewer, explicit upstream/capture truncation, interruption/expiry and task-deletion retention. Limits: 1,048,576 characters per capture; 16 live captures per chat, 128 across the app; older capture bodies expire while their status remains visible. Native text never delivered to MuseBench cannot be recovered. Independent review resolved timeout close-event ordering and Unicode-expanded search offsets. Evidence: 672 tests passed; package/build and 40 desktop/browser parity scenes passed; 92 packaged source/build files and both helpers matched. Native host execution remains separately blocked; native capture routing is covered by adapter/controller fixtures, not a new live host claim.
+
+Feature 4 delivered: SHA-256 receipts for exact prepared input, instruction revisions, selected source hashes and replayed message identities; native context remains unknown. Known app-shortened messages are disclosed, and oversized handoff drafts require shortening instead of silent loss. Preview uses the same composer, including personal instructions and native continuation mode. Evidence: 676 tests and 41 desktop/browser parity scenes passed; production package verified. Independent review findings on clipped messages and preview guidance were resolved.

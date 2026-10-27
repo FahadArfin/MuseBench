@@ -1,0 +1,5 @@
+import type {ContextReceipt as Receipt} from '../shared/types';
+export function ContextReceipt({receipt,label='Prepared request receipt'}:{receipt?:Receipt;label?:string}){
+ if(!receipt)return null;
+ return <section className="context-receipt" aria-label={label}><h3>{label}</h3><dl><dt>Request SHA-256</dt><dd><code>{receipt.promptHash}</code></dd><dt>Workspace revision</dt><dd><code>{receipt.revision??'Unavailable'}</code></dd><dt>Conversation</dt><dd>{receipt.historyMode} · {receipt.messages.length} app-included messages · {receipt.messages.filter(m=>m.truncated).length} shortened</dd><dt>Personal instructions</dt><dd><code>{receipt.instructions.personal??'None included'}</code></dd><dt>Project instructions</dt><dd><code>{receipt.instructions.project??'None included'}</code></dd></dl>{receipt.sources.length>0&&<ul>{receipt.sources.map(s=><li key={s.path}>{s.path} · {s.characters.toLocaleString()} characters <code>{s.hash}</code></li>)}</ul>}<p className="popover-help">Identifies app-prepared text and source snapshots. It does not prove native acceptance or expose Muse’s hidden context. Native context occupancy is unknown.</p></section>;
+}

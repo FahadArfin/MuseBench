@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
@@ -146,7 +147,7 @@ test('queue reordering persists and does not resume paused work',async t=>{
 
 test('full received responses remain searchable past the renderer limit',async t=>{
  const {c,runtime}=await fixture(t);const id=await start(c);await c.dispatch({type:'sendMessage',text:'Inspect the source'});runtime.finish('x'.repeat(17000)+' retrievedlongresponse');
- assert.ok(c.getState().task.messages.every(m=>m.text.length<=16000));const hit=c.searchChats({query:'retrievedlongresponse'})[0];assert.equal(hit.id,id);
+ assert.ok(c.getState().task.messages.every(m=>m.text.length<=16000));assert.equal(c.getState().task.messages.find(m=>m.text.length===16000).contextTruncated,true);const hit=c.searchChats({query:'retrievedlongresponse'})[0];assert.equal(hit.id,id);
  const page=c.readChatHistory({taskId:id,messageId:hit.messageId,offset:17000});assert.equal(page.messages[0].text,' retrievedlongresponse');
 });
 
@@ -164,4 +165,10 @@ test('workflow phase gates hold both manual dequeue and automatic continuation',
  await c.dispatch({type:'saveWorkflow',workflow:{id:'gated',title:'Gated',scope:[],checks:['Tests pass'],phases:[{title:'Review',instructions:'Review only',budget:'standard',requiredChecks:['test']}]}});
  await c.dispatch({type:'queueWorkflow',id:'gated-request',taskId,workflowId:'gated',objective:'Review current revision'});
  const before=runtime.sent.length;const s=await c.dispatch({type:'resumeQueue'});assert.match(s.error,/passing checks/);assert.equal(runtime.sent.length,before);assert.equal(s.task.promptQueue.length,1);
+});
+
+
+test('stored context receipt matches the exact prompt delivered to the runtime',async t=>{
+ const {c,runtime}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'Bind the source evidence'});
+ const receipt=c.getState().task.contextSummary.receipt;assert.equal(receipt.promptHash,createHash('sha256').update(runtime.sent[0].text).digest('hex'));assert.equal(receipt.revision.length,64);assert.equal(receipt.nativeContext,'unknown');
 });

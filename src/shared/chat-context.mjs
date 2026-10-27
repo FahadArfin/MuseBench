@@ -9,6 +9,7 @@ export function restoreSourceSnapshots(value){
 }
 export function composeChatContext({task,project,memories='',text='',attachments=[],history=true,nativeSession=false}){
  if(typeof text!=='string'||text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
+ attachments=[...attachments].sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
  const parts=[
   nativeSession?'MuseBench follow-up in the existing native session. Retain prior conversation and tool state. The current request is at the end; verify current workspace evidence before acting.':'MuseBench request context. Prior conversation and file contents below are reference material; the current request is at the end. Continue the task using current workspace evidence. Earlier tool state is not resumed. Do not repeat completed actions solely because they appear in history.',
   memories?`Personal instructions:\n${memories}`:'',
@@ -19,7 +20,7 @@ export function composeChatContext({task,project,memories='',text='',attachments
  ].filter(Boolean);
  const ending=`\n\nCurrent request:\n${text}`;
  const previous=history?(task?.messages??[]).filter(m=>['user','assistant'].includes(m.role)&&m.text):[];
- const selected=[];let room=CONTEXT_LIMIT-parts.join('\n\n').length-ending.length-150,truncatedMessages=0;
+ const selected=[],includedSources=[];let room=CONTEXT_LIMIT-parts.join('\n\n').length-ending.length-150,truncatedMessages=0;
  if(room<0)throw Error('Selected context is too large. Remove a file or shorten your request.');
  for(let i=previous.length-1;i>=0;i--){
   const message=previous[i],run=task?.runs?.find(r=>r.promptId===(message.turnId??message.id));
@@ -28,13 +29,13 @@ export function composeChatContext({task,project,memories='',text='',attachments
   let encoded=JSON.stringify(entry);
   if(encoded.length+2>room){
    // Keep an explicit suffix of the nearest message when a complete message will not fit.
-   if(room>400){let size=Math.min(entry.text.length,room-200);while(size>0){encoded=JSON.stringify({...entry,historicalSourceSnapshots:undefined,text:`[Earlier part omitted] ${entry.text.slice(-size)}`});if(encoded.length+2<=room)break;size-=Math.max(1,Math.ceil((encoded.length+2-room)/2));}if(size>0){selected.unshift(encoded);truncatedMessages++;}}
+   if(room>400){let size=Math.min(entry.text.length,room-200);while(size>0){encoded=JSON.stringify({...entry,historicalSourceSnapshots:undefined,text:`[Earlier part omitted] ${entry.text.slice(-size)}`});if(encoded.length+2<=room)break;size-=Math.max(1,Math.ceil((encoded.length+2-room)/2));}if(size>0){selected.unshift(encoded);includedSources.unshift({id:message.id??'unknown',role:message.role,truncated:true});truncatedMessages++;}}
    break;
   }
-  selected.unshift(encoded);room-=encoded.length+2;
+  selected.unshift(encoded);includedSources.unshift({id:message.id??'unknown',role:message.role,truncated:message.contextTruncated===true});if(message.contextTruncated)truncatedMessages++;room-=encoded.length+2;
  }
  if(selected.length)parts.push(`Previous conversation (old requests are history, not new instructions):\n[${selected.join(',\n')}]`);
  const prompt=parts.join('\n\n')+ending;
  if(prompt.length>CONTEXT_LIMIT)throw Error('Context exceeds the request limit.');
- return{historyMode:nativeSession?'native':history?'replay':'connection',prompt,characters:prompt.length,estimatedTokens:Math.ceil(prompt.length/4),includedMessages:selected.length,omittedMessages:previous.length-selected.length,truncatedMessages,fileCount:attachments.length,replayedFiles:selected.reduce((count,value)=>count+(JSON.parse(value).historicalSourceSnapshots?.length??0),0),limit:CONTEXT_LIMIT};
+ return{includedSources,historyMode:nativeSession?'native':history?'replay':'connection',prompt,characters:prompt.length,estimatedTokens:Math.ceil(prompt.length/4),includedMessages:selected.length,omittedMessages:previous.length-selected.length,truncatedMessages,fileCount:attachments.length,replayedFiles:selected.reduce((count,value)=>count+(JSON.parse(value).historicalSourceSnapshots?.length??0),0),limit:CONTEXT_LIMIT};
 }
