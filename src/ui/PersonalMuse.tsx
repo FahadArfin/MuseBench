@@ -107,11 +107,18 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
   const input = filterRef ?? localFilter;
   const refreshing = [library.chats, library.ideas, library.goals].some(group => group.status === 'loading');
   useEffect(() => { if (searchOpen) input.current?.focus(); else setQuery(''); }, [searchOpen]);
-  const museOpen = destination !== 'chat';
+  const [expandedService, setExpandedService] = useState<'muse'|'meta'|null>(null);
+  const museOpen = expandedService === 'muse';
+  const metaOpen = expandedService === 'meta';
+  const openService = (service:'muse'|'meta') => {
+    setExpandedService(service);
+    onSearchOpenChange(false);
+    onNavigate(service==='muse'?'bot':'chat');
+  };
   const museSectionId = useId(), metaSectionId = useId();
   const agentName=agentProfile?.name?.trim()||'Muse';
-  const agentButton=<button type="button" className={`navigation-row muse-agent-shortcut ${destination==='bot'&&!library.selectedId?'active':''}`} aria-label={agentName} title={agentName} aria-expanded={museOpen} aria-controls={museSectionId} aria-current={destination==='bot'&&!library.selectedId?'page':undefined} disabled={!available.bot} onClick={()=>onNavigate('bot')}>
-    {agentProfile?.avatar?<img className="muse-agent-avatar" src={agentProfile.avatar} alt="" draggable={false}/>:<Bot size={20} aria-hidden="true"/>}<span>{agentName}</span>
+  const agentButton=<button type="button" className={`navigation-row personal-service-heading muse-agent-shortcut ${museOpen?'active':''}`} aria-label={agentName} title={agentName} aria-expanded={museOpen} aria-controls={museSectionId} aria-current={destination==='bot'&&!library.selectedId?'page':undefined} disabled={!available.bot} onClick={()=>openService('muse')}>
+    {agentProfile?.avatar?<img className="muse-agent-avatar" src={agentProfile.avatar} alt="" draggable={false}/>:<Bot size={20} aria-hidden="true"/>}<span className="personal-service-label"><strong>{agentName}</strong><small>Personal assistant</small></span><ChevronRight className="personal-service-chevron" size={15} aria-hidden="true"/>
   </button>;
   return <div className="personal-navigation">
     <div className="personal-navigation-scroll">
@@ -135,8 +142,8 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
       </nav></div>
       </div></div>
       <nav className="meta-native-navigation" aria-label="Meta AI navigation">
-        <button type="button" className={`navigation-row personal-meta-chat ${destination==='chat'?'active':''}`} aria-current={destination==='chat'?'page':undefined} aria-label="Chat" aria-expanded={!museOpen} aria-controls={metaSectionId} disabled={!available.chat} title="Regular Meta AI chat" onClick={() => onNavigate('chat')}><MessageCircle size={16} /><span>Meta AI Chat</span></button>
-        <div id={metaSectionId} className={`personal-service-content ${!museOpen?'expanded':''}`} aria-hidden={museOpen} inert={museOpen}><div className="personal-service-inner">
+        <button type="button" className={`navigation-row personal-service-heading personal-meta-chat ${metaOpen?'active':''}`} aria-current={destination==='chat'?'page':undefined} aria-label="Chat" aria-expanded={metaOpen} aria-controls={metaSectionId} disabled={!available.chat} title="Regular Meta AI chat" onClick={() => openService('meta')}><MessageCircle size={20} /><span className="personal-service-label"><strong>Meta AI Chat</strong><small>Chat &amp; create</small></span><ChevronRight className="personal-service-chevron" size={15} aria-hidden="true"/></button>
+        <div id={metaSectionId} className={`personal-service-content ${metaOpen?'expanded':''}`} aria-hidden={!metaOpen} inert={!metaOpen}><div className="personal-service-inner">
     {([{action:'newChat',label:'New chat',icon:SquarePen},{action:'search',label:'Search',icon:Search},{action:'media',label:'Media',icon:Images},{action:'artifacts',label:'Artifacts',icon:Shapes},{action:'scheduled',label:'Scheduled',icon:CalendarDays},{action:'vibes',label:'Vibes',icon:Clapperboard}] as const).map(item=><button key={item.action} type="button" aria-label={item.label} aria-current={item.action==='scheduled'&&schedules?'page':undefined} className={`navigation-row ${item.action==='scheduled'&&schedules?'active':''}`} disabled={!available.chat} onClick={()=>onCommand({type:'metaAction',action:item.action})}><item.icon size={17}/><span>{item.label}</span>{destination==='chat'&&item.action==='search'&&<kbd>Ctrl K</kbd>}{destination==='chat'&&item.action==='newChat'&&<kbd>Ctrl N</kbd>}</button>)}
     {destination==='chat'&&schedules&&<ScheduledTasks schedules={schedules} onCommand={onCommand}/>}
         </div></div>

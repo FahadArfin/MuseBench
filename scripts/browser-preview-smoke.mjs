@@ -121,11 +121,16 @@ try {
  await page.getByRole('group',{name:'Choose workspace'}).getByRole('button',{name:'Muse AI',exact:true}).click();
  await page.getByRole('region',{name:'Desktop website snapshot'}).waitFor();
  await page.screenshot({path:'artifacts/browser-preview/personal.png'});
+ assert.equal(await page.locator('.personal-service-content.expanded').count(),0);
+ await page.locator('.muse-agent-shortcut').click();
  await page.getByRole('button',{name:'Ideas',exact:true}).click();
  await page.getByRole('region',{name:'Desktop website snapshot'}).waitFor();
  await page.getByRole('button',{name:'Goals',exact:true}).click();
  await page.getByRole('region',{name:'Desktop website snapshot'}).waitFor();
  await page.getByRole('navigation',{name:'Meta AI navigation',exact:true}).getByRole('button',{name:'Chat',exact:true}).click();
+ assert.equal(await page.locator('.personal-service-content.expanded').count(),1);
+ assert.equal(await page.locator('.muse-agent-shortcut').getAttribute('aria-expanded'),'false');
+ assert.equal(await page.locator('.personal-meta-chat').getAttribute('aria-expanded'),'true');
  await page.getByRole('region',{name:'Desktop website snapshot'}).waitFor();
  await page.getByRole('button',{name:'Scheduled',exact:true}).click();await page.getByRole('region',{name:'Scheduled tasks'}).waitFor();assert.equal(await page.getByRole('textbox',{name:'Sample scheduling message'}).count(),0);
  await page.getByRole('group',{name:'Chat or Work'}).getByRole('button',{name:'Work',exact:true}).click();
