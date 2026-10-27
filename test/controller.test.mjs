@@ -356,3 +356,16 @@ test('project check output is captured before the display log is shortened',asyn
  const result=c.readCapturedOutput({taskId:task.id,id:task.check.id});assert.match(result.selected.text,/HEAD_EVIDENCE/);assert.equal(result.selected.status,'passed');
  assert.match(c.readCapturedOutput({taskId:task.id,id:task.check.id,query:'TAIL_EVIDENCE'}).selected.text,/TAIL_EVIDENCE/);
 });
+
+
+test('tutorial filter edit supports Windows CRLF checkouts',async t=>{
+ const {controller:c}=await fixture(t);
+ const created=await c.dispatch({type:'createDemo'}),file=path.join(created.activeProject.root,'app.js');
+ await writeFile(file,(await readFile(file,'utf8')).replace(/\r?\n/g,'\r\n'));
+ await c.dispatch({type:'newTask',mode:'demo',request:'Add a caffeine-free tea filter'});
+ await c.dispatch({type:'approvePlan'});
+ const applied=await c.dispatch({type:'applyDemo'});
+ assert.equal(applied.error,null);
+ assert.match(await readFile(file,'utf8'),/MUSEBENCH_FILTER: true \*\/\r\nconst FILTER_ENABLED = true;/);
+ assert.ok(applied.task.changes.some(f=>f.path==='app.js'));
+});
