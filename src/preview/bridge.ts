@@ -38,6 +38,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const initial=task('Build a clearer project overview','preview-overview');
  initial.messages.push({id:id(),role:'assistant',at:stamp,text:'The project overview now keeps your recent threads together, with a clear place to start a new chat.\n\nYou can open the changed file below, explore the composer controls, or switch to Muse AI. This is fictional sample content for visual feedback.'});
  initial.changes=[{path:'src/ProjectOverview.tsx',status:'modified',additions:3,deletions:1,before:'<h1>Project</h1>\n',after:'<h1>Your project</h1>\n<p>Pick up where you left off.</p>\n<button>New chat</button>\n'}];
+ initial.executionReceipts=[{id:'sample-request',phase:'settled',result:'unknown',acceptance:'accepted',delivery:'not-requested',createdAt:stamp,updatedAt:stamp,reason:'Preview example: interrupted before the result was confirmed.'}];
  initial.runs=[{id:'sample-run',promptId:initial.messages[0].id,prompt:initial.request,runId:'sample',status:'completed',startedAt:stamp,endedAt:stamp,activities:[{id:'sample-layout',kind:'tool',title:'Updated the project overview',tool:'edit',status:'completed',detail:'src/ProjectOverview.tsx',output:'Sample change for preview only.'}]}];
  initial.runs[0].activities.push({id:'sample-workflow',kind:'tool',title:'Workflow: Preview review',tool:'workflow',status:'completed',detail:'Simulated workflow progress for preview only',output:'',workflow:{parentRunId:'sample',parallelLimit:2}});
  const other=task('Polish the chat composer','preview-composer');

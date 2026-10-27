@@ -12,8 +12,8 @@ Delivery order and status:
 4. Complete — context inspector and source receipts.
 5. Complete — selected-file checkpoint restore, redo and conflicts.
 6. Complete — reviewed project lessons and skill promotion.
-7. In progress — durable execution/delivery receipts and unknown outcomes.
-8. Pending — bounded goal continuation with user priority.
+7. Complete — durable execution/delivery receipts and unknown outcomes.
+8. In progress — bounded goal continuation with user priority.
 9. Pending — focused reviewer contracts and explicit integration.
 10. Pending — app-owned tool discovery; native semantic tools remain conditional on supported execution.
 11. Pending — performance measurements and justified event/UI improvements.
@@ -41,3 +41,5 @@ Feature 4 delivered: SHA-256 receipts for exact prepared input, instruction revi
 Feature 5 delivered: selected text-file checkpoint comparison and restore, pre-restore redo checkpoints, exact reviewed revision checks, per-file conflict checks, idle runtime/check/preview requirement, persisted operation journals and interrupted-operation notice. Added/deleted paths are explicit; renames are selected add/delete pairs. Binary contents are unavailable and refused. No Git index writes or conversation rewinds. Evidence: 680 tests; 42 production/browser parity scenes; 94 packaged source/build files and native helpers verified. Multi-file restore is journaled, not an atomic filesystem transaction; concurrent external filesystem mutation still requires review of partial results.
 
 Feature 6 delivered: explicit lesson proposals with source chat/message/revision and passing check provenance, searchable review, guidance comparison, stale-content rejection, duplicate detection, bounded acceptance into existing project instructions and exact-block revocation. Validated-source lessons can use the existing native skill validation/install path after explicit review; native use still requires a load receipt. No automatic learning claim or background model call. Evidence: 683 tests and 45 desktop/browser parity scenes, including proposed/accepted/revoked lessons; package verification passed.
+
+Feature 7 delivered: independent SQLite execution intents, dispatch/acceptance/native identity/result receipts, restart recovery to unknown, and separate suppressed/submitted/shown/failed/unsupported notification delivery. No notification callback dispatches work; unsupported process/version facts remain unknown. The session inspector shares receipts in preview and desktop. Evidence: 687 tests, 45 parity scenes, 96 packaged source/build files and helpers verified. OS shown means notification visibility, not user reading or external side-effect success. Meta-hosted schedules remain outside this controller.

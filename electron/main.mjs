@@ -168,12 +168,13 @@ else {
     handler('musebench:choose-binary',async()=>{const result=await dialog.showOpenDialog(window,{title:'Select your official Muse CLI executable',properties:['openFile'],filters:[{name:'Muse CLI',extensions:process.platform==='win32'?['exe']:['*']}]});return result.canceled?null:result.filePaths[0];});
     handler('musebench:external',async url=>{if(!allowedExternal(url))throw Error('This external link is not supported.');await shell.openExternal(url);});
     const notifications=new Set();
-    const notifier=createRunNotifier({isFocused:()=>!window||window.isDestroyed()||window.isFocused(),send:options=>{
-      if(!Notification.isSupported())return;
+    const notifier=createRunNotifier({report:(id,status)=>controller.recordDelivery(id,status),isFocused:()=>!window||window.isDestroyed()||window.isFocused(),send:(options,receipt)=>{
+      if(!Notification.isSupported()){receipt.delivery('unsupported');return;}
       const notification=new Notification(options);notifications.add(notification);
       notification.on('click',()=>{if(!window.isDestroyed()){if(window.isMinimized())window.restore();window.show();window.focus();}});
       notification.on('close',()=>notifications.delete(notification));
-      notification.on('failed',()=>notifications.delete(notification));
+      notification.on('show',()=>receipt.delivery('shown'));
+      notification.on('failed',()=>{receipt.delivery('failed');notifications.delete(notification);});
       notification.show();
       while(notifications.size>5){const oldest=notifications.values().next().value;notifications.delete(oldest);oldest.close();}
     }});

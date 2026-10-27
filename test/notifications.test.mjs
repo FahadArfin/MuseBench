@@ -25,3 +25,7 @@ test('delivery failures do not interrupt controller updates or re-notify',()=>{
  let attempts=0;const notify=createRunNotifier({isFocused:()=>false,send:()=>{attempts++;throw Error('not supported');}});notify.configure(prefs);
  notify.observe(state('a','working'));assert.doesNotThrow(()=>notify.observe(state('a','completed')));notify.observe(state('a','completed'));assert.equal(attempts,1);
 });
+
+test('delivery receipts distinguish submission, OS visibility and failure without executing a run',()=>{
+ const receipts=[];let callback;const notifier=createRunNotifier({isFocused:()=>false,report:(id,status)=>receipts.push([id,status]),send:(_options,receipt)=>{callback=receipt.delivery;}});notifier.configure({completion:true,attention:false,sound:false});notifier.observe({task:{id:'t',runs:[{id:'r',status:'working'}]}});notifier.observe({task:{id:'t',runs:[{id:'r',status:'completed'}]}});callback('shown');assert.deepEqual(receipts,[['r','submitted'],['r','shown']]);
+});

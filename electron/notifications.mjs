@@ -6,7 +6,7 @@ export function validateNotificationPreferences(value) {
 
 // Observe native run transitions only. The renderer cannot supply notification
 // content, and restored terminal runs never produce a notification.
-export function createRunNotifier({isFocused,send}) {
+export function createRunNotifier({isFocused,send,report=()=>{}}) {
  let preferences={completion:false,attention:false,sound:false};
  const seen=new Map();
  return {
@@ -17,8 +17,10 @@ export function createRunNotifier({isFocused,send}) {
     seen.set(key,run.status);
     if(!previous||previous===run.status)continue;
     const completed=run.status==='completed',attention=['waiting','failed','interrupted'].includes(run.status);
-    if((!completed||!preferences.completion)&&(!attention||!preferences.attention))continue;
-    try {if(!isFocused())send({title:'MuseBench',body:completed?'Muse Code finished a task.':run.status==='waiting'?'Muse Code needs your attention.':'A Muse Code task stopped. Open MuseBench for details.',silent:!preferences.sound});}catch{/* OS notification failures must not affect a coding run. */}
+    if(!completed&&!attention)continue;
+    const delivery=status=>{try{report(run.id,status);}catch{}};
+    if((!completed||!preferences.completion)&&(!attention||!preferences.attention)){delivery('suppressed');continue;}
+    try {if(isFocused()){delivery('suppressed');continue;}delivery('submitted');send({title:'MuseBench',body:completed?'Muse Code finished a task.':run.status==='waiting'?'Muse Code needs your attention.':'A Muse Code task stopped. Open MuseBench for details.',silent:!preferences.sound},{id:run.id,delivery});}catch{delivery('failed');}
    }
    while(seen.size>300)seen.delete(seen.keys().next().value);
   },
