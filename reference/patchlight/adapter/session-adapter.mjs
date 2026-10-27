@@ -13,8 +13,9 @@ const str = v => typeof v==='string' && v.length>0;
  */
 export class MuseSessionAdapter {
  #connection; #state; #messages=new Map(); #seen=new Map(); #buffer=[];
- #epoch=0; #timeout; #listeners=new Set(); #maxEvents; #maxText;
- constructor({connection,sdkVersion,initializeResult,fullAccess=false,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
+ #epoch=0; #timeout; #listeners=new Set(); #maxEvents; #maxText; #allowContinuation;
+ constructor({connection,sdkVersion,initializeResult,fullAccess=false,allowContinuation=()=>false,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
+  this.#allowContinuation=allowContinuation;
   this.#connection=connection;this.#timeout=timeoutMs;this.#maxEvents=maxEvents;this.#maxText=maxText;
   const gate=compatibility({sdkVersion,initializeResult,fullAccess});
   this.#state={status:gate.available&&connection?'ready':'unavailable',reason:connection?gate.reason:'runtime-unavailable',sessionId:null,turnId:null,mode:null,planReadOnlyEnforced:false,tests:'not-run',outcome:null,liveVerified:false};
@@ -56,7 +57,7 @@ export class MuseSessionAdapter {
   if(!usable.has(this.#state.status))throw Error('Session cannot accept a turn in its current state');
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Invalid turn input');
   const epoch=++this.#epoch;
-  this.#state.status='submitting';this.#state.mode=mode;this.#state.outcome=null;this.#state.turnId=null;this.#state.reason=null;
+  this.#state.status='submitting';this.#state.mode=mode;this.#state.outcome=null;this.#state.turnId=null;this.#state.rootTurnId=null;this.#state.ownedTurnIds=[];this.#state.reason=null;
   this.#messages.clear();this.#seen.clear();this.#buffer=[];this.#emit();
   if(this.#epoch!==epoch||this.#state.status!=='submitting')throw Error('Turn submission was interrupted before dispatch');
   let commandId;
@@ -67,7 +68,7 @@ export class MuseSessionAdapter {
    const ack=await this.#bounded(this.#connection.command('turn/start',{sessionId:this.#state.sessionId,input:[{type:'text',text:input}]},{commandId,maxAttempts:1}));
    if(this.#epoch!==epoch)throw Error('Turn submission was interrupted');
    if(ack?.commandId!==commandId||ack.status!=='accepted'||ack.disposition!=='started'||ack.startedNewTurn!==true||!str(ack.turnId))throw Error('Unsupported or unconfirmed turn disposition');
-   this.#state.turnId=ack.turnId;this.#state.status='running';
+   this.#state.turnId=ack.turnId;this.#state.rootTurnId=ack.turnId;this.#state.ownedTurnIds=[ack.turnId];this.#state.status='running';
    const held=this.#buffer;this.#buffer=[];for(const f of held)this.#receive(f);this.#emit();
    return this.snapshot();
   }catch(error){if(this.#epoch===epoch)this.#halt('uncertain','turn-submit-outcome-unknown');throw error;}
@@ -95,7 +96,13 @@ export class MuseSessionAdapter {
   if(this.#seen.size>=this.#maxEvents){this.disconnect('event-limit');return;}
   this.#seen.set(p.viewCursor,payload);
   if(method.startsWith('turn/')){
-   if(p.turnId!==this.#state.turnId){this.disconnect('unexpected-turn');return;}
+   if(p.turnId!==this.#state.turnId){
+    // Only the owner of this exclusive session can opt into native child-reporting
+    // turns. Never adopt an overlapping, unobserved or malformed foreground turn.
+    if(method!=='turn/started'||!terminals.has(this.#state.status)||!str(p.turnId)||p.commandId!==p.turnId||!this.#allowContinuation(this.snapshot())){this.disconnect('unexpected-turn');return;}
+    if(this.#state.ownedTurnIds.length>=128){this.disconnect('continuation-limit');return;}
+    this.#state.ownedTurnIds.push(p.turnId);this.#state.turnId=p.turnId;this.#state.status='running';this.#state.outcome=null;this.#state.reason=null;
+   }
    if(method==='turn/completed'){
     if(!terminals.has(p.terminal)){this.disconnect('unsupported-terminal');return;}
     if(terminals.has(this.#state.outcome)&&this.#state.outcome!==p.terminal){this.disconnect('conflicting-terminal');return;}

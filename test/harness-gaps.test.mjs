@@ -258,3 +258,22 @@ test('uncertain steering preserves a durable receipt and draft without inventing
 });
 
 test('restart reconciles unfinished native compaction as unknown without deleting history',async t=>{const {c,runtime,dataDir}=await fixture(t);await start(c);runtime.emit({compaction:{commandId:'compact-c',sessionId:'s',turnId:'t',status:'accepted'}});await c.close();const reopened=await createController({dataDir,runtime:fakeRuntime()});try{assert.equal(reopened.getState().task.compactionReceipts[0].status,'unknown');assert.equal(reopened.getState().task.compactionReceipts[0].commandId,'compact-c');}finally{await reopened.close();}});
+
+test('a rejected second correction never relabels the first unknown steering receipt',async t=>{const {c,runtime}=await fixture(t);const taskId=await start(c);await c.dispatch({type:'sendMessage',text:'Work'});runtime.emit({transport:'msp',steeringSupported:true,turnId:'turn'});runtime.steer=async()=>{runtime.emit({steering:{commandId:'first',turnId:'turn',status:'unknown'}});throw Error('Unknown');};await c.dispatch({type:'steerMessage',taskId,expectedTurnId:'turn',text:'A'});runtime.steer=async()=>{throw Error('Previous command uncertain');};await c.dispatch({type:'steerMessage',taskId,expectedTurnId:'turn',text:'B'});assert.equal(c.getState().task.steeringReceipts[0].text,'A');});
+test('native child work reserves its checkout and refuses followups while another chat owns it',async t=>{const {c,runtime,runtimes}=await fixture(t,{background:true});const first=await start(c);await c.dispatch({type:'sendMessage',text:'First'});runtime.finish();runtime.emit({childControlsSupported:true,childrenBusy:true});const second=await start(c);let s=await c.dispatch({type:'sendMessage',text:'Conflicting'});assert.match(s.error,/checkout/);runtime.emit({childrenBusy:false});await c.dispatch({type:'sendMessage',text:'Other work'});await c.dispatch({type:'selectTask',id:first});let controls=0;runtime.childControl=async()=>controls++;s=await c.dispatch({type:'childControl',taskId:first,sessionId:'s',itemId:'i',revision:1,action:'followupTask',body:'Work'});assert.match(s.error,/checkout/);assert.equal(controls,0);assert.equal(c.getState().tasks.find(t=>t.id===second).runtimeBusy,true);});
+
+test('native reporting and later child followup stay attached to the original app prompt',async t=>{
+ const {c,runtime}=await fixture(t);const taskId=await start(c);runtime.emit({transport:'msp'});await c.dispatch({type:'sendMessage',text:'Delegate work'});
+ runtime.emit({rootTurnId:'native-root',turnId:'native-root',runId:'native-root',inputAccepted:true});
+ const promptId=c.getState().task.messages.find(m=>m.role==='user').id;
+ runtime.emit({status:'running',childrenBusy:true,foregroundActive:false});
+ assert.match((await c.dispatch({type:'sendMessage',text:'Too early'})).error,/running/);
+ runtime.emit({status:'running',turnId:'report',runId:'report',foregroundActive:true,messages:[{id:'child-report',kind:'agentMessage',text:'Child result'}]});
+ runtime.emit({status:'completed',childrenBusy:false,cleanup:'confirmed'});
+ assert.equal(c.getState().task.messages.find(m=>m.text==='Child result').turnId,promptId);
+ runtime.emit({status:'running',turnId:'followup-report',runId:'followup-report',foregroundActive:true,messages:[{id:'followup-report',kind:'agentMessage',text:'Follow-up result'}]});
+ runtime.emit({status:'completed',cleanup:'confirmed'});
+ assert.equal(c.getState().task.messages.find(m=>m.text==='Follow-up result').turnId,promptId);
+ assert.equal(c.getState().task.runs.length,1);assert.equal(c.getState().task.runtimeComplete,true);
+ assert.equal(c.readChatHistory({taskId}).messages.filter(m=>m.role==='assistant').length,2);
+});

@@ -10,7 +10,7 @@ export function runtimeCapabilities(runtime={}) {
   row('approvals','Interactive approvals',msp,'Exec stops when human approval is required. It cannot submit an approval response.'),
   row('steering','Live steering',msp&&runtime.steeringSupported===true,'Requires a validated interactive connection with exact-turn steering support.'),
   row('questions','Answer agent questions',false,'Interactive user-input requests are not supported by this adapter.'),
-  row('childControls','Child agent controls',false,'Activity can be displayed; child messaging and cancellation are not connected.'),
+  row('childControls','Child agent controls',msp&&runtime.childControlsSupported===true,'Activity can be displayed; child messaging and cancellation are not connected.'),
   row('compaction','Native context compaction',msp&&runtime.compactionSupported===true,'Local context trimming does not compact the native session.'),
   row('modelSelection','Model selection',exec,'This connection uses the Muse provider default model.'),
   row('web','Native web tools',false,'Native web_fetch stalled in headless validation; web tools remain disabled.'),

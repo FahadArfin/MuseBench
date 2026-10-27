@@ -29,9 +29,9 @@
 - [x] Run native compaction against an owned real session and verify terminal result; tests/build/parity, commit and push.
 
 ## 3. Child controls
-- [ ] Pin supported child operations and test observed identity, attempt/revision guards, refusal and uncertain receipts.
-- [ ] Fold native workflow children and expose supported controls in shared Session UI; unsupported peer messaging stays unavailable.
-- [ ] Validate native observed children using a supported invocation if available. Do not manufacture a successful child control from fixtures; record any native admission blocker precisely. Tests/build/parity, commit and push.
+- [x] Pin supported child operations and test observed identity, attempt/revision guards, refusal and uncertain receipts.
+- [x] Fold native workflow children and expose supported controls in shared Session UI; unsupported peer messaging stays unavailable.
+- [x] Validate native observed children using a supported invocation if available. Do not manufacture a successful child control from fixtures; record any native admission blocker precisely. Tests/build/parity, commit and push.
 
 ## Closeout
 - [ ] Independent final review, fixes, verified production package/install, clean GitHub sync. Keep user data and previous install backup.
@@ -39,3 +39,8 @@
 Feature 1 evidence: 717 tests; 54 browser/packaged-renderer parity scenes; real native same-turn steering applied with confirmed host shutdown. Review fixed history budget, transport-session ownership and durable unknown steering receipts. The first full-suite run had an unrelated HTTP oversized-body connection reset; focused and full reruns passed.
 
 Feature 2 evidence: 724 tests; 56 shared-renderer parity scenes; real compaction 28,134 to 20,832 native tokens, local transcript preserved, subsequent turn retained the cobalt marker. Review fixed interrupted receipt restoration. The protocol supplies no compaction command identity in view items: serialized idle-only dispatch binds the first new manual item for the exact owned turn, then follows its revision.
+
+
+Feature 3 evidence: 739 tests, production build, and 62 browser/production-Electron renderer parity scenes passed. Real pinned-host probes confirmed child message delivery changed its final result, interruption cancelled child work, parent reporting turns were retained, and owned host shutdown completed. A generated workflow child's follow-up was rejected by Muse with `subagent_state_ineligible`; no successful follow-up effect is claimed. Other controls retain native admission checks and fixture coverage.
+
+Review fixes: reserve the checkout through child work and automatic parent reporting turns; separate result-ready from closed child lifecycle; retain original prompt attribution; keep unknown commands blocked after receipt eviction; choose the latest workflow attempt; preserve immutable steering text; clear native root identity on fresh request submission; prevent older-root child launches; release known rejected launches; keep Session controls available during child-only work and queue rather than steering a completed foreground turn. The production-package comparison now includes the modified SDK adapter modules.

@@ -303,10 +303,10 @@ test('failed connection leaves the prompt retryable and never submits or approve
 });
 
 test('sending never reconnects a blocked runtime or resolves an approval automatically',async t=>{
-  const {controller:c,options,controllers}=await fixture(t);await c.close();let connections=0,decisions=0;
-  const runtime={snapshot:()=>({status:'blocked',pending:{kind:'approval'},messages:[]}),subscribe:()=>()=>{},disconnect:async()=>{},connect:async()=>{connections++;},decide:async()=>{decisions++;},send:async()=>{throw Error('Approval required');}};
+  const {controller:c,options,controllers}=await fixture(t);await c.close();let connections=0,decisions=0,blocked=false;
+  const runtime={snapshot:()=>({status:blocked?'blocked':'idle',pending:blocked?{kind:'approval'}:null,messages:[]}),subscribe:()=>()=>{},disconnect:async()=>{},connect:async()=>{connections++;},decide:async()=>{decisions++;},send:async()=>{throw Error('Approval required');}};
   const live=await createController({...options,runtime});controllers.push(live);
-  await live.dispatch({type:'newTask',request:'talk to me',mode:'muse'});
+  await live.dispatch({type:'newTask',request:'talk to me',mode:'muse'});blocked=true;
   const result=await live.dispatch({type:'sendMessage',text:'talk to me'});
   assert.equal(result.error,'Approval required');assert.equal(connections,0);assert.equal(decisions,0);assert.equal(result.task.planApproved,false);
 });

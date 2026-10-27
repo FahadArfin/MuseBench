@@ -296,3 +296,72 @@ test('native compaction waits for terminal evidence and blocks sends until it ar
 test('disconnect during compaction ack never updates a new owner',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'A turn'});h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});let resolve;h.host.connection.command=async()=>new Promise(r=>resolve=r);const operation=h.runtime.compact({sessionId:'session-one',turnId:'turn-one'});await h.runtime.disconnect();resolve({commandId:'0198f0ab-9999-7000-8000-000000000001',status:'accepted'});await assert.rejects(operation,/interrupted/);assert.equal(h.runtime.snapshot().compaction.status,'unknown');assert.equal(h.runtime.snapshot().permissionVerified,false);
 });
+
+test('native child controls bind current session and revision and send at most once on uncertain ack',async t=>{
+ const h=await harness(t);await h.connect();h.emit({method:'item/updated',params:{sessionId:'session-one',item:{itemId:'child-item',kind:'subagent',subagentId:'native-child',revision:2,status:'inProgress',controlStatus:'running'}}});let calls=0;h.host.connection.command=async(method,params,opts)=>{calls++;assert.equal(method,'subagent/sendMessage');assert.equal(params.subagentId,'native-child');assert.equal(opts.maxAttempts,1);return {commandId:'wrong',status:'accepted'};};const input={sessionId:'session-one',itemId:'child-item',revision:2,action:'sendMessage',body:'Correction'};await assert.rejects(h.runtime.childControl({...input,sessionId:'other'}));await assert.rejects(h.runtime.childControl({...input,revision:1}));assert.equal(calls,0);await assert.rejects(h.runtime.childControl(input));assert.equal(h.runtime.snapshot().childReceipts[0].status,'unknown');await assert.rejects(h.runtime.childControl(input),/uncertain/);assert.equal(calls,1);
+});
+test('child control receipt is admission only, parent item supplies independently observed result',async t=>{
+ const h=await harness(t);await h.connect();const item={itemId:'child-item',kind:'subagent',subagentId:'native-child',revision:2,status:'inProgress',controlStatus:'running'};h.emit({method:'item/updated',params:{sessionId:'session-one',item}});h.host.connection.command=async(m,p,o)=>({commandId:o.commandId,status:'accepted'});await h.runtime.childControl({sessionId:'session-one',itemId:'child-item',revision:2,action:'interrupt'});assert.equal(h.runtime.snapshot().childReceipts[0].status,'accepted');assert.equal(h.runtime.snapshot().children.items[0].controlStatus,'running');h.emit({method:'item/updated',params:{sessionId:'session-one',item:{...item,revision:3,status:'cancelled',controlStatus:'resultReady'}}});assert.equal(h.runtime.snapshot().children.items[0].status,'cancelled');assert.equal(h.runtime.snapshot().childReceipts[0].status,'accepted');
+});
+
+test('child uncertainty survives bounded receipt eviction',async t=>{const h=await harness(t);await h.connect();for(const id of ['uncertain','other'])h.emit({method:'item/updated',params:{sessionId:'session-one',item:{itemId:id,kind:'subagent',subagentId:id,revision:1,status:'inProgress',controlStatus:'running'}}});let n=0,calls=0;h.host.connection.mintCommandId=()=>String(++n);h.host.connection.command=async(m,p,o)=>{calls++;return {commandId:p.subagentId==='uncertain'?'wrong':o.commandId,status:'accepted'};};const input={sessionId:'session-one',itemId:'uncertain',revision:1,action:'sendMessage',body:'A'};await assert.rejects(h.runtime.childControl(input));for(let i=0;i<41;i++)await h.runtime.childControl({...input,itemId:'other'});assert.equal(h.runtime.snapshot().childReceipts.length,40);await assert.rejects(h.runtime.childControl(input),/uncertain/);assert.equal(calls,42);});
+
+test('native child completion keeps ownership through the host reporting turn',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Delegate'});let cursor=0;
+ const event=(method,params)=>h.emit({method,params:{sessionId:'session-one',viewCursor:String(++cursor),...params}});
+ const child={itemId:'child',kind:'subagent',subagentId:'native-child',turnId:'turn-one',revision:1,status:'inProgress',controlStatus:'running'};
+ event('item/started',{item:child});event('turn/completed',{turnId:'turn-one',terminal:'completed'});
+ assert.equal(h.runtime.snapshot().status,'running');assert.equal(h.runtime.snapshot().foregroundActive,false);
+ event('item/updated',{item:{...child,revision:2,controlStatus:'resultReady',result:{summary:'Child result'}}});
+ await assert.rejects(h.runtime.send({text:'Too early'}));
+ event('turn/started',{turnId:'native-report',commandId:'native-report'});
+ assert.equal(h.runtime.snapshot().turnId,'native-report');assert.equal(h.runtime.snapshot().rootTurnId,'turn-one');
+ event('item/completed',{item:{itemId:'report',kind:'agentMessage',turnId:'native-report',revision:1,status:'completed',text:'Child returned'}});
+ event('turn/completed',{turnId:'native-report',terminal:'completed'});
+ assert.equal(h.runtime.snapshot().status,'completed');assert.equal(h.runtime.snapshot().childrenBusy,false);assert.equal(h.runtime.snapshot().messages.at(-1).text,'Child returned');
+});
+
+test('unobserved or overlapping native turns still fail closed',async t=>{
+ for(const child of [false,true]){const h=await harness(t);await h.connect();await h.runtime.send({text:'Work'});
+ if(child)h.emit({method:'item/updated',params:{sessionId:'session-one',item:{itemId:'child',kind:'subagent',subagentId:'native',turnId:'turn-one',revision:1,status:'inProgress',controlStatus:'running'}}});
+ else h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});
+ h.emit({method:'turn/started',params:{sessionId:'session-one',turnId:'foreign',commandId:'foreign',viewCursor:'foreign'}});assert.equal(h.runtime.snapshot().reason,'unexpected-turn');}
+});
+
+test('a fresh explicit request clears prior root identity before its admission',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'First'});
+ h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});
+ const snapshots=[];h.runtime.subscribe(s=>snapshots.push(s));const original=h.host.connection.command;
+ h.host.connection.command=async(m,p,o)=>m==='turn/start'?{commandId:o.commandId,status:'accepted',disposition:'started',startedNewTurn:true,turnId:'turn-two'}:original(m,p,o);
+ await h.runtime.send({text:'Second'});
+ assert.ok(snapshots.some(s=>s.status==='submitting'));for(const s of snapshots.filter(s=>s.status==='submitting'))assert.equal(s.rootTurnId,null);
+ assert.equal(h.runtime.snapshot().rootTurnId,'turn-two');
+});
+
+
+test('idle child followup reserves reporting and refuses launches from an older root',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Delegate'});let n=0;
+ const event=(method,params)=>h.emit({method,params:{sessionId:'session-one',viewCursor:'follow-'+(++n),...params}});
+ const child={itemId:'child',kind:'subagent',subagentId:'native-child',turnId:'turn-one',revision:1,status:'inProgress',controlStatus:'resultReady'};
+ event('item/started',{item:child});event('turn/completed',{turnId:'turn-one',terminal:'completed'});
+ const command=h.host.connection.command;h.host.connection.command=async(m,p,o)=>m==='subagent/followupTask'?{commandId:o.commandId,status:'accepted'}:command(m,p,o);
+ await h.runtime.childControl({sessionId:'session-one',itemId:'child',revision:1,action:'followupTask',body:'Continue'});
+ event('item/updated',{item:{...child,revision:2,controlStatus:'running'}});
+ event('item/updated',{item:{...child,revision:3}});
+ assert.equal(h.runtime.snapshot().status,'running');await assert.rejects(h.runtime.send({text:'Cannot race report'}));
+ event('turn/started',{turnId:'report',commandId:'report'});event('turn/completed',{turnId:'report',terminal:'completed'});
+ assert.equal(h.runtime.snapshot().status,'completed');
+ h.host.connection.command=async(m,p,o)=>m==='turn/start'?{commandId:o.commandId,status:'accepted',disposition:'started',startedNewTurn:true,turnId:'new-root'}:command(m,p,o);
+ await h.runtime.send({text:'New explicit request'});event('turn/completed',{turnId:'new-root',terminal:'completed'});
+ await assert.rejects(h.runtime.childControl({sessionId:'session-one',itemId:'child',revision:3,action:'followupTask',body:'Old context'}),/earlier request/);
+});
+
+
+test('known child admission rejection releases a pending launch without inventing report work',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Delegate'});
+ h.emit({method:'item/updated',params:{sessionId:'session-one',item:{itemId:'child',kind:'subagent',subagentId:'native',turnId:'turn-one',revision:1,status:'inProgress',controlStatus:'resultReady'}}});
+ h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});
+ h.host.connection.command=async()=>{throw Object.assign(Error('subagent_state_ineligible'),{code:-32030});};
+ await assert.rejects(h.runtime.childControl({sessionId:'session-one',itemId:'child',revision:1,action:'followupTask',body:'More'}),/ineligible/);
+ assert.equal(h.runtime.snapshot().status,'completed');assert.equal(h.runtime.snapshot().childrenBusy,false);assert.equal(h.runtime.snapshot().childReceipts.at(-1).status,'rejected');
+});
