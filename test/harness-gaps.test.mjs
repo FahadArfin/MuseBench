@@ -1,3 +1,4 @@
+import {writeFileSync} from 'node:fs';
 import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
@@ -190,4 +191,17 @@ test('project lessons retain actual source provenance and reject stale acceptanc
 
 test('execution receipts survive restart and notification updates never dispatch a new run',async t=>{
  const {c,runtime,dataDir}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'Keep the receipt'});let receipt=c.getState().task.executionReceipts[0];assert.equal(receipt.phase,'running');assert.equal(receipt.promptHash.length,64);runtime.finish();receipt=c.getState().task.executionReceipts[0];assert.equal(receipt.result,'completed');c.recordDelivery(receipt.id,'failed');assert.equal(runtime.sent.length,1);assert.equal(c.getState().task.executionReceipts[0].result,'completed');await c.close();const reopened=await createController({dataDir,runtime:fakeRuntime()});assert.equal(reopened.getState().task.executionReceipts[0].result,'completed');await reopened.close();
+});
+
+test('bounded continuation runs validation, stops on passing evidence and yields to queued user input',async t=>{
+ const {c,runtime,project}=await fixture(t);await writeFile(join(project,'package.json'),JSON.stringify({scripts:{test:'node -e "process.exit(0)"'}}));await start(c);await c.dispatch({type:'refresh'});await c.dispatch({type:'saveValidationProfile',projectId:c.getState().activeProject.id,scripts:['test']});await c.dispatch({type:'setGoal',objective:'Finish with tests',status:'active'});assert.equal((await c.dispatch({type:'continueGoal',maxRounds:2,minutes:1})).error,null);await wait(()=>runtime.sent.length===1);runtime.finish();for(let i=0;i<120&&c.getState().task.goal.driver.armed;i++)await new Promise(r=>setTimeout(r,50));assert.equal(c.getState().task.goal.driver.reason,'Checks passed; review the result');assert.equal(runtime.sent.length,1);
+ await c.dispatch({type:'continueGoal',maxRounds:2,minutes:1});await c.dispatch({type:'queueMessage',text:'Human priority'});await new Promise(r=>setTimeout(r,250));assert.equal(runtime.sent.length,1);assert.equal(c.getState().task.goal.driver.armed,false);
+});
+
+test('restart disarms a pending goal and untrusted dispatch cannot claim controller origin',async t=>{
+ const {c,dataDir,project}=await fixture(t);await writeFile(join(project,'package.json'),JSON.stringify({scripts:{test:'node -e "process.exit(0)"'}}));await start(c);await c.dispatch({type:'refresh'});await c.dispatch({type:'saveValidationProfile',projectId:c.getState().activeProject.id,scripts:['test']});await c.dispatch({type:'setGoal',objective:'Continue after checks',status:'active'});await c.dispatch({type:'continueGoal',maxRounds:2,minutes:1});await c.close();const runtime=fakeRuntime(),reopened=await createController({dataDir,runtime});await new Promise(r=>setTimeout(r,250));assert.equal(reopened.getState().task.goal.driver.armed,false);assert.equal(runtime.sent.length,0);await reopened.close();assert.throws(()=>validateAction({type:'sendMessage',text:'Spoof',fromGoal:true}));
+});
+
+test('goal continuation rejects passing checks when a later edit changes the reviewed revision',async t=>{
+ const {c,runtime,project}=await fixture(t);await writeFile(join(project,'package.json'),JSON.stringify({scripts:{test:'node -e "process.exit(0)"'}}));await start(c);await c.dispatch({type:'refresh'});await c.dispatch({type:'saveValidationProfile',projectId:c.getState().activeProject.id,scripts:['test']});await c.dispatch({type:'setGoal',objective:'Validate current files',status:'active'});let changed=false;const unsubscribe=c.subscribe(state=>{if(!changed&&state.task?.validationRun?.status==='passed'){changed=true;writeFileSync(join(project,'notes.md'),'Edited after check');}});await c.dispatch({type:'continueGoal',maxRounds:2,minutes:1});await wait(()=>runtime.sent.length===1);runtime.finish();for(let i=0;i<120&&c.getState().task.goal.driver.armed;i++)await new Promise(r=>setTimeout(r,50));unsubscribe();assert.equal(changed,true);assert.equal(c.getState().task.goal.driver.reason,'Validation unavailable, cancelled or stale');assert.equal(runtime.sent.length,1);
 });

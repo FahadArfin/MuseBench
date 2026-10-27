@@ -1,3 +1,4 @@
+import {newGoalDriver,pauseGoalDriver} from '../shared/goal-driver.mjs';
 import {proposeLesson,decideLesson} from '../shared/project-lessons.mjs';
 import {composeChatContext} from '../shared/chat-context.mjs';
 import {literalIndex} from '../shared/literal-search.mjs';
@@ -38,6 +39,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const initial=task('Build a clearer project overview','preview-overview');
  initial.messages.push({id:id(),role:'assistant',at:stamp,text:'The project overview now keeps your recent threads together, with a clear place to start a new chat.\n\nYou can open the changed file below, explore the composer controls, or switch to Muse AI. This is fictional sample content for visual feedback.'});
  initial.changes=[{path:'src/ProjectOverview.tsx',status:'modified',additions:3,deletions:1,before:'<h1>Project</h1>\n',after:'<h1>Your project</h1>\n<p>Pick up where you left off.</p>\n<button>New chat</button>\n'}];
+ initial.goal={objective:'Finish the sample project with passing validation',status:'active'};
  initial.executionReceipts=[{id:'sample-request',phase:'settled',result:'unknown',acceptance:'accepted',delivery:'not-requested',createdAt:stamp,updatedAt:stamp,reason:'Preview example: interrupted before the result was confirmed.'}];
  initial.runs=[{id:'sample-run',promptId:initial.messages[0].id,prompt:initial.request,runId:'sample',status:'completed',startedAt:stamp,endedAt:stamp,activities:[{id:'sample-layout',kind:'tool',title:'Updated the project overview',tool:'edit',status:'completed',detail:'src/ProjectOverview.tsx',output:'Sample change for preview only.'}]}];
  initial.runs[0].activities.push({id:'sample-workflow',kind:'tool',title:'Workflow: Preview review',tool:'workflow',status:'completed',detail:'Simulated workflow progress for preview only',output:'',workflow:{parentRunId:'sample',parallelLimit:2}});
@@ -53,6 +55,8 @@ export function createPreviewBridge():MuseBenchBridge {
  async function dispatch(action:Action):Promise<AppState>{
   const current=state.task;
   switch(action.type){
+   case 'continueGoal':if(current?.goal){current.goal.driver=newGoalDriver(action);pauseGoalDriver(current.goal.driver,'Preview: no native runs are dispatched.');}break;
+   case 'pauseGoalContinuation':pauseGoalDriver(current?.goal?.driver,'Paused by you');break;
    case 'proposeLesson':{if(state.activeProject)proposeLesson(state.activeProject,{id:id(),title:action.title,text:action.text,applicability:action.applicability,sourceTaskId:action.taskId,sourceMessageId:action.messageId,revision:'sample-after',validation:null});break;}
    case 'decideLesson':{if(state.activeProject)decideLesson(state.activeProject,action.id,action.decision);break;}
    case 'restoreCheckpoint':{state.checkpoints.unshift({id:id(),taskId:action.taskId,title:'Before restore (simulated)',revision:'sample-after',createdAt:stamp});break;}

@@ -1,10 +1,11 @@
+import {newGoalDriver,goalDecision,pauseGoalDriver} from '../shared/goal-driver.mjs';
 import {createExecutionLedger} from './execution-ledger.mjs';
 import {proposeLesson,decideLesson} from '../shared/project-lessons.mjs';
 import {restoreSelected} from './checkpoint-restore.mjs';
 import {contextReceipt} from './context-receipts.mjs';
 import {StringDecoder} from 'node:string_decoder';
 import {createOutputStore} from './output-artifacts.mjs';
-import {validateCheckScripts,missingChecks} from '../shared/validation.mjs';
+import {validateCheckScripts,missingChecks,checkDiagnostics} from '../shared/validation.mjs';
 import {createHistoryStore} from './chat-history.mjs';
 import {restoreSkillReceipts} from '../shared/skill-receipts.mjs';
 import {restoreUsage} from '../shared/native-usage.mjs';
@@ -61,7 +62,7 @@ function restoreTask(record,knownProjectId){
   task.pinned=task.pinned===true;task.archived=task.archived===true;task.archivedAt=task.archived?(Number.isFinite(Date.parse(task.archivedAt))?task.archivedAt:now()):null;
   task.checkReceipts=Array.isArray(task.checkReceipts)?task.checkReceipts.filter(c=>c&&typeof c.script==='string'&&typeof c.revision==='string').slice(-40):[];if(task.validationRun?.status==='running')task.validationRun.status='cancelled';
   task.promptQueue=Array.isArray(task.promptQueue)?task.promptQueue.filter(q=>q&&typeof q.id==='string'&&typeof q.text==='string'&&q.text.length<=16000).slice(0,5):[];task.queuePaused=true;task.queueHold=task.promptQueue.length>0;
-  task.goal=task.goal&&typeof task.goal.objective==='string'?{objective:task.goal.objective.slice(0,1000),status:task.goal.status==='paused'?'paused':'active'}:null;
+  task.goal=task.goal&&typeof task.goal.objective==='string'?{objective:task.goal.objective.slice(0,1000),status:task.goal.status==='paused'?'paused':'active',...(task.goal.driver?{driver:{...task.goal.driver,armed:false,reason:'Restarted; explicitly start a new bounded continuation'}}:{})}:null;
   task.createdAt=validDate(task.createdAt)?task.createdAt:task.messages.find(item=>validDate(item.at))?.at??now();
   task.updatedAt=validDate(task.updatedAt)?task.updatedAt:task.messages.findLast(item=>validDate(item.at))?.at??task.createdAt;
   task.shellResults=mergeShellResults([],Array.isArray(task.shellResults)?task.shellResults:[],null);
@@ -214,6 +215,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const cleanup=async(disconnect=true)=>{await cancelCheck();await stopPreview();if(disconnect)await runtime?.disconnect?.();};
   const requireNavigationIdle=()=>{if(context.pending||['running','starting','submitting','connecting','checking-permissions'].includes(state.runtime.status))throw Error('Finish or disconnect the running Muse turn before switching projects or tasks.');};
   const navigationCleanup=async()=>{
+    pauseGoalDriver(state.task?.goal?.driver,'Changed active chat; explicitly resume continuation');
     if(runtimeFactory){await cleanup(false);saveTask();return;}
     context.navigation=true;context.pending=false;context.turn=null;if(state.task){state.task.queuePaused=true;state.task.queueHold=Boolean(state.task.promptQueue?.length);}
     try{await cleanup();state.runtime=runtime?.snapshot?.()??missingRuntime();if(state.runtime.cleanup==='unconfirmed')throw Error('Native shutdown could not be confirmed. Disconnect Muse before switching projects or tasks.');}
@@ -280,7 +282,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(check.status!=='passed'||check.revision!==validation.revision)validation.status=check.status==='passed'?'stale':check.status;
         else if(validation.index+1<validation.scripts.length){validation.index++;try{await runCheck(validation.scripts[validation.index]);}catch(error){validation.status='failed';state.error=error.message;}}
         else validation.status='passed';
-      }emit();
+      }emit();if(task.goal?.driver?.armed)scheduleGoal(context);
     }).catch(e=>{if(!closed){state.error=e.message;emit();}});};child.once('error',e=>finish(null,e));child.once('close',code=>finish(code));
   };
   const startPreview=async script=>{
@@ -381,6 +383,24 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     });
     queue=operation.catch(()=>{});void operation.finally(()=>{owner.queueScheduled=false;if(!owner.pending&&owner.runtime?.snapshot?.().status==='completed'&&queueEligible(owner))scheduleQueue(owner);}).catch(()=>{});
   };
+  const scheduleGoal=(owner=context)=>{
+    const driver=owner.task?.goal?.driver;if(owner.goalScheduled||!driver?.armed||closing||closed)return;owner.goalScheduled=true;const ticket=driver.id;
+    setTimeout(()=>{owner.goalScheduled=false;if(closing||closed)return;const operation=queue.then(async()=>{
+      const t=owner.task,d=t?.goal?.driver;if(!d?.armed||d.id!==ticket||owner.pending)return;if(owner!==selectedContext()){pauseGoalDriver(d,'Active chat changed');saveRecord(t);return;}
+      if(t.validationRun?.status==='running')return;
+      if(d.phase==='checking'&&t.validationRun?.status==='passed'){const snap=await current();if(missingChecks(t,snap.revision,t.validationRun.scripts).length)t.validationRun.status='stale';}
+      if(d.phase==='checking'&&t.validationRun?.status==='failed'){const fingerprint=hash((t.check?.script??'')+'\n'+JSON.stringify(checkDiagnostics(t.check?.log??'').length?checkDiagnostics(t.check.log):{revision:t.check?.revision,exitCode:t.check?.exitCode}));d.repeatedFailures=d.lastFailure===fingerprint?d.repeatedFailures+1:1;d.lastFailure=fingerprint;}
+      const decision=goalDecision(d,{userPending:!!t.promptQueue?.length,result:executions.list(t.id)[0]?.result,validation:t.validationRun?.status});
+      if(decision.kind==='pause'){pauseGoalDriver(d,decision.reason);saveRecord(t);emit();return;}
+      if(decision.kind==='validate'){
+        const p=await refreshScripts(),scripts=validateCheckScripts(p.validationScripts),snap=await current();d.phase='checking';t.validationRun={scripts,revision:snap.revision,index:0,status:'running'};saveRecord(t);await runCheck(scripts[0]);emit();return;
+      }
+      if(decision.kind==='run'){
+        d.rounds++;d.phase='running';saveRecord(t);const diagnostic=t.check?.status==='failed'?`\nValidation failed (${t.check.script}):\n${t.check.log.slice(-6000)}`:'';
+        await sendToTask({type:'sendMessage',fromGoal:true,text:`Continue this objective within the current run budget: ${t.goal.objective}\nVerify the existing work. Avoid repeating completed external actions. The app will run the saved validation profile when you finish.${diagnostic}`},t,owner);emit();
+      }
+    }).catch(error=>{const d=owner.task?.goal?.driver;if(d?.id===ticket){pauseGoalDriver(d,error.message);if(owner.task.validationRun?.status==='running'&&!checkProcess)owner.task.validationRun.status='failed';saveRecord(owner.task);emit();}});queue=operation.catch(()=>{});},150);
+  };
   const onRuntime=(event,owner)=>{
     const selected=owner===selectedContext(),context=owner,runtime=owner.runtime,task=owner.task;
     if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;if(selected)state.runtime=structuredClone(next);
@@ -423,7 +443,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       if(['running','starting','submitting'].includes(next.status))task.runtimeComplete=false;
     }
     if(task&&(['failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)||next.status==='completed'&&next.cleanup!=='confirmed')){task.queuePaused=true;task.queueHold=Boolean(task.promptQueue?.length);}
-    if(task)saveRecord(task);emit();if(next.status==='completed')scheduleQueue(owner);
+    if(task)saveRecord(task);emit();if(next.status==='completed')scheduleQueue(owner);if(task?.goal?.driver?.armed&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status))scheduleGoal(owner);
   };
   const subscribeContext=owner=>{if(!owner.unsubscribe)owner.unsubscribe=owner.runtime?.subscribe?.(event=>onRuntime(event,owner));};
   subscribeContext(context);
@@ -569,7 +589,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         const owner=contexts.get(target.id);if(owner?.pending&&!target.queueHold)target.queuePaused=false;
         saveRecord(target);break;
       }
-      case 'queueMessage':{
+      case 'queueMessage':{pauseGoalDriver(state.task?.goal?.driver,'Queued user input takes priority');
         const t=requireTask();if(t.mode!=='muse'||t.archived)throw Error('Open an active Muse chat to queue a request.');if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
         if(!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid conversation mode.');if((t.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');const files=fileReferences(action.files),images=imageReferences(action.images);await selectedSources(files);await imageStore.resolve(t.projectId,images);
         t.promptQueue??=[];t.promptQueue.push({id:randomUUID(),text:action.text.trim(),files,images,mode:action.mode??'chat',runOptions:validateRunOptions(action.runOptions??t.runOptions),at:now()});
@@ -590,6 +610,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       }
       case 'renameTask':{requireNavigationIdle();const t=requireTask();if(typeof action.title!=='string'||!action.title.trim()||action.title.length>100)throw Error('Use a chat name up to 100 characters.');t.title=action.title.trim();break;}
       case 'setMemories':{requireNavigationIdle();if(typeof action.text!=='string'||action.text.length>1500)throw Error('Memory instructions must be at most 1,500 characters.');state.memories=action.text.trim();break;}
+      case 'continueGoal':{
+        requireNavigationIdle();const t=requireTask();if(!t.goal?.objective||t.mode!=='muse')throw Error('Save a goal in a Muse chat first.');if(contextBusy(context)||checkProcess||t.promptQueue?.length)throw Error('Finish active work and queued prompts first.');validateCheckScripts(state.activeProject.validationScripts);t.goal.driver=newGoalDriver(action);t.goal.status='active';saveRecord(t);const owner=context,ticket=t.goal.driver.id;clearTimeout(owner.goalDeadline);owner.goalDeadline=setTimeout(async()=>{const d=owner.task?.goal?.driver;if(closing||closed||!d?.armed||d.id!==ticket)return;pauseGoalDriver(d,'Time budget reached');saveRecord(owner.task);try{if(owner===selectedContext())await cancelCheck();if(owner.pending)await owner.runtime?.disconnect?.();}catch(error){d.reason+='; cleanup needs review: '+error.message;}if(!closed){saveRecord(owner.task);emit();}},action.minutes*60000);owner.goalDeadline.unref?.();scheduleGoal(context);break;
+      }
+      case 'pauseGoalContinuation':{const t=requireTask();pauseGoalDriver(t.goal?.driver,'Paused by you');break;}
       case 'setGoal':{requireNavigationIdle();const t=requireTask();if(typeof action.objective!=='string'||action.objective.length>1000||!['active','paused'].includes(action.status))throw Error('Use a goal up to 1,000 characters.');t.goal=action.objective.trim()?{objective:action.objective.trim(),status:action.status}:null;break;}
       case 'refreshModels':{requireNavigationIdle();if(!runtime?.refreshModels)throw Error('Model discovery needs the native exec connection.');if(!runtime.snapshot().permissionVerified){if(!state.activeProject)throw Error('Choose a project first.');await runtime.connect({binary:preferredBinary??undefined,workspaceRoot:state.activeProject.root});context.root=state.activeProject.root;preferredBinary=runtime.snapshot().binary??preferredBinary;}await runtime.refreshModels();break;}
       case 'setRunOptions':{requireNavigationIdle();const t=requireTask();t.runOptions=validateRunOptions(action.runOptions);break;}
@@ -631,9 +655,9 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(state.runtime.status==='blocked'||state.runtime.status==='uncertain'){await runtime?.disconnect?.();state.runtime=runtime?.snapshot?.()??state.runtime;}
         if(action.choice==='fresh')t.nativeSession=null;else if(t.nativeSession){if(!t.nativeSession.seeded)throw Error('Native input receipt was not confirmed before interruption. Start a fresh session to avoid replaying an uncertain request.');t.nativeSession={...t.nativeSession,status:'ready'};}break;
       }
-      case 'sendMessage':await sendToTask(action);break;
+      case 'sendMessage':pauseGoalDriver(state.task?.goal?.driver,'User input takes priority');await sendToTask(action);break;
       case 'connectMuse':if(!state.activeProject)throw Error('Open a project first.');if(!runtime)throw Error('Muse runtime unavailable in this installation.');await runtime.connect({binary:action.binary,workspaceRoot:state.activeProject.root});context.root=state.activeProject.root;preferredBinary=runtime.snapshot().binary??preferredBinary;state.runtime=runtime.snapshot();break;
-      case 'disconnectMuse':if(state.task?.nativeSession?.status==='running')state.task.nativeSession.status='needs-recovery';if(state.task){state.task.queuePaused=true;state.task.queueHold=Boolean(state.task.promptQueue?.length);}if(state.task?.runs)state.task.runs=state.task.runs.map(run=>['queued','working','waiting'].includes(run.status)?{...run,status:'cancelled',endedAt:now(),activities:run.activities.map(item=>['queued','working','waiting'].includes(item.status)?{...item,status:'cancelled'}:item)}:run);for(const item of state.task?.messages??[]){const run=state.task.runs?.find(r=>r.promptId===(item.turnId??item.id));if(run)item.outcome=run.status;}context.pending=false;context.turn=null;if(state.task?.mode==='muse')state.task.runtimeComplete=false;await runtime?.disconnect?.();state.runtime=runtime?.snapshot?.()??missingRuntime();break;
+      case 'disconnectMuse':pauseGoalDriver(state.task?.goal?.driver,'Disconnected by you');if(state.task?.nativeSession?.status==='running')state.task.nativeSession.status='needs-recovery';if(state.task){state.task.queuePaused=true;state.task.queueHold=Boolean(state.task.promptQueue?.length);}if(state.task?.runs)state.task.runs=state.task.runs.map(run=>['queued','working','waiting'].includes(run.status)?{...run,status:'cancelled',endedAt:now(),activities:run.activities.map(item=>['queued','working','waiting'].includes(item.status)?{...item,status:'cancelled'}:item)}:run);for(const item of state.task?.messages??[]){const run=state.task.runs?.find(r=>r.promptId===(item.turnId??item.id));if(run)item.outcome=run.status;}context.pending=false;context.turn=null;if(state.task?.mode==='muse')state.task.runtimeComplete=false;await runtime?.disconnect?.();state.runtime=runtime?.snapshot?.()??missingRuntime();break;
       case 'runtimeDecision':if(!runtime)throw Error('Muse is not connected.');await runtime.decide(action.decision);state.runtime=runtime.snapshot();break;
       default:throw Error('Unknown controller action.');
     }

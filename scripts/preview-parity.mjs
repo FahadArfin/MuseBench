@@ -65,6 +65,7 @@ try{
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.querySelector('[role="option"][title^="/checks"]')?.click());await compare('validation-profile');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const checkbox=document.querySelector('.validation-profile input[type="checkbox"]');if(!checkbox)throw Error('Missing validation profile');checkbox.click();});await click('button','Save profile');await click('button','Run profile');await compare('validation-passed');await click('button','Captured output');await compare('output-captures');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.querySelector('.output-captures button')?.click());await compare('output-head');await click('button','Tail');await compare('output-tail');await click('button','Close dialog');await click('button','Close details panel');
+ await click('button','Edit goal');await compare('goal-budgets');await click('button','Start bounded continuation');await compare('goal-preview-stopped');await click('button','Close dialog');
  await click('button','View changes');await compare('file-changes');
  await click('summary','Choose editor for src/ProjectOverview.tsx');await compare('file-editor-menu');
  await click('button','Close details panel');
