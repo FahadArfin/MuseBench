@@ -1,6 +1,6 @@
 # Paired evaluations and renderer profiling
 
-26–27 October 2026, local Windows development checkout. This delivers reproducible developer tools and a renderer baseline. It does **not** establish improved native model quality, token savings, native inference speed, production Electron performance, or a memory upper bound. No external model requests were made. No running desktop or user profile was opened or modified.
+26–27 October 2026, local Windows development checkout. This delivers reproducible developer tools, a development-browser baseline, and an isolated production-asset Electron measurement. It does **not** establish improved native model quality, token savings, native inference speed, foreground/full-application Electron performance, or a memory upper bound. These fixture and renderer probes make no model requests. The separately authorized native comparison is documented in [native-comparison-2026-10-27.md](native-comparison-2026-10-27.md). No running desktop or user profile was opened or modified.
 
 ## Run the tools
 
@@ -11,9 +11,15 @@ node --test test/harness-eval*.test.mjs
 node scripts/harness-eval-fixture.mjs
 node scripts/harness-eval.mjs artifacts/harness-eval/fixture/manifest.json --out artifacts/harness-eval/fixture/replayed-report.json
 node scripts/renderer-performance.mjs --samples 12 --turns 20,100,300 --out artifacts/renderer-performance/my-run
+# After building dist and keeping shared source/build files stable:
+node scripts/renderer-performance.mjs --renderer electron-production --samples 12 --turns 20,100,300 --out artifacts/renderer-performance/my-electron-run
 ```
 
 These use existing Node, Vite and Playwright dependencies. No package manifest changes are required. Chromium must already be available to the installed Playwright package. Reports, traces, allocation profiles, screenshots, and fixture inputs are written below the already ignored `artifacts/` directory. The renderer tool starts its own loopback server on an automatically assigned port, uses fresh ephemeral browser contexts, blocks page requests outside that server's origin, and closes the server/browser it owns.
+
+The default `--renderer browser` retains that development-preview behavior. Optional `--renderer electron-production` serves an immutable in-memory copy of `dist/` through an owned loopback HTTP server and injects a bundled sample bridge before the production entrypoint, following the existing preview-parity fixture approach. It starts `renderer-performance-electron.mjs` with a new isolated `userData` directory, then creates hidden sandboxed windows with background throttling disabled and separate in-memory session partitions. It does not launch the MuseBench main process or touch an existing desktop profile. Production asset and fixture-bundle SHA256 hashes are recorded. Build `dist` first and avoid source changes while profiling.
+
+The production mode additionally samples Electron `app.getAppMetrics()` for the current window's exact renderer OS PID. `workingSetKiB` and Windows `privateKiB` are current process memory observations; unavailable counters remain null. Their maximum across samples is expressly not a true peak, memory bound, or whole-application measurement. The profiler does not use the API's lifetime peak field as an acceptance claim.
 
 ## Paired experiment contract
 
@@ -72,7 +78,7 @@ node scripts/harness-eval.mjs artifacts/harness-eval/experiment/manifest.json --
 
 Timeout/output overflow stops the owned subprocess tree on Windows and records an unknown execution outcome without replay. This is not a sandbox or transactional cancellation. Commands inherit the calling environment, may change their explicit workspace, and must be reviewed. Adapters must not detach processes or reuse a dirty workspace between arms/repetitions. A local timeout cannot guarantee that a remote provider stopped work, and Unix child-tree containment is not implemented. Never automatically retry an unknown result.
 
-Before any real provider experiment, the owner must choose the task corpus and success rubric, model/configuration for each arm, repeat count, approved authentication, isolated workspaces/session reset strategy, provider-enforced token limits and maximum spend. The local process budget is **not** a provider billing cap. No paid/native comparison was run in this task; that remains a budget and provider-adapter prerequisite.
+Before any real provider experiment, the owner must choose the task corpus and success rubric, model/configuration for each arm, repeat count, approved authentication, isolated workspaces/session reset strategy, provider-enforced token limits and maximum spend. The local process budget is **not** a provider billing cap. The later native comparison used a separately approved 12-run/20-minute envelope and dedicated adapter; its budget is exhausted. Further native runs require a new explicit budget.
 
 ### Fixture verification
 
@@ -102,7 +108,25 @@ All 72 samples across these two runs had trace-observed Paint events. All scenar
 
 A final run with source hashing and stability enforcement also completed with zero page errors and all 36 Paint observations. Its report at `artifacts/renderer-performance/2026-10-26-run3/report.json` records revision `4b2bcac3152965e788316f172bea723029ebca50`, a dirty working tree, exact source hashes and `sourceChangedDuringRun: false`. At 40 / 200 / 600 visible messages, paint p50 was 65.92 / 240.37 / 676.89 ms, p95 was 126.12 / 394.63 / 755.01 ms, and sampled maximum used heap was 41.06 / 87.14 / 173.33 MiB. The machine was not reserved exclusively for profiling; the between-run variation is another reason to retain all runs and avoid a precise production performance claim.
 
-The observed scaling justifies investigating repeated long-transcript React/Markdown work. It does not by itself identify a bottleneck, prove that virtualization is the right change, or establish a production regression. Next acceptance work should profile the packaged Electron renderer, keep equivalent task/message/cadence fixtures, measure real concurrent native delivery separately, include OS process memory and a longer retention test, and agree thresholds before comparing changes.
+The observed scaling justifies investigating repeated long-transcript React/Markdown work. It does not by itself identify a bottleneck, prove that virtualization is the right change, or establish a production regression. Next acceptance work should measure foreground packaged-app rendering and real concurrent native delivery separately, include a longer retention test, and agree thresholds before comparing changes.
+
+## Production Electron synthetic measurement, 27 October
+
+The optional production mode completed 12 updates for each 20/100/300-turn scenario, with four task snapshots and 40/200/600 selected transcript messages. It used production `dist` assets and the bundled sample bridge, a hidden sandboxed Electron window per scenario, separate ephemeral session partitions, and a new artifact-local profile. This is production renderer code under a synthetic bridge, not the packaged MuseBench main process, IPC delivery, real native streaming, or an end-to-end application benchmark.
+
+The successful run lasted 85.4 seconds (`2026-10-27T04:25:47.109Z`–`04:27:12.521Z`). Electron was 45.0.0, Chromium 156.0.8078.48, embedded Node 24.22.0, and the content viewport was 1440×960 on the Windows/CPU/RAM environment described above. The integration owner paused other build/test jobs during acquisition. Revision was `fa921450bc0a977cb834ae0676b3e0e0cbf8f1b6` with a dirty working tree; exact source, production assets, fixture bundle and profiler hashes are retained in the report. Start/end source hashes matched (`sourceChangedDuringRun: false`).
+
+| Turns / visible messages | Event-to-DOM p50 / p95 | Observed Paint p50 / p95 | Sampled max V8 heap | Sampled max working set | Sampled max private bytes |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 20 / 40 | 17.30 / 23.00 ms | 997.61 / 998.89 ms | 14.38 MiB | 142.63 MiB | 79.65 MiB |
+| 100 / 200 | 65.20 / 78.20 ms | 998.95 / 1006.98 ms | 35.55 MiB | 268.04 MiB | 192.38 MiB |
+| 300 / 600 | 166.60 / 189.00 ms | 1004.91 / 1018.68 ms | 66.82 MiB | 422.70 MiB | 349.93 MiB |
+
+All 36 samples had a matching main-thread trace Paint and all scenarios had the expected DOM message counts, with no captured page errors. Paint intervals cluster near one second even with `backgroundThrottling: false`. The much shorter DOM times and nearly constant paint interval are consistent with hidden-window scheduling dominating this measurement; the probe does not establish the exact scheduling cause. These Paint values must not be read as foreground user latency or compared with headless development-browser numbers as a speedup/regression. Screenshot inspection confirmed the streaming content, but the 300-turn capture still displayed marker `probe-300-10` after DOM sample `probe-300-11`; that explicitly demonstrates why a trace Paint and a frame opportunity do not prove that the latest pixels were presented.
+
+Electron `app.getAppMetrics()` was matched to each owned renderer PID (41972, 49460, 49876), with 12 working-set/private-memory samples each. The reported maxima are maxima of these samples only, not peak memory, a whole-app upper bound, or a leak finding. JS heap and process counters cover different memory and must not be added. The app/server were closed after the run, and a process inventory found no remaining renderer-performance Electron process.
+
+Evidence: `artifacts/renderer-performance/2026-10-27-electron-production-v3/report.json`, three trace JSON files, three allocation profiles and three screenshots. Earlier attempts (`2026-10-27-electron-production/` and `-v2/`) failed before collecting samples: top-level Electron readiness await, then Playwright's missing hidden partition target. Their failed reports are retained. The final implementation uses nonblocking readiness and the parity fixture's `webContents.executeJavaScript` approach, with Electron's `webContents.debugger` CDP transport for traces/heap. Default browser mode still uses Playwright CDPSession. Focused harness-evaluation tests pass 21/21, including explicit renderer-mode and workload validation.
 
 ## Primary API references
 
@@ -111,3 +135,6 @@ The observed scaling justifies investigating repeated long-transcript React/Mark
 - [Chrome DevTools HeapProfiler](https://chromedevtools.github.io/devtools-protocol/tot/HeapProfiler/): sampling and garbage-collection commands.
 - [Chrome DevTools Tracing](https://chromedevtools.github.io/devtools-protocol/tot/Tracing/): bounded trace stream capture.
 - [requestAnimationFrame](https://developer.mozilla.org/en-US/docs/Web/API/Window/requestAnimationFrame): callbacks occur before repaint, which is why frame opportunities and trace-observed paints are separate metrics.
+- [Electron app.getAppMetrics](https://www.electronjs.org/docs/latest/api/app#appgetappmetrics) and [MemoryInfo](https://www.electronjs.org/docs/latest/api/structures/memory-info): current per-process working set/private-memory counters, distinct from the API's lifetime peak counter.
+- [Electron Debugger](https://www.electronjs.org/docs/latest/api/debugger): CDP attachment, commands and tracing events for the owned hidden renderer.
+- [Electron BrowserWindow](https://www.electronjs.org/docs/latest/api/browser-window): hidden window, sandbox, session partition and background-throttling options.

@@ -17,3 +17,9 @@ test('renderer CLI rejects excessive workloads and arbitrary external URLs',()=>
  for(const args of [['--samples','0'],['--samples','501'],['--url','https://example.com'],['--turns','0'],['--turns','50001'],['--samples','NaN']])assert.throws(()=>parseOptions(args));
  assert.deepEqual(parseOptions(['--turns','20,100','--samples','4']).turns,[20,100]);
 });
+test('renderer mode defaults to browser and requires the explicit production Electron choice',()=>{
+ assert.equal(parseOptions([]).renderer,'browser');
+ assert.equal(parseOptions(['--renderer','electron-production']).renderer,'electron-production');
+ assert.throws(()=>parseOptions(['--renderer','running-desktop']),/renderer/i);
+ assert.throws(()=>parseOptions(['--renderer','electron-production','--samples','101']));
+});
