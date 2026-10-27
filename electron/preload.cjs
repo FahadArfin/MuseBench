@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   configureNotifications: value => ipcRenderer.invoke('musebench:notifications', value),
   commandInfo: type => ipcRenderer.invoke('musebench:command-info', type),
   inspectCodeContext: input => ipcRenderer.invoke('musebench:code-context',input),
+  inspectCheckpoint: input => ipcRenderer.invoke('musebench:checkpoint',input),
   readCapturedOutput: input => ipcRenderer.invoke('musebench:captured-output',input),
   readChatHistory: input => ipcRenderer.invoke('musebench:chat-history',input),
   searchChats: input => ipcRenderer.invoke('musebench:chat-search',input),

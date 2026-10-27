@@ -1,3 +1,4 @@
+import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -171,4 +172,14 @@ test('workflow phase gates hold both manual dequeue and automatic continuation',
 test('stored context receipt matches the exact prompt delivered to the runtime',async t=>{
  const {c,runtime}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'Bind the source evidence'});
  const receipt=c.getState().task.contextSummary.receipt;assert.equal(receipt.promptHash,createHash('sha256').update(runtime.sent[0].text).digest('hex'));assert.equal(receipt.revision.length,64);assert.equal(receipt.nativeContext,'unknown');
+});
+
+test('checkpoint restoration binds review revision, refuses active writers and preserves redo',async t=>{
+ const {c,project,dataDir,runtime}=await fixture(t);const taskId=await start(c),db=new DatabaseSync(join(dataDir,'musebench.sqlite'));const text='Earlier notes',files={'notes.md':{text,binary:false,hash:createHash('sha256').update(text).digest('hex')}};
+ db.prepare('INSERT INTO checkpoints(id,task_id,revision,json) VALUES(?,?,?,?)').run('restore-test',taskId,'old',JSON.stringify({files}));db.close();
+ const info=await c.inspectCheckpoint({taskId,id:'restore-test'});assert.ok(info.files.some(f=>f.path==='notes.md'));
+ let result=await c.dispatch({type:'restoreCheckpoint',taskId,id:'restore-test',revision:'stale',paths:['notes.md']});assert.match(result.error,/changed/);
+ await c.dispatch({type:'sendMessage',text:'Still working'});result=await c.dispatch({type:'restoreCheckpoint',taskId,id:'restore-test',revision:info.revision,paths:['notes.md']});assert.match(result.error,/running|runtime/i);runtime.finish();
+ result=await c.dispatch({type:'restoreCheckpoint',taskId,id:'restore-test',revision:info.revision,paths:['notes.md']});assert.equal(result.error,null);assert.equal(await readFile(join(project,'notes.md'),'utf8'),text);assert.ok(result.checkpoints.some(c=>c.title.startsWith('Before restore')));assert.equal(await readFile(join(project,'package.json'),'utf8'),'{}');
+ const redo=result.checkpoints[0],review=await c.inspectCheckpoint({taskId,id:redo.id});result=await c.dispatch({type:'restoreCheckpoint',taskId,id:redo.id,revision:review.revision,paths:['notes.md']});assert.equal(result.error,null);assert.equal(await readFile(join(project,'notes.md'),'utf8'),'Useful project notes.');
 });

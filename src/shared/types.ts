@@ -17,6 +17,7 @@ export interface Preview { status: 'stopped' | 'starting' | 'running' | 'failed'
 export interface RuntimeState {modelCatalog?:import("./models.mjs").NativeModelCatalog;runLimits?:{steps:number;wallTimeMs:number;tokenBudget:null};simulation?:boolean;permissionVerified?:boolean;durableSessions?:boolean; modelId?:string|null; status: string; reason: string | null; binary: string | null; sdkVersion: string; hostVersion?: string; sessionId?: string | null; liveVerified: boolean; messages?: unknown[]; pending?: unknown; transport?: 'exec' | 'msp'; shellEnabled?: boolean; shellUnavailableReason?: string | null; shellResults?: ShellResult[]; activity?:{items:ActivityItem[];truncated:boolean}; }
 export interface AppState {workflows?:import('./workflows.mjs').Workflow[];backgroundChats?:boolean; sidebarOrder?:Record<string,string[]>; projectCreationRoot?:string; drafts?:Record<string,CodeDraft>; memories?:string; projects: Project[]; tasks: TaskSummary[]; activeProject: Project | null; task: Task | null; checkpoints: Checkpoint[]; preview: Preview; runtime: RuntimeState; busy: boolean; error: string | null; }
 export type Action = {type:'saveValidationProfile';projectId:string;scripts:string[]} | {type:'runValidation'} | {type:'refreshModels'}
+  | {type:'restoreCheckpoint';taskId:string;id:string;revision:string;paths:string[]}
   | {type:'archiveWorktree'|'restoreWorktree';projectId:string;id:string} | {type:'recoverWorktree';projectId:string;id:string;branch:string} | {type:'setupWorktree';projectId:string;script:string}
   | {type:'saveWorkflow';workflow:import('./workflows.mjs').Workflow} | {type:'deleteWorkflow';id:string} | {type:'queueWorkflow';id:string;taskId:string;workflowId:string;objective:string}
   | {type:'handoffContext';id:string;sourceTaskId:string;targetTaskId:string;text:string;files:ContextFile[]}
@@ -107,3 +108,6 @@ export interface WorktreeState {root:string;branch:string;head:string;dirty:bool
 export interface CapturedOutput {id:string;label:string;status:string;received:number;length:number;captureTruncated:boolean;sourceTruncated:boolean;}
 export interface OutputPage {items:CapturedOutput[];selected:(CapturedOutput&{offset:number;text:string;match:number|null})|null;}
 export interface MuseBenchBridge {readCapturedOutput(input:{taskId:string;id?:string;offset?:number;query?:string}):Promise<OutputPage>;}
+
+export interface CheckpointComparison {revision:string;files:(FileChange&{restorable:boolean})[];operations:{id:string;status:string;completed:number;total:number}[];}
+export interface MuseBenchBridge {inspectCheckpoint(input:{taskId:string;id:string}):Promise<CheckpointComparison>;}
