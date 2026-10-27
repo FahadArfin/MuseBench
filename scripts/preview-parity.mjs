@@ -103,7 +103,11 @@ try{
  await click('button','Reasoning effort');await compare('project-reasoning-picker');await escape();
  await click('button','Add project');await compare('create-project');await escape();
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:',',ctrlKey:true,bubbles:true})));await compare('settings');await escape();
- await click('button','Customize');await compare('customize');await click('summary','Project skills and rules');await click('button','Review project instructions');await compare('project-instruction-review');await click('button','Hooks');await compare('project-hooks');await click('button','Add hook');await compare('project-hook-editor');await escape();
+ await click('button','Customize');await compare('customize');await click('summary','Project skills and rules');await click('button','Review project instructions');await compare('project-instruction-review');await click('button','Hooks');await compare('project-hooks');await click('button','Add hook');await compare('project-hook-editor');await click('summary','Reusable presets');
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>{for(const [label,value]of [['Hook 1 name','format-check'],['Hook 1 command','Write-Output reviewed'],['Hook preset name','Formatting checks']]){const input=document.querySelector(`[aria-label="${label}"]`);Object.getOwnPropertyDescriptor(input.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(input,value);input.dispatchEvent(new Event('input',{bubbles:true}));}});
+ await click('button','Save draft as new preset');await compare('hook-preset-saved');
+ for(const page of [browserPage,desktopPage]){const saved=await page.evaluate(async()=>{const s=(await window.musebench.customize({type:'refresh'})).state;return{hooks:s.hooks.items.length,presets:s.hookPresets.items.length};});assert.deepEqual(saved,{hooks:0,presets:1});await page.evaluate(()=>{const select=document.querySelector('[aria-label="Saved hook preset"]');select.value=select.options[1].value;select.dispatchEvent(new Event('change',{bubbles:true}));});}
+ await click('button','Load into draft');await compare('hook-preset-review-required');for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(()=>[...document.querySelectorAll('button')].find(b=>b.textContent==='Save reviewed hooks')?.disabled),true);await escape();
  await click('button','Muse AI');await compare('muse-shell');
  await click('nav[aria-label="Meta AI navigation"] button','Chat');await compare('meta-shell');
  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(430,820));await browserPage.setViewportSize({width:430,height:820});await compare('meta-toggle-narrow');
@@ -139,6 +143,11 @@ try{
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const select=document.querySelector('select[aria-label="Pending requests"]');select.value='input:preview-question-two';select.dispatchEvent(new Event('change',{bubbles:true}));});await compare('native-second-question');await click('button','Decline to answer');await compare('native-question-still-pending');for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.pendingRequests.length),1);await click('button','Decline to answer');
 
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.inputResponse.outcome),'cancelled');
+
+ for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'disconnectMuse'});await window.musebench.dispatch({type:'connectMuse',transport:'msp',fullAccess:true,workspaceTools:true});});
+ await compare('native-restored-session');
+ for(const page of [browserPage,desktopPage]){assert.equal(await page.evaluate(()=>document.querySelector('.runtime-details')?.textContent.includes('Restored')),true);assert.equal(await page.evaluate(()=>document.querySelector('.runtime-access input[type="checkbox"]')?.checked),true);}
+ await click('button','Disconnect');await compare('semantic-tools-connection-option');
  await click('button','Close dialog');
  for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.appUpdate('check');});
  await compare('update-available-toolbar');

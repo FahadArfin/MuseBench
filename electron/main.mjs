@@ -1,4 +1,5 @@
 import {createFileEditor} from './file-editor.mjs';
+import {createWorkspaceMcpConfig} from './workspace-mcp-config.mjs';
 import {createAppUpdates,createUpdateShutdown,updateBlocked} from './app-updates.mjs';
 import updaterPackage from 'electron-updater';
 import {existsSync} from 'node:fs';
@@ -45,7 +46,8 @@ else {
     const helperPath = app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchJob.exe') : path.join(root,'native','bin','MuseBenchJob.exe');
     const dataDir = app.getPath('userData');
     const extensionReview=createExtensionReview({dataDir,profile:process.env.USERPROFILE});
-    const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({helperPath,extensionReview,durableSessions:true}) : createRuntime();
+    const workspaceMcp=createWorkspaceMcpConfig({appRoot:root});
+    const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({helperPath,extensionReview,workspaceMcp,durableSessions:true}) : createRuntime({extensionReview,workspaceMcp});
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.13 can stall before shell launch inside the user profile.
     // New working copies have their own location; saved originals stay put.

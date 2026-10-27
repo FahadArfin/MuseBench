@@ -37,6 +37,7 @@ export function validateAction(action) {
   if(action.type==='steerMessage'){string('taskId',200);string('expectedTurnId',200);string('text',16000);if(action.files?.length||action.images?.length)throw Error('Steering supports text only.');}
   if(action.type==='connectMuse'&&action.transport!==undefined&&!['exec','msp'].includes(action.transport))throw Error('Invalid transport.');
   if(action.type==='connectMuse'&&action.fullAccess!==undefined&&typeof action.fullAccess!=='boolean')throw Error('Full access must be a boolean.');
+  if(action.type==='connectMuse'&&action.workspaceTools!==undefined&&typeof action.workspaceTools!=='boolean')throw Error('Workspace tools must be a boolean.');
   if (action.type === 'connectMuse' && action.binary !== undefined) string('binary',4096);
   if(['createWorktree','openWorktree'].includes(action.type)){string('projectId',200);if(action.type==='createWorktree'){string('branch',100);string('base',200);}else string('id',100);}
   if (action.type === 'newTask' && !['demo','manual','muse'].includes(action.mode)) throw Error('Invalid task mode.');
