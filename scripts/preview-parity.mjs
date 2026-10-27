@@ -172,9 +172,9 @@ try{
  await click('button','Profile menu');for(const page of [browserPage,desktopPage])await page.evaluate(()=>[...document.querySelectorAll('[role=menuitem]')].find(e=>e.textContent?.startsWith('Settings'))?.click());await click('button','Updates');await compare('settings-app-updates');
  await browserPage.goto('http://127.0.0.1:4322/preview.html?setup=1');
  await app.evaluate(async({BrowserWindow})=>BrowserWindow.getAllWindows()[0].loadURL('http://127.0.0.1:4322/__desktop__/index.html?setup=1'));
- await browserPage.getByRole('button',{name:'Log in to Muse AI',exact:true}).waitFor();
- await compare('onboarding-login');await click('button','Muse Code');await compare('onboarding-code-plans');
- await click('button','Log in to Muse Code');await compare('onboarding-avatar-required');await click('button','Rose mascot');await compare('onboarding-avatar-selected');
+ await browserPage.getByRole('button',{name:'Profile menu',exact:true}).waitFor();
+ await compare('direct-chat-startup');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(()=>document.querySelectorAll('.onboarding').length),0);
  assert.deepEqual(errors,[]);report.status='passed';
 }catch(error){report.status='failed';report.failure=String(error.stack??error);console.error(report.failure);process.exitCode=1;}
 finally{if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});}await browser.close();await server.close();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));}
