@@ -29,6 +29,7 @@ export function validateAction(action) {
   if(action.type==='createReviewer'&&(['parentTaskId','projectId','role','question'].some(k=>typeof action[k]!=='string'||!action[k]||action[k].length>2000)))throw Error('Invalid review contract.');if(action.type==='integrateReview'&&typeof action.taskId!=='string')throw Error('Invalid review chat.');
   const fields = {openProject:'path',selectProject:'id',selectTask:'id',newTask:'request',runCheck:'script',startPreview:'script',inspectPreview:'revision',accept:'revision',sendMessage:'text',runtimeDecision:'decision'};
   if (fields[action.type]) string(fields[action.type]);
+  if(action.type==='connectMuse'&&action.fullAccess!==undefined&&typeof action.fullAccess!=='boolean')throw Error('Full access must be a boolean.');
   if (action.type === 'connectMuse' && action.binary !== undefined) string('binary',4096);
   if(['createWorktree','openWorktree'].includes(action.type)){string('projectId',200);if(action.type==='createWorktree'){string('branch',100);string('base',200);}else string('id',100);}
   if (action.type === 'newTask' && !['demo','manual','muse'].includes(action.mode)) throw Error('Invalid task mode.');

@@ -17,6 +17,7 @@ import {validateRunOptions,approvalArguments,runBudget} from '../shared/run-opti
 const HOST_VERSION='1.4.13';
 const execFileAsync=promisify(execFile);
 const readyFlags=['runner_trusted','runner_version_matches','sandbox_users_ready','capabilities_ready','restricted_network_required','wfp_ready'];
+const fullDescription='Full access: shell commands run without OS filesystem or network sandboxing, with your Windows account permissions. Ask me still applies; requests needing interactive approval stop. Web and input tools remain disabled. Planning is not read-only.';
 const usable=new Set(['idle','completed','failed','cancelled']);
 const fileDescription='Windows file-editing mode. Each request starts an independent native run with Ask me and a fresh Windows sandbox readiness check; shell/web/input tools are disabled; explicitly reviewed app hooks run outside the sandbox. This is startup evidence, not dynamic MSP permission evidence; planning is not read-only.';
 const shellDescription='Windows sandboxed command mode. Each request starts an independent native run with Ask me and a fresh Windows sandbox readiness check. Managed PowerShell is enabled; web/input tools are disabled; explicitly reviewed app hooks run outside the sandbox. Human approval requests stop the run. Command results are separate from MuseBench checks and review; planning is not read-only.';
@@ -37,13 +38,13 @@ function stderrReason(value) {
  return 'Muse failed. Inspect partial changes and use the official CLI for additional diagnostics.';
 }
 
-function permissionArgs(shellEnabled,approval='ask',sessionId=null) {
- return [...approvalArguments(approval),...(sessionId?['--session-id',sessionId]:['--no-session-log']),...(!shellEnabled?['--disable-shell']:[]),'--disable-web-tools','--disable-reminders','--disable-request-user-input','--no-foreign-personal-context','--max-tool-output-bytes','65536','-c','hooks={}','-c','managed_hooks_path=null'];
+function permissionArgs(shellEnabled,approval='ask',sessionId=null,fullAccess=false) {
+ return [...approvalArguments(approval),...(fullAccess?['--disable-sandbox']:[]),...(sessionId?['--session-id',sessionId]:['--no-session-log']),...(!shellEnabled?['--disable-shell']:[]),'--disable-web-tools','--disable-reminders','--disable-request-user-input','--no-foreign-personal-context','--max-tool-output-bytes','65536','-c','hooks={}','-c','managed_hooks_path=null'];
 }
 
-function execArgs(workspace,provider,prompt,maxSteps,shellEnabled,runOptions,sessionId=null) {
+function execArgs(workspace,provider,prompt,maxSteps,shellEnabled,runOptions,sessionId=null,fullAccess=false) {
  const options=validateRunOptions(runOptions);
- return ['exec','--provider',provider,'--json','--workspace',workspace,...permissionArgs(shellEnabled,options.approval,sessionId),...(provider==='meta'?['--reasoning-effort',options.reasoning,...(options.model?['--model',options.model]:[])]:[]),'--max-model-steps',String(maxSteps),'--',prompt];
+ return ['exec','--provider',provider,'--json','--workspace',workspace,...permissionArgs(shellEnabled,options.approval,sessionId,fullAccess),...(provider==='meta'?['--reasoning-effort',options.reasoning,...(options.model?['--model',options.model]:[])]:[]),'--max-model-steps',String(maxSteps),'--',prompt];
 }
 
 function shellPrompt(workspace,prompt,durable=false) {
@@ -117,6 +118,7 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
  let modelRead=null;
  let state={status:'unavailable',reason:candidates.length?'Connect to verify the native Windows sandbox and exec format.':'Install official Muse, then select its native executable.',binary:candidates[0]??null,sdkVersion:HOST_VERSION,transport:'exec',durableSessions,inputAccepted:false,sessionId:null,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,usage:null,skills:[],liveVerified:false,messages:[],shellEnabled:false,shellUnavailableReason:null,shellResults:[],activity:{items:[],truncated:false},pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,permissionDescription:fileDescription,planReadOnlyEnforced:false};
  let epoch=0,owner=null,connecting=false,workspace=null,closing=null;
+ state.fullAccess=false;
  const listeners=new Set();
  const snapshot=()=>structuredClone(state);
  const update=patch=>{state={...state,...patch};for(const listener of listeners){try{listener(snapshot());}catch{/* Observers do not control the native owner. */}}};
@@ -228,13 +230,15 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
  }
 
  async function verifySandbox(token) {
+  if(state.fullAccess){update({sandboxReadiness:null});return;}
   const readiness=await begin(['sandbox','windows','check'],{token,maxBytes:16384}).result;current(token);
   const values=Object.fromEntries(readiness.stdout.split(/\r?\n/).map(line=>line.trim().split('=')));
   if(values.backend!=='windows_elevated'||values.status!=='ready'||readyFlags.some(key=>values[key]!=='true'))throw Error('Windows Muse sandbox is not ready. Run muse sandbox windows check and complete official sandbox setup before connecting.');
   update({sandboxReadiness:Object.fromEntries(['backend','status',...readyFlags].map(key=>[key,values[key]]))});
  }
 
- async function connect({binary=state.binary,workspaceRoot}={}) {
+ async function connect({binary=state.binary,workspaceRoot,fullAccess=false}={}) {
+  if(typeof fullAccess!=='boolean')throw Error('Full access must be explicitly selected as a boolean.');
   if(state.cleanup==='unconfirmed')throw Error('Native shutdown is unconfirmed. Check the process before restarting MuseBench.');
   if(connecting||state.permissionVerified||owner&&!owner.closed)throw Error('Disconnect the current Muse run before reconnecting.');
   if(closing||state.cleanup==='pending')throw Error('Wait for native shutdown to finish.');
@@ -242,7 +246,7 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
   if(typeof binary!=='string'||!isAbsolute(binary)||!binary.toLowerCase().endsWith('.exe'))throw Error('Select an absolute path to the official native Muse .exe.');
   if(typeof workspaceRoot!=='string'||!isAbsolute(workspaceRoot))throw Error('Select an absolute workspace directory first.');
   const token=++epoch;connecting=true;
-  update({status:'connecting',reason:'Checking native version, Windows sandbox and exec output.',failureCode:null,binary,sessionId:null,nativeSessionId:null,commandId:null,runId:null,liveVerified:false,messages:[],shellEnabled:false,shellUnavailableReason:null,shellResults:[],permissionVerified:false,permissionProfile:null,cleanup:undefined});
+  update({fullAccess,sandboxReadiness:null,status:'connecting',reason:fullAccess?'Checking native version and Full access execution.':'Checking native version, Windows sandbox and exec output.',failureCode:null,binary,sessionId:null,nativeSessionId:null,commandId:null,runId:null,liveVerified:false,messages:[],shellEnabled:false,shellUnavailableReason:null,shellResults:[],permissionVerified:false,permissionProfile:null,cleanup:undefined});
   try{
    binary=await realpath(binary);workspace=await realpath(workspaceRoot);current(token);
    if(!(await stat(binary)).isFile()||!(await stat(workspace)).isDirectory())throw Error('Native binary or workspace is unavailable.');
@@ -250,14 +254,14 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
    const profileRoot=await realpath(env.USERPROFILE);current(token);
    const profileRelative=relative(profileRoot.toLowerCase(),workspace.toLowerCase());
    const inProfile=profileRelative===''||(!isAbsolute(profileRelative)&&profileRelative!=='..'&&!profileRelative.startsWith(`..${sep}`));
-   const shellEnabled=!inProfile;
-   update({shellEnabled,shellUnavailableReason:inProfile?'Muse 1.4.13 managed PowerShell stalls for workspaces inside the Windows user profile on this machine. File editing remains available. Use a project folder outside your user profile for sandboxed commands.':null,permissionDescription:shellEnabled?shellDescription:fileDescription,permissionArguments:permissionArgs(shellEnabled)});
+   const shellEnabled=fullAccess||!inProfile;
+   update({shellEnabled,shellUnavailableReason:inProfile&&!fullAccess?'Muse 1.4.13 managed PowerShell stalls for workspaces inside the Windows user profile on this machine. File editing remains available. Use a project folder outside your user profile for sandboxed commands.':null,permissionDescription:fullAccess?fullDescription:shellEnabled?shellDescription:fileDescription,permissionArguments:permissionArgs(shellEnabled,'ask',null,fullAccess)});
    const version=await begin(['--version'],{token,maxBytes:16384}).result;current(token);
    if(parseMuseVersion(version.stdout)!==HOST_VERSION)throw Error(`Muse version mismatch. This mode requires ${HOST_VERSION}.`);
    update({hostVersion:HOST_VERSION});
    await verifySandbox(token);current(token);
    await verifyManagedConfiguration(token);current(token);
-   await begin(execArgs(workspace,'echo','Reply with MUSEBENCH_FORMAT_PROBE_ONLY',1,state.shellEnabled),{token,probe:true,maxBytes:1024*1024}).result;current(token);
+   await begin(execArgs(workspace,'echo','Reply with MUSEBENCH_FORMAT_PROBE_ONLY',1,state.shellEnabled,undefined,null,fullAccess),{token,probe:true,maxBytes:1024*1024}).result;current(token);
    owner=null;update({status:'idle',reason:null,sessionId:randomUUID(),permissionVerified:true,permissionProfile:':ask-me',cleanup:'confirmed'});
    return snapshot();
   }catch(error){
@@ -294,9 +298,9 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
   try{trustProject=await extensionReview?.allowProject(workspace)===true;current(token);hooks=await extensionReview?.nativeHooks?.(workspace)??{};current(token);}
   catch(error){if(token===epoch)update({status:'blocked',reason:safeReason(error.message),permissionVerified:false});throw error;}
   let prepared;try{prepared=await preparePrompt(prompt);current(token);}catch(error){await prepared?.dispose();if(token===epoch)update({status:'blocked',reason:'The request context could not be prepared. Try sending again.',permissionVerified:false});throw error;}
-  const label=options.approval==='ask'?'Ask me':options.approval==='auto'?'Auto-review':'No prompts (sandboxed)';
-  update({status:'running',runLimits:limits,inputAccepted:false,reason:null,failureCode:null,liveVerified:false,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,usage:null,skills:[],shellResults:[],activity:{items:[],truncated:false},cleanup:undefined,runOptions:options,permissionProfile:options.approval==='never'?null:options.approval==='auto'?':auto-review':':ask-me',permissionArguments:permissionArgs(state.shellEnabled,options.approval,sessionId).map(arg=>arg==='hooks={}'?'hooks='+JSON.stringify(hooks):arg),permissionDescription:(state.shellEnabled?shellDescription:fileDescription).replace('Ask me',label).replace('Each request starts an independent native run',sessionId?"Each request resumes this chat’s native session":'Each request starts an independent native run')});
-  try{current(token);const args=execArgs(workspace,'meta','',limits.steps,state.shellEnabled,options,sessionId).slice(0,-2).map(arg=>arg==='hooks={}'?'hooks='+JSON.stringify(hooks):arg).concat(trustProject?['--trust-workspace']:[],imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,resumeSession,duration:limits.wallTimeMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
+  const label=options.approval==='ask'?'Ask me':options.approval==='auto'?'Auto-review':state.fullAccess?'No prompts':'No prompts (sandboxed)';
+  update({status:'running',runLimits:limits,inputAccepted:false,reason:null,failureCode:null,liveVerified:false,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,usage:null,skills:[],shellResults:[],activity:{items:[],truncated:false},cleanup:undefined,runOptions:options,permissionProfile:options.approval==='never'?null:options.approval==='auto'?':auto-review':':ask-me',permissionArguments:permissionArgs(state.shellEnabled,options.approval,sessionId,state.fullAccess).map(arg=>arg==='hooks={}'?'hooks='+JSON.stringify(hooks):arg),permissionDescription:(state.fullAccess?fullDescription:state.shellEnabled?shellDescription:fileDescription).replace('Ask me',label).replace('Each request starts an independent native run',sessionId?"Each request resumes this chat’s native session":'Each request starts an independent native run')});
+  try{current(token);const args=execArgs(workspace,'meta','',limits.steps,state.shellEnabled,options,sessionId,state.fullAccess).slice(0,-2).map(arg=>arg==='hooks={}'?'hooks='+JSON.stringify(hooks):arg).concat(trustProject?['--trust-workspace']:[],imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,resumeSession,duration:limits.wallTimeMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
   return snapshot();
  }
 
@@ -305,7 +309,7 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
   if(state.cleanup==='unconfirmed')return snapshot();
   ++epoch;connecting=false;if(modelRead){try{await modelRead;}catch(error){if(error.code==='CATALOG_CLEANUP'){update({cleanup:'unconfirmed',permissionVerified:false,status:'unavailable'});return snapshot();}}}const previous=owner;
   if(previous)previous.stopped=true;
-  update({status:'unavailable',reason:'Disconnected. Connect again to verify the native runtime.',sessionId:null,permissionVerified:false,permissionProfile:null,pending:null,liveVerified:false,cleanup:'pending'});
+  update({fullAccess:false,sandboxReadiness:null,shellEnabled:false,shellUnavailableReason:null,permissionDescription:fileDescription,permissionArguments:[],status:'unavailable',reason:'Disconnected. Connect again to verify the native runtime.',sessionId:null,permissionVerified:false,permissionProfile:null,pending:null,liveVerified:false,cleanup:'pending'});
   closing=release(previous);const cleanup=await closing;closing=null;
   if(cleanup!=='unconfirmed')owner=null;
   update({cleanup,...(cleanup==='unconfirmed'?{reason:'Native shutdown could not be confirmed. Check the process before restarting MuseBench.'}:{})});return snapshot();

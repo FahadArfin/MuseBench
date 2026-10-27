@@ -25,7 +25,7 @@ const stamp='2026-10-26T14:00:00.000Z';
 const copy=<T,>(value:T):T=>structuredClone(value);
 const id=()=>crypto.randomUUID();
 const desktop=async():Promise<never>=>{throw new Error('This action needs the MuseBench desktop app. Browser preview uses sample data only.');};
-const runtime:RuntimeState={simulation:true,status:'ready',reason:'Browser preview · No model or shell connection',binary:null,sdkVersion:'Preview',modelId:'Muse · sample',liveVerified:false};
+const runtime:RuntimeState={simulation:true,transport:'exec',fullAccess:false,status:'ready',reason:'Browser preview · No model or shell connection',binary:null,sdkVersion:'Preview',modelId:'Muse · sample',liveVerified:false};
 function task(title:string,taskId:string=id(),projectId='preview-project'):Task {
  return {id:taskId,projectId,title,mode:'muse',createdAt:stamp,updatedAt:stamp,acceptedRevision:null,request:title,plan:'',criteria:[],planApproved:false,baselineRevision:'sample-before',revision:'sample-after',changes:[],messages:[{id:id(),role:'user',text:title,at:stamp}],shellResults:[],check:null,previewRevision:null,runtimeComplete:true,runOptions:{reasoning:'high',approval:'ask'},runs:[]};
 }
@@ -61,6 +61,8 @@ export function createPreviewBridge():MuseBenchBridge {
 
    case 'continueGoal':if(current?.goal){current.goal.driver=newGoalDriver(action);pauseGoalDriver(current.goal.driver,'Preview: no native runs are dispatched.');}break;
    case 'pauseGoalContinuation':pauseGoalDriver(current?.goal?.driver,'Paused by you');break;
+   case 'connectMuse':state.runtime={...state.runtime,fullAccess:action.fullAccess===true,status:'ready',sessionId:'preview-connection',permissionVerified:true,shellEnabled:true,reason:'Browser preview - Simulated connection; no commands run'};break;
+   case 'disconnectMuse':state.runtime={...state.runtime,fullAccess:false,shellEnabled:false,status:'unavailable',sessionId:null,permissionVerified:false,reason:'Browser preview - Disconnected'};break;
    case 'proposeLesson':{if(state.activeProject)proposeLesson(state.activeProject,{id:id(),title:action.title,text:action.text,applicability:action.applicability,sourceTaskId:action.taskId,sourceMessageId:action.messageId,revision:'sample-after',validation:null});break;}
    case 'decideLesson':{if(state.activeProject)decideLesson(state.activeProject,action.id,action.decision);break;}
    case 'restoreCheckpoint':{state.checkpoints.unshift({id:id(),taskId:action.taskId,title:'Before restore (simulated)',revision:'sample-after',createdAt:stamp});break;}
