@@ -34,7 +34,7 @@
 - [x] Validate native observed children using a supported invocation if available. Do not manufacture a successful child control from fixtures; record any native admission blocker precisely. Tests/build/parity, commit and push.
 
 ## Closeout
-- [ ] Independent final review, fixes, verified production package/install, clean GitHub sync. Keep user data and previous install backup.
+- [x] Independent final review, fixes, verified production package/install, clean GitHub sync. Keep user data and previous install backup.
 
 Feature 1 evidence: 717 tests; 54 browser/packaged-renderer parity scenes; real native same-turn steering applied with confirmed host shutdown. Review fixed history budget, transport-session ownership and durable unknown steering receipts. The first full-suite run had an unrelated HTTP oversized-body connection reset; focused and full reruns passed.
 
@@ -44,3 +44,8 @@ Feature 2 evidence: 724 tests; 56 shared-renderer parity scenes; real compaction
 Feature 3 evidence: 739 tests, production build, and 62 browser/production-Electron renderer parity scenes passed. Real pinned-host probes confirmed child message delivery changed its final result, interruption cancelled child work, parent reporting turns were retained, and owned host shutdown completed. A generated workflow child's follow-up was rejected by Muse with `subagent_state_ineligible`; no successful follow-up effect is claimed. Other controls retain native admission checks and fixture coverage.
 
 Review fixes: reserve the checkout through child work and automatic parent reporting turns; separate result-ready from closed child lifecycle; retain original prompt attribution; keep unknown commands blocked after receipt eviction; choose the latest workflow attempt; preserve immutable steering text; clear native root identity on fresh request submission; prevent older-root child launches; release known rejected launches; keep Session controls available during child-only work and queue rather than steering a completed foreground turn. The production-package comparison now includes the modified SDK adapter modules.
+
+
+Closeout: feature commits `2e5e11d` (steering), `d1f88af` (compaction), and `596e96c` (children) were pushed separately to origin/main. Windows package verification compared 109 source/build files plus both native helpers. Installation copied and hash-verified all 76 package files, preserved the previous app directory, and left the user profile untouched. The ordinary installed window was not relaunched; runtime proof uses owned disposable sessions and UI proof uses the shared production renderer in Electron. Preview remains at port 4319 with the same components and labeled fixtures.
+
+GitHub Actions run 40438536645 did not start its Windows job: GitHub reports failed account payments or an increased spending limit is required. Local test/build/parity/package checks passed; remote CI is not green. Build retains the pre-existing large JavaScript chunk warning.
