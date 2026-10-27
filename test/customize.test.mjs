@@ -7,7 +7,53 @@ import {watch,writeFileSync} from 'node:fs';
 const api=await import('../electron/customize.mjs').catch(()=>({}));
 const policy=await import('../src/runtime/extension-review.mjs').catch(()=>({}));
 import {customizeBlocked} from '../src/shared/customize-policy.mjs';
+import {CURATED_EXTENSIONS} from '../src/shared/extension-catalog.mjs';
+import {APPROVED_LOCAL_CATALOG_RECIPES} from '../electron/catalog-local-server.mjs';
 test('Customize exposes its finite setup service',()=>assert.equal(typeof api.createCustomize,'function'));
+test('catalog discovery is read-only during active tasks and does not spawn Muse',async()=>{
+ const f=await fixture();let calls=0;
+ const catalog={search:async query=>({entries:[],query}),resolve:async()=>null};
+ const service=api.createCustomize({getState:()=>({runtime:{status:'running'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,catalog,run:async()=>{calls++;throw Error('not expected');}});
+ const result=await service.dispatch({type:'catalogSearch',kind:'skills',source:'recommended',query:'design'});
+ assert.deepEqual(result.catalog.entries,[]);assert.equal(result.catalog.query.query,'design');assert.equal(calls,0);await service.close();
+});
+test('catalog installation resolves trusted IDs and keeps exact staged bytes under review',async()=>{
+ const f=await fixture(),folder=path.join(f.root,'download');await mkdir(folder);await writeFile(path.join(folder,'SKILL.md'),'---\nname: demo\ndescription: Demo\n---\nReview me');
+ const descriptor={repo:'openai/skills',ref:'main',path:'skills/.curated/demo',kind:'skill'},calls=[];
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,
+ catalog:{resolve:async id=>id==='known'?{id,title:'Demo',package:descriptor}:null},stagePackage:async(value)=>{assert.deepEqual(value,descriptor);return{folder,source:{commit:'a'.repeat(40),repo:value.repo,path:value.path},files:[],licenses:[]};},
+ run:async(_binary,args)=>{calls.push(args);return{stdout:JSON.stringify({valid:true,skills:[],plugins:[]})};}});
+ await assert.rejects(service.dispatch({type:'prepareCatalog',id:'forged',folder}),/catalog|unknown/i);
+ const result=await service.dispatch({type:'prepareCatalog',id:'known',package:{repo:'evil/repo'}});
+ assert.equal(result.prepared.source.commit,'a'.repeat(40));assert.equal(result.prepared.kind,'skills');assert.ok(result.prepared.fingerprint);
+ assert.equal(calls.filter(args=>args[1]==='install').length,0);
+ await writeFile(path.join(folder,'SKILL.md'),'changed');await assert.rejects(service.dispatch({type:'install',token:result.prepared.token,reviewed:true}),/changed after review/);
+ await service.close();
+});
+test('catalog server recipes require review and ignore renderer-supplied endpoints',async()=>{
+ const f=await fixture();const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,
+ catalog:{resolve:async id=>id==='docs'?{recipe:{name:'docs',transport:'http',url:'https://developers.openai.com/mcp'}}:null},run:async()=>({stdout:'{"skills":[],"plugins":[]}'})});
+ await assert.rejects(service.dispatch({type:'catalogServer',id:'docs'}),/review/i);
+ await assert.rejects(service.dispatch({type:'catalogServer',id:'forged',reviewed:true}),/catalog|recipe/i);
+ await service.dispatch({type:'catalogServer',id:'docs',reviewed:true,url:'https://evil.example/mcp'});
+ const config=JSON.parse(await readFile(f.settings,'utf8'));assert.equal(config.mcp_servers.docs.url,'https://developers.openai.com/mcp');assert.equal(await f.review.allowMcp('docs',config.mcp_servers.docs),true);await service.close();
+});
+test('catalog refuses setup-only packages even if renderer submits their ID',async()=>{
+ const f=await fixture();let staged=false;const service=api.createCustomize({getState:()=>({}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,catalog:{resolve:async()=>({compatibility:'setup-required',package:{}})},stagePackage:async()=>{staged=true;}});
+ await assert.rejects(service.dispatch({type:'prepareCatalog',id:'not-supported'}),/setup|catalog/i);assert.equal(staged,false);await service.close();
+});
+test('local catalog recipe is pinned and configures Node without executing npm',async()=>{
+ const f=await fixture(),nodeRoot=path.join(f.root,'node'),npmRoot=path.join(nodeRoot,'node_modules','npm');await mkdir(path.join(npmRoot,'bin'),{recursive:true});
+ await writeFile(path.join(nodeRoot,'node.exe'),'not executable');await writeFile(path.join(npmRoot,'bin','npx-cli.js'),'throw Error("do not run")');await writeFile(path.join(npmRoot,'package.json'),JSON.stringify({name:'npm',bin:{npx:'bin/npx-cli.js'}}));
+ const recipe=CURATED_EXTENSIONS.find(item=>item.id==='mcp:playwright').recipe;assert.deepEqual(recipe,APPROVED_LOCAL_CATALOG_RECIPES.playwright);
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile,PATH:nodeRoot},dataDir:f.dataDir,run:async(binary,args)=>{assert.equal(binary,'C:/muse.exe');assert.equal(args[1],'list');return{stdout:'{"skills":[],"plugins":[]}'};}});
+ await service.dispatch({type:'catalogServer',id:'mcp:playwright',reviewed:true});const settings=JSON.parse(await readFile(f.settings,'utf8'));assert.equal(settings.mcp_servers.playwright.command,path.join(nodeRoot,'node.exe'));assert.ok(settings.mcp_servers.playwright.args.includes('--ignore-scripts'));await service.close();
+});
+test('catalog validation failures clean downloaded packages and preserve diagnostics',async()=>{
+ const f=await fixture(),folder=path.join(f.dataDir,'catalog-staging','12345678-1234-4123-8123-123456789abc');await mkdir(folder,{recursive:true});await writeFile(path.join(folder,'SKILL.md'),'invalid');
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,catalog:{resolve:async()=>({package:{kind:'skill'}})},stagePackage:async()=>({folder}),run:async()=>{throw Object.assign(Error('CLI rejected'),{stdout:JSON.stringify({valid:false,diagnostics:[{message:'unsupported field tools'}]})});}});
+ await assert.rejects(service.dispatch({type:'prepareCatalog',id:'bad'}),/unsupported field tools/);await assert.rejects(readFile(path.join(folder,'SKILL.md')),error=>error.code==='ENOENT');await service.close();
+});
 test('hook setup requires explicit review, current project revision and no active task',async()=>{
  const f=await fixture();let active=false;const service=api.createCustomize({getState:()=>({activeProject:{root:f.root},runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,isActive:()=>active,run:async()=>({stdout:'{"skills":[],"plugins":[]}'})});
  const before=(await service.snapshot()).hooks,command={type:'saveHooks',root:before.root,revision:before.revision,hooks:[{id:'check',event:'Stop',command:'echo checked',timeout:2,enabled:true}]};

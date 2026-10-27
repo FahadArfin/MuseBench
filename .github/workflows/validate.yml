@@ -23,6 +23,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:browser-preview
+      - run: npm run test:catalog-preview
       - run: npm run test:preview-parity
       # These runs use only clean fixtures. Never upload local account captures.
       - uses: actions/upload-artifact@v4

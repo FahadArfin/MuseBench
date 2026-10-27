@@ -1,3 +1,5 @@
+import {CURATED_EXTENSIONS} from '../shared/extension-catalog.mjs';
+import type {CatalogEntry} from '../shared/extension-catalog-types';
 import {createPreviewHookPresets} from './hook-presets.mjs';
 import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
 import {newGoalDriver,pauseGoalDriver} from '../shared/goal-driver.mjs';
@@ -130,7 +132,7 @@ export function createPreviewBridge():MuseBenchBridge {
  function selectSite(key:string){sites.site=sites.items.find(i=>i.id===key)??site;sites.activeId=sites.site.id;sites.files=Object.entries(siteFiles).map(([path,text])=>({path,bytes:new TextEncoder().encode(text).length,sha1:'sample',mime:'text/html'}));sites.previewUrl=`data:text/html;charset=utf-8,${encodeURIComponent(siteFiles['index.html'])}`;}
  const hookPresets=createPreviewHookPresets();
  const hookProjects=new Map<string,NonNullable<CustomizeState['hooks']>>();
- const customize:CustomizeState={available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only'}],plugins:[],servers:[]};
+ const customize:CustomizeState={simulation:true,available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only'}],plugins:[],servers:[]};
  const updateListeners=new Set<(state:import('../shared/types').AppUpdateState)=>void>();
  let appUpdate:import('../shared/types').AppUpdateState={version:'0.2.0',status:'idle',availableVersion:null,percent:0,lastChecked:null,error:null,simulation:true};
  const updateEmit=(patch:Partial<typeof appUpdate>)=>{appUpdate={...appUpdate,...patch};updateListeners.forEach(fn=>fn(copy(appUpdate)));};
@@ -142,7 +144,7 @@ export function createPreviewBridge():MuseBenchBridge {
   inspectWorktrees:async input=>({root:state.projects.find(p=>p.id===input.projectId)?.root??project.root,branch:'main',head:'sample-base',dirty:true,items:copy(sampleWorktrees)}),
   importCodeImage:async input=>{const match=/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(input.dataUrl);if(!match||input.dataUrl.length>11200000)throw Error('Choose an image up to 8 MB.');const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));const id=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');imageData.set(input.projectId+id,input.dataUrl);return{id,name:input.name,mime:match[1],bytes:bytes.length};},
   readCodeImage:async input=>{const data=imageData.get(input.projectId+input.image.id);if(!data)throw Error('Screenshot unavailable');return data;},
-  getState:code.read,onState:code.on,dispatch,openProjectFile:desktop,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);if(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},
+  getState:code.read,onState:code.on,dispatch,openProjectFile:desktop,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);const catalogLink=CURATED_EXTENSIONS.some(item=>item.homepage===u.href||item.provenance.url===u.href);if(u.protocol!=='https:'||u.username||u.password||(!catalogLink&&(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},
   configureNotifications:async()=>({supported:false}),dictation:async command=>{if(['status','refresh','cancel','stop'].includes(command))return copy(dictation);return desktop();},onDictation:()=>()=>{},
   saveCodeDraft:async input=>{state.drafts![`${input.projectId}:${input.taskId??'new'}`]={text:input.text,files:copy(input.files),images:copy(input.images??[]),mode:input.mode};},
   inspectCheckpoint:async input=>{if(!tasks.has(input.taskId))throw Error('Chat not found.');return{revision:'sample-after',files:copy(initial.changes).map(f=>({...f,restorable:!f.binary})),operations:[]};},
@@ -204,6 +206,42 @@ export function createPreviewBridge():MuseBenchBridge {
    return siteChannel.emit();
   },
   customize:async command=>{
+   if(command.type==='catalogSearch'){
+    const fixtures:CatalogEntry[]=command.source==='community'?[...CURATED_EXTENSIONS.filter(item=>item.kind===command.kind).map(item=>({...item,id:'preview-community:'+item.id,source:'community' as const})),{id:'preview-validation-failure',title:'Unsupported package sample',description:'A deterministic validation failure for preview review.',kind:command.kind,source:'community',publisher:'Preview fixture',homepage:'https://github.com/FahadArfin/MuseBench',compatibility:'unverified',setup:'Preparation demonstrates a rejected unsupported capability.',tags:[],package:{repo:'https://github.com/FahadArfin/MuseBench',path:'.',kind:command.kind==='skills'?'skill':'plugin'},provenance:{source:'Simulated fixture',url:'https://github.com/FahadArfin/MuseBench'}}]:CURATED_EXTENSIONS.filter(item=>item.kind===command.kind);
+    const entries=fixtures.filter(item=>(item.title+' '+item.description+' '+item.publisher).toLowerCase().includes(command.query.toLowerCase())),offset=Number(command.cursor??0),limit=6;
+    if(!Number.isSafeInteger(offset)||offset<0)throw Error('Invalid preview cursor.');
+    return{catalog:{entries:copy(entries.slice(offset,offset+limit)),nextCursor:offset+limit<entries.length?String(offset+limit):null,stale:false,offline:false,fetchedAt:stamp,errors:[],disclosure:'Simulated catalog data. No network search, downloads or installation occur in preview.'}};
+   }
+   if(command.type==='prepareCatalog'){
+    if(command.id==='preview-validation-failure')throw Error('Preview validation rejected: unsupported executable capability. Nothing installed.');
+    const item=CURATED_EXTENSIONS.find(item=>item.id===command.id.replace(/^preview-community:/,''));if(!item?.package)throw Error('This entry requires manual setup.');
+    return{prepared:{token:'catalog:'+item.id,kind:item.package.kind==='skill'?'skills':'plugins',title:item.title,folder:'Preview staging / '+item.id,fingerprint:'Simulated content hash',instructions:'Simulated package review. Inspect the source, dependencies and permissions before installing a real package.',files:['SKILL.md','LICENSE'],capabilities:[]}};
+   }
+   if(command.type==='catalogServer'){
+    const item=CURATED_EXTENSIONS.find(item=>item.id===command.id.replace(/^preview-community:/,''));if(!item?.recipe||!command.reviewed)throw Error('Review this server first.');
+    if(customize.servers.some(server=>server.name===item.recipe!.name))throw Error('Server already configured. Manage it from Installed.');
+    customize.servers.push({name:item.recipe.name,revision:'preview-'+item.id,transport:item.recipe.transport==='npm'?'stdio':'streamable_http',address:item.recipe.transport==='npm'?`Pinned npm launcher: ${item.recipe.package}@${item.recipe.version}`:item.recipe.url,enabled:true,reviewed:true,oauth:item.recipe.transport==='http'&&!!item.recipe.oauth});return{state:copy(customize),message:'Simulated server configuration saved. Sign-in and readiness are not verified.'};
+   }
+   if(command.type==='install'&&command.token.startsWith('catalog:')){
+    const item=CURATED_EXTENSIONS.find(item=>'catalog:'+item.id===command.token);if(!item?.package||!command.reviewed)throw Error('Review the package first.');
+    if(item.package.kind==='skill'){if(!customize.skills.some(skill=>skill.id===item.id))customize.skills.push({id:item.id,title:item.title,description:item.description,scope:'user',activation:'user-only'});}
+    else if(!customize.plugins.some(plugin=>plugin.id===item.id))customize.plugins.push({id:item.id,title:item.title,description:item.description,version:'Preview',enabled:false,valid:true,capabilities:[],reviewRequired:true});
+    return{state:copy(customize),message:'Preview only: package installation simulated.'};
+   }
+   if(command.type==='serverAction'){
+    const server=customize.servers.find(item=>item.name===command.name);if(!server)throw Error('Sample server not found.');
+    if(command.action==='login')return{state:copy(customize),message:'Simulated sign-in handoff. No account authenticated; readiness remains unverified.'};
+    if(command.action==='remove')customize.servers=customize.servers.filter(item=>item!==server);
+    if(command.action==='enable'||command.action==='disable')server.enabled=command.action==='enable';
+    if(command.action==='review')server.reviewed=true;
+    return{state:copy(customize),message:'Preview only: server action simulated.'};
+   }
+   if(command.type==='pluginAction'){
+    const plugin=customize.plugins.find(item=>item.id===command.id);if(!plugin)throw Error('Sample plugin not found.');
+    if(command.action==='remove')customize.plugins=customize.plugins.filter(item=>item!==plugin);else plugin.enabled=command.action==='enable';
+    return{state:copy(customize),message:'Preview only: plugin action simulated.'};
+   }
+
    customize.hookPresets=await hookPresets.snapshot();
    if(command.type==='saveHookPreset'||command.type==='deleteHookPreset'){customize.hookPresets=(await hookPresets.dispatch(command))!;return{state:copy(customize),message:'Preview hook preset saved. Project hooks unchanged.'};}
    const hookRoot=state.activeProject?.root;if(hookRoot&&!hookProjects.has(hookRoot))hookProjects.set(hookRoot,{root:hookRoot,revision:'preview-hooks',items:[]});customize.hooks=hookRoot?hookProjects.get(hookRoot):null;

@@ -1,15 +1,17 @@
 import {useEffect,useState} from 'react';
 import {HOOK_EVENTS,type NativeHook} from '../shared/native-hooks.mjs';
 import type {CustomizeCommand,CustomizeState} from '../shared/customize-types';
-export function ProjectHooks({config,presets,disabled,save}:{config:CustomizeState['hooks'];presets?:CustomizeState['hookPresets'];disabled:boolean;save:(command:CustomizeCommand)=>void}){
+export function ProjectHooks({config,presets,starter,onStarterConsumed,disabled,save}:{config:CustomizeState['hooks'];presets?:CustomizeState['hookPresets'];starter?:{id:string;name:string;hooks:NativeHook[]};onStarterConsumed?:()=>void;disabled:boolean;save:(command:CustomizeCommand)=>void}){
  const [items,setItems]=useState<NativeHook[]>(config?.items??[]),[reviewed,setReviewed]=useState(false);
  const [presetId,setPresetId]=useState(''),[presetName,setPresetName]=useState(''),[loaded,setLoaded]=useState('');
  useEffect(()=>{setItems(config?.items??[]);setReviewed(false);setLoaded('');},[config?.root,config?.revision]);
+ useEffect(()=>{if(starter&&config){setItems(structuredClone(starter.hooks));setReviewed(false);setLoaded(starter.name);onStarterConsumed?.();}},[starter?.id,config?.root]);
  const change=(next:NativeHook[])=>{setItems(next);setReviewed(false);};
  if(!config)return <p>Open a project to configure its hooks.</p>;
  const dirty=JSON.stringify(items)!==JSON.stringify(config.items);
  const selected=presets?.items.find(item=>item.id===presetId);
  return <div className="project-hooks"><p className="extensions-path">{config.root}</p>
+ {starter&&loaded===starter.name&&<p className="extensions-help" role="status">Loaded {loaded} as an editable draft. Review the command for this project before saving.</p>}
  {presets&&<details><summary>Reusable presets</summary><fieldset disabled={disabled}><legend>Hook preset</legend><p className="extensions-help">Presets are local templates. Loading one replaces this draft; review and save below to use it in this project.</p>
  <label>Saved preset<select aria-label="Saved hook preset" value={selected?.id??''} onChange={e=>{const preset=presets.items.find(item=>item.id===e.target.value);setPresetId(preset?.id??'');setPresetName(preset?.name??'');}}><option value="">New preset</option>{presets.items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
  <button className="button" disabled={!selected} onClick={()=>{if(selected){change(structuredClone(selected.hooks));setLoaded(selected.name);}}}>Load into draft</button>

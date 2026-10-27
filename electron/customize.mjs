@@ -31,7 +31,7 @@ export function validateServer(value){
  }else throw Error('Choose HTTPS or local stdio transport.');
  return{name,config};
 }
-export function createCustomize({getState,environment=process.env,dataDir,review,run=promisify(execFile),chooseFolder=async()=>null,isActive=()=>false}){
+export function createCustomize({getState,environment=process.env,dataDir,review,catalog,stagePackage,run=promisify(execFile),chooseFolder=async()=>null,isActive=()=>false}){
  const env=curateEnvironment(environment),profile=env.USERPROFILE;
  if(!profile||!path.isAbsolute(profile))throw Error('A Windows user profile is required for Customize.');
  review??=createExtensionReview({dataDir,profile});
@@ -40,12 +40,16 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  const importsFile=path.join(dataDir,'skill-imports.json');
  const imports=async()=>{try{const value=JSON.parse(await optionalText(importsFile)??'[]');return Array.isArray(value)?value.slice(-100):[];}catch{return[];}};
  const pending=new Map(),processes=new Map();let busy=false,closed=false;
+ async function catalogService(){return catalog??= (await import('./extension-catalog.mjs')).createExtensionCatalog({dataDir});}
+ async function removeStage(folder){await(await import('./extension-staging.mjs')).removeCatalogStage(folder,{dataDir});}
+ async function clearPending(){const items=[...pending.values()];pending.clear();await Promise.all(items.filter(item=>item.catalog).map(item=>removeStage(item.folder)));}
  function binary(){const value=getState().runtime?.binary??discoverMuseBinaries({environment:env})[0];if(typeof value!=='string'||!(path.isAbsolute(value)||path.win32.isAbsolute(value))||!value.toLowerCase().endsWith('.exe'))throw Error('Install or select the official Muse CLI in Connection settings.');return value;}
- async function cli(args,{oauth=false}={}){
+ async function cli(args,{oauth=false,validation=false}={}){
   if(closed)throw Error('Customize is closed.');
   const abort=new AbortController();let operation;
   try{operation=Promise.resolve(run(binary(),args,{shell:false,windowsHide:true,env,signal:abort.signal,encoding:'utf8',timeout:oauth?180000:30000,maxBuffer:4*1024*1024,cwd:profile}));processes.set(abort,operation);const result=await operation;return oauth?{}:JSON.parse(result.stdout);}
-  catch(error){if(error.message?.startsWith('Install or select'))throw error;throw Error(oauth?'Sign-in did not finish. Retry in Customize or use muse mcp login in the official CLI.':'Muse could not complete this operation. Check the folder or configuration and try again.');}
+  catch(error){if(error.message?.startsWith('Install or select'))throw error;if(validation&&typeof error.stdout==='string'&&error.stdout.length<4*1024*1024){try{const result=JSON.parse(error.stdout);if(result.valid===false||Array.isArray(result.diagnostics))return{...result,valid:false};}catch{}}
+   throw Error(oauth?'Sign-in did not finish. Retry in Customize or use muse mcp login in the official CLI.':'Muse could not complete this operation. Check the folder or configuration and try again.');}
   finally{processes.delete(abort);}
  }
  async function settings(){const source=await optionalText(settingsPath);let config;try{config=source===null?{}:JSON.parse(source);}catch{throw Error('Muse settings are invalid. Correct settings.json before changing extensions.');}if(!object(config)||config.mcpServers||config.mcp_servers&&!object(config.mcp_servers))throw Error('Muse settings use an unsupported MCP configuration. Review settings.json in the official CLI.');return{source,config};}
@@ -83,32 +87,53 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  function requireReview(command){if(command.reviewed!==true)throw Error('Review extension access before continuing.');}
  async function prepare(kind,knownFolder){
   const folder=knownFolder??await chooseFolder(kind);if(!folder)return null;
-  const hash=await treeDigest(folder),result=await cli([kind,'validate',folder,'--json']);
-  if(result.valid===false)throw Error('Muse rejected this folder. Fix its manifest or SKILL.md first.');
-  const token=randomUUID();pending.clear();pending.set(token,{kind,folder,hash,id:result.plugin?.id,created:Date.now()});
+  const hash=await treeDigest(folder),result=await cli([kind,'validate',folder,'--json'],{validation:true});
+  if(result.valid===false){const details=(Array.isArray(result.diagnostics)?result.diagnostics:[]).slice(0,8).map(item=>clean(item.message||item.code,350)).filter(Boolean).join('; ');throw Error('Muse rejected this package. '+(details||'Fix its manifest or SKILL.md first.'));}
+  const token=randomUUID();
   let instructions,files;
   if(kind==='skills'){instructions=await optionalText(path.join(folder,'SKILL.md'));if(instructions===null||instructions.length>30000)throw Error('Skill instructions must fit within 30,000 characters for review.');files=[];const walk=async(dir,rel='')=>{for(const entry of await readdir(dir,{withFileTypes:true})){const name=rel?rel+'/'+entry.name:entry.name;if(files.length>=200)throw Error('Skill review supports up to 200 files.');if(entry.isDirectory())await walk(path.join(dir,entry.name),name);else files.push(name);}};await walk(folder);}
-  return{fingerprint:hash,instructions,files,token,kind,title:clean(result.plugin?.display_name||result.plugin?.id||path.basename(folder),200),folder,capabilities:capabilities(result.plugin?.capabilities??result.capabilities)};
+  await clearPending();pending.set(token,{kind,folder,hash,id:result.plugin?.id,created:Date.now()});
+  return{fingerprint:hash,instructions,files,token,kind,title:clean(result.plugin?.display_name||result.plugin?.id||result.id||path.basename(folder),200),folder,capabilities:capabilities(result.plugin?.capabilities??result.capabilities)};
  }
  async function dispatch(command){
   if(closed)throw Error('Customize is closed.');
-  const supported=['saveHookPreset','deleteHookPreset','saveHooks','refresh','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
+  const supported=['catalogSearch','prepareCatalog','catalogServer','saveHookPreset','deleteHookPreset','saveHooks','refresh','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
   if(!object(command)||!supported.includes(command.type)||JSON.stringify(command).length>40000)throw Error('Unsupported Customize action.');
   if(command.type==='refresh')return{state:await snapshot()};
+  if(command.type==='catalogSearch'){const {kind,query,source,cursor,refresh}=command;return{catalog:await(await catalogService()).search({kind,query,source,cursor,refresh})};}
   if(busy)throw Error('Wait for the current setup operation to finish.');
   if(customizeBlocked(getState())||isActive())throw Error('Let the running task finish and confirm it has stopped before changing extensions.');
   busy=true;
   try{
+   if(command.type==='prepareCatalog'){
+    const entry=await(await catalogService()).resolve(command.id);if(!entry?.package||entry.compatibility==='setup-required')throw Error('Unknown or setup-required catalog package. Search again and follow its setup instructions.');
+    const stage=stagePackage??(await import('./extension-staging.mjs')).stageCatalogPackage;
+    const downloaded=await stage(entry.package,{dataDir,protectedFolders:[...pending.values()].map(item=>item.folder)});
+    try{if(closed)throw Error('Customize is closed.');
+     const prepared=await prepare(entry.package.kind==='skill'?'skills':'plugins',downloaded.folder);
+     pending.get(prepared.token).catalog={id:entry.id,source:downloaded.source};
+     return{prepared:{...prepared,source:downloaded.source,licenses:downloaded.licenses,downloadedFiles:downloaded.files},message:'Downloaded and validated. Review the pinned package before installing.'};
+    }catch(error){await removeStage(downloaded.folder);throw error;}
+   }
+   if(command.type==='catalogServer'){
+    requireReview(command);const entry=await(await catalogService()).resolve(command.id);
+    if(!entry?.recipe||entry.compatibility==='setup-required')throw Error('This catalog entry needs manual setup; no supported connection recipe is available.');
+    const setup=entry.recipe.transport==='npm'?await(await import('./catalog-local-server.mjs')).resolveLocalCatalogServer(entry.recipe,{environment}):{name:entry.recipe.name,transport:'streamable_http',url:entry.recipe.url};
+    const {name,config:server}=validateServer(setup);
+    const {source,config}=await settings();if(Object.hasOwn(config.mcp_servers??{},name))throw Error('This server is already configured. Manage it in Installed.');
+    if(Object.keys(config.mcp_servers??{}).length>=250)throw Error('Remove an unused server first.');
+    config.mcp_servers={...config.mcp_servers,[name]:server};await writeSettings(source,config);await review.approveMcp(name,server);
+    return{state:await snapshot(),message:entry.recipe.oauth?'Server added. Open Installed → MCP servers and choose Sign in to connect your account.':'Server added. Available to the next Muse run.'};
+   }
    if(command.type==='saveHookPreset'||command.type==='deleteHookPreset'){if(command.type==='saveHookPreset')await hookPresets.save(command);else await hookPresets.remove(command);return{state:await snapshot(),message:command.type==='saveHookPreset'?'Hook preset saved. Load it into a project draft, then review and save that project.':'Hook preset deleted. Existing project hooks are unchanged.'};}
    if(command.type==='saveHooks'){requireReview(command);const root=getState().activeProject?.root;if(!root||command.root!==root)throw Error('The selected project changed. Reopen Customize.');await review.saveHooks(root,command.revision,command.hooks);return{state:await snapshot(),message:'Project hooks saved. Applies to future Code runs.'};}
    if(['reviewProject','approveProject','revokeProject'].includes(command.type)){const root=getState().activeProject?.root;if(!root)throw Error('Choose a project first.');if(command.type==='approveProject'){requireReview(command);if(command.root!==root)throw Error('The selected project changed.');await review.approveProject(root,command.fingerprint);}if(command.type==='revokeProject'){if(command.root!==root)throw Error('The selected project changed.');await review.revokeProject(root);}return{projectReview:await review.projectState(root),state:await snapshot()};}
    if(command.type==='preparePackSkill'){if(!MUSEBENCH_SKILL_PACK.some(s=>s.id===command.id))throw Error('Unknown MuseBench skill.');const source=fileURLToPath(new URL('../templates/musebench-skills/'+command.id+'/SKILL.md',import.meta.url)),text=await optionalText(source);if(!text)throw Error('Bundled skill is missing.');const folder=path.join(dataDir,'skill-drafts',randomUUID(),command.id);await mkdir(folder,{recursive:true});await writeFile(path.join(folder,'SKILL.md'),text,'utf8');return{prepared:await prepare('skills',folder)};}
    if(command.type==='prepareSkill'||command.type==='preparePlugin')return{prepared:await prepare(command.type==='prepareSkill'?'skills':'plugins')};
    if(command.type==='install'){
-    requireReview(command);const item=pending.get(command.token);if(!item||Date.now()-item.created>600000)throw Error('Folder review expired. Choose the folder again.');
+    requireReview(command);const item=pending.get(command.token);if(!item||Date.now()-item.created>600000){if(item){pending.delete(command.token);if(item.catalog)await removeStage(item.folder);}throw Error('Folder review expired. Choose the folder again.');}
     if(await treeDigest(item.folder)!==item.hash)throw Error('The folder changed after review. Choose it again.');
     if(item.kind==='plugins'&&!await review.pluginsReviewed())throw Error('Review the existing plugin inventory before installing another plugin.');
-    pending.delete(command.token);
     const before=item.kind==='plugins'?await review.pluginState():null;
     const installed=await cli([item.kind,'install',item.folder,'--scope','user','--json']);
     if(item.kind==='skills')await atomicJson(importsFile,[...await imports(),{title:path.basename(item.folder),folder:item.folder,fingerprint:item.hash,at:new Date().toISOString()}].slice(-100));
@@ -117,6 +142,8 @@ export function createCustomize({getState,environment=process.env,dataDir,review
      if(!idOK(item.id)||installed.installed?.id!==item.id||after.packages[item.id]!==item.hash||!unchangedOthers(before,after,item.id))throw Error('Plugin files or another plugin changed during installation. The new inventory is not approved; refresh and review it.');
      await review.approvePlugins(after.revision);
     }
+    if(item.catalog){const receiptFile=path.join(dataDir,'catalog-installations.json');let receipts=[];try{const parsed=JSON.parse(await optionalText(receiptFile)??'[]');if(Array.isArray(parsed))receipts=parsed;}catch{}await atomicJson(receiptFile,[...receipts,{...item.catalog,kind:item.kind,fingerprint:item.hash,at:new Date().toISOString()}].slice(-250));await removeStage(item.folder);}
+    pending.delete(command.token);
    }else if(command.type==='skillActivation'){
     if(!idOK(command.id)||!['on','off','user-only'].includes(command.activation))throw Error('Invalid skill action.');
     const item=(await skillList()).find(s=>s.id===command.id);if(!item||!['bundled','user','project','plugin'].includes(item.scope))throw Error('This skill is no longer available. Refresh the list.');
@@ -158,5 +185,5 @@ export function createCustomize({getState,environment=process.env,dataDir,review
    return{state:await snapshot(),message:command.type==='serverAction'&&command.action==='login'?'Muse completed the OAuth sign-in.':'Saved. Changes apply to the next Muse run.'};
   }finally{busy=false;}
  }
- return{snapshot,dispatch,isBusy:()=>busy,async close(){closed=true;pending.clear();for(const abort of processes.keys())abort.abort();await Promise.allSettled([...processes.values()]);}};
+ return{snapshot,dispatch,isBusy:()=>busy,async close(){closed=true;for(const abort of processes.keys())abort.abort();await Promise.allSettled([...processes.values()]);await clearPending();}};
 }

@@ -1,6 +1,6 @@
 # MuseBench extension catalog
 
-Status: proposed design; curated plus community search selected by the user on 27 October 2026. Implementation approval pending. This document includes current research and the concrete implementation scope.
+Status: approved for implementation by the user on 27 October 2026, including curated plus community search. This document includes current research and the concrete implementation scope.
 
 ## Outcome
 
