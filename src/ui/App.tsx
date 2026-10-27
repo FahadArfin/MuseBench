@@ -1,3 +1,4 @@
+import {TypedText} from './TypedText';
 import {AppUpdatesContext,AppUpdatePanel,UpdateToolbar,useAppUpdates} from './AppUpdates';
 import {WorkflowLibrary} from './WorkflowLibrary';
 import {ContextHandoff} from './ContextHandoff';
@@ -77,7 +78,7 @@ export default function App() {
   const appUpdates=useAppUpdates();
   const [state, setState] = useState<AppState | null>(null);
   const [preferences, setPreferences] = usePreferences();
-  const [product, setProduct] = useState<'code' | 'personal'>('code');
+  const [product, setProduct] = useState<'code' | 'personal'>('personal');
   const [view, setView] = useState<'chat' | 'project' | 'customize' | 'profile' | CodeDestination>('chat');
   const [personalMode,setPersonalMode]=useState<'chat'|'work'>('chat');
   const [workHome,setWorkHome]=useState(true);
@@ -430,7 +431,7 @@ export default function App() {
             {!task.runs?.length&&<ShellCommands results={task.shellResults ?? []} />}{Boolean(state.runtime.pending) && <button className="permission-banner" onClick={() => setModal('runtime')}><ShieldCheck size={17} /><span>{(state.runtime.pending as {kind?:string})?.kind==='input'?'Muse has a question. Answer to continue.':'Muse needs your decision. Review the permission request.'}</span><ChevronRight size={15} /></button>}
             {runtimeActive && !task.runs?.some(run=>run.status==='working') && <div className="working-indicator" role="status"><LoaderCircle size={15} className="spin" />Muse is working in your project…<button className="text-link" onClick={() => void act({ type: 'disconnectMuse' })}>Stop</button></div>}
             {!runtimeActive&&!!task.changes.length&&<ChangedFiles key={task.id} files={task.changes} onOpenFile={openFile} onOpenAll={()=>openFile()}/>}
-          </div></div> : <div className="new-chat-content"><div className="welcome-mark"><Terminal size={30} strokeWidth={1.4} /></div><h1>What would you like to build?</h1><p>{project ? `Work with Muse in ${project.name.replace(' · tutorial', '')}.` : 'A focused workspace for you, your code, and Muse.'}</p>{!project && <div className="welcome-actions"><button className="button" disabled={busy} onClick={() => void openFolder()}><FolderOpen size={16} />Open a folder</button><button className="text-link" disabled={busy} onClick={createSample}>Try sample project<ChevronRight size={14} /></button></div>}</div>}
+          </div></div> : <div className="new-chat-content"><div className="welcome-mark terminal-welcome" aria-hidden="true"><Terminal size={30} strokeWidth={1.4} /></div><h1 className="typed-welcome" aria-label="What would you like to build?"><TypedText text="What would you like to build?" delay={650} interval={42}/></h1><p>{project ? `Work with Muse in ${project.name.replace(' · tutorial', '')}.` : 'A focused workspace for you, your code, and Muse.'}</p>{!project && <div className="welcome-actions"><button className="button" disabled={busy} onClick={() => void openFolder()}><FolderOpen size={16} />Open a folder</button><button className="text-link" disabled={busy} onClick={createSample}>Try sample project<ChevronRight size={14} /></button></div>}</div>}
           <PromptTimeline transcript={transcript} active={showTask&&product==='code'&&view==='chat'&&!modal&&!profileMenuOpen&&!mobileNav} context={task?.id??''} />
           <div className="composer-region">{scrolledUp && showTask && <button className="jump-latest icon-button" title="Jump to latest" aria-label="Jump to latest" onClick={() => { setScrolledUp(false); transcript.current?.scrollTo({ top: transcript.current.scrollHeight }); }}><ArrowDown size={16} /></button>}
             {showTask && task?.mode === 'muse' && !runtimeActive && !connected && <div className="composer-notice"><Terminal size={13} /><span>{['blocked','uncertain','failed','error'].includes(state.runtime.status) ? 'Muse needs attention before continuing.' : 'Send a message to connect to Muse.'}</span><button onClick={() => setModal('runtime')}>Connection settings</button></div>}

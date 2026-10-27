@@ -49,6 +49,13 @@ try{
    });
    if(placement){assert.ok(placement.centerOffset<=1,`${name}: mode switch must remain centered`);assert.ok(placement.belowHeader>=24,`${name}: mode switch needs space below the title bar`);}
   }
+  // Native hidden windows and Chromium can start transitions on different frames.
+  // Measure settled UI, including the finite brand typing and sidebar accordion.
+  await Promise.all([browserPage,desktopPage].map(page=>page.evaluate(async()=>{
+   document.body.getBoundingClientRect();
+   const animations=document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity);
+   await Promise.race([Promise.allSettled(animations.map(a=>a.finished)),new Promise(resolve=>setTimeout(resolve,3000))]);
+  })));
   const [a,b]=await Promise.all([measure(browserPage),measure(desktopPage)]);
   const differences=[];if(a.length!==b.length)differences.push(`Element count ${a.length} / ${b.length}`);
   for(let i=0;i<Math.min(a.length,b.length);i++){const {box:abox,...aa}=a[i],{box:bbox,...bb}=b[i];if(JSON.stringify(aa)!==JSON.stringify(bb)||abox.some((n,j)=>Math.abs(n-bbox[j])>1))differences.push({index:i,browser:a[i],electron:b[i]});}
@@ -59,6 +66,8 @@ try{
  async function click(selector,label){for(const page of [browserPage,desktopPage]){let clicked=false;for(let tries=0;tries<60&&!clicked;tries++){clicked=await page.evaluate(({selector,label})=>{const element=[...document.querySelectorAll(selector)].find(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height&&!e.disabled&&(e.getAttribute('aria-label')||e.textContent?.trim())===label);if(!element)return false;element.click();return true;},{selector,label});if(!clicked)await new Promise(r=>setTimeout(r,75));}assert.ok(clicked,`Missing enabled control ${selector} ${label}`);}}
 
  async function escape(){for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));}
+ await compare('default-muse-ai');
+ await click('button','Muse Code');
  await compare('code-chat');
  await click('button','Approval access');await compare('composer-access-menu');await click('[role="menuitemcheckbox"]','Full access');await click('button','Approval access');await compare('composer-full-access');
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),true);

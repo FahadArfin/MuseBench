@@ -20,6 +20,8 @@ await mkdir('artifacts/browser-preview',{recursive:true});
 try {
  await page.goto('http://127.0.0.1:4321/preview.html');
  await page.getByRole('group',{name:'Choose workspace'}).waitFor({timeout:30000});
+ assert.equal(await page.getByRole('button',{name:'Muse AI',exact:true}).getAttribute('aria-pressed'),'true');
+ await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('combobox',{name:'Task budget',exact:true}).selectOption('extended');assert.equal((await page.evaluate(()=>window.musebench.getState())).task.runOptions.budget,'extended');await page.getByRole('combobox',{name:'Task budget',exact:true}).selectOption('standard');await page.getByRole('button',{name:'Muse connection',exact:true}).click();
  const connection=page.getByRole('dialog',{name:'Your Muse connection',exact:true});await connection.getByText('Connection capabilities',{exact:true}).click();await connection.getByText('Live steering',{exact:false}).waitFor();await connection.getByText('Semantic workspace tools',{exact:false}).waitFor();assert.equal(await connection.locator('[data-status="simulated"]').count(),12);await page.screenshot({path:'artifacts/browser-preview/capabilities.png'});await connection.getByRole('button',{name:'Close dialog',exact:true}).click();
  assert.equal(await page.locator('.browser-preview-banner').count(),0);assert.equal(await page.getByRole('button',{name:'Toggle review panel'}).count(),0);assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);
@@ -46,7 +48,7 @@ try {
  await queued.getByRole('button',{name:'Edit queued prompt 2',exact:true}).click();assert.equal(await composer.inputValue(),'Review the mobile layout');assert.equal(await queued.locator('li').count(),2);await composer.fill('');
  await page.getByRole('button',{name:'Send next queued prompt',exact:true}).click();assert.equal(await queued.locator('li').count(),1);
  while(await queued.count())await queued.getByRole('button',{name:'Remove queued prompt 1',exact:true}).click();
- await page.reload();await page.getByRole('textbox',{name:'Message Muse',exact:true}).waitFor();
+ await page.reload();await page.getByRole('button',{name:'Muse Code',exact:true}).click();await page.getByRole('textbox',{name:'Message Muse',exact:true}).waitFor();
 
  await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('button',{name:'Screenshots',exact:true}).click();
  await page.getByLabel('Attach screenshots',{exact:true}).setInputFiles({name:'screen.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=','base64')});
@@ -70,11 +72,11 @@ try {
  await page.getByRole('button',{name:'Add to chat',exact:true}).click();await composer.fill('Preserve worktree draft');await page.getByRole('button',{name:'Worktrees',exact:true}).click();assert.equal(await composer.inputValue(),'Preserve worktree draft');
  const trees=page.getByRole('dialog',{name:'Project worktrees',exact:true});await trees.getByRole('textbox',{name:'New worktree branch',exact:true}).fill('muse/preview-task');await trees.getByText(/Your uncommitted changes stay/).waitFor();await page.screenshot({path:'artifacts/browser-preview/worktrees.png'});await trees.getByRole('button',{name:'Create and open worktree',exact:true}).click();await page.getByRole('heading',{name:'MuseBench sample · muse/preview-task',exact:true}).waitFor();
  await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('button',{name:'Worktrees',exact:true}).click();await trees.getByRole('button',{name:'Archive (keep files)',exact:true}).click();await trees.getByText(/Archived · files retained/).waitFor();await trees.getByRole('button',{name:'Unarchive',exact:true}).click();await trees.getByRole('button',{name:'Archive (keep files)',exact:true}).waitFor();await page.screenshot({path:'artifacts/browser-preview/worktree-lifecycle.png'});await trees.getByRole('button',{name:'Close worktrees',exact:true}).click();
- await page.reload();await composer.waitFor();
+ await page.reload();await page.getByRole('button',{name:'Muse Code',exact:true}).click();await composer.waitFor();
  await composer.fill('Start a sample saved session');await page.getByRole('button',{name:'Send message',exact:true}).click();
  await page.getByRole('button',{name:'Add to chat',exact:true}).click();await composer.fill('Preserve session draft');await page.getByRole('button',{name:'Session',exact:true}).click();assert.equal(await composer.inputValue(),'Preserve session draft');
  const sessionDialog=page.getByRole('dialog',{name:'Chat session',exact:true});await sessionDialog.getByText('Your next message resumes this native session.',{exact:true}).waitFor();await sessionDialog.getByRole('region',{name:'Native usage'}).getByText(/Missing counters are not zero usage/).waitFor();await page.screenshot({path:'artifacts/browser-preview/session.png'});await sessionDialog.getByRole('button',{name:'Start fresh session',exact:true}).click();
- await page.reload();await composer.waitFor();
+ await page.reload();await page.getByRole('button',{name:'Muse Code',exact:true}).click();await composer.waitFor();
  const before=await page.evaluate(()=>window.musebench.getState());
  await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Keep this draft');
  await page.getByRole('button',{name:'Reasoning effort',exact:true}).click();
