@@ -8,6 +8,31 @@ import {promisify} from 'node:util';
 import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/runtime/index.mjs';
 
 const pin='sha256:7fddaf646dbc317e5fcac0785e135eb04df14fbb0db1863089dfd6da21730e5b';
+const inputRequest=()=>({sessionId:'session-one',turnId:'turn-one',userInputId:'question-one',questions:[{id:'color',header:'Color',question:'Which color?',options:[{label:'Blue'},{label:'Green'}],selection:{mode:'single'}}]});
+test('native question answers bind to the observed request and wait for settlement',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Ask'});await h.request({method:'userInput/request',params:inputRequest()});
+ const p=h.runtime.snapshot().pending;assert.equal(h.runtime.snapshot().questionsSupported,true);
+ const action={sessionId:p.sessionId,turnId:p.turnId,userInputId:p.userInputId,revision:p.revision,operation:'answer',answers:[{questionId:'color',selectedLabel:'Blue'}]};
+ await assert.rejects(h.runtime.answerInput({...action,userInputId:'stale'}));await assert.rejects(h.runtime.answerInput({...action,answers:[{questionId:'color',selectedLabel:'invented'}]}));
+ h.host.connection.command=async(method,params,opts)=>{h.calls.push({method,params,opts});return {status:'accepted',commandId:opts.commandId,userInputId:params.userInputId};};
+ await h.runtime.answerInput(action);assert.equal(h.runtime.snapshot().pending.userInputId,p.userInputId);assert.equal(h.runtime.snapshot().inputResponse.status,'accepted');
+ await assert.rejects(h.runtime.answerInput(action),/pending|already/);
+ h.emit({method:'userInput/settled',params:{sessionId:p.sessionId,userInputId:p.userInputId,outcome:'answered',answers:action.answers}});assert.equal(h.runtime.snapshot().pending,null);assert.equal(h.runtime.snapshot().status,'running');assert.deepEqual(h.runtime.snapshot().inputResponse.confirmedAnswers,action.answers);
+});
+test('ambiguous native question response is not replayed',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Ask'});await h.request({method:'userInput/request',params:inputRequest()});const p=h.runtime.snapshot().pending;
+ h.host.connection.command=async()=>({status:'accepted',commandId:'wrong',userInputId:p.userInputId});
+ const action={...p,operation:'cancel'};await assert.rejects(h.runtime.answerInput(action));assert.equal(h.runtime.snapshot().inputResponse.status,'unknown');await assert.rejects(h.runtime.answerInput(action));
+});
+test('native question arriving before turn acknowledgement is retained',async t=>{
+ const h=await harness(t);await h.connect();const command=h.host.connection.command;h.host.connection.command=async(method,...args)=>{if(method==='turn/start')await h.request({method:'userInput/request',params:inputRequest()});return command(method,...args);};
+ await h.runtime.send({text:'Ask'});assert.equal(h.runtime.snapshot().pending?.userInputId,'question-one');assert.equal(h.runtime.snapshot().status,'blocked');
+});
+test('native settlement before request prevents stale question resurrection',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Ask'});
+ h.emit({method:'userInput/settled',params:{sessionId:'session-one',userInputId:'question-one',outcome:'timedOut'}});await h.request({method:'userInput/request',params:inputRequest()});
+ assert.equal(h.runtime.snapshot().pending,null);assert.equal(h.runtime.snapshot().status,'running');
+});
 const permissions=()=>({profileId:':ask-me',reviewerAuthority:'human',reviewerAttached:false,axes:{filesystem:'sandboxed',network:'off',approval:'onRequest',reviewer:'human'}});
 
 // This replaces only the external native process. The real runtime and
@@ -171,7 +196,7 @@ test('explicit connect verifies Ask me and explicit send streams the authoritati
  const h=await harness(t);await h.connect();
  assert.equal(h.runtime.snapshot().status,'idle');assert.equal(h.runtime.snapshot().liveVerified,false);
  const start=h.calls.find(c=>c.method==='session/start');assert.equal(start.params.permissionProfile,':ask-me');assert.equal(start.params.approvalMode,'onRequest');
- assert.deepEqual(h.calls.find(c=>c.method==='initialize').params.capabilities,{experimentalApi:true,userInputDialogs:false});
+ assert.deepEqual(h.calls.find(c=>c.method==='initialize').params.capabilities,{experimentalApi:true,userInputDialogs:true});
  assert.equal(h.calls.find(c=>c.method==='spawn').spec.env.META_API_KEY,undefined);
  assert.equal(h.calls.some(c=>c.method==='turn/start'),false);
  await h.runtime.send({text:'Improve the page',mode:'chat'});

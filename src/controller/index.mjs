@@ -57,6 +57,7 @@ function restoreTask(record,knownProjectId){
   if(!task.projectId&&knownProjectId)task.projectId=knownProjectId;
   const validDate=value=>typeof value==='string'&&Number.isFinite(Date.parse(value));
   task.steeringReceipts=(Array.isArray(task.steeringReceipts)?task.steeringReceipts:[]).filter(r=>r&&['commandId','turnId','status','text','at'].every(k=>typeof r[k]==='string')).slice(-20).map(r=>({...r,text:r.text.slice(0,16000)}));
+  task.inputReceipts=(Array.isArray(task.inputReceipts)?task.inputReceipts:[]).filter(r=>r&&typeof r.userInputId==='string'&&typeof r.sessionId==='string').slice(-20).map(r=>['submitting','accepted'].includes(r.status)?{...r,status:'unknown'}:r);
   task.childControlReceipts=(Array.isArray(task.childControlReceipts)?task.childControlReceipts:[]).filter(r=>r&&['commandId','itemId','status','action'].every(k=>typeof r[k]==='string')).slice(-40).map(r=>r.status==='submitting'?{...r,status:'unknown',reason:'The app restarted before command admission was confirmed.'}:r);
   task.compactionReceipts=(Array.isArray(task.compactionReceipts)?task.compactionReceipts:[]).filter(r=>r&&['commandId','turnId','sessionId','status'].every(k=>typeof r[k]==='string')).slice(-20).map(r=>['submitting','accepted'].includes(r.status)?{...r,status:'unknown',reason:'The app restarted before native completion was observed. This request will not be replayed.'}:r);
   task.nativeSession=restoreNativeSession(task.nativeSession);task.nativeUsage=restoreUsage(task.nativeUsage);task.skillReceipts=restoreSkillReceipts(task.skillReceipts);
@@ -423,6 +424,13 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;if(selected)state.runtime=structuredClone(next);
     if(task&&next.childReceipts?.length){for(const receipt of next.childReceipts)task.childControlReceipts=[...(task.childControlReceipts??[]).filter(r=>r.commandId!==receipt.commandId),structuredClone(receipt)].slice(-40);saveRecord(task);}
     if(task&&next.compaction?.commandId){task.compactionReceipts=[...(task.compactionReceipts??[]).filter(r=>r.commandId!==next.compaction.commandId),structuredClone(next.compaction)].slice(-20);saveRecord(task);}
+    if(task&&next.inputResponse?.userInputId){
+      const receipt=next.inputResponse,key=`input:${receipt.sessionId}:${receipt.userInputId}`;
+      task.inputReceipts=[...(task.inputReceipts??[]).filter(r=>r.sessionId!==receipt.sessionId||r.userInputId!==receipt.userInputId),structuredClone(receipt)].slice(-20);
+      const text=confirmedInputText(receipt);
+      if(text&&!task.messages.some(m=>m.id===key)){const message={id:key,role:'user',text,turnId:context.turn?.promptId,at:now()};history.put(task.id,message);task.messages.push(message);task.messages=task.messages.slice(-150);}
+      saveRecord(task);
+    }
     if(task?.mode==='muse'&&!context.navigation){
       // A native child can resume its exclusively owned parent after an idle interval.
       if(next.transport==='msp'&&next.status==='running'&&context.turn?.taskId===task.id&&context.turn.runId===next.rootTurnId)context.pending=true;
@@ -441,7 +449,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         for(const item of Array.isArray(next.messages)?next.messages:[]){const key=runtimeMessageKey(item);if(typeof item?.text!=='string'||context.messageBaseline.has(key)||turn.messageBaseline.has(key)||!['userMessage','agentMessage'].includes(item.kind)||next.transport==='msp'&&item.kind==='userMessage')continue;const known=task.messages.find(m=>m.id===`runtime:${key}`);const received={id:`runtime:${key}`,role:item.kind==='userMessage'?'user':'assistant',text:item.text,turnId:turn.promptId,at:known?.at??now()};history.put(task.id,received);if(known){known.text=item.text.slice(0,16000);known.contextTruncated=item.text.length>16000;continue;}task.messages.push({...received,text:item.text.slice(0,16000),contextTruncated:item.text.length>16000});task.messages=task.messages.slice(-150);}
         if(next.transport==='exec'&&next.shellEnabled===true&&Array.isArray(next.shellResults)){const owned=Array.isArray(next.ownedRunIds)&&next.ownedRunIds.includes(turn.runId)?next.ownedRunIds.slice(0,5):[turn.runId];for(const item of next.shellResults)if(owned.includes(item?.runId)&&boundedShellResult(item))outputs.put(task.id,`shell:${item.runId}:${item.callId}`,item.command||'Native command',item.output,item.terminalStatus,item.truncated===true);for(const runId of owned)task.shellResults=mergeShellResults(task.shellResults,next.shellResults,runId);}
       }
-      const verifiedApprovalPause=next.status==='blocked'&&next.permissionVerified===true&&next.pending?.kind==='approval'&&typeof next.sessionId==='string'&&next.pending.sessionId===next.sessionId;
+      const verifiedApprovalPause=next.status==='blocked'&&next.permissionVerified===true&&['approval','input'].includes(next.pending?.kind)&&typeof next.sessionId==='string'&&next.pending.sessionId===next.sessionId;
       if(turn&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)&&!verifiedApprovalPause){const rejected=next.inputAccepted===false&&!turn.runId&&next.cleanup==='confirmed';executions.patch(turn.promptId,{phase:'settled',result:rejected?'rejected':ownsTurn&&next.cleanup==='confirmed'&&['completed','failed','cancelled'].includes(next.status)?next.status:'unknown',acceptance:next.inputAccepted===true?'accepted':rejected?'rejected':'unknown',cleanup:next.cleanup??'unknown',reason:typeof next.reason==='string'?next.reason.slice(0,1000):null});}
       const progress=turn&&(task.runs??[]).find(item=>item.id===turn.promptId);
       if(progress){
@@ -720,6 +728,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           context.pending=false;context.turn=null;if(state.task?.mode==='muse')state.task.runtimeComplete=false;state.runtime=runtime?.snapshot?.()??missingRuntime();
         }break;
       }
+      case 'answerInput':{const t=requireTask();if(action.taskId!==t.id||!runtime?.answerInput)throw Error('This question belongs to another chat or connection.');await runtime.answerInput(action);state.runtime=runtime.snapshot();break;}
       case 'runtimeDecision':if(!runtime)throw Error('Muse is not connected.');await runtime.decide(action.decision);state.runtime=runtime.snapshot();break;
       default:throw Error('Unknown controller action.');
     }
@@ -730,3 +739,4 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const archiveTimer=setInterval(()=>{queue=queue.then(purgeArchived).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
   return{getState,recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,searchChats,readChatHistory,readCapturedOutput,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
+import {confirmedInputText} from '../shared/user-input.mjs';

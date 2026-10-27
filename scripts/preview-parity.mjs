@@ -122,6 +122,13 @@ try{
  await escape();
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const input=document.querySelector('textarea[aria-label="Message Muse"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'Use sandboxed access for this chat');input.dispatchEvent(new Event('input',{bubbles:true}));});await click('button','Create task');await compare('new-chat-sandbox-default');
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),false,'A new sandboxed chat must not inherit the prior connection Full access');
+ for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});await window.musebench.dispatch({type:'sendMessage',text:'/preview-question'});});
+ await click('button','Muse has a question. Answer to continue.');await compare('native-question');
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const input=document.querySelector('textarea[aria-label="Write an answer: Approach"]');input.focus();Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'Keep the existing keyboard behavior.');input.dispatchEvent(new Event('input',{bubbles:true}));});await click('button','Send answers');await compare('native-question-answered');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.inputResponse.outcome),'answered');
+ await click('button','Close dialog');
+ for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'sendMessage',text:'/preview-question'});});await click('button','Muse has a question. Answer to continue.');await click('button','Decline to answer');await compare('native-question-declined');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.inputResponse.outcome),'cancelled');
  assert.deepEqual(errors,[]);report.status='passed';
 }catch(error){report.status='failed';report.failure=String(error.stack??error);console.error(report.failure);process.exitCode=1;}
 finally{if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});}await browser.close();await server.close();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));}

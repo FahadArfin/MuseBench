@@ -1,3 +1,4 @@
+import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
 import {childWorking} from '../shared/child-actions.mjs';
 import {createChildTracker} from './children.mjs';
 import {createCompactionTracker} from './compaction.mjs';
@@ -113,7 +114,7 @@ function provesAskMe(session,workspaceRoot,sessionId) {
 
 function displayPending(value,revision) {
  if(!value)return null;
- const p=structuredClone(value);
+ const p={...structuredClone(value),revision};
  if(p.kind!=='approval'||!Array.isArray(p.availableChoices))return p;
  p.availableChoices=p.availableChoices.map(choice=>{
   const {decisionToken:discarded,...clean}=choice;
@@ -132,6 +133,7 @@ export function createRuntime({environment=process.env,platform=process.platform
  const childEnvironment=curateEnvironment(environment);
  let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
+ const deferredInputs=new Map(),settledInputs=new Set();
  let awaitingChildReport=false,lastTerminal=null;
  const children=createChildTracker(),childCommands=new Set(),uncertainChildren=new Set(),childWork=new Map();
  const compaction=createCompactionTracker();let compactionTimer;
@@ -185,6 +187,11 @@ export function createRuntime({environment=process.env,platform=process.platform
  };
 
  function receivePending(value) {
+  if(value.kind==='input'&&settledInputs.has(value.userInputId))return false;
+  if(value.kind==='input'&&state.permissionVerified&&adapter?.snapshot().status==='submitting'){
+   if(!inputPrompt(value)||deferredInputs.size>=32){void disconnect('Unsupported native question sequence.');return false;}
+   deferredInputs.set(value.userInputId,structuredClone(value));return false;
+  }
   if(!state.permissionVerified||!['running','submitting'].includes(adapter?.snapshot().status)){
    void disconnect('An approval or input request arrived after the turn became inactive or uncertain. The session was stopped; inspect partial changes before reconnecting.');
    return false;
@@ -194,7 +201,8 @@ export function createRuntime({environment=process.env,platform=process.platform
    void disconnect('Muse sent overlapping approval or input requests. This version cannot reconcile them; the session was stopped without deciding either request.');
    return false;
   }
-  pending=structuredClone(value);pendingRevision++;return true;
+  if(value.kind==='input'&&(!inputPrompt(value)||value.turnId!==adapter.snapshot().turnId)){void disconnect('Unsupported or stale native question. No answer was sent.');return false;}
+  if(!same||JSON.stringify(pending)!==JSON.stringify(value)){pending=structuredClone(value);pendingRevision++;}return true;
  }
 
  function observe(frame) {
@@ -217,7 +225,20 @@ export function createRuntime({environment=process.env,platform=process.platform
    pending=null;blockedReason=null;syncAdapter(adapter.snapshot());
   }else if(frame.method==='userInput/requested'){
    if(!receivePending({kind:'input',...p}))return;
-   block('Muse requested input that this version cannot answer. Disconnect to close the session.',false);
+   block('Muse is waiting for your answer.',false);
+  }else if(frame.method==='userInput/settled'){
+   if(typeof p.userInputId!=='string'||p.userInputId.length>200)return;
+   if(settledInputs.size>=4096&&!settledInputs.has(p.userInputId)){void disconnect('Native question history limit reached. Reconnect before continuing.');return;}
+   settledInputs.add(p.userInputId);
+   const request=pending?.kind==='input'&&pending.userInputId===p.userInputId?pending:deferredInputs.get(p.userInputId);
+   deferredInputs.delete(p.userInputId);
+   if(request){
+    const previous=state.inputResponse?.userInputId===p.userInputId?state.inputResponse:{};
+    const receipt={...previous,sessionId:request.sessionId,userInputId:request.userInputId,turnId:request.turnId,prompt:structuredClone(request),status:'settled',outcome:p.outcome};
+    if(p.outcome==='answered')try{validateInputAnswers(request,{...request,revision:1,operation:'answer',answers:p.answers});receipt.confirmedAnswers=structuredClone(p.answers);}catch{/* Invalid settlement is never replayed as a confirmed answer. */}
+    if(pending?.userInputId===p.userInputId){pending=null;blockedReason=null;}
+    update({inputResponse:receipt});syncAdapter(adapter.snapshot());
+   }
   }
  }
 
@@ -229,7 +250,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   if(typeof binary!=='string'||!isAbsolute(binary))throw Error('Select an absolute path to a trusted official Muse native binary.');
   if(platform==='win32'&&!binary.toLowerCase().endsWith('.exe'))throw Error('Select the native muse.exe, not a .cmd or PowerShell installer/launcher.');
   if(typeof workspaceRoot!=='string'||!isAbsolute(workspaceRoot))throw Error('Select an absolute project workspace first.');
-  const token=++epoch;connecting=true;blockedReason=null;pending=null;compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();uncertainChildren.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0,childReceipts:[]});syncCompaction();
+  const token=++epoch;connecting=true;blockedReason=null;pending=null;deferredInputs.clear();settledInputs.clear();update({inputResponse:null});compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();uncertainChildren.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0,childReceipts:[]});syncCompaction();
   update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,sessionSeeded:false,steering:null,sessionId:null,messages:[],pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
   let openedSession;
   try{
@@ -240,9 +261,9 @@ export function createRuntime({environment=process.env,platform=process.platform
    const version=await bounded(probeVersion(binary,{environment:childEnvironment,timeoutMs}),timeoutMs);assertCurrent(token);
    if(version!==TARGET.hostVersion)throw Error(`Muse version mismatch: this app requires ${TARGET.hostVersion}.`);
    update({binary,hostVersion:version});assertCurrent(token);
-   const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),'--disable-request-user-input','-c','hooks={}','-c','managed_hooks_path=null'],cwd:workspace,env:{...childEnvironment},shutdownTimeoutMs:timeoutMs});
+   const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),'-c','hooks={}','-c','managed_hooks_path=null'],cwd:workspace,env:{...childEnvironment},shutdownTimeoutMs:timeoutMs});
    owner=handshake;
-   const host=await bounded(handshake.initialize({clientInfo:{name:'musebench',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:false}}),timeoutMs);assertCurrent(token);
+   const host=await bounded(handshake.initialize({clientInfo:{name:'musebench',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:true}}),timeoutMs);assertCurrent(token);
    owner=host;
    const gate=compatibility({sdkVersion,initializeResult:host.initializeResult,fullAccess});
    if(!gate.available)throw Error(gate.reason==='sandbox-unverified'?sandboxFailureReason(host.initializeResult,platform):`Muse compatibility check failed: ${gate.reason}.`);
@@ -260,13 +281,13 @@ export function createRuntime({environment=process.env,platform=process.platform
      observe(frame);
      // Runtime owns interactive approval state. Keep the preserved message
      // adapter running so it can fold the continuation after explicit consent.
-     if(!['approval/requested','approval/updated','approval/resolved','userInput/requested'].includes(frame.method))fn(frame);
+     if(!['approval/requested','approval/updated','approval/resolved','userInput/requested','userInput/settled'].includes(frame.method))fn(frame);
     }),
     onProtocolError:fn=>raw.onProtocolError(fn),
     onServerRequest:fn=>raw.onServerRequest(async request=>{
      if(request.params?.sessionId===state.sessionId&&['approval/request','userInput/request'].includes(request.method)){
       if(!receivePending({kind:request.method==='approval/request'?'approval':'input',...request.params}))return {};
-      block(pending.kind==='approval'?'Muse is waiting for your decision. Review the requested action and choose a one-time response.':'Muse requested input that this version cannot answer. Disconnect to close the session.',false);
+      block(pending.kind==='approval'?'Muse is waiting for your decision. Review the requested action and choose a one-time response.':'Muse is waiting for your answer.',false);
       return {}; // Protocol receipt only; the user decides in a separate action.
      }
      return await fn(request);
@@ -290,7 +311,7 @@ export function createRuntime({environment=process.env,platform=process.platform
    assertCurrent(token);
    if(!provesAskMe(openedSession,workspace,adapter.snapshot().sessionId))return await closePermissionGate();
    connecting=false;
-   update({status:'idle',reason:null,steeringSupported:true,compactionSupported:true,childControlsSupported:true,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate. This connection owns a new native session.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
+   update({status:'idle',reason:null,questionsSupported:true,steeringSupported:true,compactionSupported:true,childControlsSupported:true,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate. This connection owns a new native session.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
    return snapshot();
   }catch(error){
    if(token===epoch){
@@ -317,6 +338,7 @@ export function createRuntime({environment=process.env,platform=process.platform
    assertCurrent(token);
    if(blockedReason||!provesAskMe(session,workspace,state.sessionId)){block(permissionReason);throw Error(permissionReason);}
    await adapter.send({text:text.trim(),mode});assertCurrent(token);
+   for(const [id,request] of deferredInputs){deferredInputs.delete(id);if(receivePending(request))block('Muse is waiting for your answer.',false);}
    return snapshot();
   }finally{if(token===epoch)sending=false;}
  }
@@ -347,6 +369,20 @@ export function createRuntime({environment=process.env,platform=process.platform
   }finally{if(token===epoch)deciding=false;}
  }
 
+ async function answerInput(input={}){
+  if(!owner||!state.permissionVerified||!['running','submitting'].includes(adapter?.snapshot().status)||pending?.kind!=='input')throw Error('There is no active native question.');
+  if(input.sessionId!==state.sessionId||input.userInputId!==pending.userInputId||input.turnId!==pending.turnId||input.revision!==pendingRevision)throw Error('The question changed. Review the current request.');
+  if(input.operation==='engage'){validateInputAnswers(pending,input);owner.connection.notify('userInput/engaged',{sessionId:pending.sessionId,userInputId:pending.userInputId});return snapshot();}
+  if(deciding||state.inputResponse?.userInputId===pending.userInputId&&['submitting','accepted','unknown'].includes(state.inputResponse.status))throw Error('The previous answer is pending or already submitted.');
+  validateInputAnswers(pending,input);
+  const token=epoch,commandId=owner.connection.mintCommandId(),request=structuredClone(pending),receipt={commandId,sessionId:request.sessionId,turnId:request.turnId,userInputId:request.userInputId,prompt:request,operation:input.operation,submittedAnswers:structuredClone(input.answers??[]),status:'submitting'};deciding=true;update({inputResponse:receipt});
+  try{
+   const ack=await bounded(owner.connection.command(input.operation==='cancel'?'userInput/cancel':'userInput/answer',{sessionId:request.sessionId,userInputId:request.userInputId,...(input.operation==='answer'?{answers:structuredClone(input.answers)}:{})},{commandId,maxAttempts:1}),timeoutMs);
+   assertCurrent(token);if(ack?.commandId!==commandId||ack?.userInputId!==request.userInputId||ack.status!=='accepted')throw Error('Question acknowledgement could not be verified.');
+   if(pending?.userInputId===request.userInputId)update({inputResponse:{...receipt,status:'accepted'}});return snapshot();
+  }catch(error){if(token===epoch&&pending?.userInputId===request.userInputId)update({inputResponse:{...receipt,status:error.code===-32057?'rejected':'unknown'}});throw error;}finally{if(token===epoch)deciding=false;}
+ }
+
  async function steer({text,expectedTurnId}={}){
   if(typeof text!=='string'||!text.trim()||text.length>16000)throw Error('Use a correction up to 16,000 characters.');
   if(steering||state.steering?.status==='unknown')throw Error('Inspect the previous steering outcome before sending another correction.');
@@ -374,5 +410,5 @@ export function createRuntime({environment=process.env,platform=process.platform
   try{const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();}
   catch(error){if(token===epoch){if(error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
  }
- return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,steer,compact,childControl,decide,close:()=>disconnect()};
+ return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,steer,compact,childControl,answerInput,decide,close:()=>disconnect()};
 }

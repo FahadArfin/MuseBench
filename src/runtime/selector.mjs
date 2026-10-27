@@ -13,6 +13,6 @@ export function createCodeRuntime({execFactory,mspFactory,verifyConfiguration=ch
   if(selected==='msp'&&input.fullAccess!==true)throw Error('Interactive Windows mode requires explicit Full access.');
   if(selected!==kind){unsubscribe?.();runtime=factories[selected]();kind=selected;subscribe();}workspaceRoot=input.workspaceRoot;await verify();await runtime.connect(input);emit();return snapshot();
  },async disconnect(){await runtime.disconnect();emit();return snapshot();},async close(){await runtime.disconnect();unsubscribe?.();listeners.clear();}};
- for(const name of ['send','steer','decide','refreshModels','compact','childControl'])api[name]=async(...args)=>{if(typeof runtime[name]!=='function')throw Error('This control is unavailable on the current connection.');if(name==='send')await verify();return runtime[name](...args);};
+ for(const name of ['send','steer','answerInput','decide','refreshModels','compact','childControl'])api[name]=async(...args)=>{if(typeof runtime[name]!=='function')throw Error('This control is unavailable on the current connection.');if(name==='send')await verify();return runtime[name](...args);};
  return api;
 }

@@ -299,3 +299,22 @@ test('composer access keeps the selected executable across fresh chat runtimes',
  let input;fresh.connect=async value=>{input=value;fresh.emit({status:'idle',permissionVerified:true,binary:value.binary,fullAccess:value.fullAccess});};
  const result=await c.dispatch({type:'setExecutionAccess',taskId,fullAccess:false});assert.equal(result.error,null);assert.equal(input.binary,'C:/trusted/muse.exe');
 });
+test('native question pauses retain run attribution through the answer and completion',async t=>{
+ const {c,runtime}=await fixture(t);const taskId=await start(c);await c.dispatch({type:'sendMessage',text:'Ask me a question'});const runId=c.getState().task.runs[0].id;
+ runtime.emit({transport:'msp',sessionId:'s',permissionVerified:true,status:'blocked',pending:{kind:'input',sessionId:'s'}});
+ assert.equal(c.getState().task.runs[0].id,runId);runtime.answerInput=async()=>runtime.emit({status:'running',pending:null});
+ assert.match((await c.dispatch({type:'answerInput',taskId:'wrong'})).error,/another chat/);
+ assert.equal((await c.dispatch({type:'answerInput',taskId})).error,null);runtime.finish('Your answer was applied');
+ const result=c.getState();assert.equal(result.task.runtimeComplete,true);assert.equal(result.task.runs.length,1);assert.ok(result.task.messages.some(m=>m.text==='Your answer was applied'));
+});
+
+test('confirmed native answers survive restart and unknown answers never enter replay',async t=>{
+ const {c,runtime,dataDir}=await fixture(t);const taskId=await start(c);await c.dispatch({type:'sendMessage',text:'Choose a design'});
+ const prompt={kind:'input',sessionId:'s',userInputId:'q',turnId:'native',questions:[{id:'design',header:'Design',question:'Which design?',selection:{mode:'single'},options:[{label:'A'},{label:'B'}]}]};
+ runtime.emit({inputResponse:{sessionId:'s',userInputId:'q',turnId:'native',prompt,status:'accepted',submittedAnswers:[{questionId:'design',freeText:'cobalt'}]}});
+ assert.ok(!c.readChatHistory({taskId}).messages.some(m=>m.text.includes('cobalt')));
+ runtime.emit({inputResponse:{sessionId:'s',userInputId:'q',turnId:'native',prompt,status:'settled',outcome:'answered',confirmedAnswers:[{questionId:'design',freeText:'cobalt'}]}});
+ runtime.emit({inputResponse:{sessionId:'s',userInputId:'unknown',turnId:'native',prompt:{...prompt,userInputId:'unknown'},status:'accepted',submittedAnswers:[{questionId:'design',freeText:'unconfirmed-violet'}]}});
+ runtime.finish();await c.close();const fresh=fakeRuntime(),reopened=await createController({dataDir,runtime:fresh});
+ try{assert.equal(reopened.getState().task.inputReceipts.find(r=>r.userInputId==='unknown').status,'unknown');await reopened.dispatch({type:'sendMessage',text:'Continue'});assert.match(fresh.sent[0].text,/Which design\?\\nMy answer: cobalt/);assert.doesNotMatch(fresh.sent[0].text,/unconfirmed-violet/);assert.equal(reopened.readChatHistory({taskId}).messages.filter(m=>m.text.includes('cobalt')).length,1);}finally{await reopened.close();}
+});

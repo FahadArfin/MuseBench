@@ -252,7 +252,7 @@ test('a verified approval pause preserves attribution to the submitted Muse turn
   assert.equal(live.getState().task.runtimeComplete,true,'completion after an approved/resolved pause belongs to this turn');
   for(const blocked of [
     {status:'blocked',permissionVerified:false,pending:{kind:'approval',sessionId:'session-one'}},
-    {status:'blocked',permissionVerified:true,pending:{kind:'input',sessionId:'session-one'}},
+    {status:'blocked',permissionVerified:false,pending:{kind:'input',sessionId:'session-one'}},
     {status:'blocked',permissionVerified:true,pending:{kind:'approval',sessionId:'different-session'}},
     {status:'blocked',permissionVerified:true,pending:null},
     {status:'uncertain',permissionVerified:true,pending:null},
