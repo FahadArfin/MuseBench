@@ -52,6 +52,7 @@ try{
  async function click(selector,label){for(const page of [browserPage,desktopPage])await page.evaluate(({selector,label})=>{const elements=[...document.querySelectorAll(selector)].filter(e=>e.getBoundingClientRect().width&&e.getBoundingClientRect().height);const element=elements.find(e=>(e.getAttribute('aria-label')||e.textContent?.trim())===label);if(!element)throw Error(`Missing visible control ${selector} ${label}`);element.click();},{selector,label});}
  async function escape(){for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));}
  await compare('code-chat');
+ await click('button','Add to chat');await click('button','Workspace tools');await compare('workspace-tools');await click('summary','Input and result contract');await compare('workspace-tool-contract');await click('button','Close dialog');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',ctrlKey:true,bubbles:true})));await compare('history-search');await click('button','History');await compare('history-source');await click('button','Add excerpt to draft');await compare('history-draft');await escape();
  await click('button','Add to chat');await click('button','Skills');await compare('skills-picker');await click('button','Close skills');
  await click('button','Add to chat');await click('button','Worktrees');await compare('worktrees-dialog');await click('button','Close worktrees');

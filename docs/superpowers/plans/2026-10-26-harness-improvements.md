@@ -15,8 +15,8 @@ Delivery order and status:
 7. Complete — durable execution/delivery receipts and unknown outcomes.
 8. Complete — bounded goal continuation with user priority.
 9. Complete — focused reviewer contracts and explicit integration.
-10. In progress — app-owned tool discovery; native semantic tools remain conditional on supported execution.
-11. Pending — performance measurements and justified event/UI improvements.
+10. Complete — app-owned tool discovery; native semantic tools remain conditional on supported execution.
+11. In progress — performance measurements and justified event/UI improvements.
 12. Complete — runtime capability contracts and conformance tests.
 
 For each item: inspect existing behavior; write meaningful failing tests; implement shared controller/bridge/UI behavior; verify focused regressions, build and applicable browser parity; review; commit and push before the next item. Keep evidence and limitations here. Current clean checkout serves the live preview; changes integrate here without replacing user data.
@@ -47,3 +47,5 @@ Feature 7 delivered: independent SQLite execution intents, dispatch/acceptance/n
 Feature 8 delivered: opt-in goal continuation with 1–8 rounds, 1–60 minute deadline, settled execution receipt requirement, revision-bound validation between runs, repair prompts from bounded diagnostics, repeated failure stop, user queue/message priority, authoritative pause and restart/navigation disarming. A deadline disconnects an active owned run and cancels its check; cleanup uncertainty remains visible. Passing checks pauses for human review rather than claiming subjective goal completion. Evidence: 692 tests; 47 parity scenes; 97 packaged files and native helpers verified. Actual native goal runs remain host-blocked; controller tests use injected runtimes and real local check processes.
 
 Feature 9 delivered: independent correctness/test/investigator chats with source and checkout revision contracts, matching managed-worktree selection, Ask for approval, standard per-run limits, three review slots per parent, partial reported usage aggregation, owned-review cancellation and recursion refusal in app orchestration. Structured evidence is validated and added only to an empty parent draft after explicit integration and fresh revision checks. No automatic patching, sending, or read-only filesystem claim. Evidence: 695 tests; 50 shared preview/desktop parity scenes; package verified. Native review execution remains conditional on the same blocked host, covered here with injected runtimes.
+
+Feature 10 delivered: searchable Workspace tools directory and /tools command with scoped availability, progressively disclosed input/result contracts and links into existing permission-checked controls. Compiler/linter diagnostics remain in the validation feature. Native semantic navigation and dynamic model-tool loading are explicitly unavailable; no speculative server installation or frontend-as-model-tool claim. Evidence: 696 tests, 52 parity scenes, production package verified.

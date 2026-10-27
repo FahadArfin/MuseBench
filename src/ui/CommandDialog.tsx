@@ -1,10 +1,11 @@
+import {WorkspaceTools} from './WorkspaceTools';
 import {useEffect,useState} from 'react';
 import {Modal} from './WorkspacePanels';
 import type {Action,AppState} from '../shared/types';
 import {COMMANDS,findCommand} from '../shared/slash-commands.mjs';
 export interface CommandView {id:string;args?:string;detail?:string;}
-type Props={command:CommandView;state:AppState;busy:boolean;act:(action:Action)=>Promise<AppState|null>;close:()=>void;onDraft:(text:string,newChat?:boolean)=>void;onError:(text:string)=>void;};
-export function CommandDialog({command,state,busy,act,close,onDraft,onError}:Props){
+type Props={onNavigate:(command:string)=>void;command:CommandView;state:AppState;busy:boolean;act:(action:Action)=>Promise<AppState|null>;close:()=>void;onDraft:(text:string,newChat?:boolean)=>void;onError:(text:string)=>void;};
+export function CommandDialog({command,state,busy,act,close,onDraft,onError,onNavigate}:Props){
  const id=command.id,task=state.task;
  const [text,setText]=useState(command.args||(id==='memories'?state.memories??'':id==='goal'?task?.goal?.objective??'':id==='rename'?task?.title??'':''));
  const [rounds,setRounds]=useState(3),[minutes,setMinutes]=useState(10);
@@ -28,6 +29,7 @@ export function CommandDialog({command,state,busy,act,close,onDraft,onError}:Pro
   :id==='usage'?<><p>Allowance from the official Muse CLI. Billing remains managed by Meta.</p>{loading?<p role="status">Refreshing allowance…</p>:<>{message&&<p role="status">{message}</p>}<dl className="command-facts">{rows.map((row,i)=><div key={i}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl></>}<div className="command-actions"><button className="button" disabled={loading} onClick={loadUsage}>Refresh</button><button className="button primary" onClick={()=>void window.musebench!.openExternal('https://dev.meta.ai/billing/').catch(()=>onError('Could not open Meta billing.'))}>Open Meta billing</button></div></>
   :id==='feedback'?<><p>Describe the issue, then copy a report to share yourself. MuseBench does not send feedback or logs automatically.</p><textarea data-autofocus aria-label="Feedback" value={text} onChange={e=>setText(e.target.value)} maxLength={4000} placeholder="What happened? What did you expect?"/><div className="command-actions"><button className="button primary" disabled={!text.trim()} onClick={()=>void navigator.clipboard.writeText(`MuseBench feedback\n\n${text}\n\nRuntime: ${state.runtime.status}\nTransport: ${state.runtime.transport??'unknown'}\nVersion: ${state.runtime.hostVersion??state.runtime.sdkVersion}\nSandbox: enabled`).then(()=>setMessage('Report copied.')).catch(()=>setMessage('Clipboard unavailable. Select and copy your text.'))}>Copy report</button></div>{message&&<p role="status">{message}</p>}</>
   :id==='side'?<><p>Create a separate chat draft with the recent context from this chat. The original is kept in your sidebar. The new request runs only when you send it.</p><textarea data-autofocus aria-label="Side question" value={text} onChange={e=>setText(e.target.value)} maxLength={2000} placeholder="What would you like to explore?"/><div className="command-actions"><button className="button primary" disabled={!text.trim()||busy} onClick={()=>onDraft(`${context?`Context from another chat:\n${context}\n\n`:''}Side question: ${text}`,true)}>Create side chat draft</button></div></>
+  :id==='tools'?<WorkspaceTools project={!!state.activeProject} task={!!task} navigate={onNavigate}/>
   :id==='help'?<><p>Type / on its own line to open commands. Use ↑ ↓ to select, Enter or Tab to choose, → for a submenu, and Escape to go back. Skills fill an editable prompt. No command selection automatically sends a model request.</p><div className="command-help">{COMMANDS.map(item=><div key={item.id}><code>/{item.id}</code><span>{item.description}{item.kind==='info'?' · Availability info':''}</span></div>)}</div></>
   :id==='unknown'?<p>/{command.args||''} is not a MuseBench command. Type / to browse commands, or /help for the full list. Your request has not been sent.</p>
   :<p>{command.detail||findCommand(id)?.detail||'This feature is not available in the current Muse connection.'}</p>}

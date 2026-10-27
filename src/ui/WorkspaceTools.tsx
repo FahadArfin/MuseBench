@@ -1,0 +1,6 @@
+import {useState} from 'react';
+import {workspaceTools} from '../shared/workspace-tools.mjs';
+export function WorkspaceTools({project,task,navigate}:{project:boolean;task:boolean;navigate:(command:string)=>void}){
+ const [query,setQuery]=useState('');const tools=workspaceTools({project,task}).filter(t=>(t.title+' '+t.description+' '+t.input+' '+t.output).toLowerCase().includes(query.toLowerCase()));
+ return <section aria-label="Workspace tools"><p>Find app controls and inspect their inputs before opening them. Permissions and source freshness are checked when an action runs.</p><input aria-label="Search workspace tools" placeholder="Search tools, diagnostics, history…" value={query} onChange={e=>setQuery(e.target.value)}/>{tools.map(tool=><article className="context-receipt" key={tool.id}><strong>{tool.title}</strong><p>{tool.description}</p><small>{tool.reason}</small><details><summary>Input and result contract</summary><dl><dt>Input</dt><dd>{tool.input}</dd><dt>Result and limits</dt><dd>{tool.output}</dd></dl></details>{tool.command&&<button className="button" disabled={!tool.available} onClick={()=>navigate(tool.command!)}>Open {tool.title}</button>}</article>)}{!tools.length&&<p>No matching tools.</p>}</section>;
+}
