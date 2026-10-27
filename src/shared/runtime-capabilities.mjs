@@ -13,7 +13,7 @@ export function runtimeCapabilities(runtime={}) {
   row('childControls','Child agent controls',msp&&runtime.childControlsSupported===true,'Activity can be displayed; child messaging and cancellation are not connected.'),
   row('compaction','Native context compaction',msp&&runtime.compactionSupported===true,'Local context trimming does not compact the native session.'),
   row('modelSelection','Model selection',exec,'This connection uses the Muse provider default model.'),
-  row('web','Native web tools',false,'Native web_fetch stalled in headless validation; web tools remain disabled.'),
+  row('web','Native web search and fetch',exec&&runtime.fullAccess===true,'Verified web search and fetch require native exec with Full access. Sandboxed web execution remains unverified.'),
   row('hooks','Reviewed project hooks',exec,'Reviewed app-owned hooks require the native exec connection.'),
  ];
 }

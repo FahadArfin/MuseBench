@@ -39,7 +39,7 @@ function stderrReason(value) {
 }
 
 function permissionArgs(shellEnabled,approval='ask',sessionId=null,fullAccess=false) {
- return [...approvalArguments(approval),...(fullAccess?['--disable-sandbox']:[]),...(sessionId?['--session-id',sessionId]:['--no-session-log']),...(!shellEnabled?['--disable-shell']:[]),'--disable-web-tools','--disable-reminders','--disable-request-user-input','--no-foreign-personal-context','--max-tool-output-bytes','65536','-c','hooks={}','-c','managed_hooks_path=null'];
+ return [...approvalArguments(approval),...(fullAccess?['--disable-sandbox']:[]),...(sessionId?['--session-id',sessionId]:['--no-session-log']),...(!shellEnabled?['--disable-shell']:[]),...(fullAccess?[]:['--disable-web-tools']),'--disable-reminders','--disable-request-user-input','--no-foreign-personal-context','--max-tool-output-bytes','65536','-c','hooks={}','-c','managed_hooks_path=null'];
 }
 
 function execArgs(workspace,provider,prompt,maxSteps,shellEnabled,runOptions,sessionId=null,fullAccess=false) {

@@ -27,6 +27,7 @@ test('Full access is explicit, skips sandbox readiness, and preserves human appr
  await h.runtime.send({text:'Print a marker'});
  const args=h.calls.at(-1).args;
  assert.ok(args.includes('--disable-sandbox'));
+ assert.equal(args.includes('--disable-web-tools'),false);
  assert.equal(args[args.indexOf('--permission-profile')+1],':ask-me');
  assert.ok(!args.includes('--yolo'));
  assert.ok(!args.includes('--disable-approval'));

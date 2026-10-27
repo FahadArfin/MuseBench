@@ -6,7 +6,7 @@ The connection dialog still offers Full access and transport selection under Set
 
 Sandboxed is the default. Full access is selected for one connection and is not saved as a global preference. Disconnecting or creating a fresh runtime returns to the sandboxed default. Other chats do not inherit it. Approval selection remains separate: Ask for approval, Auto-review, and No prompts retain their existing meanings. The Windows exec transport still stops when an interactive approval is required.
 
-Full access uses the official `--disable-sandbox` flag. Direct shell commands run with the Windows account's filesystem and network access. This does not enable disabled web/input tools, automatically trust project extensions, or replace the existing exec transport with MSP.
+Full access uses the official `--disable-sandbox` flag. Direct shell commands run with the Windows account's filesystem and network access. Native exec Full access also enables the CLI's web search and fetch tools, verified against live public pages. Sandboxed exec retains disabled web tools. This does not automatically trust project extensions or replace the exec transport with MSP.
 
 ## Verified behavior
 
