@@ -1,5 +1,6 @@
 const command=(id,label,description,icon,kind='action',aliases=[],detail='')=>({id,label,description,icon,kind,aliases,detail});
 export const COMMANDS=Object.freeze([
+ command('tools','Workspace tools','Find tools and inspect their input/result contracts','Wrench'),
  command('fast','Fast','Use lower reasoning for quicker replies','Zap'),
  command('feedback','Feedback','Prepare a local feedback report','MessageSquare', 'action',['bug']),
  command('goal','Goal','Keep an objective with this chat','Target'),
