@@ -50,4 +50,25 @@ Feature 9 delivered: independent correctness/test/investigator chats with source
 
 Feature 10 delivered: searchable Workspace tools directory and /tools command with scoped availability, progressively disclosed input/result contracts and links into existing permission-checked controls. Compiler/linter diagnostics remain in the validation feature. Native semantic navigation and dynamic model-tool loading are explicitly unavailable; no speculative server installation or frontend-as-model-tool claim. Evidence: 696 tests, 52 parity scenes, production package verified.
 
-Feature 11 delivered: measured controller progress coalescing (40 ms), bounded latest-state delivery, immediate lifecycle/input acceptance/pending/terminal flush, unchanged durable source capture, and redundant receipt/history-write avoidance. Synthetic four-chat benchmark: 11,443 ms and 204 full snapshots before; 326–342 ms and four snapshots after, with final control-aware run 341 ms. See docs/HARNESS-PERFORMANCE-2026-10-26.md for methodology and limits; renderer paint/RSS and native model speed are not measured claims. Evidence: 698 tests and 52 desktop/browser parity scenes; production package verified. Final independent review is underway before release closeout.
+Feature 11 delivered: measured controller progress coalescing (40 ms), bounded latest-state delivery, immediate lifecycle/input acceptance/pending/terminal flush, unchanged durable source capture, and redundant receipt/history-write avoidance. Synthetic four-chat benchmark: 11,443 ms and 204 full snapshots before; 326–342 ms and four snapshots after, with final control-aware run 341 ms. See docs/HARNESS-PERFORMANCE-2026-10-26.md for methodology and limits; renderer paint/RSS and native model speed are not measured claims. Evidence: 698 tests and 52 desktop/browser parity scenes; production package verified.
+
+## Final review and integration
+
+An independent final review reproduced four defects. Commit `efb12b1` resolved all four, with regression tests: goal dispatch rechecks its driver identity and deadline after awaited connection preparation; explicit disconnect retains ownership until terminal receipt settlement (missing cleanup remains unknown); review integration refuses file-only and image-only drafts; branches preserve known message truncation through restart and context inspection. The reviewer question input also uses the shared full-width styling. No reported finding was deferred.
+
+The separately reviewed Full access change in PR #1 was merged without losing these fixes at `0193687`. It remains opt-in per connection, defaults to sandboxed, resets on disconnect, and preserves separate approval selection. It does not enable new interactive transport controls. Historical host-blocked notes above describe the evidence available when each feature shipped; the live checks below supersede that limitation for the tested paths only.
+
+Final merged-tree verification: **709 tests passed, zero failures; 52 browser/production-Electron parity scenes passed; build and package passed; 99 packaged source/build files and both native helpers matched the source.** The installed desktop was replaced with that validated package, with all 76 distribution files hash-checked. A sibling backup and user profile were retained. Normal startup of this final installed build was not tested; isolated production-Electron parity is separate evidence.
+
+### Full access live acceptance
+
+At 2026-10-27 01:53:34–01:53:48 UTC, two real Muse requests used the actual controller and Windows exec adapter in a disposable user-profile workspace, with Full access explicitly selected and Ask for approval retained:
+
+- A one-round, one-minute goal ran one managed PowerShell marker command, captured the output, recorded completed execution and confirmed cleanup, ran the saved npm validation profile, and stopped with “Checks passed; review the result.”
+- After removing the app goal and closing/reopening the controller, the same native session resumed. Its context receipt was `native`, and the model recalled the unique marker without replayed app chat history. Execution completed with confirmed cleanup.
+
+This verifies bounded goal execution and persistent-session recall on this host using the workaround. It is not a model-quality comparison, a sandbox repair, or proof of recovery after an ambiguous external side effect. Local diagnostic source/results: `artifacts/harness-full-access-validation.mjs` and `.json` (ignored machine-specific artifacts).
+
+### Remaining experimental/native milestones
+
+All unblocked app-owned items in this delivery list are complete and pushed individually. Full access removes the tested exec shell obstacle; it does **not** supply exact-turn MSP steering, native compaction, request/approval response transport, or attempt-specific child controls. The production Windows connection remains exec; its unsupported controls remain explicitly unavailable. Those milestones require their own interactive adapter implementation and real protocol acceptance tests, rather than removing a capability guard based on a shell result. Native semantic tools/dynamic tool exposure and comparative model evaluations also remain conditional experiments, not delivered capabilities. See `docs/FULL-ACCESS.md` for the workaround boundary.

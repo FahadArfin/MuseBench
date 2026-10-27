@@ -42,6 +42,8 @@ Local package/install receipts are `artifacts/personal-package-verification.json
 
 ## Unfinished native-dependent work
 
+**Later evidence update:** PR #1 and integration commit `0193687` add explicit connection-scoped Full access on Windows exec. It works around the tested shell failure without repairing the sandbox. A subsequent two-request controller acceptance check passed bounded goal execution, saved-profile validation and native-session recall after restart. See `docs/FULL-ACCESS.md` and the final section of `docs/superpowers/plans/2026-10-26-harness-improvements.md`. The table below is the earlier sandboxed evidence; interactive transport, compaction and child-control milestones still need independent implementation and validation.
+
 | Item | Current evidence | Required next proof |
 | --- | --- | --- |
 | True live steering, concurrent questions/approvals, native compaction | Installed CLI `1.4.13-R6996.1` reports Windows sandbox readiness, but MSP initialize still returns `sandboxAvailability: unavailable` without a reason. The sessionless probe confirmed host shutdown. | A supported interactive host must report sandbox availability, then exact-turn/request identity, retries and reconnect must pass real execution tests. |
