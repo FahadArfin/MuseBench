@@ -102,3 +102,7 @@ export interface MuseBenchBridge {
 
 export interface ManagedWorktree {archiveCommit?:string;archivedAt?:string;recoveredFrom?:string;id:string;path:string;branch:string;base:string;commit:string;sourceRoot:string;createdAt:string;status:string;available:boolean;locked?:boolean;}
 export interface WorktreeState {root:string;branch:string;head:string;dirty:boolean;items:ManagedWorktree[];}
+
+export interface CapturedOutput {id:string;label:string;status:string;received:number;length:number;captureTruncated:boolean;sourceTruncated:boolean;}
+export interface OutputPage {items:CapturedOutput[];selected:(CapturedOutput&{offset:number;text:string;match:number|null})|null;}
+export interface MuseBenchBridge {readCapturedOutput(input:{taskId:string;id?:string;offset?:number;query?:string}):Promise<OutputPage>;}

@@ -1,3 +1,5 @@
+import {StringDecoder} from 'node:string_decoder';
+import {createOutputStore} from './output-artifacts.mjs';
 import {validateCheckScripts,missingChecks} from '../shared/validation.mjs';
 import {createHistoryStore} from './chat-history.mjs';
 import {restoreSkillReceipts} from '../shared/skill-receipts.mjs';
@@ -143,7 +145,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const db=new DatabaseSync(path.join(dataDir,'musebench.sqlite'));
   db.exec('PRAGMA secure_delete=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS app(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS baselines(task_id TEXT PRIMARY KEY,revision TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,revision TEXT NOT NULL,json TEXT NOT NULL);');
-  const history=createHistoryStore(db);
+  const history=createHistoryStore(db),outputs=createOutputStore(db);
   const saved=db.prepare('SELECT json FROM app WHERE id=1').get();
   const state=saved?JSON.parse(saved.json):{projects:[],activeProject:null,task:null,checkpoints:[],preview:stopped(),runtime:missingRuntime(),busy:false,error:null};
   state.projectCreationRoot=newProjectsDir;
@@ -203,7 +205,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     task.changes=changes(baseline,snap.files,diffCache);return snap;
   };
   const stopPreview=async()=>{previewToken=null;const child=previewProcess;previewProcess=null;await killTree(child);state.preview=stopped();};
-  const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';state.task.check.endedAt=now();persist();}await killTree(child);};
+  const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';outputs.finish(state.task.id,state.task.check.id,'cancelled');state.task.check.endedAt=now();persist();}await killTree(child);};
   const cleanup=async(disconnect=true)=>{await cancelCheck();await stopPreview();if(disconnect)await runtime?.disconnect?.();};
   const requireNavigationIdle=()=>{if(context.pending||['running','starting','submitting','connecting','checking-permissions'].includes(state.runtime.status))throw Error('Finish or disconnect the running Muse turn before switching projects or tasks.');};
   const navigationCleanup=async()=>{
@@ -218,7 +220,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(state.task?.id===id){await navigationCleanup();state.task=null;baseline={};diffCache.clear();state.runtime=missingRuntime();}
     db.exec('BEGIN IMMEDIATE');
     try{
-      history.deleteTask(id);db.prepare('DELETE FROM tasks WHERE id=?').run(id);db.prepare('DELETE FROM baselines WHERE task_id=?').run(id);db.prepare('DELETE FROM checkpoints WHERE task_id=?').run(id);
+      outputs.deleteTask(id);history.deleteTask(id);db.prepare('DELETE FROM tasks WHERE id=?').run(id);db.prepare('DELETE FROM baselines WHERE task_id=?').run(id);db.prepare('DELETE FROM checkpoints WHERE task_id=?').run(id);
       const retained=contexts.get(id);if(retained){retained.unsubscribe?.();retained.unsubscribe=null;retained.task=null;contexts.delete(id);}if(context.task?.id===id)context.task=null;
       taskRecords.delete(id);delete state.drafts[draftKey(target.projectId,id)];state.checkpoints=state.checkpoints.filter(item=>item.taskId!==id);persist();db.exec('COMMIT');
     }catch(error){db.exec('ROLLBACK');Object.assign(state,previous.state);baseline=previous.baseline;taskRecords.clear();for(const [key,value] of previous.records)taskRecords.set(key,value);state.runtime=runtime?.snapshot?.()??missingRuntime();throw error;}
@@ -260,13 +262,14 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const refreshScripts=async()=>{const p=state.activeProject;if(!p)throw Error('Open a project first.');p.scripts=(await scriptsFor(p.root)).scripts;Object.assign(p,await projectGit(p.root));return p;};
   const runCheck=async script=>{
     const task=requireTask();requireNavigationIdle();requireWritable(task,state.activeProject);if(checkProcess)throw Error('A check is running. Cancel it first.');const project=await refreshScripts();if(!Object.hasOwn(project.scripts,script))throw Error('Choose a script listed in package.json.');const snap=await current();
-    const check={id:randomUUID(),script,command:`npm run --ignore-scripts ${script} — ${project.scripts[script]}`,status:'running',revision:snap.revision,exitCode:null,log:'',startedAt:now()};task.check=check;checkInvalidated=false;const taskId=task.id,child=launchScript(project.root,script);checkProcess=child;
-    const append=chunk=>{if(closed||state.task?.id!==taskId||state.task.check?.id!==check.id)return;check.log=(check.log+chunk.toString()).slice(-MAX_LOG);emit();};child.stdout.on('data',append);child.stderr.on('data',append);
-    let done=false;const timeout=setTimeout(async()=>{check.log=(check.log+`\nCheck stopped after ${checkTimeoutMs} ms timeout.`).slice(-MAX_LOG);await killTree(child);finish(null,Error('Project check timed out.'));},Math.max(100,Math.min(checkTimeoutMs,600000)));
+    const check={id:randomUUID(),script,command:`npm run --ignore-scripts ${script} — ${project.scripts[script]}`,status:'running',revision:snap.revision,exitCode:null,log:'',startedAt:now()};task.check=check;outputs.start(task.id,check.id,check.command);checkInvalidated=false;const taskId=task.id,child=launchScript(project.root,script);checkProcess=child;
+    const append=text=>{if(closed||state.task?.id!==taskId||state.task.check?.id!==check.id)return;outputs.append(taskId,check.id,text);check.log=(check.log+text).slice(-MAX_LOG);emit();};
+    for(const stream of [child.stdout,child.stderr]){const decoder=new StringDecoder('utf8');stream.on('data',chunk=>append(decoder.write(chunk)));stream.on('end',()=>{const tail=decoder.end();if(tail)append(tail);});}
+    let done=false;const timeout=setTimeout(async()=>{append(`\n[MuseBench] Check stopped after ${checkTimeoutMs} ms timeout.`);await killTree(child);finish(null,Error('Project check timed out.'));},Math.max(100,Math.min(checkTimeoutMs,600000)));
     const finish=(code,error)=>{if(done)return;done=true;clearTimeout(timeout);queue=queue.then(async()=>{
-      if(closed||state.task?.id!==taskId||state.task.check?.id!==check.id)return;if(checkProcess===child)checkProcess=null;if(error)check.log=(check.log+'\n'+error.message).slice(-MAX_LOG);check.exitCode=code;check.endedAt=now();
+      if(closed||state.task?.id!==taskId||state.task.check?.id!==check.id)return;if(checkProcess===child)checkProcess=null;if(error){outputs.append(taskId,check.id,'\n[MuseBench] '+error.message);check.log=(check.log+'\n'+error.message).slice(-MAX_LOG);}check.exitCode=code;check.endedAt=now();
       if(check.status!=='cancelled')try{const latest=await current();check.status=checkInvalidated||latest.revision!==check.revision?'stale':code===0?'passed':'failed';}catch(e){check.status='stale';state.error=e.message;}
-      task.checkReceipts=[...(task.checkReceipts??[]),{...check,log:check.log.slice(-8000)}].slice(-40);
+      outputs.finish(task.id,check.id,check.status);task.checkReceipts=[...(task.checkReceipts??[]),{...check,log:check.log.slice(-8000)}].slice(-40);
       const validation=task.validationRun;
       if(validation?.status==='running'){
         if(check.status!=='passed'||check.revision!==validation.revision)validation.status=check.status==='passed'?'stale':check.status;
@@ -316,6 +319,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       return[{...summary,projectName:project.name,snippet:hit?.snippet??source,...(hit?{messageId:hit.messageId,offset:hit.offset,at:hit.at}:{})}];
     }).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||b.updatedAt.localeCompare(a.updatedAt)).slice(0,100);
   };
+  const readCapturedOutput=input=>{if(!input||!taskRecords.has(input.taskId))throw Error('Chat not found.');return outputs.read(input);};
   const readChatHistory=input=>{if(!input||!taskRecords.has(input.taskId))throw Error('Chat not found.');return history.page(input);};
   const selectedContext=()=>context;
   const sendToTask=async(action,t=state.task,context=contexts.get(t?.id)??selectedContext())=>{
@@ -381,7 +385,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       if(ownsTurn){
         task.nativeUsage=restoreUsage(next.usage);task.skillReceipts=restoreSkillReceipts(next.skills);
         for(const item of Array.isArray(next.messages)?next.messages:[]){const key=runtimeMessageKey(item);if(typeof item?.text!=='string'||context.messageBaseline.has(key)||turn.messageBaseline.has(key)||!['userMessage','agentMessage'].includes(item.kind))continue;const known=task.messages.find(m=>m.id===`runtime:${key}`);const received={id:`runtime:${key}`,role:item.kind==='userMessage'?'user':'assistant',text:item.text,turnId:turn.promptId,at:known?.at??now()};history.put(task.id,received);if(known){known.text=item.text.slice(0,16000);continue;}task.messages.push({...received,text:item.text.slice(0,16000)});task.messages=task.messages.slice(-150);}
-        if(next.transport==='exec'&&next.shellEnabled===true&&Array.isArray(next.shellResults)){const owned=Array.isArray(next.ownedRunIds)&&next.ownedRunIds.includes(turn.runId)?next.ownedRunIds.slice(0,5):[turn.runId];for(const runId of owned)task.shellResults=mergeShellResults(task.shellResults,next.shellResults,runId);}
+        if(next.transport==='exec'&&next.shellEnabled===true&&Array.isArray(next.shellResults)){const owned=Array.isArray(next.ownedRunIds)&&next.ownedRunIds.includes(turn.runId)?next.ownedRunIds.slice(0,5):[turn.runId];for(const item of next.shellResults)if(owned.includes(item?.runId)&&boundedShellResult(item))outputs.put(task.id,`shell:${item.runId}:${item.callId}`,item.command||'Native command',item.output,item.terminalStatus,item.truncated===true);for(const runId of owned)task.shellResults=mergeShellResults(task.shellResults,next.shellResults,runId);}
       }
       const verifiedApprovalPause=next.status==='blocked'&&next.permissionVerified===true&&next.pending?.kind==='approval'&&typeof next.sessionId==='string'&&next.pending.sessionId===next.sessionId;
       const progress=turn&&(task.runs??[]).find(item=>item.id===turn.promptId);
@@ -612,5 +616,5 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   if(state.task)try{const row=db.prepare('SELECT revision FROM baselines WHERE task_id=?').get(state.task.id);if(!row||row.revision!==state.task.baselineRevision)throw Error('The saved task baseline is unavailable. Start a new task.');await current();}catch(error){state.error=error.message;state.task.previewRevision=null;state.task.acceptedRevision=null;state.task.runtimeComplete=false;if(state.task.check)state.task.check.status='stale';}
   persist();
   const archiveTimer=setInterval(()=>{queue=queue.then(purgeArchived).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,inspectContext,searchChats,readChatHistory,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(closing||closed)return Promise.reject(Error('Controller closed.'));const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();closed=true;listeners.clear();db.close();})();return closePromise;}};
+  return{getState,inspectContext,searchChats,readChatHistory,readCapturedOutput,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(closing||closed)return Promise.reject(Error('Controller closed.'));const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();closed=true;listeners.clear();db.close();})();return closePromise;}};
 }

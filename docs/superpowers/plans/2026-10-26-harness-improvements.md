@@ -8,8 +8,8 @@ Delivery order and status:
 
 1. Complete — durable message history, source excerpts, paging and indexed search.
 2. Complete — validation profiles, revision-bound phase gates and diagnostics.
-3. In progress — recoverable captured output with explicit limits and retrieval.
-4. Pending — context inspector and source receipts.
+3. Complete — recoverable captured output with explicit limits and retrieval.
+4. In progress — context inspector and source receipts.
 5. Pending — selected-file checkpoint restore, redo and conflicts.
 6. Pending — reviewed project lessons and skill promotion.
 7. Pending — durable execution/delivery receipts and unknown outcomes.
@@ -32,3 +32,6 @@ Feature 1 delivered: durable app-received messages, portable term index with lit
 
 
 Feature 2 delivered: saved project validation profiles (1–8 package scripts), sequential execution, exact-revision check receipts, stop on failure/cancellation/source mutation, workflow required-check gates on manual and automatic dispatch, profile-aware checkpoint acceptance, and bounded compiler diagnostics. No model-generated completion assertion opens a gate. Repairs remain explicit user-directed runs; the later bounded goal driver can consume these receipts. Independent review resolved old-pass reuse during a rerun and multi-script typing. Evidence: 668 tests passed; production package/build and 37 parity scenes passed, including profile state and typed required checks; 90 packaged files and native helpers match source. One unrelated HTTP rejection test failed once with fetch failed and passed both its isolated retry and the complete rerun.
+
+
+Feature 3 delivered: captured check output before display truncation, owned native shell-output captures, head/tail/paging/exact search in a shared viewer, explicit upstream/capture truncation, interruption/expiry and task-deletion retention. Limits: 1,048,576 characters per capture; 16 live captures per chat, 128 across the app; older capture bodies expire while their status remains visible. Native text never delivered to MuseBench cannot be recovered. Independent review resolved timeout close-event ordering and Unicode-expanded search offsets. Evidence: 672 tests passed; package/build and 40 desktop/browser parity scenes passed; 92 packaged source/build files and both helpers matched. Native host execution remains separately blocked; native capture routing is covered by adapter/controller fixtures, not a new live host claim.

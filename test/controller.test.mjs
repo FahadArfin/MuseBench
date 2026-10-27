@@ -135,6 +135,7 @@ test('a check timeout stops a real long-running command',async t=>{
   const s=await settled(bounded,s=>s.task.check?.status!=='running');
   assert.equal(s.task.check.status,'failed');
   assert.match(s.task.check.log,/timeout|timed out/i);
+  assert.match(bounded.readCapturedOutput({taskId:s.task.id,id:s.task.check.id}).selected.text,/timeout|timed out/i);
 });
 
 test('cancelling a live package script does not let a later exit pass',async t=>{
@@ -345,4 +346,13 @@ test('validation stops on source changes and cancelled validation never continue
  for(let i=0;i<300&&c.getState().task.validationRun.status==='running';i++)await new Promise(r=>setTimeout(r,20));
  assert.equal(c.getState().task.validationRun.status,'stale');assert.equal(c.getState().task.validationRun.index,0);
  await c.dispatch({type:'saveValidationProfile',projectId,scripts:['slow','later']});await c.dispatch({type:'runValidation'});await c.dispatch({type:'cancelCheck'});assert.equal(c.getState().task.validationRun.status,'cancelled');
+});
+
+
+test('project check output is captured before the display log is shortened',async t=>{
+ const {controller:c}=await fixture(t,{test:'node -e "console.log(\'HEAD_EVIDENCE\'+\'x\'.repeat(80000)+\'TAIL_EVIDENCE\')"'});
+ await c.dispatch({type:'runCheck',script:'test'});for(let i=0;i<300&&c.getState().task.check.status==='running';i++)await new Promise(r=>setTimeout(r,20));
+ const task=c.getState().task;assert.equal(task.check.status,'passed');assert.ok(!task.check.log.includes('HEAD_EVIDENCE'));
+ const result=c.readCapturedOutput({taskId:task.id,id:task.check.id});assert.match(result.selected.text,/HEAD_EVIDENCE/);assert.equal(result.selected.status,'passed');
+ assert.match(c.readCapturedOutput({taskId:task.id,id:task.check.id,query:'TAIL_EVIDENCE'}).selected.text,/TAIL_EVIDENCE/);
 });

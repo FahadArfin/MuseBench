@@ -1,3 +1,4 @@
+import {literalIndex} from '../shared/literal-search.mjs';
 // App-received history is independent of the bounded renderer/context window.
 // This cannot recover messages discarded before migration or unseen native tools.
 const CAP=1024*1024, PAGE_TEXT=12000;
@@ -36,7 +37,7 @@ export function createHistoryStore(db){
   // back for partial words and punctuation to preserve the existing search UX.
   let row=terms.length?db.prepare(`SELECT h.message_id,h.metadata,h.text FROM chat_history h JOIN (SELECT message_id FROM history_terms WHERE task_id=? AND term IN (${terms.map(()=>'?').join(',')}) GROUP BY message_id HAVING count(*)=?) matches ON h.message_id=matches.message_id WHERE h.task_id=? AND h.role!='system' AND instr(history_lower(h.text),?)>0 ORDER BY h.seq DESC LIMIT 1`).get(taskId,...terms,terms.length,taskId,needle):null;
   row??=db.prepare("SELECT message_id,metadata,text FROM chat_history WHERE task_id=? AND role!='system' AND instr(history_lower(text),?)>0 ORDER BY seq DESC LIMIT 1").get(taskId,needle);
-  if(!row)return null;const offset=Math.max(0,row.text.toLowerCase().indexOf(needle)-50);
+  if(!row)return null;const offset=Math.max(0,literalIndex(row.text,needle)-50);
   return{messageId:row.message_id,snippet:row.text.slice(offset,offset+240),offset,at:JSON.parse(row.metadata).at};
  }
  function page({taskId,before,messageId,offset=0,limit=20}={}){
