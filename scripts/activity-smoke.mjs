@@ -26,16 +26,16 @@ const record=name=>{report.checks.push(name);console.log(`PASS ${name}`);};
 const screenshot=async name=>page.screenshot({path:path.join(fixture,`${name}.png`)});
 try{
  app=await electron.launch({cwd:root,args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});page=await app.firstWindow();page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(error.message));await page.waitForFunction(()=>Boolean(window.musebench));await page.setViewportSize({width:1440,height:960});
- await page.getByRole('button',{name:'Toggle threads panel'}).waitFor();assert.equal(await page.getByRole('button',{name:'Toggle review panel'}).count(),0);assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);
- assert.equal(await page.getByRole('complementary',{name:'Work threads',exact:true}).count(),0);
+ await page.getByRole('button',{name:'Toggle Sub-Agents panel'}).waitFor();assert.equal(await page.getByRole('button',{name:'Toggle review panel'}).count(),0);assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);
+ assert.equal(await page.getByRole('complementary',{name:'Sub-Agents panel',exact:true}).count(),0);
  assert.equal(await page.getByRole('complementary',{name:'File changes',exact:true}).isVisible(),false);record('Chat starts full width with both panels closed');
  const state=await page.evaluate(()=>window.musebench.getState());assert.equal(state.task.changes.length,2);assert.equal(state.task.changes.reduce((n,f)=>n+f.additions,0),3);assert.equal(state.task.changes.reduce((n,f)=>n+f.deletions,0),2);record('Real file snapshots report two files +3 -2 with unchanged middle lines excluded');
  await screenshot('conversation');
  await page.getByRole('button',{name:/Worked for/}).click();await page.getByText('Read file',{exact:true}).first().click();assert.match(await page.getByLabel('Read file output').first().innerText(),/# Shop/);record('Inline activity expands into the actual tool output');
- await page.getByRole('button',{name:'Toggle threads panel'}).click();await page.getByRole('tab',{name:/Tasks/}).waitFor();await screenshot('threads');
+ await page.getByRole('button',{name:'Toggle Sub-Agents panel'}).click();await page.getByRole('tab',{name:/Tasks/}).waitFor();await screenshot('threads');
  await page.locator('.work-thread-row').first().click();await page.getByRole('button',{name:'Continue in chat'}).waitFor();assert.match(await page.locator('.work-thread-prompt').innerText(),/Improve the shop/);record('Threads lists saved requests and opens their activity details');
  await page.getByRole('button',{name:'All tasks'}).click();await page.getByRole('tab',{name:/Agents/}).click();assert.match(await page.locator('.work-threads-empty').innerText(),/No agents or workflows reported/);record('Agent view does not invent child agents');
- await page.keyboard.press('Escape');assert.equal(await page.getByRole('complementary',{name:'Work threads',exact:true}).count(),0);record('Escape closes Threads');
+ await page.keyboard.press('Escape');assert.equal(await page.getByRole('complementary',{name:'Sub-Agents panel',exact:true}).count(),0);record('Escape closes Sub-Agents');
  const card=page.getByRole('region',{name:'Edited 2 files',exact:true});await card.waitFor();
  assert.equal(await card.locator('.changed-file-row').count(),2);
  assert.equal(await card.locator('.changed-files-totals').getAttribute('aria-label'),'3 additions, 2 deletions');
@@ -63,12 +63,12 @@ try{
  const live=structuredClone(state);live.busy=true;live.runtime.status='running';live.task.runs=[{...run,status:'working',endedAt:undefined,activities:[...actions,{id:'tests',kind:'tool',tool:'tool.powershell',title:'Run PowerShell',status:'working',detail:'Running project tests',output:''}]}];
  await app.evaluate(({BrowserWindow},value)=>BrowserWindow.getAllWindows().find(window=>window.getTitle().includes('MuseBench')).webContents.send('musebench:update',value),live);
  await page.getByRole('status').filter({hasText:'Running project tests'}).waitFor();assert.equal(await page.locator('.changed-files').count(),0);record('Streaming fixture updates the current action without reopening the activity group');
- await page.getByRole('button',{name:'Toggle threads panel'}).click();await screenshot('working-threads');assert.match(await page.locator('.work-thread-list').innerText(),/Working/);assert.match(await page.locator('.work-thread-list').innerText(),/Run PowerShell/);
+ await page.getByRole('button',{name:'Toggle Sub-Agents panel'}).click();await screenshot('working-threads');assert.match(await page.locator('.work-thread-list').innerText(),/Working/);assert.match(await page.locator('.work-thread-list').innerText(),/Run PowerShell/);
  await page.setViewportSize({width:600,height:860});await screenshot('narrow-threads');const bounds=await page.locator('.work-threads').boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=601);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);record('Threads remains within a narrow window without page overflow');
- await page.getByRole('button',{name:'Close Threads'}).click();await page.setViewportSize({width:1440,height:960});
+ await page.getByRole('button',{name:'Close Sub-Agents'}).click();await page.setViewportSize({width:1440,height:960});
  await app.evaluate(({BrowserWindow},value)=>BrowserWindow.getAllWindows().find(window=>window.getTitle().includes('MuseBench')).webContents.send('musebench:update',value),state);
- await page.evaluate(()=>{document.documentElement.dataset.theme='light';document.documentElement.style.colorScheme='light';});await page.getByRole('button',{name:'Toggle threads panel'}).click();await screenshot('light-threads');record('Light appearance renders activity using the shared theme tokens');
- await page.getByRole('button',{name:'Close Threads'}).click();
+ await page.evaluate(()=>{document.documentElement.dataset.theme='light';document.documentElement.style.colorScheme='light';});await page.getByRole('button',{name:'Toggle Sub-Agents panel'}).click();await screenshot('light-threads');record('Light appearance renders activity using the shared theme tokens');
+ await page.getByRole('button',{name:'Close Sub-Agents'}).click();
  for(const [command,title] of [['/preview','Project preview'],['/checks','Project checks']]){
    await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill(command);await page.keyboard.press('Escape');await page.getByRole('button',{name:'Send message',exact:true}).click();
    await page.getByRole('complementary',{name:title,exact:true}).waitFor();assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);assert.equal(await page.getByRole('button',{name:'Approve plan',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'Continue to review',exact:true}).count(),0);await page.getByRole('button',{name:'Close details panel'}).click();
