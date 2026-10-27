@@ -21,7 +21,7 @@ export function createAppUpdates({updater,version,enabled,isBusy,prepareInstall,
   'update-not-available':()=>{if(state.status==='checking')patch({status:'current',availableVersion:null,error:null,lastChecked:new Date().toISOString()});},
   'download-progress':info=>{if(state.status==='downloading'&&Number.isFinite(info.percent))patch({percent:Math.max(0,Math.min(100,Math.round(info.percent)))});},
   'update-downloaded':info=>{if(state.status==='downloading'&&info?.version===state.availableVersion)patch({status:'downloaded',percent:100,error:null});},
-  error:()=>{if(state.status==='installing')patch({status:'restart-required',error:'Could not start the installer. Close and reopen MuseBench before retrying.'});},
+  error:()=>{if(state.status==='checking')patch({status:'error',error:'Could not check for updates. Check your connection and try again.'});else if(state.status==='installing')patch({status:'restart-required',error:'Could not start the installer. Close and reopen MuseBench before retrying.'});},
  };
  for(const [event,fn] of Object.entries(handlers))updater.on(event,fn);
  async function dispatch(command){
@@ -35,7 +35,7 @@ export function createAppUpdates({updater,version,enabled,isBusy,prepareInstall,
   if(command==='install'&&(state.status!=='downloaded'||isBusy()))throw Error('Finish or stop active work before restarting to update.');
   operation=true;
   try{
-   if(command==='check'){patch({status:'checking',error:null});await updater.checkForUpdates();if(state.status==='checking')patch({status:'current',lastChecked:new Date().toISOString()});}
+   if(command==='check'){patch({status:'checking',error:null});await updater.checkForUpdates();if(state.status==='checking')throw Error('Update check did not confirm a result.');}
    if(command==='download'){patch({status:'downloading',percent:0,error:null});await updater.downloadUpdate();if(state.status!=='downloaded')throw Error('Download was not confirmed.');}
    if(command==='install'){patch({status:'installing',error:null});await prepareInstall();updater.quitAndInstall(true,true);}
   }catch(error){

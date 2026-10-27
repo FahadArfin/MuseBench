@@ -1,6 +1,6 @@
 # MuseBench updates
 
-The Windows application checks public GitHub Releases 15 seconds after launch and every 30 minutes while it remains open. Settings → Updates offers a manual check. A green upward-arrow icon in the active workspace toolbar appears when a newer version is available. Click it to download; then choose **Restart to update**. Downloading does not interrupt work. Ordinary app exit does not install updates.
+The Windows application checks public GitHub Releases 15 seconds after launch and every 30 minutes while it remains open. Settings → Updates offers a manual check. A green download icon in the active workspace toolbar appears when a newer version is available. Click it to download; then choose **Restart to update**. Downloading does not interrupt work. Ordinary app exit does not install updates.
 
 Restart is refused while app-managed tasks, child agents, questions/approvals, validation, armed goals, eligible queued work, Work/Sites operations, Customize or dictation are active, or process cleanup is uncertain. New IPC mutations are locked during shutdown. Saved Code drafts and chats are flushed before the installer starts. Unsaved form edits and external website state are not promised to survive a restart.
 
@@ -21,3 +21,9 @@ The updater uses `electron-updater` with a fixed public repository feed, checksu
 ## Local checks
 
 `npm test`, `npm run build`, `npm run test:browser-preview`, `npm run test:preview-parity`, `npm run package:installer`, and `node scripts/verify-personal-package.mjs` cover the application and package. Unit tests inject the updater; parity fixtures simulate it. Real download and installer/restart verification must be reported separately, with the exact release version and source commit.
+
+## Availability diagnostics (27 October 2026)
+
+A live Electron updater probe against the public feed detected 0.2.91 when the probe's current version was 0.2.90, and reported current for 0.2.91. This verifies release discovery, not download/install. The exact cause of an earlier missed update was not captured; a build or draft release is not yet available to the updater.
+
+Only the updater's explicit update-not-available event establishes that the app is current. A check that resolves without an availability event, or emits an error, stays a failure instead of being presented as up to date. Error details from remote responses are not displayed verbatim.

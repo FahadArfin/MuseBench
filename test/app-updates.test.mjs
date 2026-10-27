@@ -33,3 +33,14 @@ test('window and quit must wait for update shutdown; lock survives closed servic
  const pending=shutdown.prepare();assert.equal(shutdown.preparing(),true);await new Promise(r=>setImmediate(r));assert.equal(shutdown.preparing(),true);assert.equal(locked,true);finish();await pending;assert.equal(shutdown.preparing(),false);assert.equal(locked,true);
 });
 test('restart lock is released if activity appears during preflight',async()=>{let locked=false,busy=false;const shutdown=createUpdateShutdown({isBusy:()=>busy,voice:async()=>{busy=true;return{status:'idle'};},lock:v=>{locked=v;},closeServices:async()=>assert.fail('must not close'),verifyClosed:()=>true});await assert.rejects(shutdown.prepare());assert.equal(locked,false);assert.equal(shutdown.preparing(),false);});
+
+test('a check without a confirmed availability event never reports current',async()=>{
+ const {service,updater}=setup();updater.checkForUpdates=async()=>null;
+ await service.dispatch('check');assert.equal(service.snapshot().status,'error');assert.equal(service.snapshot().lastChecked,null);
+});
+test('an emitted check error is not overwritten with current when the promise resolves',async()=>{
+ const {service,updater}=setup();updater.checkForUpdates=async()=>{updater.emit('error',Error('private transport details'));};
+ await service.dispatch('check');assert.equal(service.snapshot().status,'error');assert.doesNotMatch(service.snapshot().error,/private/);
+ updater.checkForUpdates=async()=>updater.emit('update-available',{version:'0.2.9'});
+ await service.dispatch('check');assert.equal(service.snapshot().status,'available');assert.equal(service.snapshot().error,null);
+});
