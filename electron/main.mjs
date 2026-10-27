@@ -104,6 +104,7 @@ else {
     handler('musebench:worktrees',input=>controller.inspectWorktrees(input));
     handler('musebench:code-context',input=>controller.inspectContext(input));
     handler('musebench:checkpoint',input=>controller.inspectCheckpoint(input));
+    handler('musebench:semantic-navigation',input=>controller.semanticNavigate(input));
     handler('musebench:captured-output',input=>controller.readCapturedOutput(input));
     handler('musebench:chat-history',input=>controller.readChatHistory(input));
     handler('musebench:chat-search',input=>controller.searchChats(input));

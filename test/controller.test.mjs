@@ -369,3 +369,11 @@ test('tutorial filter edit supports Windows CRLF checkouts',async t=>{
  assert.match(await readFile(file,'utf8'),/MUSEBENCH_FILTER: true \*\/\r\nconst FILTER_ENABLED = true;/);
  assert.ok(applied.task.changes.some(f=>f.path==='app.js'));
 });
+
+test('semantic navigation binds requests to the selected project and returns source locations',async t=>{
+ const {controller:c,root}=await fixture(t);await writeFile(path.join(root,'math.ts'),'export const total = 42;\n');await writeFile(path.join(root,'main.ts'),"import {total} from './math';\nconsole.log(total);\n");
+ const projectId=c.getState().activeProject.id;
+ await assert.rejects(c.semanticNavigate({projectId:'other',operation:'definition',path:'main.ts',line:2,column:13}),/project/i);
+ const result=await c.semanticNavigate({projectId,operation:'definition',path:'main.ts',line:2,column:13});assert.equal(result.items[0].path,'math.ts');assert.equal(result.scope.standardLibrary,false);
+ await assert.rejects(c.semanticNavigate({projectId,operation:'definition',path:'../outside.ts',line:1,column:1}),/path|workspace/i);
+});

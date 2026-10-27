@@ -41,3 +41,10 @@ test('rechecks ownership after the editor picker returns',async()=>{
  await assert.rejects(open({taskId:'t',path:'file.ts',editor:'choose'}),/active task/);assert.equal(launched,false);
  }finally{await rm(root,{recursive:true,force:true});}
 });
+
+test('navigation can open an unchanged source file while keeping task and path boundaries',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'muse-navigation-editor-'));t.after(()=>rm(root,{recursive:true,force:true}));await mkdir(path.join(root,'project'));await writeFile(path.join(root,'project','source.ts'),'export const x=1;');await writeFile(path.join(root,'editor.exe'),'fixture');const launches=[];
+ const open=createFileEditor({dataDir:root,getState:()=>({activeProject:{root:path.join(root,'project')},task:{id:'t',changes:[]}}),choose:async()=>path.join(root,'editor.exe'),candidates:[],launch:async(...args)=>launches.push(args)});
+ await open({taskId:'t',path:'source.ts',source:'navigation'});assert.equal(launches.length,1);
+ for(const input of [{taskId:'other',path:'source.ts',source:'navigation'},{taskId:'t',path:'../editor.exe',source:'navigation'},{taskId:'t',path:'source.ts',source:'untrusted'}])await assert.rejects(open(input));
+});
