@@ -347,6 +347,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const selectedContext=()=>context;
   const sendToTask=async(action,t=state.task,context=contexts.get(t?.id)??selectedContext())=>{
         const runtime=context.runtime,project=state.projects.find(p=>p.id===t?.projectId);if(!t||!project)throw Error('Chat or project unavailable.');
+        const assertGoalDispatch=()=>{if(!action.fromGoal)return;const driver=t.goal?.driver;if(!driver?.armed||driver.id!==action.goalDriverId)throw Error(driver?.reason||'Goal continuation is no longer active.');if(Date.now()>=driver.deadline){pauseGoalDriver(driver,'Time budget reached');throw Error(driver.reason);}if(context!==selectedContext()||t.promptQueue?.length)throw Error('User input or navigation takes priority');};
+        assertGoalDispatch();
         let runtimeState=runtime?.snapshot?.()??missingRuntime();
         if(closing)throw Error('The app is closing. This prompt was not sent.');
         if(runtimeFactory){if(contextBusy(context))throw Error('This chat already has a running or unresolved request.');}else requireNavigationIdle();if(t.mode==='muse')requireWritable(t,project);if(t.archived)throw Error('Restore this archived chat before sending.');if(t.validationRun?.status==='running')throw Error('Wait for validation or cancel it first.');if(action.fromQueue&&action.requiredChecks?.length){const snap=await snapshot(project.root);const missing=missingChecks(t,snap.revision,validateCheckScripts(action.requiredChecks));if(missing.length)throw Error('Run passing checks for this revision before this workflow phase: '+missing.join(', '));}if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
@@ -362,6 +364,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
             await runtime.connect({binary:preferredBinary??undefined,workspaceRoot:project.root});context.root=project.root;runtimeState=runtime.snapshot();
           }
           if(closing)throw Error('The app is closing. This prompt was not sent.');
+          assertGoalDispatch();
           if(images.length&&runtimeState.transport!=='exec')throw Error('Screenshots require the native exec connection.');
           delete t.queueError;
           const previousSession=t.nativeSession?structuredClone(t.nativeSession):null;
@@ -408,7 +411,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       }
       if(decision.kind==='run'){
         d.rounds++;d.phase='running';saveRecord(t);const diagnostic=t.check?.status==='failed'?`\nValidation failed (${t.check.script}):\n${t.check.log.slice(-6000)}`:'';
-        await sendToTask({type:'sendMessage',fromGoal:true,text:`Continue this objective within the current run budget: ${t.goal.objective}\nVerify the existing work. Avoid repeating completed external actions. The app will run the saved validation profile when you finish.${diagnostic}`},t,owner);emit();
+        await sendToTask({type:'sendMessage',fromGoal:true,goalDriverId:ticket,text:`Continue this objective within the current run budget: ${t.goal.objective}\nVerify the existing work. Avoid repeating completed external actions. The app will run the saved validation profile when you finish.${diagnostic}`},t,owner);emit();
       }
     }).catch(error=>{const d=owner.task?.goal?.driver;if(d?.id===ticket){pauseGoalDriver(d,error.message);if(owner.task.validationRun?.status==='running'&&!checkProcess)owner.task.validationRun.status='failed';saveRecord(owner.task);emit();}});queue=operation.catch(()=>{});},150);
   };
@@ -616,7 +619,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'forkTask':{
         requireNavigationIdle();const original=structuredClone(requireTask()),index=original.messages.findIndex(m=>m.id===action.messageId&&['user','assistant'].includes(m.role));if(index<0)throw Error('Choose a prompt or response to branch from.');const selected=original.messages[index];
         await startTask(original.request,original.mode==='demo'?'manual':original.mode,original.runOptions);const t=state.task;t.title=`Branch · ${original.title}`.slice(0,100);t.forkedFrom=original.id;t.goal=original.goal;
-        t.messages=original.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,at:m.at,sources:m.sources,files:m.files,images:m.images,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));message('system',selected.role==='assistant'?'Branched conversation through the selected response. Current project files are unchanged.':'Branched conversation. Current project files are unchanged; the selected prompt is an unsent draft.');
+        t.messages=original.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,contextTruncated:m.contextTruncated===true,at:m.at,sources:m.sources,files:m.files,images:m.images,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));message('system',selected.role==='assistant'?'Branched conversation through the selected response. Current project files are unchanged.':'Branched conversation. Current project files are unchanged; the selected prompt is an unsent draft.');
         if(selected.role==='user')state.drafts[draftKey(t.projectId,t.id)]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:now()};break;
       }
       case 'renameTask':{requireNavigationIdle();const t=requireTask();if(typeof action.title!=='string'||!action.title.trim()||action.title.length>100)throw Error('Use a chat name up to 100 characters.');t.title=action.title.trim();break;}
@@ -630,7 +633,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       }
       case 'integrateReview':{
         requireNavigationIdle();const child=requireTask(),contract=child.reviewContract;if(!contract||action.taskId!==child.id)throw Error('Review chat changed.');if(!child.runtimeComplete||executions.list(child.id)[0]?.result!=='completed')throw Error('Wait for a confirmed reviewer result.');const parent=taskRecords.get(contract.parentTaskId),project=state.projects.find(p=>p.id===contract.parentProjectId);if(!parent||!project||parent.archived)throw Error('Parent chat is unavailable.');if(contextBusy(contexts.get(parent.id)))throw Error('Wait for the parent run to finish.');if((await snapshot(project.root)).revision!==contract.sourceRevision||(await current()).revision!==contract.inputRevision)throw Error('Review is stale: source or review files changed. Start a fresh review.');
-        const answer=child.messages.findLast(m=>m.role==='assistant');if(answer?.contextTruncated)throw Error('Review output was shortened. Ask for a smaller structured report.');const report=parseReview(answer?.text);const key=draftKey(project.id,parent.id);if(state.drafts[key]?.text)throw Error('The parent already has a draft. Save or send it before integrating this review.');const reviewText=`Independent ${contract.role} findings from chat ${child.id}, revision ${contract.sourceRevision}. Review these claims before applying changes.\n\n${JSON.stringify(report,null,2)}`;if(reviewText.length>16000)throw Error('Review is too large for a draft. Ask for a shorter structured report.');state.drafts[key]={text:reviewText,files:[],images:[],mode:'chat',updatedAt:now()};contract.integratedAt=now();saveRecord(child);await selectProject(project,parent.id);break;
+        const answer=child.messages.findLast(m=>m.role==='assistant');if(answer?.contextTruncated)throw Error('Review output was shortened. Ask for a smaller structured report.');const report=parseReview(answer?.text);const key=draftKey(project.id,parent.id),draft=state.drafts[key];if(draft?.text||draft?.files?.length||draft?.images?.length)throw Error('The parent already has a draft. Save or send it before integrating this review.');const reviewText=`Independent ${contract.role} findings from chat ${child.id}, revision ${contract.sourceRevision}. Review these claims before applying changes.\n\n${JSON.stringify(report,null,2)}`;if(reviewText.length>16000)throw Error('Review is too large for a draft. Ask for a shorter structured report.');state.drafts[key]={text:reviewText,files:[],images:[],mode:'chat',updatedAt:now()};contract.integratedAt=now();saveRecord(child);await selectProject(project,parent.id);break;
       }
       case 'cancelReviewers':{
         const parent=requireTask();for(const id of parent.reviewChildren??[]){const child=contexts.get(id);if(child?.pending)await child.runtime?.disconnect?.();}break;
@@ -682,7 +685,17 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       }
       case 'sendMessage':pauseGoalDriver(state.task?.goal?.driver,'User input takes priority');await sendToTask(action);break;
       case 'connectMuse':if(!state.activeProject)throw Error('Open a project first.');if(!runtime)throw Error('Muse runtime unavailable in this installation.');await runtime.connect({binary:action.binary,workspaceRoot:state.activeProject.root});context.root=state.activeProject.root;preferredBinary=runtime.snapshot().binary??preferredBinary;state.runtime=runtime.snapshot();break;
-      case 'disconnectMuse':pauseGoalDriver(state.task?.goal?.driver,'Disconnected by you');if(state.task?.nativeSession?.status==='running')state.task.nativeSession.status='needs-recovery';if(state.task){state.task.queuePaused=true;state.task.queueHold=Boolean(state.task.promptQueue?.length);}if(state.task?.runs)state.task.runs=state.task.runs.map(run=>['queued','working','waiting'].includes(run.status)?{...run,status:'cancelled',endedAt:now(),activities:run.activities.map(item=>['queued','working','waiting'].includes(item.status)?{...item,status:'cancelled'}:item)}:run);for(const item of state.task?.messages??[]){const run=state.task.runs?.find(r=>r.promptId===(item.turnId??item.id));if(run)item.outcome=run.status;}context.pending=false;context.turn=null;if(state.task?.mode==='muse')state.task.runtimeComplete=false;await runtime?.disconnect?.();state.runtime=runtime?.snapshot?.()??missingRuntime();break;
+      case 'disconnectMuse':{
+        pauseGoalDriver(state.task?.goal?.driver,'Disconnected by you');if(state.task?.nativeSession?.status==='running')state.task.nativeSession.status='needs-recovery';if(state.task){state.task.queuePaused=true;state.task.queueHold=Boolean(state.task.promptQueue?.length);}
+        const turn=context.turn;
+        try{await runtime?.disconnect?.();}finally{
+          // Keep turn ownership until the terminal callback has recorded cleanup.
+          // Adapters that throw or return without a terminal event remain unknown.
+          if(turn&&executions.list(state.task.id).find(r=>r.id===turn.promptId)?.phase!=='settled')executions.patch(turn.promptId,{phase:'settled',result:'unknown',cleanup:'unknown',reason:'Disconnect did not report a confirmed terminal outcome.'});
+          if(state.task?.runs)state.task.runs=state.task.runs.map(run=>['queued','working','waiting'].includes(run.status)||run.id===turn?.promptId&&run.status!=='completed'?{...run,status:'cancelled',endedAt:now(),activities:run.activities.map(item=>['queued','working','waiting'].includes(item.status)?{...item,status:'cancelled'}:item)}:run);for(const item of state.task?.messages??[]){const run=state.task.runs?.find(r=>r.promptId===(item.turnId??item.id));if(run)item.outcome=run.status;}
+          context.pending=false;context.turn=null;if(state.task?.mode==='muse')state.task.runtimeComplete=false;state.runtime=runtime?.snapshot?.()??missingRuntime();
+        }break;
+      }
       case 'runtimeDecision':if(!runtime)throw Error('Muse is not connected.');await runtime.decide(action.decision);state.runtime=runtime.snapshot();break;
       default:throw Error('Unknown controller action.');
     }

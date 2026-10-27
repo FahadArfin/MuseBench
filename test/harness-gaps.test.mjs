@@ -218,3 +218,28 @@ test('stream snapshots coalesce while terminal state and source history stay imm
 test('pending approval bypasses stream batching and periodic progress eventually publishes',async t=>{
  const {c,runtime}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'Wait for approval'});let latest;c.subscribe(s=>{latest=s;});runtime.emit({messages:[{id:'slow',kind:'agentMessage',text:'Progress while still working'}]});await new Promise(r=>setTimeout(r,75));assert.ok(latest.task.messages.some(m=>m.text==='Progress while still working'));runtime.emit({status:'blocked',pending:{kind:'approval',sessionId:'session'},sessionId:'session',permissionVerified:true});assert.equal(latest.runtime.status,'blocked');assert.equal(latest.runtime.pending.kind,'approval');
 });
+
+test('goal expiry during connection preparation never dispatches its prompt',async t=>{
+ const {c,runtime,project}=await fixture(t);await writeFile(join(project,'package.json'),JSON.stringify({scripts:{test:'node -e "process.exit(0)"'}}));await start(c);await c.dispatch({type:'refresh'});await c.dispatch({type:'saveValidationProfile',projectId:c.getState().activeProject.id,scripts:['test']});await c.dispatch({type:'setGoal',objective:'Respect the deadline',status:'active'});
+ let release,expire,connected;const ready=new Promise(resolve=>{connected=resolve;});const connect=runtime.connect.bind(runtime);runtime.connect=async()=>{connected();await new Promise(resolve=>{release=resolve;});await connect();};
+ const nativeTimeout=globalThis.setTimeout;t.mock.method(globalThis,'setTimeout',(callback,ms,...args)=>{if(ms===60000){expire=callback;return{unref(){}};}return nativeTimeout(callback,ms,...args);});
+ await c.dispatch({type:'continueGoal',maxRounds:2,minutes:1});await ready;await expire();release();await new Promise(r=>nativeTimeout(r,80));assert.equal(runtime.sent.length,0);assert.equal(c.getState().task.goal.driver.armed,false);assert.match(c.getState().task.goal.driver.reason,/Time budget reached/);
+});
+
+for(const cleanup of ['confirmed','unknown'])test(`disconnect settles an owned receipt with ${cleanup} cleanup`,async t=>{
+ const {c,runtime,dataDir}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'Stop this run'});runtime.disconnect=async()=>runtime.emit({status:'cancelled',cleanup});await c.dispatch({type:'disconnectMuse'});let receipt=c.getState().task.executionReceipts[0];assert.equal(receipt.phase,'settled');assert.equal(receipt.result,cleanup==='confirmed'?'cancelled':'unknown');await c.close();const reopened=await createController({dataDir,runtime:fakeRuntime()});receipt=reopened.getState().task.executionReceipts[0];assert.equal(receipt.result,cleanup==='confirmed'?'cancelled':'unknown');assert.doesNotMatch(receipt.reason??'',/restarted/);await reopened.close();
+});
+
+test('disconnect without a terminal callback settles as unknown',async t=>{
+ const {c,runtime}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'Stop this run'});runtime.disconnect=async()=>{};await c.dispatch({type:'disconnectMuse'});const receipt=c.getState().task.executionReceipts[0];assert.equal(receipt.phase,'settled');assert.equal(receipt.result,'unknown');assert.match(receipt.reason,/Disconnect/);
+});
+
+for(const kind of ['files','images'])test(`review integration preserves a ${kind}-only parent draft`,async t=>{
+ const {c,runtimes}=await fixture(t,{background:true});const parentTaskId=await start(c),projectId=c.getState().activeProject.id,key=`${projectId}:${parentTaskId}`;
+ const attachment=kind==='files'?{path:'notes.md',hash:'a'.repeat(64)}:await c.importImage({projectId,taskId:parentTaskId,name:'screen.png',dataUrl:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII='});const draft={type:'saveDraft',projectId,taskId:parentTaskId,text:'',[kind]:[attachment]};assert.equal((await c.dispatch(draft)).error,null);const before=c.getState().drafts[key];
+ const result=await c.dispatch({type:'createReviewer',parentTaskId,projectId,role:'tests',question:'Check error coverage'});assert.equal(result.error,null);runtimes.find(r=>r.sent.length).finish(JSON.stringify({findings:[],unresolved:[]}));const integrated=await c.dispatch({type:'integrateReview',taskId:result.task.id});assert.match(integrated.error,/draft/);assert.deepEqual(integrated.drafts[key],before);
+});
+
+test('branching and restart retain shortened response provenance in context receipts',async t=>{
+ const {c,runtime,dataDir}=await fixture(t);await start(c);await c.dispatch({type:'sendMessage',text:'Long response'});runtime.finish('x'.repeat(17000));const response=c.getState().task.messages.find(m=>m.role==='assistant');await c.dispatch({type:'forkTask',messageId:response.id});await c.close();const reopened=await createController({dataDir,runtime:fakeRuntime()});try{const s=reopened.getState(),answer=s.task.messages.find(m=>m.role==='assistant');assert.equal(answer.contextTruncated,true);const info=await reopened.inspectContext({projectId:s.activeProject.id,taskId:s.task.id,text:'Continue',files:[]});assert.ok(info.receipt.messages.some(m=>m.id===answer.id&&m.truncated));}finally{await reopened.close();}
+});
