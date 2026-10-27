@@ -1,3 +1,4 @@
+import {UpdateToolbar} from './AppUpdates';
 import {NavigationButtons} from './NavigationHistory';
 import {useContext} from 'react';
 import {BrowserPreviewContext} from './BrowserPreviewContext';
@@ -262,7 +263,7 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
       {collapsed && <button type="button" className="icon-button collapsed-toggle" aria-label="Show sidebar" onClick={onToggleSidebar}><PanelLeft size={17} /></button>}
       <NavigationButtons/><div className="breadcrumbs"><strong>{label}</strong>{state?.loading && <LoaderCircle size={13} className="spin personal-header-loading" aria-label="Loading page" />}</div>
       </div>
-      <div className="topbar-actions">
+      <div className="topbar-actions"><UpdateToolbar/>
         {signingIn ? <span className="personal-auth-status" role="status"><ShieldCheck size={14} /><span>{state?.authWindowOpen ? 'Finish sign-in in the opened window' : 'Signing in with Meta'}</span></span> : <>
           {<button type="button" className={`icon-button personal-presentation-toggle ${compact ? 'selected' : ''}`} aria-label={destination==='chat'?'Use integrated Meta AI layout':'Use integrated Muse layout'} aria-pressed={compact} title={compact ? 'Show original website navigation' : 'Use integrated navigation'} disabled={!ready} onClick={() => void command({ type: 'presentation', compact: !compact })}>{compact ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}</button>}
           <button type="button" className="personal-accounts-trigger" aria-label="Accounts and connections" title="Accounts and connections" aria-haspopup="dialog" disabled={!ready} onClick={() => setOverlay(overlay === 'accounts' ? null : 'accounts')}><UserRound size={15} /><span>Accounts</span></button>

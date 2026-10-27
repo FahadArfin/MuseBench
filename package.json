@@ -1,6 +1,6 @@
 {
   "name": "musebench",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A local coding workspace for Muse CLI",
   "license": "UNLICENSED",
@@ -24,10 +24,12 @@
     "spaces:server": "node scripts/spaces-server.mjs",
     "test:spaces": "node scripts/spaces-smoke.mjs",
     "preview:snapshots": "node scripts/capture-preview-snapshots.mjs",
-    "test:preview-parity": "node scripts/preview-parity.mjs"
+    "test:preview-parity": "node scripts/preview-parity.mjs",
+    "package:installer": "npm run build && electron-builder --win nsis --publish never"
   },
   "dependencies": {
     "@muse-code/sdk": "1.4.13",
+    "electron-updater": "6.8.11",
     "lucide-react": "^0.468.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -87,6 +89,22 @@
       "target": "dir",
       "icon": "electron/assets/musebench.ico",
       "signExecutable": false
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "FahadArfin",
+        "repo": "MuseBench",
+        "releaseType": "release"
+      }
+    ],
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowElevation": false,
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "MuseBench-Setup-${version}.${ext}",
+      "runAfterFinish": true
     }
   }
 }

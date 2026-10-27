@@ -21,6 +21,10 @@ async function fixture(t,{node=true,background=false}={}){
 const start=async c=>{const result=await c.dispatch({type:'newTask',request:'Build a helpful tool',mode:'muse'});assert.equal(result.error,null);return result.task.id;};
 const wait=async predicate=>{for(let i=0;i<50;i++){if(predicate())return;await new Promise(r=>setTimeout(r,10));}assert.fail('Timed out waiting for queue');};
 
+test('update restart guard covers inactive chats and releases only after native work settles',async t=>{
+ const {c,runtime}=await fixture(t,{background:true});await start(c);assert.equal(c.canRestartForUpdate(),true);await c.dispatch({type:'sendMessage',text:'Work'});assert.equal(c.canRestartForUpdate(),false);await start(c);assert.equal(c.canRestartForUpdate(),false);runtime.finish();assert.equal(c.canRestartForUpdate(),true);
+});
+
 test('any source folder can be opened without package.json',async t=>{const {c}=await fixture(t,{node:false});assert.equal(c.getState().error,null);assert.deepEqual(c.getState().activeProject.scripts,{});await start(c);});
 test('new workspace actions reject malformed data and internal queue flags',()=>{
  for(const action of [{type:'sendMessage',text:'Go',fromQueue:true},{type:'saveDraft',projectId:'p',taskId:null,text:'draft',files:[{path:'.env',hash:'bad'}]},{type:'setTaskFlags',id:'task',archived:'yes'},{type:'setProjectInstructions',projectId:'p',text:'x'.repeat(4001)},{type:'queueMessage',text:'Next',mode:'unrestricted'}])assert.throws(()=>validateAction(action));

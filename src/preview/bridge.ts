@@ -129,8 +129,13 @@ export function createPreviewBridge():MuseBenchBridge {
  function selectSite(key:string){sites.site=sites.items.find(i=>i.id===key)??site;sites.activeId=sites.site.id;sites.files=Object.entries(siteFiles).map(([path,text])=>({path,bytes:new TextEncoder().encode(text).length,sha1:'sample',mime:'text/html'}));sites.previewUrl=`data:text/html;charset=utf-8,${encodeURIComponent(siteFiles['index.html'])}`;}
  const hookProjects=new Map<string,NonNullable<CustomizeState['hooks']>>();
  const customize:CustomizeState={available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only'}],plugins:[],servers:[]};
+ const updateListeners=new Set<(state:import('../shared/types').AppUpdateState)=>void>();
+ let appUpdate:import('../shared/types').AppUpdateState={version:'0.2.0',status:'idle',availableVersion:null,percent:0,lastChecked:null,error:null,simulation:true};
+ const updateEmit=(patch:Partial<typeof appUpdate>)=>{appUpdate={...appUpdate,...patch};updateListeners.forEach(fn=>fn(copy(appUpdate)));};
  const dictation={id:null,status:'idle' as const,available:false,language:null,text:'',error:'Microphone input is available in the desktop app.'};
  return {
+  appUpdate:async command=>{if(command==='check')updateEmit({status:'available',availableVersion:'0.2.1',lastChecked:'2026-10-26T12:00:00Z',error:null});if(command==='download'){updateEmit({status:'downloading',percent:45});await new Promise(r=>setTimeout(r,400));updateEmit({status:'downloaded',percent:100});}if(command==='install')updateEmit({error:'Preview only. The desktop app would install and reopen.'});return copy(appUpdate);},
+  onAppUpdate:fn=>{updateListeners.add(fn);return()=>{updateListeners.delete(fn);};},
   windowControlsOverlay:true,
   inspectWorktrees:async input=>({root:state.projects.find(p=>p.id===input.projectId)?.root??project.root,branch:'main',head:'sample-base',dirty:true,items:copy(sampleWorktrees)}),
   importCodeImage:async input=>{const match=/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(input.dataUrl);if(!match||input.dataUrl.length>11200000)throw Error('Choose an image up to 8 MB.');const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));const id=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');imageData.set(input.projectId+id,input.dataUrl);return{id,name:input.name,mime:match[1],bytes:bytes.length};},

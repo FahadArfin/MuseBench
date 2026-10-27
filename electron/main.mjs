@@ -1,4 +1,7 @@
 import {createFileEditor} from './file-editor.mjs';
+import {createAppUpdates,createUpdateShutdown,updateBlocked} from './app-updates.mjs';
+import updaterPackage from 'electron-updater';
+import {existsSync} from 'node:fs';
 import {customizeBlocked} from '../src/shared/customize-policy.mjs';
 import {createCommandInfo,exportTranscript} from './command-info.mjs';
 import {createCustomize} from './customize.mjs';
@@ -33,7 +36,7 @@ if (dataOverride && path.isAbsolute(dataOverride)) app.setPath('userData', dataO
 const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
-let window, controller, customize, personal, dictation, work, workExporter, spaces, sites, closing = false;
+let window, controller, customize, personal, dictation, work, workExporter, spaces, sites, updates, closing = false, updateInstalling=false, updateShutdown, pendingIpc=0;
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -66,6 +69,7 @@ else {
       ...(process.platform === 'win32' ? {titleBarStyle:'hidden',titleBarOverlay:titleBarOverlay('dark')} : {}),
       webPreferences:{preload:path.join(root,'electron','preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webviewTag:false,webSecurity:true,spellcheck:false} });
     dictation = createDictation({helperPath: app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchSpeech.exe') : path.join(root,'native','bin','MuseBenchSpeech.exe'), onState: value => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:dictation-update',value); }});
+    window.on('close',event=>{if(updateShutdown?.preparing())event.preventDefault();});
     window.on('blur',()=>{ void dictation.stop(true).catch(()=>{}); });
     window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
     window.webContents.on('will-navigate',(event,url)=>{if(url!==uiURL) event.preventDefault();});
@@ -84,7 +88,9 @@ else {
     });
     const handler = (name, fn) => ipcMain.handle(name, async (event,...args) => {
       if (!trustedSender(event,window.webContents,uiURL)) throw Error('Workspace access is restricted to the main MuseBench window.');
-      return fn(...args);
+      if(updateInstalling&&name!=='musebench:app-update')throw Error('MuseBench is restarting to install an update.');
+      if(name==='musebench:app-update')return fn(...args);
+      pendingIpc++;try{return await fn(...args);}finally{pendingIpc--;}
     });
     const openFileEditor=createFileEditor({dataDir,getState:()=>controller.getState(),choose:async()=>{
       const result=await dialog.showOpenDialog(window,{title:'Choose your preferred text editor',properties:['openFile'],filters:[{name:'Editor application',extensions:['exe']}]});
@@ -103,6 +109,17 @@ else {
     handler('musebench:chat-search',input=>controller.searchChats(input));
     handler('musebench:code-draft',async input=>{const result=await controller.dispatch(validateAction({...input,type:'saveDraft'}));if(result.error)throw Error(result.error);});
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
+    const updateBusy=()=>pendingIpc>0||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation);
+    const {autoUpdater}=updaterPackage;
+    autoUpdater.setFeedURL({provider:'github',owner:'FahadArfin',repo:'MuseBench',private:false});
+    updateShutdown=createUpdateShutdown({isBusy:updateBusy,voice:()=>dictation.dispatch('status'),lock:value=>{updateInstalling=value;},closeServices:async()=>{
+      closing=true;personal.close();
+      const results=await Promise.allSettled([customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close()]);
+      if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
+    },verifyClosed:()=>!updateBlocked(controller.getState(),work.getState(),sites.getState())});
+    updates=createAppUpdates({updater:autoUpdater,version:app.getVersion(),enabled:app.isPackaged&&process.platform==='win32'&&existsSync(path.join(path.dirname(app.getPath('exe')),'Uninstall MuseBench.exe')),isBusy:updateBusy,onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('musebench:app-update-state',value);},prepareInstall:()=>updateShutdown.prepare()});
+    handler('musebench:app-update',command=>updates.dispatch(command));
+    updates.start();const updateStartup=setTimeout(()=>{void updates.dispatch('check').catch(()=>{});},15000);updateStartup.unref();
     handler('musebench:customize',command=>customize.dispatch(command));
     handler('musebench:sites-state',()=>sites.getState());
     handler('musebench:sites',command=>{if(customize.isBusy())throw Error('Wait for Customize to finish before starting another operation.');return sites.dispatch(command);});
@@ -183,7 +200,7 @@ else {
     handler('musebench:notifications',value=>{notifier.configure(value);return{supported:Notification.isSupported()};});
     controller.subscribe(state=>{notifier.observe(state);if(window&&!window.isDestroyed())window.webContents.send('musebench:update',state);});
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      {label:'MuseBench',submenu:[{label:'Open project…',accelerator:'CmdOrCtrl+O',click:async()=>{if(customize?.isBusy())return;const r=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!r.canceled){const next=await controller.dispatch({type:'openProject',path:r.filePaths[0]});if(!next.error&&!window.isDestroyed()){personal.hide();window.webContents.send('musebench:personal-shortcut','code');}}}},{type:'separator'},{role:'quit'}]},
+      {label:'MuseBench',submenu:[{label:'Open project…',accelerator:'CmdOrCtrl+O',click:async()=>{if(updateInstalling||closing||customize?.isBusy())return;pendingIpc++;try{const r=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!r.canceled&&!updateInstalling&&!closing){const next=await controller.dispatch({type:'openProject',path:r.filePaths[0]});if(!next.error&&!window.isDestroyed()){personal.hide();window.webContents.send('musebench:personal-shortcut','code');}}}finally{pendingIpc--;}}},{type:'separator'},{role:'quit'}]},
       {role:'editMenu'}, {label:'View',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},...(!app.isPackaged?[{role:'toggleDevTools'}]:[])]},
     ]));
     window.once('ready-to-show',()=>window.show());
@@ -191,4 +208,4 @@ else {
   }).catch(startupFailed);
 }
 app.on('window-all-closed',()=>app.quit());
-app.on('before-quit',event=>{personal?.close();if(controller&&!closing){event.preventDefault();closing=true;Promise.allSettled([customize?.close(),sites?.close(),spaces?.close(),controller.close(),work?.close(),workExporter?.close(),dictation?.close()]).finally(()=>app.quit());}});
+app.on('before-quit',event=>{if(updateShutdown?.preparing()){event.preventDefault();return;}updates?.close();personal?.close();if(controller&&!closing){event.preventDefault();closing=true;Promise.allSettled([customize?.close(),sites?.close(),spaces?.close(),controller.close(),work?.close(),workExporter?.close(),dictation?.close()]).finally(()=>app.quit());}});

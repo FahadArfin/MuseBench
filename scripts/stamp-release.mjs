@@ -1,0 +1,13 @@
+import {execFileSync} from 'node:child_process';
+import {readFileSync,writeFileSync,appendFileSync} from 'node:fs';
+const git=(...args)=>execFileSync('git',args,{encoding:'utf8'}).trim();
+if(git('rev-parse','--is-shallow-repository')==='true')throw Error('Release versions require full history.');
+if(git('status','--porcelain'))throw Error('Release must start from a clean checkout.');
+const count=Number(git('rev-list','--count','HEAD')),sha=git('rev-parse','HEAD');
+if(!Number.isSafeInteger(count)||count<1)throw Error('Invalid release sequence.');
+const version=`0.2.${count}`;
+const pkg=JSON.parse(readFileSync('package.json','utf8')),lock=JSON.parse(readFileSync('package-lock.json','utf8'));
+pkg.version=version;pkg.releaseCommit=sha;lock.version=version;lock.packages[''].version=version;
+writeFileSync('package.json',JSON.stringify(pkg,null,2)+'\n');writeFileSync('package-lock.json',JSON.stringify(lock,null,2)+'\n');
+if(process.env.GITHUB_OUTPUT)appendFileSync(process.env.GITHUB_OUTPUT,`version=${version}\nsha=${sha}\n`);
+console.log(JSON.stringify({version,sha}));

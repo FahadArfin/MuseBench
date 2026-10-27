@@ -129,6 +129,17 @@ try{
  await click('button','Close dialog');
  for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'sendMessage',text:'/preview-question'});});await click('button','Muse has a question. Answer to continue.');await click('button','Decline to answer');await compare('native-question-declined');
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.inputResponse.outcome),'cancelled');
+ await click('button','Close dialog');
+ for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.appUpdate('check');});
+ await compare('update-available-toolbar');
+ await click('button','Download update');
+ for(const page of [browserPage,desktopPage])for(let n=0;n<40;n++){if(await page.evaluate(async()=>(await window.musebench.appUpdate('status')).status==='downloaded'))break;await page.waitForTimeout(100);}
+ await compare('update-download-ready');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.appUpdate('status')).status),'downloaded');
+ await click('button','Restart to update');await compare('update-preview-restart');
+ for(const page of [browserPage,desktopPage])assert.match(await page.evaluate(async()=>(await window.musebench.appUpdate('status')).error),/Preview only/);
+ await click('button','Close dialog');
+ await click('button','Profile menu');for(const page of [browserPage,desktopPage])await page.evaluate(()=>[...document.querySelectorAll('[role=menuitem]')].find(e=>e.textContent?.startsWith('Settings'))?.click());await click('button','Updates');await compare('settings-app-updates');
  assert.deepEqual(errors,[]);report.status='passed';
 }catch(error){report.status='failed';report.failure=String(error.stack??error);console.error(report.failure);process.exitCode=1;}
 finally{if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});}await browser.close();await server.close();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));}

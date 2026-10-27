@@ -120,3 +120,6 @@ export interface CheckpointComparison {revision:string;files:(FileChange&{restor
 export interface MuseBenchBridge {inspectCheckpoint(input:{taskId:string;id:string}):Promise<CheckpointComparison>;}
 
 export interface ExecutionReceipt {id:string;phase:string;result:string;acceptance:string;delivery:string;createdAt:string;updatedAt:string;runId?:string|null;nativeSessionId?:string|null;processId?:number|null;hostVersion?:string|null;promptHash?:string;revision?:string;reason?:string|null;}
+export type AppUpdateCommand='status'|'check'|'download'|'install';
+export interface AppUpdateState {version:string;status:'idle'|'unsupported'|'checking'|'current'|'available'|'downloading'|'downloaded'|'installing'|'restart-required'|'error';availableVersion:string|null;percent:number;lastChecked:string|null;error:string|null;simulation?:boolean;}
+export interface MuseBenchBridge {appUpdate(command:AppUpdateCommand):Promise<AppUpdateState>;onAppUpdate(callback:(state:AppUpdateState)=>void):()=>void;}

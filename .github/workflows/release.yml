@@ -1,0 +1,82 @@
+name: Release Windows update
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - id: version
+        run: node scripts/stamp-release.mjs
+      - run: npm test
+      - run: npm run build
+      - run: npm run test:browser-preview
+      - run: npm run test:preview-parity
+      - run: npx electron-builder --win nsis --publish never
+      - run: node scripts/verify-personal-package.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-update
+          if-no-files-found: error
+          path: |
+            release/MuseBench-Setup-*.exe
+            release/MuseBench-Setup-*.exe.blockmap
+            release/latest.yml
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-update
+          path: release
+      - name: Publish validated installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.build.outputs.version }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          current=$(gh api "repos/$GH_REPO/commits/main" --jq .sha)
+          if [ "$current" != "$SOURCE_SHA" ]; then
+            echo "A newer main commit superseded this build; skipping publication."
+            exit 0
+          fi
+          tag="v$VERSION"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            draft=$(gh release view "$tag" --json isDraft --jq .isDraft)
+            if [ "$draft" != "true" ]; then
+              echo "This immutable version already has a published release."
+              exit 0
+            fi
+            target=$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)
+            test "$target" = "$SOURCE_SHA"
+            gh release upload "$tag" release/* --clobber
+            gh release edit "$tag" --draft=false --latest
+            exit 0
+          fi
+          printf 'Built from commit %s after tests, build and preview/desktop parity passed.\n\nWindows installer. Existing chats and settings are retained.\n' "$SOURCE_SHA" > release-notes.txt
+          gh release create "$tag" release/* --target "$SOURCE_SHA" --title "MuseBench $VERSION" --notes-file release-notes.txt --latest
