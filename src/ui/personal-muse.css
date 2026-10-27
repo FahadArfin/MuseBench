@@ -125,7 +125,7 @@
 .personal-service-content.expanded{grid-template-rows:1fr;opacity:1;visibility:visible;transition:grid-template-rows 380ms cubic-bezier(.22,1,.36,1),opacity 280ms ease 60ms,visibility 0s}
 .personal-service-inner{min-height:0;overflow:hidden}
 .personal-navigation .personal-sidebar-controls .muse-agent-shortcut{margin-bottom:0}
-.personal-service-content .personal-collection[aria-label="Muse chats"]{margin-top:8px}
+.personal-service-content .personal-collection[aria-label="Chat"]{margin-top:8px}
 .personal-service-content .personal-recents-tools{top:12px}
 .personal-service-content .personal-tools{padding-bottom:12px}
 @media(prefers-reduced-motion:reduce){.personal-service-content,.personal-service-content.expanded{transition:none}}
@@ -137,3 +137,5 @@
 .personal-service-heading .personal-service-chevron{flex:none;margin-left:auto;transition:transform 380ms cubic-bezier(.22,1,.36,1)}
 .personal-service-heading[aria-expanded="true"] .personal-service-chevron{transform:rotate(90deg)}
 @media(prefers-reduced-motion:reduce){.personal-service-heading .personal-service-chevron{transition:none}}
+
+.personal-collection-add{flex:none;width:28px;height:28px;margin-left:auto;color:var(--muted)}

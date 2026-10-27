@@ -26,6 +26,7 @@ test('catalog accepts only section-compatible finite targets and sanitizes displ
   assert.equal(c.snapshot().ideas.items[0].title, 'Try pottery'); assert.equal(c.snapshot().ideas.items.length, 1);
   c.update('chats', { status: 'ready', items: [{ key: 'main', title: 'Main conversation', target: { type: 'main', value: '/' } }] });
   assert.equal(c.snapshot().chats.items.length, 1);
+  assert.equal(c.snapshot().chats.items[0].main,true);
 });
 
 test('catalog stable IDs survive rename but removed entries and snapshots cannot retain selection authority', () => {

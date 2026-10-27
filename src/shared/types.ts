@@ -50,7 +50,7 @@ export type Action = {type:'saveValidationProfile';projectId:string;scripts:stri
   | {type:'moveQueued';taskId:string;id:string;beforeId:string|null}
   | {type:'removeQueued';id:string} | {type:'pauseQueue'|'resumeQueue'};
 export type PersonalDestination = 'bot' | 'chat' | 'ideas' | 'goals';
-export interface PersonalLibraryItem { id: string; kind: 'chat' | 'idea' | 'goal'; title: string; }
+export interface PersonalLibraryItem { id: string; kind: 'chat' | 'idea' | 'goal'; title: string; main?: boolean; }
 export interface PersonalLibraryGroup { status: 'idle' | 'loading' | 'ready' | 'unavailable'; items: PersonalLibraryItem[]; }
 export interface PersonalLibrary { chats: PersonalLibraryGroup; ideas: PersonalLibraryGroup; goals: PersonalLibraryGroup; selectedId: string | null; }
 export interface PersonalAppearance { theme: 'dark' | 'light'; textSize: 'small' | 'medium' | 'large'; font: 'system' | 'mono'; reducedMotion: boolean; }

@@ -26,7 +26,7 @@ export function createPersonalCatalog() {
   const records = new Map();
   let selectedId = null;
   function snapshot() {
-    return { ...Object.fromEntries([...groups].map(([section, group]) => [section, { status: group.status, items: group.items.map(({ id, title }) => ({ id, title, kind: kinds[section] })) }])), selectedId };
+    return { ...Object.fromEntries([...groups].map(([section, group]) => [section, { status: group.status, items: group.items.map(({ id, title, target }) => ({ id, title, kind: kinds[section], ...(target.type==='main'?{main:true}:{}) })) }])), selectedId };
   }
   function reset() {
     records.clear(); selectedId = null;
