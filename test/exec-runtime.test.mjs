@@ -17,6 +17,40 @@ function records({terminal='completed',text='Done',reason=null,model=true,shellR
 const jsonl=values=>values.map(value=>JSON.stringify(value)).join('\n')+'\n';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('Full access is explicit, skips sandbox readiness, and preserves human approval',async t=>{
+ const h=await harness(t,{ready:'status=not-ready\n'});
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.profile,fullAccess:true});
+ assert.equal(h.runtime.snapshot().fullAccess,true);
+ assert.equal(h.runtime.snapshot().shellEnabled,true);
+ assert.equal(h.calls.some(c=>c.args[0]==='sandbox'),false);
+ assert.ok(h.calls.at(-1).args.includes('--disable-sandbox'));
+ await h.runtime.send({text:'Print a marker'});
+ const args=h.calls.at(-1).args;
+ assert.ok(args.includes('--disable-sandbox'));
+ assert.equal(args[args.indexOf('--permission-profile')+1],':ask-me');
+ assert.ok(!args.includes('--yolo'));
+ assert.ok(!args.includes('--disable-approval'));
+ assert.match(h.runtime.snapshot().permissionDescription,/Full access/);
+ assert.doesNotMatch(h.runtime.snapshot().permissionDescription,/sandboxed command mode/);
+});
+
+test('disconnect and default reconnect do not retain Full access',async t=>{
+ const h=await harness(t);
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,fullAccess:true});
+ await h.runtime.disconnect();
+ assert.equal(h.runtime.snapshot().fullAccess,false);
+ await h.connect();
+ assert.equal(h.runtime.snapshot().fullAccess,false);
+ assert.ok(h.calls.some(c=>c.args[0]==='sandbox'));
+ assert.ok(!h.calls.at(-1).args.includes('--disable-sandbox'));
+});
+
+test('invalid Full access values cannot start a host',async t=>{
+ const h=await harness(t);
+ for(const fullAccess of ['true',1,null,{}])await assert.rejects(h.runtime.connect({binary:h.binary,workspaceRoot:h.root,fullAccess}),/Full access/);
+ assert.equal(h.calls.length,0);
+});
+
 test('reasoning and approval selections reach each native run without disabling the sandbox',async t=>{
  for(const [approval,args] of [['ask',['--permission-profile',':ask-me']],['auto',['--permission-profile',':auto-review']],['never',['--approval-mode','never','--approval-judge','off']]]){
   const h=await harness(t);await h.connect();await h.runtime.send({text:'Explain the code',runOptions:{reasoning:'xhigh',approval}});
