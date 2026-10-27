@@ -1,7 +1,10 @@
 import type {NativeHook} from './native-hooks.mjs';
 export type CustomizeTab='skills'|'connectors'|'plugins'|'mcp'|'hooks';
 export interface ExtensionCapability {kind:string;count:number}
+export interface HookPreset {id:string;name:string;revision:string;hooks:NativeHook[]}
+export interface HookPresetState {revision:string;items:HookPreset[]}
 export interface CustomizeState {hooks?:{root:string;revision:string;items:NativeHook[]}|null;skillImports?:{title:string;folder:string;fingerprint:string;at:string}[];
+ hookPresets?:HookPresetState|null;
  available:boolean;errors:string[];pluginsReviewed:boolean;pluginRevision:string|null;
  skills:{id:string;title:string;description:string;scope:string;activation:'on'|'off'|'user-only'}[];
  plugins:{id:string;title:string;description:string;version:string;enabled:boolean;valid:boolean;capabilities:ExtensionCapability[];reviewRequired:boolean}[];
@@ -9,7 +12,7 @@ export interface CustomizeState {hooks?:{root:string;revision:string;items:Nativ
 }
 export interface PreparedExtension {fingerprint?:string;instructions?:string;files?:string[];token:string;kind:'skills'|'plugins';title:string;folder:string;capabilities:ExtensionCapability[]}
 export type ServerSetup={name:string;transport:'streamable_http';url:string}|{name:string;transport:'stdio';command:string;args:string[]};
-export type CustomizeCommand={type:'saveHooks';root:string;revision:string;hooks:NativeHook[];reviewed:true}|{type:'reviewProject'}|{type:'approveProject';root:string;fingerprint:string;reviewed:true}|{type:'revokeProject';root:string}|{type:'preparePackSkill';id:string}|{type:'refresh'|'prepareSkill'|'preparePlugin'}|{type:'install';token:string;reviewed:true}|{type:'skillActivation';id:string;activation:'on'|'off'|'user-only'}|{type:'createSkill';name:string;description:string;instructions:string}|{type:'pluginAction';revision:string|null;id:string;action:'enable'|'disable'|'remove';reviewed:true}|{type:'reviewPlugins';revision:string|null;reviewed:true}|{type:'saveServer';server:ServerSetup;reviewed:true}|{type:'serverAction';revision:string;name:string;action:'enable'|'disable'|'remove'|'login'|'logout'|'review';reviewed?:true};
+export type CustomizeCommand={type:'saveHookPreset';revision:string;id?:string;name:string;hooks:NativeHook[]}|{type:'deleteHookPreset';revision:string;id:string}|{type:'saveHooks';root:string;revision:string;hooks:NativeHook[];reviewed:true}|{type:'reviewProject'}|{type:'approveProject';root:string;fingerprint:string;reviewed:true}|{type:'revokeProject';root:string}|{type:'preparePackSkill';id:string}|{type:'refresh'|'prepareSkill'|'preparePlugin'}|{type:'install';token:string;reviewed:true}|{type:'skillActivation';id:string;activation:'on'|'off'|'user-only'}|{type:'createSkill';name:string;description:string;instructions:string}|{type:'pluginAction';revision:string|null;id:string;action:'enable'|'disable'|'remove';reviewed:true}|{type:'reviewPlugins';revision:string|null;reviewed:true}|{type:'saveServer';server:ServerSetup;reviewed:true}|{type:'serverAction';revision:string;name:string;action:'enable'|'disable'|'remove'|'login'|'logout'|'review';reviewed?:true};
 export interface CustomizeResult {projectReview?:ProjectInstructionReview;state?:CustomizeState;prepared?:PreparedExtension|null;message?:string}
 
 export interface ProjectInstructionReview {root:string;fingerprint:string;reviewed:boolean;files:{path:string;text:string}[];}

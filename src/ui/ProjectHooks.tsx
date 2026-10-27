@@ -1,13 +1,23 @@
 import {useEffect,useState} from 'react';
 import {HOOK_EVENTS,type NativeHook} from '../shared/native-hooks.mjs';
 import type {CustomizeCommand,CustomizeState} from '../shared/customize-types';
-export function ProjectHooks({config,disabled,save}:{config:CustomizeState['hooks'];disabled:boolean;save:(command:CustomizeCommand)=>void}){
+export function ProjectHooks({config,presets,disabled,save}:{config:CustomizeState['hooks'];presets?:CustomizeState['hookPresets'];disabled:boolean;save:(command:CustomizeCommand)=>void}){
  const [items,setItems]=useState<NativeHook[]>(config?.items??[]),[reviewed,setReviewed]=useState(false);
- useEffect(()=>{setItems(config?.items??[]);setReviewed(false);},[config?.root,config?.revision]);
+ const [presetId,setPresetId]=useState(''),[presetName,setPresetName]=useState(''),[loaded,setLoaded]=useState('');
+ useEffect(()=>{setItems(config?.items??[]);setReviewed(false);setLoaded('');},[config?.root,config?.revision]);
  const change=(next:NativeHook[])=>{setItems(next);setReviewed(false);};
  if(!config)return <p>Open a project to configure its hooks.</p>;
  const dirty=JSON.stringify(items)!==JSON.stringify(config.items);
+ const selected=presets?.items.find(item=>item.id===presetId);
  return <div className="project-hooks"><p className="extensions-path">{config.root}</p>
+ {presets&&<details><summary>Reusable presets</summary><fieldset disabled={disabled}><legend>Hook preset</legend><p className="extensions-help">Presets are local templates. Loading one replaces this draft; review and save below to use it in this project.</p>
+ <label>Saved preset<select aria-label="Saved hook preset" value={selected?.id??''} onChange={e=>{const preset=presets.items.find(item=>item.id===e.target.value);setPresetId(preset?.id??'');setPresetName(preset?.name??'');}}><option value="">New preset</option>{presets.items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+ <button className="button" disabled={!selected} onClick={()=>{if(selected){change(structuredClone(selected.hooks));setLoaded(selected.name);}}}>Load into draft</button>
+ <label>Preset name<input aria-label="Hook preset name" maxLength={80} value={presetName} onChange={e=>setPresetName(e.target.value)}/></label>
+ <button className="button" disabled={!presetName.trim()||presets.items.length>=20} onClick={()=>save({type:'saveHookPreset',revision:presets.revision,name:presetName,hooks:items})}>Save draft as new preset</button>
+ {selected&&<><button className="button" disabled={!presetName.trim()} onClick={()=>save({type:'saveHookPreset',revision:presets.revision,id:selected.id,name:presetName,hooks:items})}>Update preset from draft</button><button className="text-link" onClick={()=>save({type:'deleteHookPreset',revision:presets.revision,id:selected.id})}>Delete preset</button></>}
+ {loaded&&<p className="extensions-help" role="status">Loaded {loaded} into the draft. Project hooks have not changed.</p>}
+ </fieldset></details>}
  <p>Hooks run as your Windows account, outside the agent sandbox and tool approval flow. Commands may change files or send data. Do not put credentials in commands. Review any scripts they call.</p>
  <p className="extensions-help">Before prompt runs when you submit; Before finish runs when Muse tries to finish and can block completion. Muse enforces hook timeouts; process cleanup can take longer. Failures may allow the turn to continue. Hooks are not a security boundary.</p>
  {items.map((item,index)=><fieldset key={index} disabled={disabled}><legend>Hook {index+1}</legend>

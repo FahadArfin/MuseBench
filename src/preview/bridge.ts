@@ -1,225 +1,229 @@
-import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
-import {newGoalDriver,pauseGoalDriver} from '../shared/goal-driver.mjs';
-import {proposeLesson,decideLesson} from '../shared/project-lessons.mjs';
-import {composeChatContext} from '../shared/chat-context.mjs';
-import {literalIndex} from '../shared/literal-search.mjs';
-import {validateCheckScripts,missingChecks} from '../shared/validation.mjs';
-import {validateHooks} from '../shared/native-hooks.mjs';
-import uiSkill from '../../templates/musebench-skills/musebench-ui-parity/SKILL.md?raw';
-import runtimeSkill from '../../templates/musebench-skills/musebench-runtime-check/SKILL.md?raw';
-import releaseSkill from '../../templates/musebench-skills/musebench-release-check/SKILL.md?raw';
-import {MUSEBENCH_SKILL_PACK} from '../shared/skill-pack.mjs';
-import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
-import {handoffText} from '../shared/context-handoff.mjs';
-import {moveQueuedPrompt} from '../shared/queued-prompts.mjs';
-import {loadSnapshots,selectSnapshot,selectedSnapshot,subscribeSnapshots,type SnapshotKey} from './snapshots';
-import {planSidebarMove} from '../shared/sidebar-order.mjs';
-import {projectDetails} from '../shared/create-project.mjs';
-import type {Action,AppState,MuseBenchBridge,PersonalState,Task,RuntimeState} from '../shared/types';
-import type {WorkState,WorkItem} from '../shared/work-types';
-import type {SitesState,SiteItem} from '../shared/sites-types';
-import type {SpacesState,SpacePage} from '../shared/spaces-types';
-import type {CustomizeState} from '../shared/customize-types';
-import {demoArtifact,validateArtifact} from '../shared/work-artifacts.mjs';
-
-const stamp='2026-10-26T14:00:00.000Z';
-const copy=<T,>(value:T):T=>structuredClone(value);
-const id=()=>crypto.randomUUID();
-const desktop=async():Promise<never>=>{throw new Error('This action needs the MuseBench desktop app. Browser preview uses sample data only.');};
-const runtime:RuntimeState={interactiveAvailable:true,simulation:true,transport:'exec',fullAccess:false,status:'ready',reason:'Browser preview · No model or shell connection',binary:null,sdkVersion:'Preview',modelId:'Muse · sample',liveVerified:false};
-function task(title:string,taskId:string=id(),projectId='preview-project'):Task {
- return {id:taskId,projectId,title,mode:'muse',createdAt:stamp,updatedAt:stamp,acceptedRevision:null,request:title,plan:'',criteria:[],planApproved:false,baselineRevision:'sample-before',revision:'sample-after',changes:[],messages:[{id:id(),role:'user',text:title,at:stamp}],shellResults:[],check:null,previewRevision:null,runtimeComplete:true,runOptions:{reasoning:'high',approval:'ask'},runs:[]};
-}
-function channel<T>(get:()=>T){
- const listeners=new Set<(value:T)=>void>();
- return {read:async()=>copy(get()),on:(listener:(value:T)=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener);};},emit:()=>{const next=copy(get());for(const listener of listeners)listener(copy(next));return next;}};
-}
-
-export function createPreviewBridge():MuseBenchBridge {
- const project={id:'preview-project',name:'MuseBench sample',root:'Sample workspace / MuseBench',demo:false,scripts:{test:'Example tests',build:'Example build'},instructions:'Keep the interface clear and accessible.'};
- const initial=task('Build a clearer project overview','preview-overview');
- initial.messages.push({id:id(),role:'assistant',at:stamp,text:'The project overview now keeps your recent threads together, with a clear place to start a new chat.\n\nYou can open the changed file below, explore the composer controls, or switch to Muse AI. This is fictional sample content for visual feedback.'});
- initial.changes=[{path:'src/ProjectOverview.tsx',status:'modified',additions:3,deletions:1,before:'<h1>Project</h1>\n',after:'<h1>Your project</h1>\n<p>Pick up where you left off.</p>\n<button>New chat</button>\n'}];
- initial.goal={objective:'Finish the sample project with passing validation',status:'active'};
- initial.executionReceipts=[{id:'sample-request',phase:'settled',result:'unknown',acceptance:'accepted',delivery:'not-requested',createdAt:stamp,updatedAt:stamp,reason:'Preview example: interrupted before the result was confirmed.'}];
- initial.runs=[{id:'sample-run',promptId:initial.messages[0].id,prompt:initial.request,runId:'sample',status:'completed',startedAt:stamp,endedAt:stamp,activities:[{id:'sample-layout',kind:'tool',title:'Updated the project overview',tool:'edit',status:'completed',detail:'src/ProjectOverview.tsx',output:'Sample change for preview only.'}]}];
- initial.runs[0].activities.push({id:'sample-workflow',kind:'tool',title:'Workflow: Preview review',tool:'workflow',status:'completed',detail:'Simulated workflow progress for preview only',output:'',workflow:{parentRunId:'sample',parallelLimit:2}});
- const other=task('Polish the chat composer','preview-composer');
- other.messages.push({id:id(),role:'assistant',at:stamp,text:'A compact composer keeps attachments, reasoning, and approval controls close to your message. Open the menus to review their spacing.'});
- const tasks=new Map([initial,other].map(t=>[t.id,t]));
- const state:AppState={workflows:copy(DEFAULT_WORKFLOWS),backgroundChats:true,projectCreationRoot:'Documents/MuseBench',projects:[project],tasks:[initial,other],activeProject:project,task:initial,checkpoints:[{id:'sample-checkpoint',taskId:initial.id,title:'Sample accepted revision',revision:'sample-before',createdAt:stamp}],preview:{status:'stopped',url:null,log:'',script:null},runtime:copy(runtime),busy:false,error:null,drafts:{}};
- const code=channel(()=>state);
- function sync(){state.tasks=[...tasks.values()];return code.emit();}
- const sampleWorktrees:import('../shared/types').ManagedWorktree[]=[];
- const imageData=new Map<string,string>();
- function reply(current:Task,text:string,images:import('../shared/types').CodeImage[]=[]){current.nativeSession??={id:id(),root:state.activeProject?.root??project.root,seeded:true,status:'ready'};current.messages.push({id:id(),role:'user',text,images,at:new Date().toISOString()},{id:id(),role:'assistant',text:'Preview reply — your message is shown here so you can review the conversation layout. No request was sent to Muse and no project files were changed.',at:new Date().toISOString()});current.updatedAt=new Date().toISOString();}
- async function dispatch(action:Action):Promise<AppState>{
-  const current=state.task;
-  switch(action.type){
-   case 'createReviewer':if(current){const child=task('Review · '+action.question);child.reviewContract={parentTaskId:current.id,parentProjectId:current.projectId,sourceRevision:'sample-after',inputRevision:'sample-after',role:action.role,question:action.question,budget:'standard',createdAt:stamp};child.messages.push({id:id(),role:'assistant',text:JSON.stringify({findings:[],unresolved:['Preview only. No independent native review was executed.']}),at:stamp});child.runtimeComplete=true;current.reviewChildren=[...(current.reviewChildren??[]),child.id];tasks.set(child.id,child);state.task=child;}break;
-   case 'integrateReview':if(current?.reviewContract){const parent=tasks.get(current.reviewContract.parentTaskId);if(parent){const draft=state.drafts?.[`${parent.projectId}:${parent.id}`];if(draft?.text||draft?.files?.length||draft?.images?.length)throw Error('The parent already has a draft. Save or send it before integrating this review.');(state.drafts??={})[`${parent.projectId}:${parent.id}`]={text:'Simulated review: no native execution. Review the example findings before sending.',files:[],images:[],mode:'chat',updatedAt:stamp};state.task=parent;}}break;
-   case 'cancelReviewers':break;
-
-   case 'continueGoal':if(current?.goal){current.goal.driver=newGoalDriver(action);pauseGoalDriver(current.goal.driver,'Preview: no native runs are dispatched.');}break;
-   case 'pauseGoalContinuation':pauseGoalDriver(current?.goal?.driver,'Paused by you');break;
-   case 'setExecutionAccess':state.runtime={...state.runtime,fullAccess:action.fullAccess,transport:action.fullAccess?state.runtime.transport:'exec',status:'ready',permissionVerified:true,sessionId:'preview-connection'};break;
-   case 'connectMuse':state.runtime={...state.runtime,interactiveAvailable:true,foregroundActive:false,childrenBusy:false,childWorkPending:0,transport:action.transport??state.runtime.transport,questionsSupported:action.transport==='msp',pending:null,pendingRequests:[],inputResponses:[],inputResponse:null,steeringSupported:action.transport==='msp',compactionSupported:action.transport==='msp',childControlsSupported:action.transport==='msp',children:action.transport==='msp'?{items:[{itemId:'sample-child',kind:'subagent',revision:1,status:'completed',controlStatus:'resultReady',objective:'Review keyboard navigation',result:{summary:'Sample result: keyboard focus follows the visible controls.'}},{itemId:'sample-workflow',kind:'workflow',revision:2,status:'completed',label:'Review workflow',children:[{childId:'sample-attempt',attempt:1,status:'terminal',terminal:'failed',label:'Accessibility check',failureReason:'Sample failed attempt'}]}],truncated:false}:{items:[],truncated:false},childReceipts:[],operationBusy:false,compaction:null,turnId:action.transport==='msp'?'preview-turn':null,fullAccess:action.fullAccess===true,status:'ready',sessionId:'preview-connection',permissionVerified:true,shellEnabled:true,reason:'Browser preview - Simulated connection; no commands run'};break;
-   case 'disconnectMuse':state.runtime={...state.runtime,pending:null,pendingRequests:[],fullAccess:false,foregroundActive:false,childrenBusy:false,childWorkPending:0,shellEnabled:false,status:'unavailable',sessionId:null,permissionVerified:false,reason:'Browser preview - Disconnected'};break;
-   case 'proposeLesson':{if(state.activeProject)proposeLesson(state.activeProject,{id:id(),title:action.title,text:action.text,applicability:action.applicability,sourceTaskId:action.taskId,sourceMessageId:action.messageId,revision:'sample-after',validation:null});break;}
-   case 'decideLesson':{if(state.activeProject)decideLesson(state.activeProject,action.id,action.decision);break;}
-   case 'restoreCheckpoint':{state.checkpoints.unshift({id:id(),taskId:action.taskId,title:'Before restore (simulated)',revision:'sample-after',createdAt:stamp});break;}
-   case 'refreshModels':state.runtime.modelCatalog={source:'Preview sample',models:[{id:'muse-preview',label:'Muse · sample',description:'Preview catalog only. No model request is sent.',efforts:['low','medium','high'],defaultEffort:'high',isDefault:true,contextLimit:null}]};break;
-   case 'createProject':{const details=projectDetails(action);if(state.projects.some(p=>p.name.toLowerCase()===details.name.toLowerCase()))throw Error('A project with this name already exists.');const next={id:id(),name:details.name,root:`Documents/MuseBench/${details.name}`,demo:false,scripts:{},instructions:details.instructions};state.projects.push(next);state.activeProject=next;state.task=null;break;}
-   case 'selectProject':state.activeProject=state.projects.find(p=>p.id===action.id)??project;break;
-   case 'selectTask':state.task=tasks.get(action.id)??initial;state.activeProject=state.projects.find(p=>p.id===state.task!.projectId)??project;break;
-   case 'newTask':{const next=task(action.request,id(),state.activeProject?.id??project.id);next.runOptions=action.runOptions??next.runOptions;next.messages.push({id:id(),role:'assistant',text:'Preview conversation created. Messages stay in this browser tab until you reset or reload.',at:stamp});tasks.set(next.id,next);state.task=next;break;}
-   case 'createWorktree':case 'openWorktree':case 'recoverWorktree':{let item=action.type==='openWorktree'?sampleWorktrees.find(i=>i.id===action.id):undefined;if(action.type==='createWorktree'||action.type==='recoverWorktree'){if(!action.branch.trim()||action.branch.startsWith('-'))throw Error('Choose a valid branch.');item={id:id(),branch:action.branch,base:action.type==='createWorktree'?action.base:'sample-archive',commit:'sample-base',path:'Sample worktrees/'+action.branch,sourceRoot:project.root,createdAt:stamp,status:'ready',available:true};sampleWorktrees.push(item);}if(!item)throw Error('Worktree unavailable');let p=state.projects.find(p=>p.root===item!.path);if(!p){p={...project,id:id(),name:project.name+' · '+item.branch,root:item.path,branch:item.branch,worktree:{id:item.id,sourceRoot:item.sourceRoot,branch:item.branch,base:item.base}};state.projects.push(p);}state.activeProject=p;state.task=null;break;}
-   case 'archiveWorktree':case 'restoreWorktree':{const item=sampleWorktrees.find(w=>w.id===action.id);if(item){item.status=action.type==='archiveWorktree'?'archived':'ready';if(action.type==='archiveWorktree')item.archiveCommit='sample-archive';}break;}
-   case 'setupWorktree':if(current)current.check={id:id(),script:action.script,command:'Preview: '+action.script,status:'not-run',revision:current.revision,exitCode:null,log:'Preview only. No setup command was executed.',startedAt:stamp};break;
-   case 'recoverSession':if(current){if(action.choice==='fresh')current.nativeSession=null;else if(current.nativeSession)current.nativeSession.status='ready';}break;
-   case 'saveWorkflow':{const w=validateWorkflow(action.workflow);state.workflows=[...(state.workflows??[]).filter(i=>i.id!==w.id),w];break;}
-   case 'deleteWorkflow':state.workflows=state.workflows?.filter(w=>w.id!==action.id);break;
-   case 'saveValidationProfile':{if(!state.activeProject||state.activeProject.id!==action.projectId)throw Error('Project changed.');state.activeProject.validationScripts=validateCheckScripts(action.scripts);break;}
-   case 'runValidation':{if(!current||!state.activeProject?.validationScripts?.length)throw Error('Save a validation profile first.');const scripts=state.activeProject.validationScripts;current.checkReceipts=scripts.map(script=>({id:id(),script,command:`Sample: ${script}`,status:'passed',revision:current.revision,exitCode:0,log:'Simulated check. No command was executed.',startedAt:stamp,endedAt:stamp}));current.check=current.checkReceipts.at(-1)!;current.validationRun={scripts,revision:current.revision,index:scripts.length-1,status:'passed'};break;}
-   case 'queueWorkflow':{if(!current||current.id!==action.taskId)throw Error('The selected chat changed.');if(current.promptQueue?.some(q=>q.workflow?.id===action.id))break;const w=state.workflows?.find(w=>w.id===action.workflowId);if(!w)throw Error('Workflow unavailable.');const prompts=workflowPrompts(w,action.objective);if((current.promptQueue??[]).length+prompts.length>5)throw Error('Make room in the queue for all workflow phases.');for(const p of prompts)(current.promptQueue??=[]).push({id:id(),text:p.text,files:[],images:[],mode:'chat',runOptions:{...current.runOptions!,budget:p.budget},at:stamp,...(p.requiredChecks?.length?{requiredChecks:p.requiredChecks}:{}),workflow:{id:action.id,title:w.title,phase:p.title,index:p.index,total:prompts.length}});current.queuePaused=true;break;}
-   case 'handoffContext':{if(!current||current.id!==action.sourceTaskId)throw Error('The selected source chat changed.');const target=tasks.get(action.targetTaskId);if(!target||target.archived||target.id===current.id)throw Error('Choose another active chat.');if(target.promptQueue?.some(q=>q.handoff?.id===action.id))break;if((target.promptQueue??[]).length>=5)throw Error('The recipient queue already holds five prompts.');const text=handoffText({title:current.title,project:state.activeProject?.name??'Sample project',text:action.text,files:action.files.map(f=>({...f,text:'Preview file snapshot'}))});(target.promptQueue??=[]).push({id:id(),text,files:[],images:[],mode:'chat',runOptions:copy(target.runOptions!),at:stamp,handoff:{id:action.id,sourceTaskId:current.id,sourceTitle:current.title}});break;}
-   case 'queueMessage':if(current){if((current.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');if(!action.text.trim())throw Error('Enter a prompt.');(current.promptQueue??=[]).push({id:id(),text:action.text.trim(),files:copy(action.files??[]),images:copy(action.images??[]),mode:action.mode??'chat',runOptions:copy(action.runOptions??current.runOptions!),at:stamp});current.queuePaused=true;}break;
-   case 'moveQueued':if(current)current.promptQueue=moveQueuedPrompt(current,action);break;
-   case 'removeQueued':if(current)current.promptQueue=current.promptQueue?.filter(item=>item.id!==action.id);break;
-   case 'pauseQueue':if(current)current.queuePaused=true;break;
-   case 'resumeQueue':if(current){const next=current.promptQueue?.[0];if(next&&missingChecks(current,current.revision,next.requiredChecks??[]).length)throw Error('Run passing checks for this revision before this workflow phase.');current.promptQueue?.shift();if(next)reply(current,next.text,next.images);current.queuePaused=true;}break;
-   case 'childControl':if(current){const receipt={commandId:id(),sessionId:action.sessionId,itemId:action.itemId,revision:action.revision,action:action.action,body:action.body,status:'accepted',at:stamp};state.runtime.childReceipts=[receipt];current.childControlReceipts=[receipt];if(['followupTask','resume','reopen','retry'].includes(action.action))state.runtime={...state.runtime,status:'running',foregroundActive:false,childrenBusy:true,childWorkPending:1};}break;
-   case 'compactSession':if(current){const receipt={commandId:id(),sessionId:action.sessionId,turnId:action.turnId,status:'compacted',at:stamp,tokensBefore:24000,tokensAfter:9000};state.runtime.compaction=receipt;current.compactionReceipts=[receipt];}break;
-   case 'steerMessage':if(current){current.messages.push({id:id(),role:'user',text:action.text,at:stamp});state.runtime.steering={status:'accepted',commandId:id(),turnId:action.expectedTurnId};}break;
-   case 'answerInput':{const requests=state.runtime.pendingRequests??(state.runtime.pending?[state.runtime.pending]:[]),p=inputPrompt(requests.find(value=>(value as {userInputId?:string}).userInputId===action.userInputId));if(!p||action.taskId!==current?.id||action.sessionId!==p.sessionId||action.userInputId!==p.userInputId||action.turnId!==p.turnId||action.revision!==p.revision)throw Error('The question changed.');validateInputAnswers(p,action);if(action.operation==='engage')break;const remaining=requests.filter(value=>(value as {userInputId?:string}).userInputId!==p.userInputId) as NonNullable<AppState['runtime']['pendingRequests']>;const receipt={status:'settled',userInputId:p.userInputId,outcome:action.operation==='cancel'?'cancelled':'answered'};state.runtime={...state.runtime,pending:remaining[0]??null,pendingRequests:remaining,status:remaining.length?'blocked':'completed',reason:remaining.length?'Simulated native question':null,inputResponse:receipt,inputResponses:[...(state.runtime.inputResponses??[]),receipt]};break;}
-   case 'sendMessage':if(current){reply(current,action.text,action.images);if(state.runtime.transport==='msp'){state.runtime={...state.runtime,status:'running',foregroundActive:true,turnId:'preview-turn',steeringSupported:true};if(['/preview-question','/preview-questions'].includes(action.text))state.runtime={...state.runtime,status:'blocked',reason:'Simulated native question',inputResponse:null,pending:{kind:'input',sessionId:state.runtime.sessionId,userInputId:'preview-question',turnId:'preview-turn',revision:1,questions:[{id:'approach',header:'Approach',question:'Which implementation should I use?',selection:{mode:'single'},options:[{label:'Extend the existing component',description:'Keep the current architecture.'},{label:'Create a separate component'}]}]}};if(state.runtime.pending){const first=state.runtime.pending as NonNullable<AppState['runtime']['pendingRequests']>[number];state.runtime.pendingRequests=action.text==='/preview-questions'?[first,{...first,userInputId:'preview-question-two',revision:2}]:[first];}}}break;
-   case 'renameTask':if(current)current.title=action.title;break;
-   case 'setRunOptions':if(current)current.runOptions=copy(action.runOptions);break;
-   case 'setGoal':if(current)current.goal={objective:action.objective,status:action.status};break;
-   case 'setMemories':state.memories=action.text;break;
-   case 'setProjectInstructions':{const target=state.projects.find(p=>p.id===action.projectId);if(target)target.instructions=action.text;break;}
-   case 'moveSidebarItem':{const planned=planSidebarMove(state.projects,[...tasks.values()],state.sidebarOrder,action);state.sidebarOrder=planned.orders;if(action.kind==='chat'){const target=tasks.get(action.id)!;if(action.section==='project'){target.projectId=action.projectId!;if(state.task?.id===target.id)state.activeProject=state.projects.find(p=>p.id===target.projectId)!;}if(action.section==='pinned')target.pinned=true;if(action.section==='recents')target.pinned=false;}break;}
-   case 'setTaskFlags':{const target=tasks.get(action.id);if(target){if(action.pinned!==undefined)target.pinned=action.pinned;if(action.archived!==undefined){if(action.archived&&!target.archived)target.archivedAt=new Date().toISOString();if(!action.archived)target.archivedAt=null;target.archived=action.archived;}if(target.archived)target.pinned=false;}break;}
-   case 'deleteTask':{const target=tasks.get(action.id);if(!target?.archived)throw Error('Archive this chat first.');tasks.delete(action.id);if(state.task?.id===action.id)state.task=null;for(const key of Object.keys(state.drafts??{})){if(key.endsWith(action.id))delete state.drafts![key];}break;}
-   case 'forkTask':if(current){const index=current.messages.findIndex(m=>m.id===action.messageId&&m.role!=='system');if(index<0)throw Error('Select a sample message first.');const selected=current.messages[index],fork=copy(current);fork.id=id();fork.title=`Branch: ${current.title}`;fork.pinned=false;fork.archived=false;fork.archivedAt=null;fork.messages=fork.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({...m,id:id()}));fork.runs=[];fork.changes=[];if(selected.role==='user')(state.drafts??={})[`${fork.projectId}:${fork.id}`]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:new Date().toISOString()};tasks.set(fork.id,fork);state.task=fork;}break;
-   case 'clearError':state.error=null;break;
-   case 'refresh':break;
-   default:return desktop();
-  }
-  return sync();
- }
- const personal:PersonalState={profile:{displayName:'Alex Morgan',avatarSeed:'musebench-sample-account',sample:true},destination:'bot',loading:false,origin:'',error:null,canGoBack:false,canGoForward:false,visible:false,available:{bot:true,chat:true,ideas:true,goals:true},compact:true,notice:null,authenticating:false,authWindowOpen:false,library:{selectedId:'sample-chat',chats:{status:'ready',items:[{id:'sample-chat',kind:'chat',title:'Plan a thoughtful week'},{id:'sample-notes',kind:'chat',title:'Turn notes into next steps'}]},ideas:{status:'ready',items:[{id:'sample-idea',kind:'idea',title:'A calmer morning routine'}]},goals:{status:'ready',items:[{id:'sample-goal',kind:'goal',title:'Build a habit of learning'}]}}};
- const person=channel(()=>personal);
- function applySnapshot(){const {key,snapshot}=selectedSnapshot();personal.schedules=key==='scheduled'?copy(snapshot?.personal?.schedules??{status:'unavailable',items:[]}):null;if(snapshot?.personal){personal.agentProfile=copy(snapshot.personal.agentProfile);personal.library=copy(snapshot.personal.library);}person.emit();}
- subscribeSnapshots(applySnapshot);void loadSnapshots();
- const workItems:WorkItem[]=[{id:'sample-work',title:'Weekly operations brief',team:'operations',kind:'document',projectId:'sample-work-project',taskId:'sample-work-task',createdAt:stamp,updatedAt:stamp,sources:[],demo:true}];
- const workTasks=new Map([['sample-work',task('Summarize our weekly priorities','sample-work-task','sample-work-project')]]);
- const artifacts=new Map([['sample-work',demoArtifact('document','operations')]]);
- const work:WorkState={items:workItems,activeId:null,item:null,task:null,runtime:copy(runtime),busy:false,error:null,artifact:null,artifactError:null,artifactUpdatedAt:null,capabilities:{mp4:false}};
- const workChannel=channel(()=>work);
- function selectWork(key:string){work.item=workItems.find(i=>i.id===key)??null;work.activeId=work.item?.id??null;work.task=workTasks.get(key)??null;work.artifact=artifacts.get(key)??null;work.artifactUpdatedAt=stamp;}
- const spaces:SpacesState={spaces:[{id:'sample-space',spaceId:'sample-space',name:'Design studio',url:'',local:true}],activeId:null,snapshot:null,page:null,comments:[],history:[],error:null,conflict:false,busy:false,lastSynced:stamp,invitation:null,hosting:null};
- const pages:SpacePage[]=[{id:'sample-page',title:'Welcome to the studio',type:'note',revision:1,updatedAt:stamp,updatedBy:'Preview member',body:'# A place to work together\n\nKeep project notes, ideas, and decisions in one shared space.\n\n- Agree on the next milestone\n- Share a useful draft\n- Leave focused feedback'}];
- const spaceChannel=channel(()=>spaces);
- function selectSpace(){spaces.activeId='sample-space';spaces.snapshot={space:{id:'sample-space',name:'Design studio',description:'A fictional shared workspace',createdAt:stamp},self:{id:'preview-member',name:'Preview member',role:'owner',joinedAt:stamp},members:[{id:'preview-member',name:'Preview member',role:'owner',joinedAt:stamp}],pages,invites:[]};spaces.page=pages[0];}
- const site:SiteItem={id:'sample-site',title:'Studio notes',description:'A simple home for your next idea.',slug:'studio-notes',createdAt:stamp,updatedAt:stamp,source:'starter',draftHash:'sample',liveVersionId:null,url:null,remoteId:null,remoteName:null,status:'draft'};
- const siteFiles:Record<string,string>={'index.html':'<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:10%;font:18px system-ui;background:#101b2c;color:#e6efff}small{color:#79afff}h1{font-size:clamp(30px,6vw,64px);line-height:1.1;max-width:650px}p{max-width:480px;line-height:1.6}</style></head><body><small>STUDIO NOTES · SAMPLE SITE</small><h1>Make room for your next idea.</h1><p>A quiet place to share the things you are building. This is a local preview, not a published website.</p></body></html>'};
- const sites:SitesState={items:[site],activeId:null,site:null,files:[],versions:[],previewUrl:null,hosting:{connected:false,accountName:null,teams:[],teamId:null,oauthAvailable:false,authPending:false},busy:false,operation:null,error:null,notice:null,generation:null};
- const siteChannel=channel(()=>sites);
- function selectSite(key:string){sites.site=sites.items.find(i=>i.id===key)??site;sites.activeId=sites.site.id;sites.files=Object.entries(siteFiles).map(([path,text])=>({path,bytes:new TextEncoder().encode(text).length,sha1:'sample',mime:'text/html'}));sites.previewUrl=`data:text/html;charset=utf-8,${encodeURIComponent(siteFiles['index.html'])}`;}
- const hookProjects=new Map<string,NonNullable<CustomizeState['hooks']>>();
- const customize:CustomizeState={available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only'}],plugins:[],servers:[]};
- const updateListeners=new Set<(state:import('../shared/types').AppUpdateState)=>void>();
- let appUpdate:import('../shared/types').AppUpdateState={version:'0.2.0',status:'idle',availableVersion:null,percent:0,lastChecked:null,error:null,simulation:true};
- const updateEmit=(patch:Partial<typeof appUpdate>)=>{appUpdate={...appUpdate,...patch};updateListeners.forEach(fn=>fn(copy(appUpdate)));};
- const dictation={id:null,status:'idle' as const,available:false,language:null,text:'',error:'Microphone input is available in the desktop app.'};
- return {
-  appUpdate:async command=>{if(command==='check')updateEmit({status:'available',availableVersion:'0.2.1',lastChecked:'2026-10-26T12:00:00Z',error:null});if(command==='download'){updateEmit({status:'downloading',percent:45});await new Promise(r=>setTimeout(r,400));updateEmit({status:'downloaded',percent:100});}if(command==='install')updateEmit({error:'Preview only. The desktop app would install and reopen.'});return copy(appUpdate);},
-  onAppUpdate:fn=>{updateListeners.add(fn);return()=>{updateListeners.delete(fn);};},
-  windowControlsOverlay:true,
-  inspectWorktrees:async input=>({root:state.projects.find(p=>p.id===input.projectId)?.root??project.root,branch:'main',head:'sample-base',dirty:true,items:copy(sampleWorktrees)}),
-  importCodeImage:async input=>{const match=/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(input.dataUrl);if(!match||input.dataUrl.length>11200000)throw Error('Choose an image up to 8 MB.');const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));const id=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');imageData.set(input.projectId+id,input.dataUrl);return{id,name:input.name,mime:match[1],bytes:bytes.length};},
-  readCodeImage:async input=>{const data=imageData.get(input.projectId+input.image.id);if(!data)throw Error('Screenshot unavailable');return data;},
-  getState:code.read,onState:code.on,dispatch,openProjectFile:desktop,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);if(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},
-  configureNotifications:async()=>({supported:false}),dictation:async command=>{if(['status','refresh','cancel','stop'].includes(command))return copy(dictation);return desktop();},onDictation:()=>()=>{},
-  saveCodeDraft:async input=>{state.drafts![`${input.projectId}:${input.taskId??'new'}`]={text:input.text,files:copy(input.files),images:copy(input.images??[]),mode:input.mode};},
-  inspectCheckpoint:async input=>{if(!tasks.has(input.taskId))throw Error('Chat not found.');return{revision:'sample-after',files:copy(initial.changes).map(f=>({...f,restorable:!f.binary})),operations:[]};},
-  semanticNavigate:async input=>{if(input.projectId!==state.activeProject?.id)throw Error('Choose the current project.');return {operation:input.operation,path:input.path,line:input.line,column:input.column,items:input.operation==='hover'?[]:[{path:'src/ProjectOverview.tsx',line:1,column:17,endLine:1,endColumn:32}],hover:input.operation==='hover'?{path:input.path,line:input.line,column:input.column,endLine:input.line,endColumn:input.column+15,display:'function ProjectOverview(): JSX.Element',documentation:'Preview sample component.'}:null,truncated:false,snapshot:'preview-sample',scope:{files:2,bytes:500,entries:2,skipped:{symlinks:0,directories:0},config:'fixed-no-project-config',standardLibrary:false,excludedDirectories:['node_modules','.*']},engine:'Preview sample � no source files read',elapsedMs:0};},
-  readCapturedOutput:async input=>{if(!tasks.has(input.taskId))throw Error('Chat not found.');const body='Sample validation output. No command was executed.\n\nsrc/app.ts(12,3): error TS2322: Example type diagnostic\n'+'Example output line\n'.repeat(4000)+'Capture complete.\n';const item={id:'sample-output',label:'Sample: npm test',status:'failed',received:body.length,length:body.length,captureTruncated:false,sourceTruncated:false};const match=input.query?literalIndex(body,input.query,input.offset??0):-1,offset=match>=0?Math.max(0,match-80):Math.min(input.offset??0,body.length);return{items:[item],selected:input.id?{...item,text:body.slice(offset,offset+12000),offset,match:input.query?match:null}:null};},
-  readChatHistory:async input=>{const t=tasks.get(input.taskId);if(!t)throw Error('Chat not found.');let messages=t.messages;const end=input.before?messages.findIndex(m=>m.id===input.before):messages.length;if(end<0)throw Error('Invalid history cursor.');messages=input.messageId?messages.filter(m=>m.id===input.messageId):messages.slice(Math.max(0,end-(input.limit??20)),end);const offset=input.offset??0;return copy({messages:messages.map(m=>({...m,text:m.text.slice(offset,offset+12000),textLength:m.text.length,offset})),total:t.messages.length,before:!input.messageId&&end>messages.length?messages[0]?.id??null:null,coverage:'preview-sample'});},
-  searchChats:async input=>copy([...tasks.values()].filter(t=>input.includeArchived||!t.archived).flatMap(t=>{const needle=input.query.toLowerCase(),m=t.messages.find(m=>m.role!=='system'&&m.text.toLowerCase().includes(needle));if(needle&&!m&&!t.title.toLowerCase().includes(needle)&&!project.name.toLowerCase().includes(needle))return[];return[{...t,projectName:project.name,snippet:m?.text??t.title,messageId:m?.id,at:m?.at}];})),
-  inspectCodeContext:async input=>{const context=composeChatContext({task:tasks.get(input.taskId??''),project:state.activeProject,memories:state.memories,text:input.text,attachments:[],history:!tasks.get(input.taskId??'')?.nativeSession?.seeded,nativeSession:!!tasks.get(input.taskId??'')?.nativeSession?.seeded});const digest=async(text:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),b=>b.toString(16).padStart(2,'0')).join('');return{...context,receipt:{version:1,promptHash:await digest(context.prompt),revision:'sample-after',historyMode:context.historyMode,nativeContext:'unknown',messages:context.includedSources,sources:[],instructions:{personal:state.memories?await digest(state.memories):null,project:state.activeProject?.instructions?await digest(state.activeProject.instructions):null},characters:context.characters},attachments:[],files:[]};},
-  commandInfo:async type=>{if(type==='skills')return {status:'ready',skills:[{id:'sample-skill',name:'clear-project-notes',title:'Clear project notes',description:'Sample skill',scope:'Personal',available:true},...['plan','grill','browser-app-delivery','git','create-skill','workflow-authoring'].map(name=>({id:`bundled:${name}`,name,title:name,description:'Bundled Muse skill. This preview shows catalog data without running Muse.',scope:'Bundled',activation:'on',source:`bundled://muse-core/skills/${name}/SKILL.md`,available:true})),{id:'project:sample',name:'project-sample',title:'Project skill example',description:'A project skill requiring workspace trust.',scope:'Project',available:false,unavailableReason:'Project skill trust is not supported by this connection'}]};if(type==='usage')return {status:'ready',message:'Browser preview does not use model credits.',rows:[{label:'Mode',value:'Sample data'}]};return desktop();},
-  personalState:person.read,onPersonalState:person.on,onPersonalShortcut:()=>()=>{},personal:async command=>{
-   personal.error=null;
-   switch(command.type){
-    case 'navigate':personal.notice=null;personal.destination=command.destination;personal.library.selectedId=null;selectSnapshot(command.destination);break;
-    case 'metaAction':personal.destination='chat';personal.notice=null;selectSnapshot(command.action==='newChat'?'chat':command.action as SnapshotKey);break;
-    case 'scheduleAction':personal.notice='This is a read-only desktop snapshot. Use the desktop app to create, edit, or delete real scheduled tasks.';break;
-    case 'selectItem':{personal.notice='This snapshot shows the captured page. Open individual account items in the desktop app.';const found=[...personal.library.chats.items,...personal.library.ideas.items,...personal.library.goals.items].find(i=>i.id===command.id);personal.library.selectedId=command.id;personal.destination=found?.kind==='idea'?'ideas':found?.kind==='goal'?'goals':'bot';break;}
-    case 'newMuseChat':personal.destination='bot';personal.library.selectedId=null;personal.notice='Use the desktop app to start a real Muse chat.';selectSnapshot('bot');break;
-    case 'layout':personal.visible=command.visible;return copy(personal);
-    case 'appearance':personal.appearance=copy(command.appearance);break;
-    case 'presentation':personal.compact=command.compact;break;
-    case 'dismissNotice':personal.notice=null;break;
-    case 'reload':case 'refreshLibrary':await loadSnapshots();break;
-    default:personal.notice='Account services are available in the MuseBench desktop app. This preview is not signed in.';
-   }
-   return person.emit();
-  },
-  workState:workChannel.read,onWorkState:workChannel.on,workImport:desktop,workExport:desktop,work:async command=>{
-   switch(command.type){
-    case 'select':selectWork(command.id);break;
-    case 'create':{const key=id();const next:WorkItem={id:key,title:command.title,team:command.team,kind:command.kind,projectId:key,taskId:key,createdAt:stamp,updatedAt:stamp,sources:[],demo:true};workItems.unshift(next);workTasks.set(key,task(command.brief||command.title,key,key));artifacts.set(key,demoArtifact(command.kind,command.team));selectWork(key);break;}
-    case 'send':if(work.task)reply(work.task,command.text);break;
-    case 'saveArtifact':if(work.activeId){const validated=validateArtifact(command.artifact);artifacts.set(work.activeId,validated);work.artifact=copy(validated);}break;
-    case 'clearError':work.error=null;break;
-    case 'refresh':case 'stop':break;
-   }
-   return workChannel.emit();
-  },
-  spacesState:spaceChannel.read,onSpacesState:spaceChannel.on,spacesCopyInvitation:desktop,spaces:async command=>{
-   switch(command.type){
-    case 'select':selectSpace();break;
-    case 'openPage':spaces.page=pages.find(p=>p.id===command.pageId)??null;break;
-    case 'savePage':{let page=pages.find(p=>p.id===command.pageId);if(!page){page={id:id(),title:command.title,type:'note',revision:0,updatedAt:stamp,updatedBy:'Preview member'};pages.push(page);}page.title=command.title;page.body=command.body;page.revision++;spaces.page=page;break;}
-    case 'comment':spaces.comments.push({id:id(),text:command.text,by:'Preview member',createdAt:stamp,resolved:false,canResolve:true});break;
-    case 'resolveComment':{const comment=spaces.comments.find(c=>c.id===command.commentId);if(comment)comment.resolved=command.resolved;break;}
-    case 'refresh':case 'clearInvitation':case 'clearError':spaces.error=null;break;
-    default:return desktop();
-   }
-   return spaceChannel.emit();
-  },
-  sitesState:siteChannel.read,onSitesState:siteChannel.on,sitesImport:desktop,sitesConnect:desktop,sitesAuthPoll:siteChannel.read,sitesOpen:desktop,sitesCopyUrl:desktop,sitesReadFile:async file=>{if(!Object.hasOwn(siteFiles,file))throw Error('This sample file is not available.');return {text:siteFiles[file]};},sites:async command=>{
-   switch(command.type){
-    case 'select':selectSite(command.id);break;
-    case 'saveFile':siteFiles[command.path]=command.text;selectSite(sites.activeId??site.id);break;
-    case 'update':if(sites.site)Object.assign(sites.site,{title:command.title,description:command.description,slug:command.slug});break;
-    case 'saveVersion':sites.versions.push({id:id(),number:sites.versions.length+1,label:command.label||'Sample version',createdAt:stamp,hash:'sample',fileCount:sites.files.length,bytes:sites.files.reduce((sum,file)=>sum+file.bytes,0),deployId:null,status:'saved'});break;
-    case 'refresh':case 'clearError':sites.error=null;break;
-    default:return desktop();
-   }
-   return siteChannel.emit();
-  },
-  customize:async command=>{
-   const hookRoot=state.activeProject?.root;if(hookRoot&&!hookProjects.has(hookRoot))hookProjects.set(hookRoot,{root:hookRoot,revision:'preview-hooks',items:[]});customize.hooks=hookRoot?hookProjects.get(hookRoot):null;
-   if(command.type==='saveHooks'){if(command.root!==state.activeProject?.root||command.revision!==customize.hooks?.revision||!command.reviewed)throw Error('Project hooks changed. Refresh and review again.');customize.hooks={root:command.root,revision:id(),items:validateHooks(command.hooks)};hookProjects.set(command.root,customize.hooks);return{state:copy(customize),message:'Sample project hooks saved. No commands run in preview.'};}
-   if(['reviewProject','approveProject','revokeProject'].includes(command.type))return {state:copy(customize),projectReview:{root:state.activeProject?.root??project.root,fingerprint:'Preview sample',reviewed:command.type==='approveProject',files:[{path:'AGENTS.md',text:'Preview sample: keep shared desktop and browser controls in sync.'}]}};
-   if(command.type==='preparePackSkill'){
-    const item=MUSEBENCH_SKILL_PACK.find(item=>item.id===command.id);if(!item)throw Error('Unknown skill.');
-    const instructions=({'musebench-ui-parity':uiSkill,'musebench-runtime-check':runtimeSkill,'musebench-release-check':releaseSkill} as Record<string,string>)[item.id];
-    return {state:copy(customize),prepared:{token:item.id,kind:'skills',title:item.title,folder:'Preview / '+item.id,fingerprint:'Preview sample — no installed files',instructions,files:['SKILL.md'],capabilities:[]}};
-   }
-   if(command.type==='install'){
-    const item=MUSEBENCH_SKILL_PACK.find(item=>item.id===command.token);if(!item||!command.reviewed)throw Error('Review the skill first.');
-    if(!customize.skills.some(skill=>skill.id===item.id))customize.skills.push({id:item.id,title:item.title,description:'Optional MuseBench project reference',scope:'user',activation:'user-only'});
-    customize.skillImports=[...(customize.skillImports??[]),{title:item.title,folder:'Preview / '+item.id,fingerprint:'Preview sample — no installed files',at:stamp}];
-    return {state:copy(customize),message:'Preview only: skill installation simulated.'};
-   }
-   if(command.type==='createSkill')customize.skills.push({id:id(),title:command.name,description:command.description,scope:'user',activation:'user-only'});
-   else if(command.type==='skillActivation'){const skill=customize.skills.find(s=>s.id===command.id);if(skill)skill.activation=command.activation;}
-   else if(command.type!=='refresh')return desktop();
-   return {state:copy(customize)};
-  },
- };
-}
+import {createPreviewHookPresets} from './hook-presets.mjs';
+import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
+import {newGoalDriver,pauseGoalDriver} from '../shared/goal-driver.mjs';
+import {proposeLesson,decideLesson} from '../shared/project-lessons.mjs';
+import {composeChatContext} from '../shared/chat-context.mjs';
+import {literalIndex} from '../shared/literal-search.mjs';
+import {validateCheckScripts,missingChecks} from '../shared/validation.mjs';
+import {validateHooks} from '../shared/native-hooks.mjs';
+import uiSkill from '../../templates/musebench-skills/musebench-ui-parity/SKILL.md?raw';
+import runtimeSkill from '../../templates/musebench-skills/musebench-runtime-check/SKILL.md?raw';
+import releaseSkill from '../../templates/musebench-skills/musebench-release-check/SKILL.md?raw';
+import {MUSEBENCH_SKILL_PACK} from '../shared/skill-pack.mjs';
+import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
+import {handoffText} from '../shared/context-handoff.mjs';
+import {moveQueuedPrompt} from '../shared/queued-prompts.mjs';
+import {loadSnapshots,selectSnapshot,selectedSnapshot,subscribeSnapshots,type SnapshotKey} from './snapshots';
+import {planSidebarMove} from '../shared/sidebar-order.mjs';
+import {projectDetails} from '../shared/create-project.mjs';
+import type {Action,AppState,MuseBenchBridge,PersonalState,Task,RuntimeState} from '../shared/types';
+import type {WorkState,WorkItem} from '../shared/work-types';
+import type {SitesState,SiteItem} from '../shared/sites-types';
+import type {SpacesState,SpacePage} from '../shared/spaces-types';
+import type {CustomizeState} from '../shared/customize-types';
+import {demoArtifact,validateArtifact} from '../shared/work-artifacts.mjs';
+
+const stamp='2026-10-26T14:00:00.000Z';
+const copy=<T,>(value:T):T=>structuredClone(value);
+const id=()=>crypto.randomUUID();
+const desktop=async():Promise<never>=>{throw new Error('This action needs the MuseBench desktop app. Browser preview uses sample data only.');};
+const runtime:RuntimeState={interactiveAvailable:true,simulation:true,transport:'exec',fullAccess:false,status:'ready',reason:'Browser preview · No model or shell connection',binary:null,sdkVersion:'Preview',modelId:'Muse · sample',liveVerified:false};
+function task(title:string,taskId:string=id(),projectId='preview-project'):Task {
+ return {id:taskId,projectId,title,mode:'muse',createdAt:stamp,updatedAt:stamp,acceptedRevision:null,request:title,plan:'',criteria:[],planApproved:false,baselineRevision:'sample-before',revision:'sample-after',changes:[],messages:[{id:id(),role:'user',text:title,at:stamp}],shellResults:[],check:null,previewRevision:null,runtimeComplete:true,runOptions:{reasoning:'high',approval:'ask'},runs:[]};
+}
+function channel<T>(get:()=>T){
+ const listeners=new Set<(value:T)=>void>();
+ return {read:async()=>copy(get()),on:(listener:(value:T)=>void)=>{listeners.add(listener);return()=>{listeners.delete(listener);};},emit:()=>{const next=copy(get());for(const listener of listeners)listener(copy(next));return next;}};
+}
+
+export function createPreviewBridge():MuseBenchBridge {
+ const project={id:'preview-project',name:'MuseBench sample',root:'Sample workspace / MuseBench',demo:false,scripts:{test:'Example tests',build:'Example build'},instructions:'Keep the interface clear and accessible.'};
+ const initial=task('Build a clearer project overview','preview-overview');
+ initial.messages.push({id:id(),role:'assistant',at:stamp,text:'The project overview now keeps your recent threads together, with a clear place to start a new chat.\n\nYou can open the changed file below, explore the composer controls, or switch to Muse AI. This is fictional sample content for visual feedback.'});
+ initial.changes=[{path:'src/ProjectOverview.tsx',status:'modified',additions:3,deletions:1,before:'<h1>Project</h1>\n',after:'<h1>Your project</h1>\n<p>Pick up where you left off.</p>\n<button>New chat</button>\n'}];
+ initial.goal={objective:'Finish the sample project with passing validation',status:'active'};
+ initial.executionReceipts=[{id:'sample-request',phase:'settled',result:'unknown',acceptance:'accepted',delivery:'not-requested',createdAt:stamp,updatedAt:stamp,reason:'Preview example: interrupted before the result was confirmed.'}];
+ initial.runs=[{id:'sample-run',promptId:initial.messages[0].id,prompt:initial.request,runId:'sample',status:'completed',startedAt:stamp,endedAt:stamp,activities:[{id:'sample-layout',kind:'tool',title:'Updated the project overview',tool:'edit',status:'completed',detail:'src/ProjectOverview.tsx',output:'Sample change for preview only.'}]}];
+ initial.runs[0].activities.push({id:'sample-workflow',kind:'tool',title:'Workflow: Preview review',tool:'workflow',status:'completed',detail:'Simulated workflow progress for preview only',output:'',workflow:{parentRunId:'sample',parallelLimit:2}});
+ const other=task('Polish the chat composer','preview-composer');
+ other.messages.push({id:id(),role:'assistant',at:stamp,text:'A compact composer keeps attachments, reasoning, and approval controls close to your message. Open the menus to review their spacing.'});
+ const tasks=new Map([initial,other].map(t=>[t.id,t]));
+ const state:AppState={workflows:copy(DEFAULT_WORKFLOWS),backgroundChats:true,projectCreationRoot:'Documents/MuseBench',projects:[project],tasks:[initial,other],activeProject:project,task:initial,checkpoints:[{id:'sample-checkpoint',taskId:initial.id,title:'Sample accepted revision',revision:'sample-before',createdAt:stamp}],preview:{status:'stopped',url:null,log:'',script:null},runtime:copy(runtime),busy:false,error:null,drafts:{}};
+ const code=channel(()=>state);
+ function sync(){state.tasks=[...tasks.values()];return code.emit();}
+ const sampleWorktrees:import('../shared/types').ManagedWorktree[]=[];
+ const imageData=new Map<string,string>();
+ function reply(current:Task,text:string,images:import('../shared/types').CodeImage[]=[]){current.nativeSession??={id:id(),root:state.activeProject?.root??project.root,seeded:true,status:'ready'};current.messages.push({id:id(),role:'user',text,images,at:new Date().toISOString()},{id:id(),role:'assistant',text:'Preview reply — your message is shown here so you can review the conversation layout. No request was sent to Muse and no project files were changed.',at:new Date().toISOString()});current.updatedAt=new Date().toISOString();}
+ async function dispatch(action:Action):Promise<AppState>{
+  const current=state.task;
+  switch(action.type){
+   case 'createReviewer':if(current){const child=task('Review · '+action.question);child.reviewContract={parentTaskId:current.id,parentProjectId:current.projectId,sourceRevision:'sample-after',inputRevision:'sample-after',role:action.role,question:action.question,budget:'standard',createdAt:stamp};child.messages.push({id:id(),role:'assistant',text:JSON.stringify({findings:[],unresolved:['Preview only. No independent native review was executed.']}),at:stamp});child.runtimeComplete=true;current.reviewChildren=[...(current.reviewChildren??[]),child.id];tasks.set(child.id,child);state.task=child;}break;
+   case 'integrateReview':if(current?.reviewContract){const parent=tasks.get(current.reviewContract.parentTaskId);if(parent){const draft=state.drafts?.[`${parent.projectId}:${parent.id}`];if(draft?.text||draft?.files?.length||draft?.images?.length)throw Error('The parent already has a draft. Save or send it before integrating this review.');(state.drafts??={})[`${parent.projectId}:${parent.id}`]={text:'Simulated review: no native execution. Review the example findings before sending.',files:[],images:[],mode:'chat',updatedAt:stamp};state.task=parent;}}break;
+   case 'cancelReviewers':break;
+
+   case 'continueGoal':if(current?.goal){current.goal.driver=newGoalDriver(action);pauseGoalDriver(current.goal.driver,'Preview: no native runs are dispatched.');}break;
+   case 'pauseGoalContinuation':pauseGoalDriver(current?.goal?.driver,'Paused by you');break;
+   case 'setExecutionAccess':state.runtime={...state.runtime,fullAccess:action.fullAccess,transport:action.fullAccess?state.runtime.transport:'exec',status:'ready',permissionVerified:true,sessionId:'preview-connection'};break;
+   case 'connectMuse':state.runtime={...state.runtime,durableSessions:true,imagesSupported:true,modelsSupported:true,hooksSupported:true,workspaceTools:action.transport==='msp'&&action.workspaceTools===true,restoration:action.transport==='msp'&&current?.nativeSession?.transport==='msp'?{status:'restored',sessionId:current.nativeSession.id,historyMode:'snapshot',turnCount:Math.floor(current.messages.length/2),pendingRequests:[]}:null,interactiveAvailable:true,foregroundActive:false,childrenBusy:false,childWorkPending:0,transport:action.transport??state.runtime.transport,questionsSupported:action.transport==='msp',pending:null,pendingRequests:[],inputResponses:[],inputResponse:null,steeringSupported:action.transport==='msp',compactionSupported:action.transport==='msp',childControlsSupported:action.transport==='msp',children:action.transport==='msp'?{items:[{itemId:'sample-child',kind:'subagent',revision:1,status:'completed',controlStatus:'resultReady',objective:'Review keyboard navigation',result:{summary:'Sample result: keyboard focus follows the visible controls.'}},{itemId:'sample-workflow',kind:'workflow',revision:2,status:'completed',label:'Review workflow',children:[{childId:'sample-attempt',attempt:1,status:'terminal',terminal:'failed',label:'Accessibility check',failureReason:'Sample failed attempt'}]}],truncated:false}:{items:[],truncated:false},childReceipts:[],operationBusy:false,compaction:null,turnId:action.transport==='msp'?'preview-turn':null,fullAccess:action.fullAccess===true,status:'ready',sessionId:'preview-connection',permissionVerified:true,shellEnabled:true,reason:'Browser preview - Simulated connection; no commands run'};if(current&&action.transport==='msp')current.nativeSession={id:current.nativeSession?.transport==='msp'?current.nativeSession.id:'preview-native-session',root:state.activeProject?.root??project.root,seeded:true,status:'ready',transport:'msp',fullAccess:action.fullAccess===true,workspaceTools:action.workspaceTools===true};break;
+   case 'disconnectMuse':state.runtime={...state.runtime,restoration:null,workspaceTools:false,pending:null,pendingRequests:[],fullAccess:false,foregroundActive:false,childrenBusy:false,childWorkPending:0,shellEnabled:false,status:'unavailable',sessionId:null,permissionVerified:false,reason:'Browser preview - Disconnected'};break;
+   case 'proposeLesson':{if(state.activeProject)proposeLesson(state.activeProject,{id:id(),title:action.title,text:action.text,applicability:action.applicability,sourceTaskId:action.taskId,sourceMessageId:action.messageId,revision:'sample-after',validation:null});break;}
+   case 'decideLesson':{if(state.activeProject)decideLesson(state.activeProject,action.id,action.decision);break;}
+   case 'restoreCheckpoint':{state.checkpoints.unshift({id:id(),taskId:action.taskId,title:'Before restore (simulated)',revision:'sample-after',createdAt:stamp});break;}
+   case 'refreshModels':state.runtime.modelCatalog={source:'Preview sample',models:[{id:'muse-preview',label:'Muse · sample',description:'Preview catalog only. No model request is sent.',efforts:['low','medium','high'],defaultEffort:'high',isDefault:true,contextLimit:null}]};break;
+   case 'createProject':{const details=projectDetails(action);if(state.projects.some(p=>p.name.toLowerCase()===details.name.toLowerCase()))throw Error('A project with this name already exists.');const next={id:id(),name:details.name,root:`Documents/MuseBench/${details.name}`,demo:false,scripts:{},instructions:details.instructions};state.projects.push(next);state.activeProject=next;state.task=null;break;}
+   case 'selectProject':state.activeProject=state.projects.find(p=>p.id===action.id)??project;break;
+   case 'selectTask':state.task=tasks.get(action.id)??initial;state.activeProject=state.projects.find(p=>p.id===state.task!.projectId)??project;break;
+   case 'newTask':{const next=task(action.request,id(),state.activeProject?.id??project.id);next.runOptions=action.runOptions??next.runOptions;next.messages.push({id:id(),role:'assistant',text:'Preview conversation created. Messages stay in this browser tab until you reset or reload.',at:stamp});tasks.set(next.id,next);state.task=next;break;}
+   case 'createWorktree':case 'openWorktree':case 'recoverWorktree':{let item=action.type==='openWorktree'?sampleWorktrees.find(i=>i.id===action.id):undefined;if(action.type==='createWorktree'||action.type==='recoverWorktree'){if(!action.branch.trim()||action.branch.startsWith('-'))throw Error('Choose a valid branch.');item={id:id(),branch:action.branch,base:action.type==='createWorktree'?action.base:'sample-archive',commit:'sample-base',path:'Sample worktrees/'+action.branch,sourceRoot:project.root,createdAt:stamp,status:'ready',available:true};sampleWorktrees.push(item);}if(!item)throw Error('Worktree unavailable');let p=state.projects.find(p=>p.root===item!.path);if(!p){p={...project,id:id(),name:project.name+' · '+item.branch,root:item.path,branch:item.branch,worktree:{id:item.id,sourceRoot:item.sourceRoot,branch:item.branch,base:item.base}};state.projects.push(p);}state.activeProject=p;state.task=null;break;}
+   case 'archiveWorktree':case 'restoreWorktree':{const item=sampleWorktrees.find(w=>w.id===action.id);if(item){item.status=action.type==='archiveWorktree'?'archived':'ready';if(action.type==='archiveWorktree')item.archiveCommit='sample-archive';}break;}
+   case 'setupWorktree':if(current)current.check={id:id(),script:action.script,command:'Preview: '+action.script,status:'not-run',revision:current.revision,exitCode:null,log:'Preview only. No setup command was executed.',startedAt:stamp};break;
+   case 'recoverSession':if(current){if(action.choice==='fresh')current.nativeSession=null;else if(current.nativeSession)current.nativeSession.status='ready';}break;
+   case 'saveWorkflow':{const w=validateWorkflow(action.workflow);state.workflows=[...(state.workflows??[]).filter(i=>i.id!==w.id),w];break;}
+   case 'deleteWorkflow':state.workflows=state.workflows?.filter(w=>w.id!==action.id);break;
+   case 'saveValidationProfile':{if(!state.activeProject||state.activeProject.id!==action.projectId)throw Error('Project changed.');state.activeProject.validationScripts=validateCheckScripts(action.scripts);break;}
+   case 'runValidation':{if(!current||!state.activeProject?.validationScripts?.length)throw Error('Save a validation profile first.');const scripts=state.activeProject.validationScripts;current.checkReceipts=scripts.map(script=>({id:id(),script,command:`Sample: ${script}`,status:'passed',revision:current.revision,exitCode:0,log:'Simulated check. No command was executed.',startedAt:stamp,endedAt:stamp}));current.check=current.checkReceipts.at(-1)!;current.validationRun={scripts,revision:current.revision,index:scripts.length-1,status:'passed'};break;}
+   case 'queueWorkflow':{if(!current||current.id!==action.taskId)throw Error('The selected chat changed.');if(current.promptQueue?.some(q=>q.workflow?.id===action.id))break;const w=state.workflows?.find(w=>w.id===action.workflowId);if(!w)throw Error('Workflow unavailable.');const prompts=workflowPrompts(w,action.objective);if((current.promptQueue??[]).length+prompts.length>5)throw Error('Make room in the queue for all workflow phases.');for(const p of prompts)(current.promptQueue??=[]).push({id:id(),text:p.text,files:[],images:[],mode:'chat',runOptions:{...current.runOptions!,budget:p.budget},at:stamp,...(p.requiredChecks?.length?{requiredChecks:p.requiredChecks}:{}),workflow:{id:action.id,title:w.title,phase:p.title,index:p.index,total:prompts.length}});current.queuePaused=true;break;}
+   case 'handoffContext':{if(!current||current.id!==action.sourceTaskId)throw Error('The selected source chat changed.');const target=tasks.get(action.targetTaskId);if(!target||target.archived||target.id===current.id)throw Error('Choose another active chat.');if(target.promptQueue?.some(q=>q.handoff?.id===action.id))break;if((target.promptQueue??[]).length>=5)throw Error('The recipient queue already holds five prompts.');const text=handoffText({title:current.title,project:state.activeProject?.name??'Sample project',text:action.text,files:action.files.map(f=>({...f,text:'Preview file snapshot'}))});(target.promptQueue??=[]).push({id:id(),text,files:[],images:[],mode:'chat',runOptions:copy(target.runOptions!),at:stamp,handoff:{id:action.id,sourceTaskId:current.id,sourceTitle:current.title}});break;}
+   case 'queueMessage':if(current){if((current.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');if(!action.text.trim())throw Error('Enter a prompt.');(current.promptQueue??=[]).push({id:id(),text:action.text.trim(),files:copy(action.files??[]),images:copy(action.images??[]),mode:action.mode??'chat',runOptions:copy(action.runOptions??current.runOptions!),at:stamp});current.queuePaused=true;}break;
+   case 'moveQueued':if(current)current.promptQueue=moveQueuedPrompt(current,action);break;
+   case 'removeQueued':if(current)current.promptQueue=current.promptQueue?.filter(item=>item.id!==action.id);break;
+   case 'pauseQueue':if(current)current.queuePaused=true;break;
+   case 'resumeQueue':if(current){const next=current.promptQueue?.[0];if(next&&missingChecks(current,current.revision,next.requiredChecks??[]).length)throw Error('Run passing checks for this revision before this workflow phase.');current.promptQueue?.shift();if(next)reply(current,next.text,next.images);current.queuePaused=true;}break;
+   case 'childControl':if(current){const receipt={commandId:id(),sessionId:action.sessionId,itemId:action.itemId,revision:action.revision,action:action.action,body:action.body,status:'accepted',at:stamp};state.runtime.childReceipts=[receipt];current.childControlReceipts=[receipt];if(['followupTask','resume','reopen','retry'].includes(action.action))state.runtime={...state.runtime,status:'running',foregroundActive:false,childrenBusy:true,childWorkPending:1};}break;
+   case 'compactSession':if(current){const receipt={commandId:id(),sessionId:action.sessionId,turnId:action.turnId,status:'compacted',at:stamp,tokensBefore:24000,tokensAfter:9000};state.runtime.compaction=receipt;current.compactionReceipts=[receipt];}break;
+   case 'steerMessage':if(current){current.messages.push({id:id(),role:'user',text:action.text,at:stamp});state.runtime.steering={status:'accepted',commandId:id(),turnId:action.expectedTurnId};}break;
+   case 'answerInput':{const requests=state.runtime.pendingRequests??(state.runtime.pending?[state.runtime.pending]:[]),p=inputPrompt(requests.find(value=>(value as {userInputId?:string}).userInputId===action.userInputId));if(!p||action.taskId!==current?.id||action.sessionId!==p.sessionId||action.userInputId!==p.userInputId||action.turnId!==p.turnId||action.revision!==p.revision)throw Error('The question changed.');validateInputAnswers(p,action);if(action.operation==='engage')break;const remaining=requests.filter(value=>(value as {userInputId?:string}).userInputId!==p.userInputId) as NonNullable<AppState['runtime']['pendingRequests']>;const receipt={status:'settled',userInputId:p.userInputId,outcome:action.operation==='cancel'?'cancelled':'answered'};state.runtime={...state.runtime,pending:remaining[0]??null,pendingRequests:remaining,status:remaining.length?'blocked':'completed',reason:remaining.length?'Simulated native question':null,inputResponse:receipt,inputResponses:[...(state.runtime.inputResponses??[]),receipt]};break;}
+   case 'sendMessage':if(current){reply(current,action.text,action.images);if(state.runtime.transport==='msp'){state.runtime={...state.runtime,status:'running',foregroundActive:true,turnId:'preview-turn',steeringSupported:true};if(['/preview-question','/preview-questions'].includes(action.text))state.runtime={...state.runtime,status:'blocked',reason:'Simulated native question',inputResponse:null,pending:{kind:'input',sessionId:state.runtime.sessionId,userInputId:'preview-question',turnId:'preview-turn',revision:1,questions:[{id:'approach',header:'Approach',question:'Which implementation should I use?',selection:{mode:'single'},options:[{label:'Extend the existing component',description:'Keep the current architecture.'},{label:'Create a separate component'}]}]}};if(state.runtime.pending){const first=state.runtime.pending as NonNullable<AppState['runtime']['pendingRequests']>[number];state.runtime.pendingRequests=action.text==='/preview-questions'?[first,{...first,userInputId:'preview-question-two',revision:2}]:[first];}}}break;
+   case 'renameTask':if(current)current.title=action.title;break;
+   case 'setRunOptions':if(current)current.runOptions=copy(action.runOptions);break;
+   case 'setGoal':if(current)current.goal={objective:action.objective,status:action.status};break;
+   case 'setMemories':state.memories=action.text;break;
+   case 'setProjectInstructions':{const target=state.projects.find(p=>p.id===action.projectId);if(target)target.instructions=action.text;break;}
+   case 'moveSidebarItem':{const planned=planSidebarMove(state.projects,[...tasks.values()],state.sidebarOrder,action);state.sidebarOrder=planned.orders;if(action.kind==='chat'){const target=tasks.get(action.id)!;if(action.section==='project'){target.projectId=action.projectId!;if(state.task?.id===target.id)state.activeProject=state.projects.find(p=>p.id===target.projectId)!;}if(action.section==='pinned')target.pinned=true;if(action.section==='recents')target.pinned=false;}break;}
+   case 'setTaskFlags':{const target=tasks.get(action.id);if(target){if(action.pinned!==undefined)target.pinned=action.pinned;if(action.archived!==undefined){if(action.archived&&!target.archived)target.archivedAt=new Date().toISOString();if(!action.archived)target.archivedAt=null;target.archived=action.archived;}if(target.archived)target.pinned=false;}break;}
+   case 'deleteTask':{const target=tasks.get(action.id);if(!target?.archived)throw Error('Archive this chat first.');tasks.delete(action.id);if(state.task?.id===action.id)state.task=null;for(const key of Object.keys(state.drafts??{})){if(key.endsWith(action.id))delete state.drafts![key];}break;}
+   case 'forkTask':if(current){const index=current.messages.findIndex(m=>m.id===action.messageId&&m.role!=='system');if(index<0)throw Error('Select a sample message first.');const selected=current.messages[index],fork=copy(current);fork.id=id();fork.title=`Branch: ${current.title}`;fork.pinned=false;fork.archived=false;fork.archivedAt=null;fork.messages=fork.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({...m,id:id()}));fork.runs=[];fork.changes=[];if(selected.role==='user')(state.drafts??={})[`${fork.projectId}:${fork.id}`]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:new Date().toISOString()};tasks.set(fork.id,fork);state.task=fork;}break;
+   case 'clearError':state.error=null;break;
+   case 'refresh':break;
+   default:return desktop();
+  }
+  return sync();
+ }
+ const personal:PersonalState={profile:{displayName:'Alex Morgan',avatarSeed:'musebench-sample-account',sample:true},destination:'bot',loading:false,origin:'',error:null,canGoBack:false,canGoForward:false,visible:false,available:{bot:true,chat:true,ideas:true,goals:true},compact:true,notice:null,authenticating:false,authWindowOpen:false,library:{selectedId:'sample-chat',chats:{status:'ready',items:[{id:'sample-chat',kind:'chat',title:'Plan a thoughtful week'},{id:'sample-notes',kind:'chat',title:'Turn notes into next steps'}]},ideas:{status:'ready',items:[{id:'sample-idea',kind:'idea',title:'A calmer morning routine'}]},goals:{status:'ready',items:[{id:'sample-goal',kind:'goal',title:'Build a habit of learning'}]}}};
+ const person=channel(()=>personal);
+ function applySnapshot(){const {key,snapshot}=selectedSnapshot();personal.schedules=key==='scheduled'?copy(snapshot?.personal?.schedules??{status:'unavailable',items:[]}):null;if(snapshot?.personal){personal.agentProfile=copy(snapshot.personal.agentProfile);personal.library=copy(snapshot.personal.library);}person.emit();}
+ subscribeSnapshots(applySnapshot);void loadSnapshots();
+ const workItems:WorkItem[]=[{id:'sample-work',title:'Weekly operations brief',team:'operations',kind:'document',projectId:'sample-work-project',taskId:'sample-work-task',createdAt:stamp,updatedAt:stamp,sources:[],demo:true}];
+ const workTasks=new Map([['sample-work',task('Summarize our weekly priorities','sample-work-task','sample-work-project')]]);
+ const artifacts=new Map([['sample-work',demoArtifact('document','operations')]]);
+ const work:WorkState={items:workItems,activeId:null,item:null,task:null,runtime:copy(runtime),busy:false,error:null,artifact:null,artifactError:null,artifactUpdatedAt:null,capabilities:{mp4:false}};
+ const workChannel=channel(()=>work);
+ function selectWork(key:string){work.item=workItems.find(i=>i.id===key)??null;work.activeId=work.item?.id??null;work.task=workTasks.get(key)??null;work.artifact=artifacts.get(key)??null;work.artifactUpdatedAt=stamp;}
+ const spaces:SpacesState={spaces:[{id:'sample-space',spaceId:'sample-space',name:'Design studio',url:'',local:true}],activeId:null,snapshot:null,page:null,comments:[],history:[],error:null,conflict:false,busy:false,lastSynced:stamp,invitation:null,hosting:null};
+ const pages:SpacePage[]=[{id:'sample-page',title:'Welcome to the studio',type:'note',revision:1,updatedAt:stamp,updatedBy:'Preview member',body:'# A place to work together\n\nKeep project notes, ideas, and decisions in one shared space.\n\n- Agree on the next milestone\n- Share a useful draft\n- Leave focused feedback'}];
+ const spaceChannel=channel(()=>spaces);
+ function selectSpace(){spaces.activeId='sample-space';spaces.snapshot={space:{id:'sample-space',name:'Design studio',description:'A fictional shared workspace',createdAt:stamp},self:{id:'preview-member',name:'Preview member',role:'owner',joinedAt:stamp},members:[{id:'preview-member',name:'Preview member',role:'owner',joinedAt:stamp}],pages,invites:[]};spaces.page=pages[0];}
+ const site:SiteItem={id:'sample-site',title:'Studio notes',description:'A simple home for your next idea.',slug:'studio-notes',createdAt:stamp,updatedAt:stamp,source:'starter',draftHash:'sample',liveVersionId:null,url:null,remoteId:null,remoteName:null,status:'draft'};
+ const siteFiles:Record<string,string>={'index.html':'<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;padding:10%;font:18px system-ui;background:#101b2c;color:#e6efff}small{color:#79afff}h1{font-size:clamp(30px,6vw,64px);line-height:1.1;max-width:650px}p{max-width:480px;line-height:1.6}</style></head><body><small>STUDIO NOTES · SAMPLE SITE</small><h1>Make room for your next idea.</h1><p>A quiet place to share the things you are building. This is a local preview, not a published website.</p></body></html>'};
+ const sites:SitesState={items:[site],activeId:null,site:null,files:[],versions:[],previewUrl:null,hosting:{connected:false,accountName:null,teams:[],teamId:null,oauthAvailable:false,authPending:false},busy:false,operation:null,error:null,notice:null,generation:null};
+ const siteChannel=channel(()=>sites);
+ function selectSite(key:string){sites.site=sites.items.find(i=>i.id===key)??site;sites.activeId=sites.site.id;sites.files=Object.entries(siteFiles).map(([path,text])=>({path,bytes:new TextEncoder().encode(text).length,sha1:'sample',mime:'text/html'}));sites.previewUrl=`data:text/html;charset=utf-8,${encodeURIComponent(siteFiles['index.html'])}`;}
+ const hookPresets=createPreviewHookPresets();
+ const hookProjects=new Map<string,NonNullable<CustomizeState['hooks']>>();
+ const customize:CustomizeState={available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only'}],plugins:[],servers:[]};
+ const updateListeners=new Set<(state:import('../shared/types').AppUpdateState)=>void>();
+ let appUpdate:import('../shared/types').AppUpdateState={version:'0.2.0',status:'idle',availableVersion:null,percent:0,lastChecked:null,error:null,simulation:true};
+ const updateEmit=(patch:Partial<typeof appUpdate>)=>{appUpdate={...appUpdate,...patch};updateListeners.forEach(fn=>fn(copy(appUpdate)));};
+ const dictation={id:null,status:'idle' as const,available:false,language:null,text:'',error:'Microphone input is available in the desktop app.'};
+ return {
+  appUpdate:async command=>{if(command==='check')updateEmit({status:'available',availableVersion:'0.2.1',lastChecked:'2026-10-26T12:00:00Z',error:null});if(command==='download'){updateEmit({status:'downloading',percent:45});await new Promise(r=>setTimeout(r,400));updateEmit({status:'downloaded',percent:100});}if(command==='install')updateEmit({error:'Preview only. The desktop app would install and reopen.'});return copy(appUpdate);},
+  onAppUpdate:fn=>{updateListeners.add(fn);return()=>{updateListeners.delete(fn);};},
+  windowControlsOverlay:true,
+  inspectWorktrees:async input=>({root:state.projects.find(p=>p.id===input.projectId)?.root??project.root,branch:'main',head:'sample-base',dirty:true,items:copy(sampleWorktrees)}),
+  importCodeImage:async input=>{const match=/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(input.dataUrl);if(!match||input.dataUrl.length>11200000)throw Error('Choose an image up to 8 MB.');const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));const id=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');imageData.set(input.projectId+id,input.dataUrl);return{id,name:input.name,mime:match[1],bytes:bytes.length};},
+  readCodeImage:async input=>{const data=imageData.get(input.projectId+input.image.id);if(!data)throw Error('Screenshot unavailable');return data;},
+  getState:code.read,onState:code.on,dispatch,openProjectFile:desktop,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);if(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},
+  configureNotifications:async()=>({supported:false}),dictation:async command=>{if(['status','refresh','cancel','stop'].includes(command))return copy(dictation);return desktop();},onDictation:()=>()=>{},
+  saveCodeDraft:async input=>{state.drafts![`${input.projectId}:${input.taskId??'new'}`]={text:input.text,files:copy(input.files),images:copy(input.images??[]),mode:input.mode};},
+  inspectCheckpoint:async input=>{if(!tasks.has(input.taskId))throw Error('Chat not found.');return{revision:'sample-after',files:copy(initial.changes).map(f=>({...f,restorable:!f.binary})),operations:[]};},
+  semanticNavigate:async input=>{if(input.projectId!==state.activeProject?.id)throw Error('Choose the current project.');return {operation:input.operation,path:input.path,line:input.line,column:input.column,items:input.operation==='hover'?[]:[{path:'src/ProjectOverview.tsx',line:1,column:17,endLine:1,endColumn:32}],hover:input.operation==='hover'?{path:input.path,line:input.line,column:input.column,endLine:input.line,endColumn:input.column+15,display:'function ProjectOverview(): JSX.Element',documentation:'Preview sample component.'}:null,truncated:false,snapshot:'preview-sample',scope:{files:2,bytes:500,entries:2,skipped:{symlinks:0,directories:0},config:'fixed-no-project-config',standardLibrary:false,excludedDirectories:['node_modules','.*']},engine:'Preview sample · no source files read',elapsedMs:0};},
+  readCapturedOutput:async input=>{if(!tasks.has(input.taskId))throw Error('Chat not found.');const body='Sample validation output. No command was executed.\n\nsrc/app.ts(12,3): error TS2322: Example type diagnostic\n'+'Example output line\n'.repeat(4000)+'Capture complete.\n';const item={id:'sample-output',label:'Sample: npm test',status:'failed',received:body.length,length:body.length,captureTruncated:false,sourceTruncated:false};const match=input.query?literalIndex(body,input.query,input.offset??0):-1,offset=match>=0?Math.max(0,match-80):Math.min(input.offset??0,body.length);return{items:[item],selected:input.id?{...item,text:body.slice(offset,offset+12000),offset,match:input.query?match:null}:null};},
+  readChatHistory:async input=>{const t=tasks.get(input.taskId);if(!t)throw Error('Chat not found.');let messages=t.messages;const end=input.before?messages.findIndex(m=>m.id===input.before):messages.length;if(end<0)throw Error('Invalid history cursor.');messages=input.messageId?messages.filter(m=>m.id===input.messageId):messages.slice(Math.max(0,end-(input.limit??20)),end);const offset=input.offset??0;return copy({messages:messages.map(m=>({...m,text:m.text.slice(offset,offset+12000),textLength:m.text.length,offset})),total:t.messages.length,before:!input.messageId&&end>messages.length?messages[0]?.id??null:null,coverage:'preview-sample'});},
+  searchChats:async input=>copy([...tasks.values()].filter(t=>input.includeArchived||!t.archived).flatMap(t=>{const needle=input.query.toLowerCase(),m=t.messages.find(m=>m.role!=='system'&&m.text.toLowerCase().includes(needle));if(needle&&!m&&!t.title.toLowerCase().includes(needle)&&!project.name.toLowerCase().includes(needle))return[];return[{...t,projectName:project.name,snippet:m?.text??t.title,messageId:m?.id,at:m?.at}];})),
+  inspectCodeContext:async input=>{const context=composeChatContext({task:tasks.get(input.taskId??''),project:state.activeProject,memories:state.memories,text:input.text,attachments:[],history:!tasks.get(input.taskId??'')?.nativeSession?.seeded,nativeSession:!!tasks.get(input.taskId??'')?.nativeSession?.seeded});const digest=async(text:string)=>Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text))),b=>b.toString(16).padStart(2,'0')).join('');return{...context,receipt:{version:1,promptHash:await digest(context.prompt),revision:'sample-after',historyMode:context.historyMode,nativeContext:'unknown',messages:context.includedSources,sources:[],instructions:{personal:state.memories?await digest(state.memories):null,project:state.activeProject?.instructions?await digest(state.activeProject.instructions):null},characters:context.characters},attachments:[],files:[]};},
+  commandInfo:async type=>{if(type==='skills')return {status:'ready',skills:[{id:'sample-skill',name:'clear-project-notes',title:'Clear project notes',description:'Sample skill',scope:'Personal',available:true},...['plan','grill','browser-app-delivery','git','create-skill','workflow-authoring'].map(name=>({id:`bundled:${name}`,name,title:name,description:'Bundled Muse skill. This preview shows catalog data without running Muse.',scope:'Bundled',activation:'on',source:`bundled://muse-core/skills/${name}/SKILL.md`,available:true})),{id:'project:sample',name:'project-sample',title:'Project skill example',description:'A project skill requiring workspace trust.',scope:'Project',available:false,unavailableReason:'Project skill trust is not supported by this connection'}]};if(type==='usage')return {status:'ready',message:'Browser preview does not use model credits.',rows:[{label:'Mode',value:'Sample data'}]};return desktop();},
+  personalState:person.read,onPersonalState:person.on,onPersonalShortcut:()=>()=>{},personal:async command=>{
+   personal.error=null;
+   switch(command.type){
+    case 'navigate':personal.notice=null;personal.destination=command.destination;personal.library.selectedId=null;selectSnapshot(command.destination);break;
+    case 'metaAction':personal.destination='chat';personal.notice=null;selectSnapshot(command.action==='newChat'?'chat':command.action as SnapshotKey);break;
+    case 'scheduleAction':personal.notice='This is a read-only desktop snapshot. Use the desktop app to create, edit, or delete real scheduled tasks.';break;
+    case 'selectItem':{personal.notice='This snapshot shows the captured page. Open individual account items in the desktop app.';const found=[...personal.library.chats.items,...personal.library.ideas.items,...personal.library.goals.items].find(i=>i.id===command.id);personal.library.selectedId=command.id;personal.destination=found?.kind==='idea'?'ideas':found?.kind==='goal'?'goals':'bot';break;}
+    case 'newMuseChat':personal.destination='bot';personal.library.selectedId=null;personal.notice='Use the desktop app to start a real Muse chat.';selectSnapshot('bot');break;
+    case 'layout':personal.visible=command.visible;return copy(personal);
+    case 'appearance':personal.appearance=copy(command.appearance);break;
+    case 'presentation':personal.compact=command.compact;break;
+    case 'dismissNotice':personal.notice=null;break;
+    case 'reload':case 'refreshLibrary':await loadSnapshots();break;
+    default:personal.notice='Account services are available in the MuseBench desktop app. This preview is not signed in.';
+   }
+   return person.emit();
+  },
+  workState:workChannel.read,onWorkState:workChannel.on,workImport:desktop,workExport:desktop,work:async command=>{
+   switch(command.type){
+    case 'select':selectWork(command.id);break;
+    case 'create':{const key=id();const next:WorkItem={id:key,title:command.title,team:command.team,kind:command.kind,projectId:key,taskId:key,createdAt:stamp,updatedAt:stamp,sources:[],demo:true};workItems.unshift(next);workTasks.set(key,task(command.brief||command.title,key,key));artifacts.set(key,demoArtifact(command.kind,command.team));selectWork(key);break;}
+    case 'send':if(work.task)reply(work.task,command.text);break;
+    case 'saveArtifact':if(work.activeId){const validated=validateArtifact(command.artifact);artifacts.set(work.activeId,validated);work.artifact=copy(validated);}break;
+    case 'clearError':work.error=null;break;
+    case 'refresh':case 'stop':break;
+   }
+   return workChannel.emit();
+  },
+  spacesState:spaceChannel.read,onSpacesState:spaceChannel.on,spacesCopyInvitation:desktop,spaces:async command=>{
+   switch(command.type){
+    case 'select':selectSpace();break;
+    case 'openPage':spaces.page=pages.find(p=>p.id===command.pageId)??null;break;
+    case 'savePage':{let page=pages.find(p=>p.id===command.pageId);if(!page){page={id:id(),title:command.title,type:'note',revision:0,updatedAt:stamp,updatedBy:'Preview member'};pages.push(page);}page.title=command.title;page.body=command.body;page.revision++;spaces.page=page;break;}
+    case 'comment':spaces.comments.push({id:id(),text:command.text,by:'Preview member',createdAt:stamp,resolved:false,canResolve:true});break;
+    case 'resolveComment':{const comment=spaces.comments.find(c=>c.id===command.commentId);if(comment)comment.resolved=command.resolved;break;}
+    case 'refresh':case 'clearInvitation':case 'clearError':spaces.error=null;break;
+    default:return desktop();
+   }
+   return spaceChannel.emit();
+  },
+  sitesState:siteChannel.read,onSitesState:siteChannel.on,sitesImport:desktop,sitesConnect:desktop,sitesAuthPoll:siteChannel.read,sitesOpen:desktop,sitesCopyUrl:desktop,sitesReadFile:async file=>{if(!Object.hasOwn(siteFiles,file))throw Error('This sample file is not available.');return {text:siteFiles[file]};},sites:async command=>{
+   switch(command.type){
+    case 'select':selectSite(command.id);break;
+    case 'saveFile':siteFiles[command.path]=command.text;selectSite(sites.activeId??site.id);break;
+    case 'update':if(sites.site)Object.assign(sites.site,{title:command.title,description:command.description,slug:command.slug});break;
+    case 'saveVersion':sites.versions.push({id:id(),number:sites.versions.length+1,label:command.label||'Sample version',createdAt:stamp,hash:'sample',fileCount:sites.files.length,bytes:sites.files.reduce((sum,file)=>sum+file.bytes,0),deployId:null,status:'saved'});break;
+    case 'refresh':case 'clearError':sites.error=null;break;
+    default:return desktop();
+   }
+   return siteChannel.emit();
+  },
+  customize:async command=>{
+   customize.hookPresets=await hookPresets.snapshot();
+   if(command.type==='saveHookPreset'||command.type==='deleteHookPreset'){customize.hookPresets=(await hookPresets.dispatch(command))!;return{state:copy(customize),message:'Preview hook preset saved. Project hooks unchanged.'};}
+   const hookRoot=state.activeProject?.root;if(hookRoot&&!hookProjects.has(hookRoot))hookProjects.set(hookRoot,{root:hookRoot,revision:'preview-hooks',items:[]});customize.hooks=hookRoot?hookProjects.get(hookRoot):null;
+   if(command.type==='saveHooks'){if(command.root!==state.activeProject?.root||command.revision!==customize.hooks?.revision||!command.reviewed)throw Error('Project hooks changed. Refresh and review again.');customize.hooks={root:command.root,revision:id(),items:validateHooks(command.hooks)};hookProjects.set(command.root,customize.hooks);return{state:copy(customize),message:'Sample project hooks saved. No commands run in preview.'};}
+   if(['reviewProject','approveProject','revokeProject'].includes(command.type))return {state:copy(customize),projectReview:{root:state.activeProject?.root??project.root,fingerprint:'Preview sample',reviewed:command.type==='approveProject',files:[{path:'AGENTS.md',text:'Preview sample: keep shared desktop and browser controls in sync.'}]}};
+   if(command.type==='preparePackSkill'){
+    const item=MUSEBENCH_SKILL_PACK.find(item=>item.id===command.id);if(!item)throw Error('Unknown skill.');
+    const instructions=({'musebench-ui-parity':uiSkill,'musebench-runtime-check':runtimeSkill,'musebench-release-check':releaseSkill} as Record<string,string>)[item.id];
+    return {state:copy(customize),prepared:{token:item.id,kind:'skills',title:item.title,folder:'Preview / '+item.id,fingerprint:'Preview sample — no installed files',instructions,files:['SKILL.md'],capabilities:[]}};
+   }
+   if(command.type==='install'){
+    const item=MUSEBENCH_SKILL_PACK.find(item=>item.id===command.token);if(!item||!command.reviewed)throw Error('Review the skill first.');
+    if(!customize.skills.some(skill=>skill.id===item.id))customize.skills.push({id:item.id,title:item.title,description:'Optional MuseBench project reference',scope:'user',activation:'user-only'});
+    customize.skillImports=[...(customize.skillImports??[]),{title:item.title,folder:'Preview / '+item.id,fingerprint:'Preview sample — no installed files',at:stamp}];
+    return {state:copy(customize),message:'Preview only: skill installation simulated.'};
+   }
+   if(command.type==='createSkill')customize.skills.push({id:id(),title:command.name,description:command.description,scope:'user',activation:'user-only'});
+   else if(command.type==='skillActivation'){const skill=customize.skills.find(s=>s.id===command.id);if(skill)skill.activation=command.activation;}
+   else if(command.type!=='refresh')return desktop();
+   return {state:copy(customize)};
+  },
+ };
+}

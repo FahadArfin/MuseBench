@@ -1,4 +1,5 @@
 import {fileURLToPath} from 'node:url';
+import {createHookPresetStore} from './hook-presets.mjs';
 import {MUSEBENCH_SKILL_PACK} from '../src/shared/skill-pack.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -34,6 +35,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  const env=curateEnvironment(environment),profile=env.USERPROFILE;
  if(!profile||!path.isAbsolute(profile))throw Error('A Windows user profile is required for Customize.');
  review??=createExtensionReview({dataDir,profile});
+ const hookPresets=createHookPresetStore(dataDir);
  const settingsPath=path.join(profile,'.config','muse','settings.json');
  const importsFile=path.join(dataDir,'skill-imports.json');
  const imports=async()=>{try{const value=JSON.parse(await optionalText(importsFile)??'[]');return Array.isArray(value)?value.slice(-100):[];}catch{return[];}};
@@ -74,7 +76,8 @@ export function createCustomize({getState,environment=process.env,dataDir,review
   }
   try{const {config}=await settings();servers=await Promise.all(Object.entries(config.mcp_servers??{}).slice(0,250).map(async([name,entry])=>({name:clean(name,100),revision:configurationDigest(entry),transport:entry.transport==='stdio'?'stdio':'streamable_http',address:entry.transport==='stdio'?clean(entry.command,200):safeAddress(entry.url),enabled:entry.enabled!==false,reviewed:await review.allowMcp(name,entry),oauth:entry.transport==='streamable_http'})));pluginsReviewed=await review.pluginsReviewed();const afterPlugins=await review.pluginState();if(beforePlugins?.revision===afterPlugins.revision){if(inventoryDisplayed)pluginRevision=afterPlugins.revision;}else errors.push('Plugins changed while loading. Refresh before reviewing them.');}catch{errors.push('Muse configuration could not be read. Correct settings.json in the official CLI before editing.');}
   let hooks=null;try{const root=getState().activeProject?.root;if(root)hooks=await review.hookState(root);}catch{errors.push('Project hooks could not be read.');}
-  return{hooks,skillImports:await imports(),available,skills:skillRows,plugins:pluginRows,servers,pluginsReviewed,pluginRevision,errors};
+  let presetState=null;try{presetState=await hookPresets.snapshot();}catch(error){errors.push(error.message);}
+  return{hooks,hookPresets:presetState,skillImports:await imports(),available,skills:skillRows,plugins:pluginRows,servers,pluginsReviewed,pluginRevision,errors};
  }
  function safeAddress(value){try{const u=new URL(value);return u.origin+u.pathname;}catch{return'Configured server';}}
  function requireReview(command){if(command.reviewed!==true)throw Error('Review extension access before continuing.');}
@@ -89,13 +92,14 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  }
  async function dispatch(command){
   if(closed)throw Error('Customize is closed.');
-  const supported=['saveHooks','refresh','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
+  const supported=['saveHookPreset','deleteHookPreset','saveHooks','refresh','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
   if(!object(command)||!supported.includes(command.type)||JSON.stringify(command).length>40000)throw Error('Unsupported Customize action.');
   if(command.type==='refresh')return{state:await snapshot()};
   if(busy)throw Error('Wait for the current setup operation to finish.');
   if(customizeBlocked(getState())||isActive())throw Error('Let the running task finish and confirm it has stopped before changing extensions.');
   busy=true;
   try{
+   if(command.type==='saveHookPreset'||command.type==='deleteHookPreset'){if(command.type==='saveHookPreset')await hookPresets.save(command);else await hookPresets.remove(command);return{state:await snapshot(),message:command.type==='saveHookPreset'?'Hook preset saved. Load it into a project draft, then review and save that project.':'Hook preset deleted. Existing project hooks are unchanged.'};}
    if(command.type==='saveHooks'){requireReview(command);const root=getState().activeProject?.root;if(!root||command.root!==root)throw Error('The selected project changed. Reopen Customize.');await review.saveHooks(root,command.revision,command.hooks);return{state:await snapshot(),message:'Project hooks saved. Applies to future Code runs.'};}
    if(['reviewProject','approveProject','revokeProject'].includes(command.type)){const root=getState().activeProject?.root;if(!root)throw Error('Choose a project first.');if(command.type==='approveProject'){requireReview(command);if(command.root!==root)throw Error('The selected project changed.');await review.approveProject(root,command.fingerprint);}if(command.type==='revokeProject'){if(command.root!==root)throw Error('The selected project changed.');await review.revokeProject(root);}return{projectReview:await review.projectState(root),state:await snapshot()};}
    if(command.type==='preparePackSkill'){if(!MUSEBENCH_SKILL_PACK.some(s=>s.id===command.id))throw Error('Unknown MuseBench skill.');const source=fileURLToPath(new URL('../templates/musebench-skills/'+command.id+'/SKILL.md',import.meta.url)),text=await optionalText(source);if(!text)throw Error('Bundled skill is missing.');const folder=path.join(dataDir,'skill-drafts',randomUUID(),command.id);await mkdir(folder,{recursive:true});await writeFile(path.join(folder,'SKILL.md'),text,'utf8');return{prepared:await prepare('skills',folder)};}
