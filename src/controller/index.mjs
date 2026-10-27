@@ -1,3 +1,4 @@
+import {proposeLesson,decideLesson} from '../shared/project-lessons.mjs';
 import {restoreSelected} from './checkpoint-restore.mjs';
 import {contextReceipt} from './context-receipts.mjs';
 import {StringDecoder} from 'node:string_decoder';
@@ -486,6 +487,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         message('system','Working copy created from the reviewed source files. Dependencies, Git metadata and local secrets were excluded. Your original project is unchanged.');break;
       }
       case 'newTask':await startTask(action.request,action.mode,action.runOptions);break;
+      case 'proposeLesson':{
+        requireNavigationIdle();validateBinding(action.projectId,action.taskId);const t=requireTask(),p=state.activeProject;if(!history.page({taskId:t.id,messageId:action.messageId}).messages.some(m=>m.id===action.messageId))throw Error('Source message is unavailable.');const snap=await current();proposeLesson(p,{id:randomUUID(),title:action.title,text:action.text,applicability:action.applicability,sourceTaskId:t.id,sourceMessageId:action.messageId,revision:snap.revision,validation:(t.checkReceipts??[]).findLast(c=>c.revision===snap.revision&&c.status==='passed')??null});Object.assign(state.projects.find(item=>item.id===p.id),p);break;
+      }
+      case 'decideLesson':{requireNavigationIdle();validateBinding(action.projectId,null);decideLesson(state.activeProject,action.id,action.decision);Object.assign(state.projects.find(p=>p.id===action.projectId),state.activeProject);break;}
       case 'setProjectInstructions':{requireNavigationIdle();validateBinding(action.projectId,null);if(typeof action.text!=='string'||action.text.length>4000)throw Error('Project instructions must be at most 4,000 characters.');state.activeProject.instructions=action.text.trim();const p=state.projects.find(p=>p.id===action.projectId);p.instructions=state.activeProject.instructions;break;}
       case 'saveDraft':{
         const p=state.projects.find(p=>p.id===action.projectId);if(!p||action.taskId!=null&&taskRecords.get(action.taskId)?.projectId!==p.id)throw Error('Draft project or chat is unavailable.');

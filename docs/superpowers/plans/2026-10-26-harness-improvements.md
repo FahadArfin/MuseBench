@@ -11,8 +11,8 @@ Delivery order and status:
 3. Complete — recoverable captured output with explicit limits and retrieval.
 4. Complete — context inspector and source receipts.
 5. Complete — selected-file checkpoint restore, redo and conflicts.
-6. In progress — reviewed project lessons and skill promotion.
-7. Pending — durable execution/delivery receipts and unknown outcomes.
+6. Complete — reviewed project lessons and skill promotion.
+7. In progress — durable execution/delivery receipts and unknown outcomes.
 8. Pending — bounded goal continuation with user priority.
 9. Pending — focused reviewer contracts and explicit integration.
 10. Pending — app-owned tool discovery; native semantic tools remain conditional on supported execution.
@@ -39,3 +39,5 @@ Feature 3 delivered: captured check output before display truncation, owned nati
 Feature 4 delivered: SHA-256 receipts for exact prepared input, instruction revisions, selected source hashes and replayed message identities; native context remains unknown. Known app-shortened messages are disclosed, and oversized handoff drafts require shortening instead of silent loss. Preview uses the same composer, including personal instructions and native continuation mode. Evidence: 676 tests and 41 desktop/browser parity scenes passed; production package verified. Independent review findings on clipped messages and preview guidance were resolved.
 
 Feature 5 delivered: selected text-file checkpoint comparison and restore, pre-restore redo checkpoints, exact reviewed revision checks, per-file conflict checks, idle runtime/check/preview requirement, persisted operation journals and interrupted-operation notice. Added/deleted paths are explicit; renames are selected add/delete pairs. Binary contents are unavailable and refused. No Git index writes or conversation rewinds. Evidence: 680 tests; 42 production/browser parity scenes; 94 packaged source/build files and native helpers verified. Multi-file restore is journaled, not an atomic filesystem transaction; concurrent external filesystem mutation still requires review of partial results.
+
+Feature 6 delivered: explicit lesson proposals with source chat/message/revision and passing check provenance, searchable review, guidance comparison, stale-content rejection, duplicate detection, bounded acceptance into existing project instructions and exact-block revocation. Validated-source lessons can use the existing native skill validation/install path after explicit review; native use still requires a load receipt. No automatic learning claim or background model call. Evidence: 683 tests and 45 desktop/browser parity scenes, including proposed/accepted/revoked lessons; package verification passed.

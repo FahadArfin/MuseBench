@@ -2,7 +2,7 @@ export interface DictationState { id: string | null; status: 'idle' | 'starting'
 export interface RunOptions {model?:string; budget?:'standard'|'extended'|'deep'; reasoning: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'; approval: 'ask' | 'auto' | 'never'; }
 export type Stage = 'plan' | 'changes' | 'preview' | 'checks' | 'review';
 export type CheckStatus = 'not-run' | 'running' | 'passed' | 'failed' | 'cancelled' | 'stale';
-export interface Project {validationScripts?:string[];worktree?:{id:string;sourceRoot:string;branch:string;base:string}; repositoryUrl?:string|null; branch?:string|null; id: string; name: string; root: string; demo: boolean; scripts: Record<string,string>; instructions?:string; }
+export interface Project {lessons?:import('./project-lessons.mjs').ProjectLesson[];validationScripts?:string[];worktree?:{id:string;sourceRoot:string;branch:string;base:string}; repositoryUrl?:string|null; branch?:string|null; id: string; name: string; root: string; demo: boolean; scripts: Record<string,string>; instructions?:string; }
 export interface FileChange { path: string; status: 'added' | 'modified' | 'deleted'; additions: number; deletions: number; before: string; after: string; binary?: boolean; approximate?: boolean; }
 export type WorkStatus = 'queued'|'working'|'waiting'|'completed'|'failed'|'cancelled'|'interrupted';
 export interface ActivityItem {workflow?:{parentRunId:string;parallelLimit:number};id:string;kind:'model'|'tool'|'agent';title:string;tool:string;status:WorkStatus;detail:string;output:string;truncated?:boolean;agentId?:string;}
@@ -17,6 +17,8 @@ export interface Preview { status: 'stopped' | 'starting' | 'running' | 'failed'
 export interface RuntimeState {modelCatalog?:import("./models.mjs").NativeModelCatalog;runLimits?:{steps:number;wallTimeMs:number;tokenBudget:null};simulation?:boolean;permissionVerified?:boolean;durableSessions?:boolean; modelId?:string|null; status: string; reason: string | null; binary: string | null; sdkVersion: string; hostVersion?: string; sessionId?: string | null; liveVerified: boolean; messages?: unknown[]; pending?: unknown; transport?: 'exec' | 'msp'; shellEnabled?: boolean; shellUnavailableReason?: string | null; shellResults?: ShellResult[]; activity?:{items:ActivityItem[];truncated:boolean}; }
 export interface AppState {workflows?:import('./workflows.mjs').Workflow[];backgroundChats?:boolean; sidebarOrder?:Record<string,string[]>; projectCreationRoot?:string; drafts?:Record<string,CodeDraft>; memories?:string; projects: Project[]; tasks: TaskSummary[]; activeProject: Project | null; task: Task | null; checkpoints: Checkpoint[]; preview: Preview; runtime: RuntimeState; busy: boolean; error: string | null; }
 export type Action = {type:'saveValidationProfile';projectId:string;scripts:string[]} | {type:'runValidation'} | {type:'refreshModels'}
+  | {type:'proposeLesson';projectId:string;taskId:string;messageId:string;title:string;text:string;applicability:string}
+  | {type:'decideLesson';projectId:string;id:string;decision:'accept'|'reject'|'revoke'}
   | {type:'restoreCheckpoint';taskId:string;id:string;revision:string;paths:string[]}
   | {type:'archiveWorktree'|'restoreWorktree';projectId:string;id:string} | {type:'recoverWorktree';projectId:string;id:string;branch:string} | {type:'setupWorktree';projectId:string;script:string}
   | {type:'saveWorkflow';workflow:import('./workflows.mjs').Workflow} | {type:'deleteWorkflow';id:string} | {type:'queueWorkflow';id:string;taskId:string;workflowId:string;objective:string}

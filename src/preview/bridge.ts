@@ -1,3 +1,4 @@
+import {proposeLesson,decideLesson} from '../shared/project-lessons.mjs';
 import {composeChatContext} from '../shared/chat-context.mjs';
 import {literalIndex} from '../shared/literal-search.mjs';
 import {validateCheckScripts,missingChecks} from '../shared/validation.mjs';
@@ -51,6 +52,8 @@ export function createPreviewBridge():MuseBenchBridge {
  async function dispatch(action:Action):Promise<AppState>{
   const current=state.task;
   switch(action.type){
+   case 'proposeLesson':{if(state.activeProject)proposeLesson(state.activeProject,{id:id(),title:action.title,text:action.text,applicability:action.applicability,sourceTaskId:action.taskId,sourceMessageId:action.messageId,revision:'sample-after',validation:null});break;}
+   case 'decideLesson':{if(state.activeProject)decideLesson(state.activeProject,action.id,action.decision);break;}
    case 'restoreCheckpoint':{state.checkpoints.unshift({id:id(),taskId:action.taskId,title:'Before restore (simulated)',revision:'sample-after',createdAt:stamp});break;}
    case 'refreshModels':state.runtime.modelCatalog={source:'Preview sample',models:[{id:'muse-preview',label:'Muse · sample',description:'Preview catalog only. No model request is sent.',efforts:['low','medium','high'],defaultEffort:'high',isDefault:true,contextLimit:null}]};break;
    case 'createProject':{const details=projectDetails(action);if(state.projects.some(p=>p.name.toLowerCase()===details.name.toLowerCase()))throw Error('A project with this name already exists.');const next={id:id(),name:details.name,root:`Documents/MuseBench/${details.name}`,demo:false,scripts:{},instructions:details.instructions};state.projects.push(next);state.activeProject=next;state.task=null;break;}
