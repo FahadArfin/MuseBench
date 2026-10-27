@@ -205,7 +205,8 @@ export function createRuntime({environment=process.env,platform=process.platform
   }
  }
 
- async function connect({binary=state.binary,workspaceRoot}={}) {
+ async function connect({binary=state.binary,workspaceRoot,fullAccess=false}={}) {
+  if(fullAccess!==false)throw Error('Full access is currently supported by the Windows native exec connection only.');
   if(owner||connecting)throw Error('Disconnect the current Muse session before connecting again.');
   if(closing||state.cleanup==='pending')throw Error('Wait for Muse shutdown to finish before reconnecting.');
   if(state.cleanup==='unconfirmed')throw Error('Muse shutdown is unconfirmed. Restart MuseBench after checking the native process.');
