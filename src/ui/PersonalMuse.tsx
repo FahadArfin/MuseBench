@@ -111,9 +111,10 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
   const museOpen = expandedService === 'muse';
   const metaOpen = expandedService === 'meta';
   const openService = (service:'muse'|'meta') => {
-    setExpandedService(service);
+    const collapse = expandedService === service;
+    setExpandedService(collapse ? null : service);
     onSearchOpenChange(false);
-    onNavigate(service==='muse'?'bot':'chat');
+    if (!collapse) onNavigate(service==='muse'?'bot':'chat');
   };
   const museSectionId = useId(), metaSectionId = useId();
   const agentName=agentProfile?.name?.trim()||'Muse';

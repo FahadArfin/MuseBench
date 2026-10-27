@@ -145,6 +145,10 @@ try {
  await page.screenshot({path:'artifacts/browser-preview/personal.png'});
  assert.equal(await page.locator('.personal-service-content.expanded').count(),0);
  await page.locator('.muse-agent-shortcut').click();
+ await page.locator('.muse-agent-shortcut').click();
+ assert.equal(await page.locator('.personal-service-content.expanded').count(),0);
+ assert.equal(await page.evaluate(async()=>(await window.musebench.personalState()).destination),'bot');
+ await page.locator('.muse-agent-shortcut').click();
  await page.getByRole('button',{name:'Ideas',exact:true}).click();
  await page.getByRole('region',{name:'Desktop website snapshot'}).waitFor();
  await page.getByRole('button',{name:'Goals',exact:true}).click();
@@ -153,6 +157,11 @@ try {
  assert.equal(await page.locator('.personal-service-content.expanded').count(),1);
  assert.equal(await page.locator('.muse-agent-shortcut').getAttribute('aria-expanded'),'false');
  assert.equal(await page.locator('.personal-meta-chat').getAttribute('aria-expanded'),'true');
+ await page.locator('.personal-meta-chat').click();
+ assert.equal(await page.locator('.personal-service-content.expanded').count(),0);
+ assert.equal(await page.evaluate(async()=>(await window.musebench.personalState()).destination),'chat');
+ await page.locator('.personal-meta-chat').click();
+ await page.screenshot({path:'artifacts/browser-preview/service-pills.png'});
  await page.getByRole('region',{name:'Desktop website snapshot'}).waitFor();
  await page.getByRole('button',{name:'Scheduled',exact:true}).click();await page.getByRole('region',{name:'Scheduled tasks'}).waitFor();assert.equal(await page.getByRole('textbox',{name:'Sample scheduling message'}).count(),0);
  await page.getByRole('group',{name:'Chat or Work'}).getByRole('button',{name:'Work',exact:true}).click();
