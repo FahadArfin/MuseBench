@@ -121,10 +121,20 @@ test('PATH discovery only reports existing native files and curated env excludes
 test('curated Windows environment resolves a bare native shell command without inheriting secrets',{skip:process.platform!=='win32'},async()=>{
  const windows=process.env.SystemRoot??'C:\\Windows';
  const env=curateEnvironment({...process.env,Path:join(windows,'System32'),pathext:'.COM;.EXE;.BAT;.CMD',SystemRoot:windows,META_API_KEY:'must-not-cross',NODE_OPTIONS:'must-not-cross'});
- const {stdout}=await promisify(execFile)(join(windows,'System32','WindowsPowerShell','v1.0','powershell.exe'),[
+ const binary=join(windows,'System32','WindowsPowerShell','v1.0','powershell.exe');
+ let stdout;
+ try {({stdout}=await promisify(execFile)(binary,[
   '-NoLogo','-NoProfile','-NonInteractive','-Command',
   "$ErrorActionPreference='Stop'; $null=whoami; if($env:META_API_KEY -or $env:NODE_OPTIONS){throw 'Unexpected inherited environment'}; Write-Output 'native-command-resolved'",
- ],{env,windowsHide:true,shell:false,timeout:60000,maxBuffer:4096,encoding:'utf8'});
+ ],{env,windowsHide:true,shell:false,timeout:60000,maxBuffer:4096,encoding:'utf8'}));}
+ catch(error){
+  const withoutPosix={...env};for(const key of ['HOME','TMPDIR','LANG','LC_ALL','LC_CTYPE','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_CACHE_HOME'])delete withoutPosix[key];
+  for(const [name,source] of [['curated',env],['withoutPosix',withoutPosix],['full',process.env]]){
+   try{await promisify(execFile)(binary,['-NoLogo','-NoProfile','-NonInteractive','-Command',"Write-Output 'probe'"],{env:source,windowsHide:true,timeout:15000,maxBuffer:4096});console.error('PowerShell startup probe: '+name+' passed');}
+   catch{console.error('PowerShell startup probe: '+name+' failed');}
+  }
+  throw error;
+ }
  assert.equal(stdout.trim(),'native-command-resolved');
 });
 

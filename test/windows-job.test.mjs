@@ -7,6 +7,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
+import {spawn as spawnNative} from 'node:child_process';
 import {createJobSpawner} from '../src/runtime/windows-job.mjs';
 import {verifyWindowsJobBuild} from '../scripts/build-windows-job.mjs';
 
@@ -152,11 +153,12 @@ test('built Windows helper preserves bytes/argv and drains a detached child afte
 test('built Windows helper confirms both immediate cancellation and an active detached descendant',{skip:!available},async t=>{
   const directory=await fs.mkdtemp(path.join(tmpdir(),'musebench-job-cancel-'));
   t.after(async()=>{await fs.rm(directory,{recursive:true,force:true,maxRetries:3,retryDelay:100});});
-  const spawn=createJobSpawner({helperPath});const errors=[];
+  const wire=[];
+  const spawn=createJobSpawner({helperPath,spawnHelper:(...args)=>{const helper=spawnNative(...args);helper.stdout.on('data',chunk=>wire.push(chunk.toString().slice(0,2048)));helper.stderr.on('data',chunk=>wire.push(chunk.toString().slice(0,2048)));helper.on('close',code=>wire.push('helper exit '+code));return helper;}});const errors=[];
   for(let attempt=0;attempt<4;attempt++){
     const child=spawn(process.execPath,['-e','setTimeout(()=>{},10000)'],{cwd:directory,env:process.env});
     child.on('error',e=>errors.push(e));child.stdout.resume();child.stderr.resume();
-    assert.equal(await child.stop(),true);assert.equal(child.cleanupConfirmed,true);
+    assert.equal(await child.stop(),true,JSON.stringify({errors:errors.map(e=>e.message),wire}));assert.equal(child.cleanupConfirmed,true);
   }
   const marker=path.join(directory,'survived.txt');
   const descendant=`process.stdout.write('ready');setTimeout(()=>require('node:fs').writeFileSync(${JSON.stringify(marker)},'bad'),1500);setTimeout(()=>{},10000);`;
