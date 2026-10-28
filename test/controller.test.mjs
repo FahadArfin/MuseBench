@@ -16,7 +16,11 @@ async function fixture(t, scripts = { test: 'node --test test.mjs', dev: 'node s
   const options = {dataDir:path.join(base,'data'),templateDir:path.resolve('templates/tea-store')};
   const controller = await createController(options);
   const controllers=[controller];
-  t.after(async()=>{for(const c of controllers)await c.close(); await rm(base,{recursive:true,force:true});});
+  t.after(async()=>{
+    for(const c of controllers)await c.close();
+    // Windows can briefly retain a command's working-directory lock after exit.
+    await rm(base,{recursive:true,force:true,maxRetries:5,retryDelay:100});
+  });
   await controller.dispatch({type:'openProject',path:root});
   await controller.dispatch({type:'newTask',request:'Improve tea selection',mode:'manual'});
   return {controller,root,base,options,controllers};
