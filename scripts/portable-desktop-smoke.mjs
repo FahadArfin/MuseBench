@@ -10,7 +10,12 @@ const env=isolatedDesktopEnvironment(data);
 const errors=[],report={platform:process.platform,arch:process.arch,checks:[],errors};let app;
 try{
  app=await electron.launch({executablePath:packagePaths().executable,args:['--host-resolver-rules=MAP * 0.0.0.0, EXCLUDE localhost',...(process.env.CI&&process.platform==='linux'?['--no-sandbox']:[])],env,timeout:60000});
- const page=await app.firstWindow();page.on('pageerror',error=>errors.push(error.message));
+ // Electron also creates personal-chat WebContentsViews during boot. Select the
+ // packaged shell rather than whichever web contents wins the first-window race.
+ let page;const deadline=Date.now()+60000;
+ while(!page&&Date.now()<deadline){page=app.windows().find(candidate=>/\/dist\/index\.html(?:[?#]|$)/.test(candidate.url().replaceAll('\\','/')));if(!page)await new Promise(resolve=>setTimeout(resolve,100));}
+ if(!page)throw Error('Packaged shell did not open: '+app.windows().map(candidate=>candidate.url()).join(', '));
+ page.on('pageerror',error=>errors.push(error.message));
  await page.waitForFunction(()=>!!window.musebench,{},{timeout:30000});
  const state=await page.evaluate(()=>window.musebench.getState());assert.ok(Array.isArray(state.projects));
  assert.equal(state.runtime.liveVerified,false);report.checks.push('Fresh profile starts with the real preload/controller; no model verification is invented');
