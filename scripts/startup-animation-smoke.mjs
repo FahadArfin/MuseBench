@@ -57,7 +57,7 @@ async function until(check,label,timeout=12000){
 const settled=page=>page.waitForFunction(()=>document.querySelector('.launch-content')&&!document.querySelector('.launch-overlay')&&document.documentElement.dataset.launchActive!=='true'&&!document.querySelector('.launch-content').inert);
 const observation=page=>page.evaluate(()=>window.__launchObservation);
 
-async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,skip}={}){
+async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,fontDelay=0,skip}={}){
   const page=lastPage=await browser.newPage({viewport,reducedMotion,...(name==='preview-launch'?{recordVideo:{dir:output,size:viewport}}:{})});
   page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(`${name}: ${error.message}`));
   const load=report.sceneLoads??={};load[name]={failedRequests:[],failedResponses:[],crashed:false};
@@ -69,6 +69,7 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
     if(url.hostname!=='127.0.0.1')return route.abort();
     // Reproduce a delayed renderer bundle without changing presentation timing.
     if(name==='preview-launch'&&process.argv.includes('--slow-renderer')&&/\/assets\/index-[^/]+\.js$/.test(url.pathname))await delay(7000);
+    if(fontDelay&&/\/inter-latin-wght-normal-[^/]+\.woff2$/.test(url.pathname))await delay(fontDelay);
     return route.continue();
   });
   await page.addInitScript(observeLaunch);
@@ -194,6 +195,13 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
 
   const light=await browserScene('light-launch',{preferences:{theme:'light'}});checkLaunchMotion(light.frames,'light theme');await light.page.close();
   pass('Light theme retains the same typing, cursor, motion and exact sidebar landing');
+
+  const lateFont=await browserScene('late-brand-font',{fontDelay:350});checkLaunchMotion(lateFont.frames,'late brand font');await lateFont.page.close();
+  pass('A late brand font preserves centered typing, cursor tracking and exact landing');
+  const stalledFont=await browserScene('stalled-brand-font',{fontDelay:2000});
+  assert(!stalledFont.frames.some(frame=>frame.rendered),'A stalled font skips the flourish instead of measuring fallback glyphs');
+  await stalledFont.page.close();
+  pass('A stalled brand font releases interaction without starting a misaligned animation');
 
   const slow=await browserScene('slow-first-paint',{slowFirstPaint:550});checkLaunchMotion(slow.frames,'slow first paint');await slow.page.close();
   pass('A busy cold renderer still completes the flight and icon handoff before the launch deadline');

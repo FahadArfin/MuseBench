@@ -127,10 +127,17 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
         } catch { finish(); }
       }, 850);
     };
-    // The bundled brand font is already fetching through CSS. Bound this wait so a
-    // damaged font/cache cannot hold the launch screen; flight uses real DOM bounds.
-    Promise.race([document.fonts.load('500 17px "Inter Variable"'), new Promise(resolve => later(() => resolve(null), 100))])
-      .catch(() => {}).then(() => { if (!disposed && !finished) frame = requestAnimationFrame(begin); });
+    // Measure the actual brand font, never a fallback that can swap underneath
+    // cached centering/cursor coordinates. Leave room for the normal flight;
+    // a damaged or unusually slow font must release the app, not hold its UI.
+    Promise.race([
+      document.fonts.load('500 17px "Inter Variable"', 'Muse AI').then(fonts => fonts.length > 0),
+      new Promise<boolean>(resolve => later(() => resolve(false), 400)),
+    ]).catch(() => false).then(ready => {
+      if (disposed || finished) return;
+      if (!ready) { finish(); return; }
+      frame = requestAnimationFrame(begin);
+    });
     return () => {
       disposed = true;
       cancelAnimationFrame(frame);

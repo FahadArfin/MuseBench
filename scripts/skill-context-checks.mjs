@@ -70,7 +70,7 @@ export async function checkSkillContext({page,dialog,pass,screenshot,desktopApp}
   if(desktopApp)await desktopApp.evaluate(()=>{const state=globalThis.__catalogFixture.state;delete state.skillCatalog.stale;state.errors=[];});
   else await page.evaluate(()=>{delete window.__skillContextFixture.skillCatalog.stale;});
   await dialog.getByRole('button',{name:'Refresh extensions',exact:true}).click();
-  assert.equal(await summary.getByText('Last refresh',{exact:true}).count(),0);
+  await summary.getByText('Last refresh',{exact:true}).waitFor({state:'hidden'});
   if(desktopApp)await desktopApp.evaluate(()=>{Object.assign(globalThis.__catalogFixture.state,{skills:[],skillCatalog:undefined,errors:['Skills could not be refreshed.']});});
   else await page.evaluate(()=>{window.__skillContextUnavailable=true;});
   await dialog.getByRole('button',{name:'Refresh extensions',exact:true}).click();
