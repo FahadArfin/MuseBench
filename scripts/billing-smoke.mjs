@@ -11,6 +11,8 @@ let app,browser,server,page;
 const pass=label=>{report.checks.push(label);console.log('PASS '+label);};
 async function shot(name){const file=path.join(output,name+'.png');await page.screenshot({path:file});report.screenshots.push(file);}
 async function bounded(promise,label){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' timed out')),12000);})]);}finally{clearTimeout(timer);}}
+async function setResetWindows(windows){if(desktop)await app.evaluate((_electron,windows)=>{globalThis.__billingFixture.windows=windows;},windows);else await page.evaluate(windows=>{window.__resetFixture.windows=windows;},windows);}
+async function usageReads(){return desktop?app.evaluate(()=>globalThis.__billingFixture.usageReads):page.evaluate(()=>window.__resetFixture.usageReads);}
 try{
  if(desktop){
   const dataDir=path.join(output,'data');await mkdir(dataDir);const env={...process.env,MUSEBENCH_DATA_DIR:dataDir,MUSEBENCH_PROJECTS_DIR:path.join(output,'projects')};delete env.ELECTRON_RUN_AS_NODE;delete env.MUSEBENCH_DEV;
@@ -32,7 +34,7 @@ try{
   await app.evaluate(({ipcMain,session})=>{
    for(const s of [session.defaultSession,session.fromPartition('persist:musebench-personal-muse'),session.fromPartition('persist:musebench-billing')])s.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*']},(_d,cb)=>cb({cancel:true}));
    const state={mode:'account',source:'account',status:'ready',hasApiKey:false,billingAccountId:null,busy:false};
-   const fixture=globalThis.__billingFixture={state,checkouts:[],failNextCheckout:false,sender:null};
+   const fixture=globalThis.__billingFixture={state,checkouts:[],failNextCheckout:false,sender:null,usageReads:0,windows:[{label:'Weekly',remainingPercent:9,resetsAt:new Date(Date.now()+86400000).toISOString()}]};
    const emit=event=>event.sender.send('musebench:billing-update');
    ipcMain.removeHandler('musebench:code-billing');ipcMain.handle('musebench:code-billing',(event,c)=>{
     fixture.sender=event.sender;
@@ -42,17 +44,34 @@ try{
     if(c.type==='linkBilling')state.billingAccountId=c.accountId;
     if(c.type!=='status')emit(event);return{state:{...state}};
    });
-   ipcMain.removeHandler('musebench:command-info');ipcMain.handle('musebench:command-info',(_event,type)=>type==='usage'?{status:'ready',usage:{windows:state.source==='account'?[{label:'Weekly',remainingPercent:9}]:[],billingSource:state.source,billingMatched:state.billingAccountId==='fixture-team',billing:{accountId:'fixture-team',spent:18.25,freeCredits:125,currency:'USD',period:'This month',source:'Isolated fixture'}}}:{status:'ready'});
+   ipcMain.removeHandler('musebench:command-info');ipcMain.handle('musebench:command-info',(_event,type)=>{if(type!=='usage')return{status:'ready'};fixture.usageReads++;return{status:'ready',usage:{windows:state.source==='account'?fixture.windows:[],billingSource:state.source,billingMatched:state.billingAccountId==='fixture-team',billing:{accountId:'fixture-team',spent:18.25,freeCredits:125,currency:'USD',period:'This month',source:'Isolated fixture'}}};});
    ipcMain.removeHandler('musebench:onboarding');ipcMain.handle('musebench:onboarding',()=>({code:{status:'ready'},personal:{status:'ready'}}));
   });
  }else{
   server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-billing-test',server:{port:4326,host:'127.0.0.1',strictPort:true}});await server.listen();
   browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:1440,height:1000}});await page.goto('http://127.0.0.1:4326/preview.html');
  }
+ if(!desktop)await page.evaluate(()=>{const original=window.musebench.commandInfo;const fixture=window.__resetFixture={windows:null,usageReads:0};window.musebench.commandInfo=async type=>{const r=await original(type);if(type==='usage'){fixture.usageReads++;if(fixture.windows)r.usage.windows=fixture.windows;}return r;};});
  page.setDefaultTimeout(15000);page.on('pageerror',e=>report.errors.push(e.message));
  await page.getByRole('button',{name:'Profile menu',exact:true}).click();await page.getByRole('menuitem',{name:'Usage',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Usage & billing',exact:true});await dialog.getByRole('radio',{name:/Muse Code account/}).waitFor();
  await dialog.getByText('9% left',{exact:true}).waitFor();pass('Subscription allowance visible in the shared Overview');await shot('overview');
+ const resets=dialog.getByRole('region',{name:'Subscription resets',exact:true});
+ await resets.getByText('Automatic resets',{exact:true}).waitFor();await resets.getByText('Banked resets',{exact:true}).waitFor();
+ assert.equal(await resets.getByRole('button',{name:/^(Claim|Use) reset$/}).count(),0);await resets.getByText('Not available',{exact:true}).waitFor();
+ await page.clock.install();const resetNow=await page.evaluate(()=>Date.now());
+ const resetWindows=[{label:'Current window',remainingPercent:0,resetsAt:new Date(resetNow+120000).toISOString()},{label:'Weekly',remainingPercent:9,resetsAt:new Date(resetNow+86400000).toISOString()}];
+ await setResetWindows(resetWindows);await resets.getByRole('button',{name:'Refresh usage',exact:true}).click();await dialog.getByText('0% left',{exact:true}).waitFor();
+ const beforeDeadline=await usageReads();await page.clock.fastForward(121100);
+ await resets.getByText('Awaiting Meta update',{exact:true}).waitFor();assert.equal(await usageReads(),beforeDeadline+1);assert.equal(await dialog.getByRole('progressbar',{name:'Current window remaining',exact:true}).getAttribute('value'),'0');
+ const afterDeadline=await usageReads();await page.clock.fastForward(15000);assert.equal(await usageReads(),afterDeadline);
+ pass('Scheduled reset triggers one read; stale Meta observation keeps the real bar and does not spin');await shot('resets-awaiting');
+ await setResetWindows([{...resetWindows[0],remainingPercent:100,resetsAt:new Date(resetNow+18000000).toISOString()},resetWindows[1]]);
+ await resets.getByRole('button',{name:'Refresh usage',exact:true}).click();await dialog.getByText('100% left',{exact:true}).waitFor();pass('Only a new provider observation refills the usage bar');
+ await setResetWindows([]);await resets.getByRole('button',{name:'Refresh usage',exact:true}).click();await resets.getByText('Meta has not reported subscription reset times yet.').waitFor();
+ assert.equal(await resets.locator('time').count(),0);pass('Unavailable allowance never becomes a zero reset balance or an invented date');
+ await setResetWindows([{...resetWindows[0],remainingPercent:64,resetsAt:new Date(resetNow+18000000).toISOString()},resetWindows[1]]);
+ await resets.getByRole('button',{name:'Refresh usage',exact:true}).click();await dialog.getByText('9% left',{exact:true}).waitFor();await shot('resets');
  if(desktop){
   const states=await page.evaluate(async()=>({work:await window.musebench.workState(),sites:await window.musebench.sitesState()}));
   for(const name of ['work','sites'])for(const busy of [true,false]){
@@ -61,7 +80,8 @@ try{
   }
   pass('Billing controls unlock when Work and Sites finish without refocus');
  }
- await dialog.getByRole('tab',{name:'Plans',exact:true}).click();assert.equal(await dialog.getByRole('radio').count(),4);
+ await resets.getByRole('button',{name:'View subscription plans',exact:true}).click();assert.equal(await dialog.getByRole('radio').count(),4);
+ const beforePlans=await usageReads();await page.clock.fastForward(300001);assert.equal(await usageReads(),beforePlans);pass('Leaving Overview cancels its reset polling');
  await dialog.getByRole('radio',{name:/Power Usage/}).click();assert.equal(await dialog.getByRole('radio',{name:/Power Usage/}).getAttribute('aria-checked'),'true');
  await dialog.getByRole('button',{name:/Continue to Meta checkout/}).click();await dialog.getByText('Preview only. No checkout or purchase was started.').waitFor();await shot('plans');pass('Four plans, selected plan, subscription checkout and explicit simulated outcome');
  if(desktop)await app.evaluate(()=>{globalThis.__billingFixture.failNextCheckout=true;});
@@ -73,6 +93,7 @@ try{
  await dialog.getByRole('tab',{name:'Overview',exact:true}).click();await dialog.getByRole('radio',{name:/API billing/}).click();
  const field=dialog.getByLabel('Meta API key',{exact:true});await field.fill('fixture-not-a-real-api-key');assert.equal(await field.getAttribute('type'),'password');
  await dialog.getByRole('button',{name:'Save & use API',exact:true}).click();await dialog.getByText('API billing is selected. Subscription allowance is separate.').waitFor();assert.equal(await field.count(),0);
+ await resets.getByText('API billing uses pay-as-you-go credits. Subscription resets do not apply.').waitFor();assert.equal(await resets.locator('time').count(),0);pass('API selection hides subscription reset countdowns');
  assert.ok(!(await page.evaluate(()=>window.musebench.codeBilling({type:'status'})).then(JSON.stringify)).includes('fixture-not-a-real-api-key'));pass('API key input clears and never returns through billing state');
  await dialog.getByRole('button',{name:'This is my API billing account',exact:true}).click();await dialog.getByText('Billing account linked to this API key’s usage display.').waitFor();await shot('api-overview');
  await page.keyboard.press('Escape');await page.getByRole('button',{name:'Profile menu',exact:true}).click();await page.getByText(/API · \$125\.00 free credits/).waitFor();pass('Compact usage switches to the confirmed API billing account');
