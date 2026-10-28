@@ -1,17 +1,16 @@
 .launch-content{width:100%;height:100%}
 .launch-overlay{position:fixed;inset:0;z-index:1000;overflow:hidden;user-select:none;-webkit-app-region:no-drag}
-.launch-backdrop{position:absolute;inset:0;background:var(--bg)}
-.launch-wordmark{position:fixed;top:0;left:0;display:flex;align-items:center;gap:7px;width:max-content;height:28px;color:#1877f2;font:600 17px/1 var(--font-ui);letter-spacing:-.35px;transform-origin:0 0;will-change:transform;visibility:hidden}
+.launch-backdrop{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 48%,rgb(24 119 242 / .035),transparent 54%),var(--bg)}
+/* Let Chromium rasterize the hero at its visible scale before the flight. */
+.launch-wordmark{position:fixed;top:0;left:0;display:flex;align-items:center;gap:5px;width:max-content;height:28px;color:#1877f2;font:500 17px/1 var(--font-ui);letter-spacing:-.4px;transform-origin:0 0;visibility:hidden}
 .launch-overlay:not([data-phase="preparing"]) .launch-wordmark{visibility:visible}
-.launch-symbol{position:relative;display:block;width:28px;height:28px;flex:none}
+.launch-symbol{position:relative;display:block;width:20px;height:28px;flex:none}
 .launch-symbol svg{position:absolute;inset:0;stroke-width:1.8}
+.launch-terminal path{stroke-width:1.6;stroke-dasharray:1;stroke-dashoffset:1}
 .launch-chat-icon{opacity:0}
 .launch-name{white-space:pre}
 .launch-name>span{opacity:0}
-.launch-overlay:not([data-phase="preparing"]) .launch-name>span{animation:launch-letter 1ms linear var(--launch-letter-delay) forwards}
-.launch-overlay[data-phase="typing"] .launch-terminal path:last-child{animation:launch-cursor 440ms steps(1,end) 2}
-@keyframes launch-letter{to{opacity:1}}
-@keyframes launch-cursor{0%,100%{opacity:1}50%{opacity:.15}}
+.launch-cursor{position:absolute;top:20px;left:0;width:6px;height:1.5px;border-radius:.75px;background:currentColor;transform:translateX(18px)}
 :root[data-launch-active="true"] [data-launch-brand="personal"]{visibility:hidden}
 :root[data-launch-active="true"] [data-launch-brand="personal"] .typed-text>span,
 [data-launch-arrived="true"] .typed-text>span,

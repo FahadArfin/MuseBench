@@ -20,6 +20,7 @@ function observeLaunch(){
   if(window.__launchObservation)return;
   const result=window.__launchObservation={frames:[],startedAt:performance.now(),timeOrigin:performance.timeOrigin};
   const rect=element=>{if(!element)return null;const r=element.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
+  const union=boxes=>{if(!boxes.length)return null;const x=Math.min(...boxes.map(box=>box.x)),y=Math.min(...boxes.map(box=>box.y));return {x,y,width:Math.max(...boxes.map(box=>box.x+box.width))-x,height:Math.max(...boxes.map(box=>box.y+box.height))-y};};
   const sample=()=>{
     const layer=document.querySelector('.launch-overlay'),mark=document.querySelector('.launch-wordmark');
     // Vite can spend several seconds compiling before React mounts on a cold
@@ -30,10 +31,17 @@ function observeLaunch(){
     if(result.appObservedAt===undefined){if(now-result.startedAt<30000)requestAnimationFrame(sample);return;}
     const target=[...document.querySelectorAll('[data-launch-brand="personal"]')].find(element=>element.getBoundingClientRect().width>0);
     const style=mark?getComputedStyle(mark):null;
+    const glyphs=mark?[...mark.querySelectorAll('.launch-name>span')].map(element=>({text:element.textContent,opacity:Number(getComputedStyle(element).opacity),box:rect(element)})):[];
+    const cursor=mark?.querySelector('.launch-cursor'),terminal=mark?.querySelector('.launch-terminal'),chatIcon=mark?.querySelector('.launch-chat-icon');
     result.frames.push({at:performance.now(),active:document.documentElement.dataset.launchActive==='true',phase:layer?.dataset.phase??null,
       rendered:Boolean(mark&&style.visibility==='visible'&&getComputedStyle(layer).display!=='none'),
-      letters:mark?[...mark.querySelectorAll('.launch-name>span')].filter(element=>Number(getComputedStyle(element).opacity)>.9).map(element=>element.textContent).join(''):'',
-      mark:rect(mark),target:rect(target),color:style?.color,viewport:{width:innerWidth,height:innerHeight},overflow:document.documentElement.scrollWidth>innerWidth+1,
+      letters:glyphs.filter(glyph=>glyph.opacity>.9).map(glyph=>glyph.text).join(''),glyphs,
+      cursor:cursor?{box:rect(cursor),opacity:Number(getComputedStyle(cursor).opacity)}:null,cursorCount:mark?.querySelectorAll('.launch-cursor').length??0,
+      terminalOpacity:terminal?Number(getComputedStyle(terminal).opacity):null,chatIcon:chatIcon?{box:rect(chatIcon),opacity:Number(getComputedStyle(chatIcon).opacity)}:null,
+      mark:rect(mark),text:rect(mark?.querySelector('.launch-name')),target:rect(target),targetText:rect(target?.querySelector('.typed-text')),targetIcon:rect(target?.querySelector('.product-brand-icon')),
+      textGlyphBounds:union(glyphs.map(glyph=>glyph.box)),targetGlyphBounds:union(target?[...target.querySelectorAll('.typed-text>span')].map(rect):[]),
+      targetVisible:target?getComputedStyle(target).visibility==='visible':false,targetLettersOpaque:target?[...target.querySelectorAll('.typed-text>span')].every(glyph=>Number(getComputedStyle(glyph).opacity)>.99):false,
+      color:style?.color,viewport:{width:innerWidth,height:innerHeight},overflow:document.documentElement.scrollWidth>innerWidth+1,
       inert:Boolean(document.querySelector('.launch-content')?.inert)});
     if(performance.now()-result.appObservedAt<6500)requestAnimationFrame(sample);
   };
@@ -51,6 +59,10 @@ const observation=page=>page.evaluate(()=>window.__launchObservation);
 async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,skip}={}){
   const page=lastPage=await browser.newPage({viewport,reducedMotion,...(name==='preview-launch'?{recordVideo:{dir:output,size:viewport}}:{})});
   page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(`${name}: ${error.message}`));
+  const load=report.sceneLoads??={};load[name]={failedRequests:[],failedResponses:[],crashed:false};
+  page.on('crash',()=>{load[name].crashed=true;});
+  page.on('requestfailed',request=>{if(new URL(request.url()).hostname==='127.0.0.1')load[name].failedRequests.push({url:request.url(),error:request.failure()?.errorText});});
+  page.on('response',response=>{if(response.status()>=400&&new URL(response.url()).hostname==='127.0.0.1')load[name].failedResponses.push({url:response.url(),status:response.status()});});
   await page.route('**/*',async route=>{
     const url=new URL(route.request().url());
     if(url.hostname!=='127.0.0.1')return route.abort();
@@ -64,9 +76,9 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
     if(brokenAnimation)Element.prototype.animate=function(){throw Error('Simulated unavailable animation compositor');};
   },{preferences,brokenAnimation});
   await page.goto(`${server.resolvedUrls.local[0]}preview.html${query}`,{waitUntil:'domcontentloaded'});
-  if(name==='preview-launch'){
+  if(name==='preview-launch'||name==='light-launch'){
     await page.waitForFunction(()=>{const letter=document.querySelector('.launch-name>span:last-child');return letter&&Number(getComputedStyle(letter).opacity)>.9;});
-    await page.screenshot({path:path.join(output,'launch-centered.png')});
+    await page.screenshot({path:path.join(output,name==='preview-launch'?'launch-centered.png':'light-launch-centered.png')});
   }
   if(skip){await page.locator('.launch-overlay[data-phase="typing"]').waitFor();await skip(page);}
   await settled(page);await page.locator('.app').waitFor();
@@ -77,29 +89,76 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
   return {page,frames:evidence.frames};
 }
 
-async function checkBrowser(){
-  server=await createServer({configFile:path.join(root,'vite.preview.config.mjs'),cacheDir:path.join(root,'node_modules/.vite-startup-animation'),server:{host:'127.0.0.1',port:0,strictPort:false}});await server.listen();
-  browser=await chromium.launch({headless:true});
-  const normal=await browserScene('preview-launch');
-  const typed=normal.frames.filter(frame=>frame.rendered&&frame.phase==='typing');
+function checkLaunchMotion(frames,label){
+  const typed=frames.filter(frame=>frame.rendered&&frame.phase==='typing');
   assert(typed.length>5,'Explicit preview must visibly animate');
   assert(typed.some(frame=>frame.letters.length>0&&frame.letters!=='Muse AI'),'Brand letters appear progressively');
   assert(typed.some(frame=>frame.letters==='Muse AI'),'Typing completes before the flight');
+  assert(typed.filter(frame=>frame.glyphs.some(glyph=>glyph.opacity>.1&&glyph.opacity<.9)).length>3,'Glyphs softly fade into view across rendered frames');
   const centered=typed.find(frame=>frame.letters==='Muse AI');
   assert(Math.abs(centered.mark.x+centered.mark.width/2-centered.viewport.width/2)<2,'Large launch title starts centered horizontally');
   assert(Math.abs(centered.mark.y+centered.mark.height/2-centered.viewport.height/2)<2,'Large launch title starts centered vertically');
-  assert(centered.mark.height>=80,'Launch title is substantially larger than the sidebar brand');
+  assert(centered.mark.height>=74&&centered.mark.height<=84,'Hero uses the optically balanced size of about 80px while remaining larger than the sidebar brand');
   assert.equal(centered.color,'rgb(24, 119, 242)','Launch uses requested Facebook blue');
-  const moving=normal.frames.filter(frame=>frame.rendered&&frame.phase==='moving');
+  assert(typed.every(frame=>frame.cursorCount===1),'Only one terminal typing cursor is rendered');
+  const tracking=typed.filter(frame=>frame.cursor?.opacity>.2&&frame.glyphs.some(glyph=>glyph.opacity>.01));
+  assert(tracking.length>5,'Cursor accompanies the visibly typed name');
+  let atTextEdge=0,leadStarted=null,longestLead=0;
+  for(const frame of tracking){
+    const fullyVisible=frame.glyphs.filter(glyph=>glyph.opacity>.99).at(-1);
+    const revealing=frame.glyphs.filter(glyph=>glyph.opacity>.001).at(-1);
+    const minimum=fullyVisible?fullyVisible.box.x+fullyVisible.box.width:frame.text.x;
+    // The cursor moves as a glyph begins its short fade. A sample at that exact
+    // boundary may see the new cursor position before the glyph's first paint.
+    const next=frame.glyphs[frame.glyphs.indexOf(revealing)+1];
+    const maximum=(next??revealing).box.x+(next??revealing).box.width;
+    assert(frame.cursor.box.x>=minimum-2&&frame.cursor.box.x<=maximum+12,`${label}: cursor tracks the advancing text edge`);
+    if(Math.abs(frame.cursor.box.x-revealing.box.x-revealing.box.width)<=8){
+      atTextEdge++;
+      if(leadStarted!==null){longestLead=Math.max(longestLead,frame.at-leadStarted);leadStarted=null;}
+    }else if(leadStarted===null)leadStarted=frame.at;
+  }
+  if(leadStarted!==null)longestLead=Math.max(longestLead,tracking.at(-1).at-leadStarted);
+  // The JS cursor move can precede the new glyph's first compositor paint by
+  // one or two frames. Permit that short lead, never a cursor detached ahead.
+  assert(atTextEdge/tracking.length>=.7&&longestLead<90,'Cursor stays beside the revealing text with only a brief lead at glyph boundaries');
+  const firstCursor=tracking[0].cursor.box.x,lastCursor=tracking.at(-1).cursor.box.x;
+  assert(lastCursor-firstCursor>centered.text.width*.45,'Cursor advances with the text instead of blinking beneath the leading symbol');
+  assert(typed.at(-1).cursor.opacity<.02,'Cursor withdraws before the wordmark begins travelling');
+  const moving=frames.filter(frame=>frame.rendered&&frame.phase==='moving');
   assert(moving.length>5,'Brand visibly travels to the sidebar');
+  assert(moving.every(frame=>frame.cursor?.opacity<.02),'The withdrawn cursor stays hidden throughout the flight');
   const landed=moving.at(-1);
   assert(Math.abs(landed.mark.x-landed.target.x)<3,'Flight lands on the real sidebar title position');
   assert(Math.abs(landed.mark.y-landed.target.y)<4,'Flight lands on the real sidebar title height');
   assert(moving.at(0).mark.width>landed.mark.width*2,'Brand scales down smoothly into the sidebar');
-  assert(normal.frames.filter(frame=>frame.active&&frame.phase).every(frame=>frame.inert),'Background controls do not steal launch input');
-  const active=normal.frames.filter(frame=>frame.active);
+  const duration=landed.at-moving[0].at;
+  const progress=frame=>(centered.mark.x-frame.mark.x)/(centered.mark.x-landed.mark.x);
+  const atFraction=fraction=>moving.reduce((nearest,frame)=>Math.abs(frame.at-moving[0].at-duration*fraction)<Math.abs(nearest.at-moving[0].at-duration*fraction)?frame:nearest,moving[0]);
+  const quarter=progress(atFraction(.25)),middle=progress(atFraction(.5)),threeQuarter=progress(atFraction(.75));
+  assert(quarter>.01&&quarter<.25,'Flight accelerates gently instead of darting across most of the distance immediately');
+  assert(middle>.35&&middle<.8,'Flight develops its main movement through the middle of the transition');
+  assert(middle-quarter>quarter&&middle-quarter>1-threeQuarter,'Flight accelerates out and slows down into the title');
+  for(const key of ['x','y','width','height']){
+    assert(Math.abs(landed.text[key]-landed.targetText[key])<2,`${label}: final text ${key} matches the actual sidebar text without a jump`);
+    assert(Math.abs(landed.textGlyphBounds[key]-landed.targetGlyphBounds[key])<2,`${label}: final rendered glyph ${key} matches the real title`);
+    assert(Math.abs(landed.chatIcon.box[key]-landed.targetIcon[key])<2,`${label}: final chat icon ${key} matches the actual sidebar icon`);
+  }
+  assert(landed.terminalOpacity<.02&&landed.chatIcon.opacity>.98,'Terminal symbol resolves fully into the sidebar chat icon before handoff');
+  const revealed=frames.find(frame=>frame.at>landed.at&&!frame.active&&frame.target);
+  assert(revealed?.targetVisible&&revealed.targetLettersOpaque,'The real title is fully visible on the first frame after handoff');
+  assert(frames.filter(frame=>frame.active&&frame.phase).every(frame=>frame.inert),'Background controls do not steal launch input');
+  const active=frames.filter(frame=>frame.active);
   assert(active.at(-1).at-active[0].at<2350,'Normal animation remains short');
+}
+
+async function checkBrowser(){
+  server=await createServer({configFile:path.join(root,'vite.preview.config.mjs'),cacheDir:path.join(root,'node_modules/.vite-startup-animation'),server:{host:'127.0.0.1',port:0,strictPort:false}});await server.listen();
+  browser=await chromium.launch({headless:true});
+  const normal=await browserScene('preview-launch');
+  checkLaunchMotion(normal.frames,'dark theme');
   pass('Preview types the large blue Muse AI wordmark in the center, animates to the actual sidebar brand, and releases interaction in under 2.35 seconds');
+  pass('One cursor follows softly revealed glyphs and withdraws before gentle acceleration, deceleration and a seamless text/icon handoff');
   await normal.page.getByRole('button',{name:'Muse Code',exact:true}).click();
   await normal.page.getByRole('textbox',{name:'Message Muse',exact:true}).waitFor();
   assert.equal(await normal.page.locator('.launch-overlay').count(),0);
@@ -107,6 +166,9 @@ async function checkBrowser(){
   assert.equal(await normal.page.locator('.launch-overlay').count(),0);
   pass('Switching between Muse AI and Muse Code does not replay launch');
   const video=normal.page.video();await normal.page.close();if(video)await video.saveAs(path.join(output,'launch-demo.webm'));
+
+  const light=await browserScene('light-launch',{preferences:{theme:'light'}});checkLaunchMotion(light.frames,'light theme');await light.page.close();
+  pass('Light theme retains the same typing, cursor, motion and exact sidebar landing');
 
   const ordinary=await browserScene('preview-normal',{query:''});
   assert(!ordinary.frames.some(frame=>frame.active));await ordinary.page.close();
@@ -216,6 +278,7 @@ async function checkDesktop(){
   const motion=report.scenes['desktop-cold']=await observation(page);
   assert(motion.frames.some(frame=>frame.rendered&&frame.phase==='typing'),'Real desktop visibly types after its initially hidden window appears');
   assert(motion.frames.some(frame=>frame.rendered&&frame.phase==='moving'),'Real desktop visibly flies into the sidebar');
+  checkLaunchMotion(motion.frames,'desktop');
   if(variant==='source'){
     const fixture=await app.evaluate(()=>globalThis.__launchFixture);report.scenes['desktop-fixture']=fixture;
     assert(fixture.requests.some(request=>/^https:\/\/(www\.)?meta\.ai\/$/.test(request.url)),'Official initial chat URL was preloaded');
@@ -252,7 +315,9 @@ try{
   assert.deepEqual(report.errors,[]);report.status='passed';
 }catch(error){
   report.status='failed';report.error=String(error.stack??error);console.error(error);process.exitCode=1;
+  report.failureDocument=await lastPage?.evaluate(()=>({url:location.href,title:document.title,readyState:document.readyState,rootChildren:document.querySelector('#root')?.childElementCount??null,launchActive:document.documentElement.dataset.launchActive??null,overlay:document.querySelector('.launch-overlay')?.getAttribute('data-phase')??null})).catch(()=>null);
   console.error('Launch diagnostics:',JSON.stringify(Object.fromEntries(Object.entries(report.scenes).filter(([,scene])=>scene?.frames).map(([name,scene])=>[name,{appMountMs:scene.appObservedAt===undefined?null:Math.round(scene.appObservedAt-scene.startedAt),phases:scene.frames.reduce((counts,frame)=>({...counts,[frame.phase??'settled']:(counts[frame.phase??'settled']??0)+1}),{})}]))));
+  console.error('Load diagnostics:',JSON.stringify({document:report.failureDocument,scenes:report.sceneLoads}));
   await lastPage?.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});
 }
 finally{await app?.close().catch(()=>{});await browser?.close().catch(()=>{});await server?.close();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log(`Report: ${path.join(output,'report.json')}`);}

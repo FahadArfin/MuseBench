@@ -1,5 +1,5 @@
-import {useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode} from 'react';
-import {MessagesSquare, Terminal} from 'lucide-react';
+import {useCallback, useLayoutEffect, useRef, useState, type ReactNode} from 'react';
+import {MessagesSquare} from 'lucide-react';
 import {readPreferences} from './preferences.mjs';
 import './launch-animation.css';
 
@@ -45,18 +45,43 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
     motion.addEventListener('change', onMotionChange);
     layer.addEventListener('pointerdown', finish);
     // This is a flourish, never a dependency of app readiness or an indefinite loader.
-    later(finish, 1900);
+    later(finish, 2100);
     const begin = () => {
       if (disposed || finished) return;
       if (reduce() || document.hidden) { finish(); return; }
+      // Measure before scaling so the cursor can follow actual glyph advances,
+      // including the space. Keep the full title in layout throughout typing.
       const box = mark.getBoundingClientRect();
-      const scale = Math.min(3.4, (innerWidth - 64) / box.width);
+      const letters = Array.from(mark.querySelectorAll<HTMLElement>('.launch-name>span'));
+      const cursor = mark.querySelector<HTMLElement>('.launch-cursor')!;
+      const advances = letters.map(letter => letter.getBoundingClientRect().right - box.left + 1.5);
+      const scale = Math.min(2.85, (innerWidth - 64) / (box.width + 9));
       const x = (innerWidth - box.width * scale) / 2;
       const y = (innerHeight - box.height * scale) / 2;
       const origin = `translate(${x}px, ${y}px) scale(${scale})`;
       mark.style.transform = origin;
       layer.dataset.phase = 'typing';
+      try {
+        animate(mark, [{opacity:0}, {opacity:1}], {duration:160, easing:'ease-out'});
+        animate(mark.querySelector('.launch-terminal path')!, [{strokeDashoffset:1}, {strokeDashoffset:0}], {duration:220, easing:'cubic-bezier(.4,0,.2,1)'});
+        // A restrained cadence, with a little breathing room before "AI".
+        const beats = [180, 238, 292, 352, 410, 490, 556];
+        letters.forEach((letter, index) => later(() => {
+          if (disposed || finished) return;
+          try {
+            cursor.style.transform = `translateX(${advances[index]}px)`;
+            animate(letter, [{opacity:0}, {opacity:1}], {duration:90, easing:'ease-out'});
+          } catch { finish(); }
+        }, beats[index]));
+        later(() => {
+          if (!disposed && !finished) {
+            try { animate(cursor, [{opacity:1}, {opacity:0}], {duration:100}); }
+            catch { finish(); }
+          }
+        }, 720);
+      } catch { finish(); return; }
       later(() => {
+        if (disposed || finished) return;
         try {
           // Both product sidebars stay mounted; the first match can be the hidden one.
           const target = Array.from(document.querySelectorAll<HTMLElement>('[data-launch-brand="personal"]'))
@@ -72,19 +97,28 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
             return;
           }
           layer.dataset.phase = 'moving';
-          const size = parseFloat(getComputedStyle(text!).fontSize) / 17;
-          const destination = `translate(${targetBox.left}px, ${targetBox.top + (targetBox.height - box.height * size) / 2}px) scale(${size})`;
-          animate(mark, [{transform:origin, color:'#1877f2'}, {transform:destination, color:getComputedStyle(text!).color}], {duration:700, easing:'cubic-bezier(.22, 1, .36, 1)'});
-          animate(layer.querySelector('.launch-backdrop')!, [{opacity:1}, {opacity:0}], {duration:480, delay:140, easing:'ease-in-out'});
-          animate(layer.querySelector('.launch-terminal')!, [{opacity:1}, {opacity:0}], {duration:180, delay:480});
-          animate(layer.querySelector('.launch-chat-icon')!, [{opacity:0}, {opacity:1}], {duration:180, delay:480});
-          later(finish, 710);
+          const targetStyle = getComputedStyle(target!), textStyle = getComputedStyle(text!);
+          const destination = `translate(${targetBox.left}px, ${targetBox.top}px) scale(1)`;
+          // Start at rest, accelerate, and settle. A pure ease-out would launch
+          // toward the corner at full speed and make the mark feel disconnected.
+          const travel = {duration:740, easing:'cubic-bezier(.65, 0, .22, 1)'};
+          // The sidebar uses a 28px icon beside smaller type. Scaling the whole
+          // wordmark to its font size would leave a visible jump at handoff.
+          animate(mark, [
+            {transform:origin, color:'#1877f2', fontSize:'17px', fontWeight:'500', lineHeight:'17px', gap:'5px', height:'28px'},
+            {transform:destination, color:textStyle.color, fontSize:textStyle.fontSize, fontWeight:textStyle.fontWeight, lineHeight:`${textBox.height}px`, gap:targetStyle.columnGap, height:`${targetBox.height}px`},
+          ], travel);
+          animate(layer.querySelector('.launch-symbol')!, [{width:'20px'}, {width:'28px'}], travel);
+          animate(layer.querySelector('.launch-backdrop')!, [{opacity:1}, {opacity:0}], {duration:560, delay:100, easing:'cubic-bezier(.4, 0, .2, 1)'});
+          animate(layer.querySelector('.launch-terminal')!, [{opacity:1}, {opacity:0}], {duration:160, delay:530});
+          animate(layer.querySelector('.launch-chat-icon')!, [{opacity:0}, {opacity:1}], {duration:160, delay:530});
+          later(finish, 760);
         } catch { finish(); }
-      }, 800);
+      }, 850);
     };
     // The bundled brand font is already fetching through CSS. Bound this wait so a
     // damaged font/cache cannot hold the launch screen; flight uses real DOM bounds.
-    Promise.race([document.fonts.load('600 17px "Inter Variable"'), new Promise(resolve => later(() => resolve(null), 100))])
+    Promise.race([document.fonts.load('500 17px "Inter Variable"'), new Promise(resolve => later(() => resolve(null), 100))])
       .catch(() => {}).then(() => { if (!disposed && !finished) frame = requestAnimationFrame(begin); });
     return () => {
       disposed = true;
@@ -101,8 +135,9 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
   return <div ref={overlay} className="launch-overlay" data-phase="preparing" role="status" aria-label="Opening Muse AI">
     <div className="launch-backdrop"/>
     <div ref={wordmark} className="launch-wordmark" aria-hidden="true">
-      <span className="launch-symbol"><Terminal className="launch-terminal" size={28} strokeWidth={1.8}/><MessagesSquare className="launch-chat-icon" size={28} strokeWidth={1.8}/></span>
-      <span className="launch-name">{Array.from('Muse AI').map((letter,index) => <span key={index} style={{'--launch-letter-delay':`${180 + index * 70}ms`} as CSSProperties}>{letter}</span>)}</span>
+      <span className="launch-symbol"><svg className="launch-terminal" width="28" height="28" viewBox="0 0 28 28" fill="none"><path d="m8 8 6 6-6 6" pathLength="1" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/></svg><MessagesSquare className="launch-chat-icon" size={28} strokeWidth={1.8}/></span>
+      <span className="launch-name">{Array.from('Muse AI').map((letter,index) => <span key={index}>{letter}</span>)}</span>
+      <span className="launch-cursor"/>
     </div>
   </div>;
 }
