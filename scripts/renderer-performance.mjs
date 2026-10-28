@@ -165,6 +165,8 @@ export async function runRendererPerformance(options){
      await page.addInitScript(installProbe);await page.goto(origin+'/preview.html',{waitUntil:'networkidle',timeout:60000});
     }
     page.setDefaultTimeout(20000);
+    await page.waitForFunction(()=>!!document.querySelector('button[aria-label="Muse Code"]'));
+    await page.evaluate(()=>document.querySelector('button[aria-label="Muse Code"]').click());
     await page.locator('.conversation-transcript').waitFor();
     cdp??=await context.newCDPSession(page);
     const memory=async()=>production?electronApp.evaluate(({app,BrowserWindow},id)=>{const window=BrowserWindow.fromId(id),pid=window.webContents.getOSProcessId(),metric=app.getAppMetrics().find(m=>m.pid===pid);return{pid,workingSetKiB:metric?.memory?.workingSetSize??null,privateKiB:metric?.memory?.privateBytes??null};},windowId):null;

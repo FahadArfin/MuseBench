@@ -23,6 +23,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:chat-organization
+      - run: npm run test:code-responsiveness
       - run: npm run test:browser-preview
       - run: npm run test:onboarding-preview
       - run: npm run test:catalog-preview

@@ -24,9 +24,9 @@ import type {CustomizeTab} from '../shared/customize-types';
 import {RunActivity,WorkThreads,ChangedFiles} from './WorkActivity';
 import {CommandDialog,type CommandView} from './CommandDialog';
 import {findCommand,parseSlashSubmission,type MuseSkill} from '../shared/slash-commands.mjs';
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
 import { Archive, Pin, ArrowDown, ArrowUp, Bot, ChevronDown, ChevronRight, Code2, Copy, Files, FolderOpen, History, Home, Info, Keyboard, Lightbulb, LoaderCircle, MessageSquare, PanelLeft, Plus, Search, Settings2, ShieldCheck, Square, SquarePen, Target, Terminal, X } from 'lucide-react';
-import Markdown from 'react-markdown';
+import Markdown, {type Components} from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Action, AppState, PersonalCommand, PersonalDestination } from '../shared/types';
 import { CheckpointDialog, Modal, ProjectToolsPanel, RuntimeDialog, ShellCommands } from './WorkspacePanels';
@@ -62,9 +62,16 @@ function CodeBlock({ children }: { children: ReactNode }) {
   useEffect(() => { if (copied) { const timer = setTimeout(() => setCopied(false), 1800); return () => clearTimeout(timer); } }, [copied]);
   return <div className="markdown-code"><div><span>Code</span><button onClick={async () => { try { await navigator.clipboard.writeText(ref.current?.innerText ?? ''); setCopied(true); } catch { /* Code also supports manual selection. */ } }}><Copy size={12} />{copied ? 'Copied' : 'Copy code'}</button></div><pre ref={ref}>{children}</pre></div>;
 }
-function MarkdownText({ text }: { text: string }) {
-  return <div className="markdown"><Markdown remarkPlugins={[remarkGfm]} skipHtml components={{ a: ({ children, href }) => <span className="message-link" title={href}>{children}</span>, img: ({ alt }) => <span className="muted">{alt || 'Image reference'}</span>, pre: ({ children }) => <CodeBlock>{children}</CodeBlock> }}>{text}</Markdown></div>;
-}
+const markdownPlugins = [remarkGfm];
+const markdownComponents: Components = {
+  a: ({ children, href }) => <span className="message-link" title={href}>{children}</span>,
+  img: ({ alt }) => <span className="muted">{alt || 'Image reference'}</span>,
+  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+};
+// Bridge snapshots clone message objects; text equality still preserves settled responses.
+const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
+  return <div className="markdown"><Markdown remarkPlugins={markdownPlugins} skipHtml components={markdownComponents}>{text}</Markdown></div>;
+});
 
 type AppVisit =
  | {area:'code';view:'chat'|'project'|'customize'|'profile'|CodeDestination;projectId?:string;taskId?:string;creating?:boolean}
@@ -176,6 +183,10 @@ export default function App() {
     catch (error) { setLocalError(error instanceof Error ? error.message : String(error)); return null; }
     finally { setPending(false); }
   }, [bridge]);
+  const branchResponse = useCallback(async (messageId: string) => {
+    const next = await act({ type: 'forkTask', messageId });
+    if (next && !next.error) { setCreating(false); setView('chat'); setReviewOpen(false); }
+  }, [act]);
   const [customizeQuery,setCustomizeQuery]=useState(''),[shortcutRevision,setShortcutRevision]=useState(0);
   const [customizeTab,setCustomizeTab]=useState<CustomizeTab>('skills');
   const openCustomize=(tab:CustomizeTab='skills',filter='')=>{setCustomizeQuery(filter);setCustomizeTab(tab);setProfileMenuOpen(false);setMobileNav(false);setModal('extensions');};
@@ -394,15 +405,12 @@ export default function App() {
   useEffect(()=>bridge?.onPersonalShortcut?.(shortcut=>{if(shortcut==='back')navigationHistory.go(-1);else if(shortcut==='forward')navigationHistory.go(1);}),[bridge,navigationHistory.go]);
   if (!bridge) return <main className="browser-fallback"><Terminal size={32} /><h1>MuseBench desktop</h1><p>Open the Windows application to work with your local projects and Muse.</p></main>;
   if (!state) return <main className="loading"><LoaderCircle className="spin" size={24} /><p>Opening MuseBench…</p>{localError && <p role="alert">{localError}</p>}</main>;
-  const tasks = (state.tasks ?? []).filter(t=>!t.archived).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||b.updatedAt.localeCompare(a.updatedAt));
-  const filteredTasks = tasks.filter(item => `${item.title} ${state.projects.find(p => p.id === item.projectId)?.name ?? ''}`.toLowerCase().includes(query.toLowerCase()));
-  const filteredProjects = state.projects.filter(item => `${item.name} ${item.root}`.toLowerCase().includes(query.toLowerCase()));
   const systemMessages = task?.messages.filter(item => item.role === 'system') ?? [];
   let initialUserSeen = false;
   const visibleMessages = task?.messages.filter(item => {if(item.role === 'system')return false;if(item.role === 'user'&&!initialUserSeen){initialUserSeen=true;return !(task.mode==='muse'&&item.text===task.request);}return true;}) ?? [];
   const openThread=(id?:string)=>{setSelectedRunId(id);setReviewOpen(false);setThreadsOpen(true);};
   const openFile=(path?:string)=>{setSelectedFilePath(path);setThreadsOpen(false);setReviewOpen(true);setStage('changes');};
-  const runActivity=(promptId:string)=>(task?.runs??[]).filter(run=>run.promptId===promptId).map(run=><RunActivity key={run.id} run={run} shellResults={(task?.shellResults??[]).filter(item=>item.runId===run.runId||run.ownedRunIds?.includes(item.runId))} onOpen={()=>openThread(run.id)}/>);
+  const runActivity=(promptId:string)=>(task?.runs??[]).filter(run=>run.promptId===promptId).map(run=><RunActivity key={`${task?.id}:${run.id}`} run={run} shellResults={(task?.shellResults??[]).filter(item=>item.runId===run.runId||run.ownedRunIds?.includes(item.runId))} onOpen={()=>openThread(run.id)}/>);
   const initialPrompt=task?.messages.find(item=>item.role==='user');
   const profileAction=(action:ProfileAction)=>{setProfileMenuOpen(false);setMobileNav(false);if(action==='profile'){if(view!=='profile'||product!=='code')profileReturn.current={product,view};setProduct('code');setView('profile');setModal(null);}else if(action==='settings')setModal('settings');else showCommand(action);};
   const navigateShortcut=(destination:CodeDestination)=>{setProduct('code');setView(destination);setMobileNav(false);setProfileMenuOpen(false);setModal(null);if(destination==='spaces')setSpacesHome(true);if(destination==='sites')setSitesHome(true);};
@@ -427,7 +435,7 @@ export default function App() {
         <main className={`conversation ${!showTask ? 'new-conversation' : ''}`}>
           {showTask && task ? <div className="conversation-transcript" ref={transcript} onScroll={e => { const target = e.currentTarget; setScrolledUp(target.scrollHeight - target.scrollTop - target.clientHeight > 100); }}><div className="transcript-inner"><article className="message user-message" data-timeline-prompt=""><p>{task.request}</p>{initialPrompt?.images?.length&&project?<CodeImages images={initialPrompt.images} projectId={project.id}/>:null}</article>{initialPrompt?.text===task.request&&runActivity(initialPrompt.id)}
             {systemMessages.length > 0 && <details className="activity-details"><summary><Terminal size={14} /><span>Workspace activity</span><small>{systemMessages.length} updates</small><ChevronDown size={13} /></summary><div>{systemMessages.map(item => <p key={item.id}>{item.text}</p>)}</div></details>}
-            {visibleMessages.map(item => <div key={item.id} id={`turn-${item.id}`}><article data-timeline-prompt={item.role==='user'?'':undefined} data-timeline-answer={item.role==='assistant'?'':undefined} className={`message ${item.role}-message`}>{item.role === 'user' ? <><p>{item.text}</p>{!!item.images?.length&&project&&<CodeImages images={item.images} projectId={project.id}/>} {!!item.files?.length&&<small>{item.files.length} source files attached</small>}</> : <MarkdownText text={item.text} />}{item.role === 'assistant' && <ResponseActions message={item} chatId={task.id} branchDisabled={busy||runtimeActive} onBranch={async()=>{const next=await act({type:'forkTask',messageId:item.id});if(next&&!next.error){setCreating(false);setView('chat');setReviewOpen(false);}}}/>}</article>{item.role==='user'&&runActivity(item.id)}</div>)}
+            {visibleMessages.map(item => <div key={`${task.id}:${item.id}`} id={`turn-${item.id}`}><article data-timeline-prompt={item.role==='user'?'':undefined} data-timeline-answer={item.role==='assistant'?'':undefined} className={`message ${item.role}-message`}>{item.role === 'user' ? <><p>{item.text}</p>{!!item.images?.length&&project&&<CodeImages images={item.images} projectId={project.id}/>} {!!item.files?.length&&<small>{item.files.length} source files attached</small>}</> : <MarkdownText text={item.text} />}{item.role === 'assistant' && <ResponseActions messageId={item.id} text={item.text} at={item.at} chatId={task.id} branchDisabled={busy||runtimeActive} onBranch={branchResponse}/>}</article>{item.role==='user'&&runActivity(item.id)}</div>)}
             {!task.runs?.length&&<ShellCommands results={task.shellResults ?? []} />}{Boolean(state.runtime.pending) && <button className="permission-banner" onClick={() => setModal('runtime')}><ShieldCheck size={17} /><span>{(state.runtime.pending as {kind?:string})?.kind==='input'?'Muse has a question. Answer to continue.':'Muse needs your decision. Review the permission request.'}</span><ChevronRight size={15} /></button>}
             {runtimeActive && !task.runs?.some(run=>run.status==='working') && <div className="working-indicator" role="status"><LoaderCircle size={15} className="spin" />Muse is working in your project…<button className="text-link" onClick={() => void act({ type: 'disconnectMuse' })}>Stop</button></div>}
             {!runtimeActive&&!!task.changes.length&&<ChangedFiles key={task.id} files={task.changes} onOpenFile={openFile} onOpenAll={()=>openFile()}/>}

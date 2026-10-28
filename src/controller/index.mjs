@@ -220,13 +220,16 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const message=(role,text)=>{if(state.task){state.task.messages.push({id:randomUUID(),role,text:String(text).slice(0,16000),at:now()});state.task.messages=state.task.messages.slice(-150);}};
   const requireTask=()=>{if(!state.task||!state.activeProject)throw Error('Open a project and start a task first.');return state.task;};
   const diffCache=new Map();
-  const current=async()=>{
-    const task=requireTask(),root=state.activeProject.root;
-    if(await canonicalRoot(root)!==root)throw Error('The workspace canonical path changed. Reopen the project.');
-    const snap=await snapshot(root);
+  const applyCurrentSnapshot=async snap=>{
+    const task=requireTask();
     if(task.revision!==snap.revision){task.revision=snap.revision;task.previewRevision=null;task.acceptedRevision=null;if(task.check?.status==='running')checkInvalidated=true;else if(task.check)task.check.status='stale';await stopPreview();}
     for(const key of diffCache.keys())if(!Object.hasOwn(baseline,key)&&!Object.hasOwn(snap.files,key))diffCache.delete(key);
     task.changes=changes(baseline,snap.files,diffCache);return snap;
+  };
+  const current=async()=>{
+    requireTask();const root=state.activeProject.root;
+    if(await canonicalRoot(root)!==root)throw Error('The workspace canonical path changed. Reopen the project.');
+    return applyCurrentSnapshot(await snapshot(root));
   };
   const stopPreview=async()=>{previewToken=null;const child=previewProcess;previewProcess=null;await killTree(child);state.preview=stopped();};
   const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';outputs.finish(state.task.id,state.task.check.id,'cancelled');state.task.check.endedAt=now();persist();}await killTree(child);};
@@ -262,15 +265,21 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(state.activeProject?.id===p.id&&state.task?.id===taskId)return;
     requireSwitchable();
     if(await canonicalRoot(p.root)!==p.root)throw Error('The workspace canonical path changed. Reopen the project.');
-    await snapshot(p.root);const info=await scriptsFor(p.root);
+    const info=await scriptsFor(p.root);
     let restored=null,restoredBaseline={};
     if(taskId){
       const record=taskRecords.get(taskId);if(!record||record.projectId!==p.id)throw Error('Saved task has no valid project association.');
       const row=db.prepare('SELECT revision,json FROM baselines WHERE task_id=?').get(taskId);if(!row||row.revision!==record.baselineRevision)throw Error('The saved task baseline is unavailable. Start a new task.');
       restored=contexts.get(taskId)?.task??restoreTask(record);restoredBaseline=JSON.parse(row.json);
     }
-    await navigationCleanup();p.scripts=info.scripts;Object.assign(p,await projectGit(p.root));state.activeProject=p;state.task=restored;baseline=restoredBaseline;bindContext(restored);
-    if(state.task)await current();
+    await navigationCleanup();
+    const git=await projectGit(p.root);
+    // Capture after cleanup, which may finish source writes. Validate before
+    // replacing the selection, then use this same fresh capture for its diff.
+    if(await canonicalRoot(p.root)!==p.root)throw Error('The workspace canonical path changed. Reopen the project.');
+    const snap=await snapshot(p.root);
+    p.scripts=info.scripts;Object.assign(p,git);state.activeProject=p;state.task=restored;baseline=restoredBaseline;bindContext(restored);
+    if(state.task)await applyCurrentSnapshot(snap);
   };
   const startTask=async(request,mode,runOptions)=>{
     const options=validateRunOptions(runOptions);

@@ -34,9 +34,15 @@ export function mountPromptTimeline({host,root,userSelector,answerSelector,scrol
   frame=null;if(disposed||!entries.length)return;
   const rect=geometry(),height=Math.max(0,Math.min(360,rect.height-48));host.style.left=Math.max(0,rect.left+7)+'px';host.style.top=Math.max(8,rect.top+(rect.height-height)/2)+'px';host.style.height=height+'px';
   nav.hidden=entries.length<2||rect.width===0||rect.height<100;
-  let index=0;for(let i=0;i<entries.length;i++){if(entries[i].node.getBoundingClientRect().top<=rect.top+50)index=i;else break;}
-  const scroll=viewport();if(scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<=3)index=entries.length-1;
-  if(active!==index){active=index;buttons.forEach((button,i)=>{if(i===index)button.setAttribute('aria-current','step');else button.removeAttribute('aria-current');});if(preview<0&&!shadow.activeElement&&buttons[index])nav.scrollTop=Math.max(0,buttons[index].offsetTop-nav.clientHeight/2);}
+  const scroll=viewport();let index=entries.length-1;
+  if(scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight>3){
+   // Prompts follow vertical DOM order. Read live geometry so streaming text,
+   // expanded content and viewport changes cannot leave cached positions stale.
+   let low=0,high=entries.length;
+   while(low<high){const middle=Math.floor((low+high)/2);if(entries[middle].node.getBoundingClientRect().top<=rect.top+50)low=middle+1;else high=middle;}
+   index=Math.max(0,low-1);
+  }
+  if(active!==index){buttons[active]?.removeAttribute('aria-current');active=index;buttons[index]?.setAttribute('aria-current','step');if(preview<0&&!shadow.activeElement&&buttons[index])nav.scrollTop=Math.max(0,buttons[index].offsetTop-nav.clientHeight/2);}
   if(preview>=0)show(preview);
  }
  const schedulePosition=()=>{if(!frame&&!disposed)frame=requestAnimationFrame(position);};
@@ -44,7 +50,7 @@ export function mountPromptTimeline({host,root,userSelector,answerSelector,scrol
   const entry=entries[index];if(!entry?.node.isConnected){refresh();return;}
   const scroll=viewport(),rect=geometry(),top=scroll.scrollTop+entry.node.getBoundingClientRect().top-rect.top-20;
   scroll.scrollTo({top:Math.max(0,top),behavior:'instant'}); // Never race streaming auto-follow with a smooth animation.
-  active=-1;position();
+  position();
  }
  function refresh(){
   timer=null;if(disposed||!root.isConnected)return;
