@@ -73,7 +73,17 @@ function respond(res,status,value) {
   let body=JSON.stringify(value);
   if (Buffer.byteLength(body) > RESPONSE_BYTES) {status=413;body=JSON.stringify({error:'Response exceeds 8 MiB.',code:'RESPONSE_TOO_LARGE'});}
   res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Content-Length':Buffer.byteLength(body),'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'",'Connection':'close'});
-  res.end(body);
+  const req=res.req;
+  if (!req || req.complete || req.destroyed) {res.end(body);return;}
+  // Flush the complete length-delimited rejection immediately. Closing while
+  // upload bytes are still arriving can reset the socket and erase that reply
+  // on Windows. Discard the rest without buffering, with a fixed time bound.
+  let finished=false;
+  const finish=()=>{if(finished)return;finished=true;clearTimeout(timer);if(!res.destroyed)res.end();};
+  const timer=setTimeout(()=>{finish();req.destroy();},REQUEST_MS);timer.unref();
+  req.once('end',finish);req.once('aborted',finish);req.on('error',finish);
+  res.once('close',()=>{finished=true;clearTimeout(timer);});
+  res.write(body);req.resume();
 }
 
 /** A standalone, persistent hub. Only the trusted host process can call createSpace directly. */

@@ -4,6 +4,7 @@ import {mkdtemp, readdir, readFile, rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
+import net from 'node:net';
 import {spawn} from 'node:child_process';
 import {DatabaseSync} from 'node:sqlite';
 
@@ -214,11 +215,42 @@ test('HTTP refuses browser origins, unknown hosts, credential URLs, oversized or
   assert.equal(response.headers.get('cache-control'),'no-store');
   assert.equal(response.headers.get('x-content-type-options'),'nosniff');
   // Declared length is rejected before the body arrives, rather than waiting for an upload.
-  const status = await new Promise((resolve,reject) => {
-    const req=http.request(f.hub.url+'/v1',{method:'POST',headers:{'Content-Type':'application/json','Content-Length':900000}},res=>{res.resume();resolve(res.statusCode);});
-    req.on('error',reject);req.flushHeaders();req.on('response',()=>req.destroy());
+  const early = await new Promise((resolve,reject) => {
+    const req=http.request(f.hub.url+'/v1',{method:'POST',headers:{'Content-Type':'application/json','Content-Length':900000}},res=>{
+      const chunks=[];res.on('data',chunk=>chunks.push(chunk));res.on('error',reject);
+      res.on('end',()=>{resolve({status:res.statusCode,body:JSON.parse(Buffer.concat(chunks).toString())});req.destroy();});
+    });
+    req.on('error',reject);req.setTimeout(2000,()=>req.destroy(Error('Rejection waited for the request body')));req.flushHeaders();
   });
-  assert.equal(status,413);
+  denied(early,413);
+});
+
+test('oversized uploads return readable rejections while their request bytes are still arriving', async t => {
+  const f=await fixture(t), failures=[], body={...note,spaceId:f.owner.spaceId,body:'x'.repeat(800*1024)};
+  // Repeat the actual Windows fetch/upload race, with no retry that could hide a reset.
+  for(let i=0;i<150;i++)try{denied(await request(f.hub.url,body,f.owner.token),413);}catch(error){failures.push({attempt:i,error:error.message,cause:error.cause?.code});}
+  assert.deepEqual(failures,[]);
+  assert.equal(ok(await f.client(f.owner)({op:'read'})).pages.length,0);
+});
+
+test('rejected slow uploads get an immediate reply and a fixed drain deadline despite traffic', {timeout:16000}, async t => {
+  const f=await fixture(t), url=new URL(f.hub.url);let response='',writes=0,heartbeat;
+  const socket=net.createConnection({host:url.hostname,port:Number(url.port),allowHalfOpen:true});
+  t.after(()=>{clearInterval(heartbeat);socket.destroy();});
+  await new Promise((resolve,reject)=>{
+    socket.on('data',chunk=>{response+=chunk.toString();});
+    // A forced deadline close can race a pending write; Windows reports either
+    // RESET or ABORTED, while Unix can report EPIPE. None replaces the reply.
+    socket.on('error',error=>{if(!['ECONNRESET','ECONNABORTED','EPIPE'].includes(error.code)||!response.includes('BODY_TOO_LARGE'))reject(error);});socket.once('close',resolve);
+    socket.once('connect',()=>{
+      socket.write(`POST /v1 HTTP/1.1\r\nHost: ${url.host}\r\nContent-Type: application/json\r\nContent-Length: 900000\r\n\r\n`);
+      heartbeat=setInterval(()=>{writes++;socket.write('x');},100);heartbeat.unref();
+    });
+  });
+  clearInterval(heartbeat);
+  assert.match(response,/^HTTP\/1\.1 413/);assert.equal(JSON.parse(response.split('\r\n\r\n')[1]).code,'BODY_TOO_LARGE');
+  assert.ok(writes>=2,'the response must not close the socket while the upload is still in flight');
+  assert.equal(ok(await f.client(f.owner)({op:'read'})).pages.length,0);
 });
 
 test('all headers inside the byte limit are checked so a late Origin cannot bypass the policy', async t => {
