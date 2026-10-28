@@ -1,0 +1,160 @@
+{
+  "observedOn": "2026-10-28",
+  "nativeVersion": "Muse Code 1.4.13 (1.4.13-R6996.1)",
+  "operation": "plugins validate --json under an isolated temporary profile",
+  "scope": "Parser validation only. No install, server startup, connection, model call or real-profile change.",
+  "cases": [
+    {
+      "label": "skills-only",
+      "fixture": "skills-only",
+      "exitCode": 0,
+      "valid": true,
+      "manifestFamily": "agent-plugins",
+      "compatibility": {
+        "summary": "full",
+        "declarations": [
+          {
+            "id": "skill:probe-note",
+            "kind": "skill",
+            "classification": "supported"
+          }
+        ]
+      },
+      "diagnostics": [],
+      "capabilities": {
+        "skills": [
+          {
+            "id": "probe-note",
+            "path": "skills/probe-note/SKILL.md"
+          }
+        ],
+        "mcpServers": []
+      },
+      "inputs": {
+        "plugin": {
+          "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+          "name": "musebench-probe",
+          "version": "1.0.0",
+          "description": "Inert local compatibility validation fixture."
+        },
+        "skill": "---\nname: probe-note\ndescription: Inert validation note for a local compatibility probe.\n---\n\nThis is inert fixture text. No actions are requested.\n"
+      }
+    },
+    {
+      "label": "skill-with-inert-mcp",
+      "fixture": "skill-with-inert-mcp",
+      "exitCode": 0,
+      "valid": true,
+      "manifestFamily": "agent-plugins",
+      "compatibility": {
+        "summary": "full",
+        "declarations": [
+          {
+            "id": "skill:probe-note",
+            "kind": "skill",
+            "classification": "supported"
+          },
+          {
+            "id": "mcp:inert-probe",
+            "kind": "mcp",
+            "classification": "supported"
+          }
+        ]
+      },
+      "diagnostics": [],
+      "capabilities": {
+        "skills": [
+          {
+            "id": "probe-note",
+            "path": "skills/probe-note/SKILL.md"
+          }
+        ],
+        "mcpServers": [
+          {
+            "id": "inert-probe",
+            "transport": "stdio",
+            "command": [
+              "musebench-fixture-do-not-execute"
+            ],
+            "url": null
+          }
+        ]
+      },
+      "inputs": {
+        "plugin": {
+          "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+          "name": "musebench-probe",
+          "version": "1.0.0",
+          "description": "Inert local compatibility validation fixture."
+        },
+        "skill": "---\nname: probe-note\ndescription: Inert validation note for a local compatibility probe.\n---\n\nThis is inert fixture text. No actions are requested.\n",
+        "mcp": {
+          "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+          "mcpServers": {
+            "inert-probe": {
+              "type": "stdio",
+              "command": "musebench-fixture-do-not-execute"
+            }
+          }
+        }
+      }
+    },
+    {
+      "label": "skill-with-inert-http-mcp",
+      "fixture": "skill-with-inert-http-mcp",
+      "exitCode": 0,
+      "valid": true,
+      "manifestFamily": "agent-plugins",
+      "compatibility": {
+        "summary": "full",
+        "declarations": [
+          {
+            "id": "skill:probe-note",
+            "kind": "skill",
+            "classification": "supported"
+          },
+          {
+            "id": "mcp:inert-http",
+            "kind": "mcp",
+            "classification": "supported"
+          }
+        ]
+      },
+      "diagnostics": [],
+      "capabilities": {
+        "skills": [
+          {
+            "id": "probe-note",
+            "path": "skills/probe-note/SKILL.md"
+          }
+        ],
+        "mcpServers": [
+          {
+            "id": "inert-http",
+            "transport": "http",
+            "command": [],
+            "url": "https://example.invalid/mcp"
+          }
+        ]
+      },
+      "inputs": {
+        "plugin": {
+          "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+          "name": "musebench-probe",
+          "version": "1.0.0",
+          "description": "Inert local compatibility validation fixture."
+        },
+        "skill": "---\nname: probe-note\ndescription: Inert validation note for a local compatibility probe.\n---\n\nThis is inert fixture text. No actions are requested.\n",
+        "mcp": {
+          "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+          "mcpServers": {
+            "inert-http": {
+              "type": "streamable-http",
+              "url": "https://example.invalid/mcp"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
