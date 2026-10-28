@@ -4,13 +4,14 @@ import {promisify} from 'node:util';
 import {StringDecoder} from 'node:string_decoder';
 const run=promisify(execFile);
 const errors={language:'Install a Windows speech recognition language to use dictation.',microphone:'Could not open the microphone. Check Windows microphone privacy settings and your default input device.',unavailable:'Local dictation is unavailable. You can continue typing.',protocol:'Dictation stopped unexpectedly. Please try again.'};
-export function createDictation({helperPath,spawnHelper=spawn,probe=async()=>{
+export function createDictation({helperPath,platform=process.platform,spawnHelper=spawn,probe=async()=>{
  const {stdout}=await run(helperPath,['--probe'],{windowsHide:true,shell:false,timeout:5000,maxBuffer:4096});return JSON.parse(stdout.trim());
 },onState=()=>{}}) {
  let state={id:null,status:'idle',available:null,language:null,text:'',error:null},owner=null,closed=false,probePromise=null,generation=0,probeGeneration=0;
  const snapshot=()=>({...state});
  const update=patch=>{state={...state,...patch};onState(snapshot());};
  async function availability(refresh=false){
+  if(platform!=='win32'){update({available:false,error:'Use your system keyboard dictation on this platform.'});return;}
   if(refresh&&!owner)probePromise=null;
   if(!probePromise){
    const current=++probeGeneration;

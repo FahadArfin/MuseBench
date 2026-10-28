@@ -1,9 +1,10 @@
 import {spawn} from 'node:child_process';
 import path from 'node:path';
 import {curateEnvironment} from '../src/runtime/index.mjs';
+import {isNativeExecutable} from '../src/shared/platform.mjs';
 
 // Credentials stay in the official CLI store. Never echo subprocess output or keys.
-export function createOnboarding({getBinary,getRuntime=()=>({}),personal,spawnProcess=spawn}) {
+export function createOnboarding({getBinary,getRuntime=()=>({}),personal,spawnProcess=spawn,platform=process.platform}) {
  let code={status:'required',message:'Sign in with the official Muse CLI.'},child=null,generation=0,authFaultSeen=false;
  const state=async()=>{
   if(getRuntime().failureCode==='auth'){if(!authFaultSeen)code={status:'required',message:'Your Muse sign-in needs attention.'};authFaultSeen=true;}else authFaultSeen=false;
@@ -12,7 +13,7 @@ export function createOnboarding({getBinary,getRuntime=()=>({}),personal,spawnPr
  function run(args,key){
   if(child)throw Error('A sign-in is already running.');
   const binary=getBinary();
-  if(typeof binary!=='string'||!path.isAbsolute(binary)||!binary.endsWith('.exe'))throw Error('Install the official Muse CLI, then restart MuseBench.');
+  if(!isNativeExecutable(binary,platform))throw Error('Install the official Muse CLI, then restart MuseBench.');
   const epoch=++generation;code={status:'pending',message:key?'Saving your API key in Muse…':'Approve the Muse sign-in in your browser.'};
   let process;
   try{process=spawnProcess(binary,args,{env:curateEnvironment(),shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});child=process;}catch{code={status:'required',message:'Muse could not start sign-in.'};throw Error(code.message);}

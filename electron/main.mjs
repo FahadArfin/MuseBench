@@ -2,6 +2,7 @@ import {createBillingReader} from './billing-reader.mjs';
 import {createCodeBilling} from './code-billing.mjs';
 import {createBillingPayments} from './billing-payments.mjs';
 import {createOnboarding} from './onboarding.mjs';
+import {userProfile} from '../src/shared/platform.mjs';
 import {createFileEditor} from './file-editor.mjs';
 import {createWorkspaceMcpConfig} from './workspace-mcp-config.mjs';
 import {createAppUpdates,createUpdateShutdown,updateBlocked} from './app-updates.mjs';
@@ -52,7 +53,7 @@ else {
   app.whenReady().then(async () => {
     const helperPath = app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchJob.exe') : path.join(root,'native','bin','MuseBenchJob.exe');
     const dataDir = app.getPath('userData');
-    const extensionReview=createExtensionReview({dataDir,profile:process.env.USERPROFILE});
+    const extensionReview=createExtensionReview({dataDir,profile:userProfile()});
     const workspaceMcp=createWorkspaceMcpConfig({appRoot:root});
     codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>!!onboarding?.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>billingReader.read()});
     const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp});
@@ -129,7 +130,7 @@ else {
     });
     handler('musebench:launch-complete',()=>launch.complete());
     const openFileEditor=createFileEditor({dataDir,getState:()=>controller.getState(),choose:async()=>{
-      const result=await dialog.showOpenDialog(window,{title:'Choose your preferred text editor',properties:['openFile'],filters:[{name:'Editor application',extensions:['exe']}]});
+      const result=await dialog.showOpenDialog(window,{title:'Choose your preferred text editor',properties:['openFile'],...(process.platform==='win32'?{filters:[{name:'Editor application',extensions:['exe']}]}:{})});
       return result.canceled?null:result.filePaths[0];
     }});
     handler('musebench:open-file',openFileEditor);
@@ -155,7 +156,7 @@ else {
       await sessionDurability.close();
       if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
     },verifyClosed:()=>!updateBlocked(controller.getState(),work.getState(),sites.getState())});
-    updates=createAppUpdates({updater:autoUpdater,version:app.getVersion(),enabled:app.isPackaged&&process.platform==='win32'&&existsSync(path.join(path.dirname(app.getPath('exe')),'Uninstall MuseBench.exe')),isBusy:updateBusy,onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('musebench:app-update-state',value);},prepareInstall:()=>updateShutdown.prepare()});
+    updates=createAppUpdates({updater:autoUpdater,version:app.getVersion(),enabled:app.isPackaged&&(process.platform==='win32'&&existsSync(path.join(path.dirname(app.getPath('exe')),'Uninstall MuseBench.exe'))||process.platform==='linux'&&!!process.env.APPIMAGE),isBusy:updateBusy,onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('musebench:app-update-state',value);},prepareInstall:()=>updateShutdown.prepare()});
     handler('musebench:app-update',command=>updates.dispatch(command));
     updates.start();const updateStartup=setTimeout(()=>{void updates.dispatch('check').catch(()=>{});},15000);updateStartup.unref();
     handler('musebench:customize',command=>customize.dispatch(command));

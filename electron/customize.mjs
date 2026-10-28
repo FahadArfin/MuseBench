@@ -9,6 +9,7 @@ import {promisify} from 'node:util';
 import {randomUUID} from 'node:crypto';
 import {mkdir,writeFile,realpath,lstat,readdir} from 'node:fs/promises';
 import path from 'node:path';
+import {userProfile,isNativeExecutable} from '../src/shared/platform.mjs';
 import {curateEnvironment,discoverMuseBinaries} from '../src/runtime/index.mjs';
 import {customizeBlocked} from '../src/shared/customize-policy.mjs';
 import {atomicJson,optionalText,treeDigest,createExtensionReview,configurationDigest} from '../src/runtime/extension-review.mjs';
@@ -41,9 +42,8 @@ export function validateServer(value){
  }else throw Error('Choose HTTPS or local stdio transport.');
  return{name,config};
 }
-export function createCustomize({getState,environment=process.env,dataDir,review,catalog,stagePackage,run=promisify(execFile),chooseFolder=async()=>null,isActive=()=>false}){
- const env=curateEnvironment(environment),profile=env.USERPROFILE;
- if(!profile||!path.isAbsolute(profile))throw Error('A Windows user profile is required for Customize.');
+export function createCustomize({getState,environment=process.env,dataDir,review,catalog,stagePackage,run=promisify(execFile),chooseFolder=async()=>null,isActive=()=>false,platform=process.platform}){
+ const env=curateEnvironment(environment),profile=userProfile(env,platform);
  review??=createExtensionReview({dataDir,profile});
  const hookPresets=createHookPresetStore(dataDir);
  const settingsPath=path.join(profile,'.config','muse','settings.json');
@@ -53,7 +53,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  async function catalogService(){return catalog??= (await import('./extension-catalog.mjs')).createExtensionCatalog({dataDir});}
  async function removeStage(folder){await(await import('./extension-staging.mjs')).removeCatalogStage(folder,{dataDir});}
  async function clearPending(){const items=[...pending.values()];pending.clear();await Promise.all(items.filter(item=>item.catalog).map(item=>removeStage(item.folder)));}
- function binary(){const value=getState().runtime?.binary??discoverMuseBinaries({environment:env})[0];if(typeof value!=='string'||!(path.isAbsolute(value)||path.win32.isAbsolute(value))||!value.toLowerCase().endsWith('.exe'))throw Error('Install or select the official Muse CLI in Connection settings.');return value;}
+ function binary(){const value=getState().runtime?.binary??discoverMuseBinaries({environment:env,platform})[0];if(!isNativeExecutable(value,platform))throw Error('Install or select the official Muse CLI in Connection settings.');return value;}
  async function cli(args,{oauth=false,validation=false,executable}={}){
   if(closed)throw Error('Customize is closed.');
   const abort=new AbortController();let operation;

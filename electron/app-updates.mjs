@@ -27,7 +27,7 @@ export function createAppUpdates({updater,version,enabled,isBusy,prepareInstall,
  async function dispatch(command){
   if(!['status','check','download','install'].includes(command))throw Error('Unsupported update action.');
   if(command==='status')return snapshot();
-  if(closed||!enabled)throw Error('Install MuseBench using the Windows setup to enable updates.');
+  if(closed||!enabled)throw Error('Automatic installation is unavailable for this package. Download the latest release from GitHub.');
   if(operation)return snapshot();
   if(['installing','restart-required'].includes(state.status))return snapshot();
   if(command==='check'&&state.status==='downloaded')return snapshot();

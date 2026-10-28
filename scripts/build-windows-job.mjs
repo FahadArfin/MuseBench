@@ -94,7 +94,8 @@ export async function buildWindowsJob({root = repositoryRoot, compilerPath} = {}
   }
   const paths = buildPaths(root);
   try {
-    return {...await verifyWindowsJobBuild({root}), reused: true};
+    const existing=await verifyWindowsJobBuild({root});
+    if(existing.manifest.platform==='anycpu')return {...existing, reused:true};
   } catch (error) {
     if (!['WINDOWS_JOB_BUILD_MISSING', 'WINDOWS_JOB_BUILD_INVALID',
       'WINDOWS_JOB_BUILD_STALE', 'WINDOWS_JOB_BUILD_MISMATCH'].includes(error.code)) throw error;
@@ -124,7 +125,7 @@ export async function buildWindowsJob({root = repositoryRoot, compilerPath} = {}
     // exact source bytes used even if a developer edits the original mid-build.
     await fs.writeFile(stagingSource, source, {flag: 'wx'});
     try {
-      await runFile(compiler, ['/nologo', '/target:exe', '/platform:x64', '/optimize+',
+      await runFile(compiler, ['/nologo', '/target:exe', '/platform:anycpu', '/optimize+',
         '/r:System.Web.Extensions.dll', `/out:${stagingExecutable}`, stagingSource], {
         windowsHide: true,
         shell: false,
@@ -141,6 +142,7 @@ export async function buildWindowsJob({root = repositoryRoot, compilerPath} = {}
     }
     const manifest = {
       schemaVersion: 1,
+      platform: 'anycpu',
       source: sourceRelativePath,
       sourceSha256,
       exeSha256: hash(binary),

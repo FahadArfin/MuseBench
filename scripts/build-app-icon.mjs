@@ -8,7 +8,7 @@ const directory=fileURLToPath(new URL('../electron/assets/',import.meta.url));
 const svg=await readFile(path.join(directory,'musebench.svg'),'utf8');
 const sizes=[16,20,24,32,40,48,64,128,256];
 const browser=await chromium.launch({headless:true});
-const frames=[];
+const frames=[];let large;
 try {
   const page=await browser.newPage({deviceScaleFactor:1});
   for(const size of sizes) {
@@ -16,6 +16,8 @@ try {
     await page.setContent(`<style>html,body{margin:0;background:transparent}svg{display:block;width:100vw;height:100vh}</style>${svg}`);
     frames.push(await page.screenshot({omitBackground:true}));
   }
+  await page.setViewportSize({width:1024,height:1024});
+  large=await page.screenshot({omitBackground:true});
 } finally {await browser.close();}
 
 // ICO directory entries point to PNG frames, preserving alpha at every scale.
@@ -33,5 +35,5 @@ for(let index=0;index<sizes.length;index++) {
   offset+=frame.length;
 }
 await writeFile(path.join(directory,'musebench.ico'),Buffer.concat([header,...frames]));
-await writeFile(path.join(directory,'musebench.png'),frames.at(-1));
+await writeFile(path.join(directory,'musebench.png'),large);
 console.log(`Rendered MuseBench icon at ${sizes.join(', ')} px`);

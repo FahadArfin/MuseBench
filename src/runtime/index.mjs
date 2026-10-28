@@ -17,7 +17,7 @@ import {MuseSessionAdapter} from '../../reference/patchlight/adapter/session-ada
 export const SETUP_URL='https://dev.meta.ai/docs/muse-code';
 const require=createRequire(import.meta.url);
 const execFileAsync=promisify(execFile);
-const environmentNames=['PATH','PATHEXT','SystemRoot','COMSPEC','TEMP','TMP','USERPROFILE','HOMEDRIVE','HOMEPATH','APPDATA','LOCALAPPDATA'];
+const environmentNames=['PATH','PATHEXT','SystemRoot','COMSPEC','TEMP','TMP','USERPROFILE','HOMEDRIVE','HOMEPATH','APPDATA','LOCALAPPDATA','HOME','TMPDIR','LANG','LC_ALL','LC_CTYPE','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_CACHE_HOME'];
 const usable=new Set(['idle','completed','failed','cancelled']);
 const permissionReason='Muse permissions could not be verified. This app needs the built-in Ask me profile with a sandbox and human approvals. Update the official Muse installation or disconnect; no turn was sent.';
 
@@ -49,6 +49,10 @@ export function discoverMuseBinaries({environment=process.env,platform=process.p
  const env=curateEnvironment(environment);
  const folders=(env.PATH??'').split(platform==='win32'?';':delimiter).filter(Boolean);
  if(platform==='win32'&&env.LOCALAPPDATA&&isAbsolute(env.LOCALAPPDATA))folders.push(join(env.LOCALAPPDATA,'Programs','muse'));
+ if(platform!=='win32'){
+  if(env.HOME&&isAbsolute(env.HOME))folders.push(join(env.HOME,'.local','bin'));
+  folders.push('/usr/local/bin',...(platform==='darwin'?['/opt/homebrew/bin']:[]));
+ }
  const found=[],seenFolders=new Set(),seenFiles=new Set();
  const key=path=>platform==='win32'?path.toLowerCase():path;
  const addNative=(path,expectedFolder)=>{

@@ -1,0 +1,21 @@
+# Platform downloads and releases
+
+Every push to `main` stamps one version from the Git commit count. The release workflow builds on native runners, validates package contents, launches each packaged desktop app with an isolated profile, and publishes only after every required target passes. A newer main commit supersedes an older unpublished build. Existing published releases stay immutable.
+
+| Platform | CPU | Download | Updates |
+| --- | --- | --- | --- |
+| Windows | x64, ARM64 | Setup `.exe` | In-app download and restart |
+| Linux | x64, ARM64 | `.AppImage`, `.deb` | AppImage in-app; deb manual |
+| macOS | Intel x64, Apple silicon ARM64 | `.dmg`, `.zip` | Manual until Developer ID signing is configured |
+
+The x64 Windows installer retains its existing name. ARM64 includes `arm64` in its filename. Combined Windows update metadata lists both files so the updater can choose the native architecture. Linux update channels are architecture-specific. `SHA256SUMS` and `release-manifest.json` accompany every release and identify source commit, target, file size and digest. The publisher also verifies the updater's SHA-512 download digests before uploading anything.
+
+macOS packages are ad-hoc signed, without Apple notarization. Gatekeeper may require the user to approve opening a download in System Settings. We do not disable Gatekeeper. Signed distribution and automatic macOS updates require Apple Developer ID credentials; iOS App Store/TestFlight distribution additionally needs provisioning.
+
+Muse Code still requires the official Muse CLI and a valid Meta account. Linux/macOS use the native Muse session host and preserve its permission checks. Windows uses the existing supervised process runtime; its managed helpers use AnyCPU for x64/ARM64. Local speech dictation is Windows-only; other systems can use their keyboard dictation. Native package launch checks do not claim live provider login/model execution on all six machines.
+
+Local packaging: `npm run package:desktop` on the target OS/architecture. `node scripts/verify-personal-package.mjs` verifies its contents, and `node scripts/portable-desktop-smoke.mjs` launches it with a fresh isolated profile. Linux CI runs the latter under Xvfb. Production sandbox settings are not weakened by the CI launch flags.
+
+Android companion delivery is tracked in the multi-platform design. Mobile chat uses its own Meta session; Code connects to a paired desktop. iOS delivery is deferred pending Apple provisioning.
+
+Sources: [GitHub native runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners), [electron-builder multi-platform builds](https://www.electron.build/v26/docs/features/multi-platform-build/), [updater signing requirements](https://www.electron.build/v26/docs/features/auto-update/), [official Muse setup](https://dev.meta.ai/docs/muse-code).

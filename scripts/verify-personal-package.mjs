@@ -1,11 +1,12 @@
 import * as asar from '@electron/asar';
-import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 
-const root = process.cwd(), packageDir = process.env.MUSEBENCH_PACKAGE_DIR || path.join(root, 'release/win-unpacked');
-const archive = path.join(packageDir, 'resources/app.asar');
+import {packagePaths} from './package-paths.mjs';
+const root=process.cwd(),{packageDir,resources,executable}=packagePaths();
+const archive = path.join(resources, 'app.asar');
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 const files = [];
 function visit(relative) {
@@ -42,13 +43,14 @@ const checked = files.map(file => {
   return { file, sha256: sha(source) };
 });
 const nativeHelpers = {};
-for (const helper of ['MuseBenchJob', 'MuseBenchSpeech']) {
+for (const helper of process.platform==='win32'?['MuseBenchJob', 'MuseBenchSpeech']:[]) {
   for (const suffix of ['.exe', '.build.json']) {
     const name = helper + suffix;
-    assert(readFileSync(path.join(root, 'native/bin', name)).equals(readFileSync(path.join(packageDir, 'resources/native', name))));
+    assert(readFileSync(path.join(root, 'native/bin', name)).equals(readFileSync(path.join(resources, 'native', name))));
   }
   nativeHelpers[helper] = sha(readFileSync(path.join(root, 'native/bin', helper + '.exe')));
 }
-const report = { checkedAt: new Date().toISOString(), status: 'passed', files: checked, executableSha256: sha(readFileSync(path.join(packageDir, 'MuseBench.exe'))), archiveSha256: sha(readFileSync(archive)), nativeHelpers };
+const report = { checkedAt: new Date().toISOString(), status: 'passed', platform:process.platform,arch:process.arch,packageDir,files: checked, executableSha256: sha(readFileSync(executable)), archiveSha256: sha(readFileSync(archive)), nativeHelpers };
+mkdirSync(path.join(root,'artifacts'),{recursive:true});
 writeFileSync(path.join(root, 'artifacts/personal-package-verification.json'), JSON.stringify(report, null, 2));
-console.log(`PASS ${checked.length} packaged source/build files and both native helpers match the validated source`);
+console.log(`PASS ${checked.length} packaged source/build files and ${Object.keys(nativeHelpers).length} native helpers match the validated source`);

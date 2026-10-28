@@ -2,6 +2,7 @@ import {normalizeAllowance} from '../src/shared/account-usage.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import path from 'node:path';
+import {isNativeExecutable} from '../src/shared/platform.mjs';
 const clean=(value,max=200)=>typeof value==='string'?value.replace(/[\u0000-\u001f]/g,' ').slice(0,max):'';
 export function normalizeSkills(value,{transport,projectTrusted=false}={}){
  return (Array.isArray(value?.skills)?value.skills:[]).filter(s=>s&&['on','off','user-only','user-invocable-only'].includes(s.activation)&&typeof s.id==='string'&&/^[-\w:./]+$/.test(s.id)&&s.id.length<=200).slice(0,250).map(s=>{
@@ -26,11 +27,11 @@ export function usageSummary(value){
  };
  walk(value);return rows.slice(0,40);
 }
-export function createCommandInfo({getState,extensionReview,run=promisify(execFile)}){
+export function createCommandInfo({getState,extensionReview,run=promisify(execFile),platform=process.platform}){
  return async type=>{
   if(!['skills','usage'].includes(type))throw Error('Unsupported information command.');
   const state=getState(),binary=state.runtime?.binary;
-  if(typeof binary!=='string'||!(path.isAbsolute(binary)||path.win32.isAbsolute(binary))||!binary.toLowerCase().endsWith('.exe'))return{status:'unavailable',message:'Install or select the official Muse CLI in Connection settings.',skills:[]};
+  if(!isNativeExecutable(binary,platform))return{status:'unavailable',message:'Install or select the official Muse CLI in Connection settings.',skills:[]};
   const args=type==='skills'?['skills','list','--json']:['usage','--json'];
   if(type==='skills'&&state.activeProject?.root)args.push('--workspace',state.activeProject.root);
   const projectTrusted=type==='skills'&&state.activeProject?.root&&await extensionReview?.allowProject(state.activeProject.root)===true;if(projectTrusted)args.push('--trust-workspace');

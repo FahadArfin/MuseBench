@@ -20,8 +20,8 @@
     "test:billing-desktop": "node scripts/billing-smoke.mjs --desktop",
     "dev": "node scripts/dev.mjs",
     "start": "node scripts/start.mjs",
-    "build": "node scripts/build-windows-job.mjs && node scripts/build-windows-speech.mjs && tsc --noEmit && vite build",
-    "pretest": "node -e \"require('electron')\" && node scripts/build-windows-job.mjs && node scripts/build-windows-speech.mjs",
+    "build": "node scripts/build-native.mjs && tsc --noEmit && vite build",
+    "pretest": "node -e \"require('electron')\" && node scripts/build-native.mjs",
     "test": "node --test --test-concurrency=4 test/*.test.mjs reference/patchlight/adapter/test/*.test.mjs",
     "test:ui": "node scripts/smoke.mjs",
     "test:live": "node scripts/live-smoke.mjs",
@@ -40,7 +40,8 @@
     "test:profile-identity": "node scripts/profile-identity-smoke.mjs && node scripts/profile-account-desktop-smoke.mjs",
     "test:startup-animation": "node scripts/startup-animation-smoke.mjs",
     "test:session-recovery": "node scripts/sidebar-loading-smoke.mjs && node scripts/session-durability-smoke.mjs",
-    "package:installer": "npm run build && electron-builder --win nsis --publish never"
+    "package:installer": "npm run build && electron-builder --win nsis --publish never",
+    "package:desktop": "npm run build && node scripts/package-desktop.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.3.0",
@@ -61,7 +62,8 @@
     "electron": "45.0.0",
     "electron-builder": "^26.0.12",
     "playwright": "^1.58.0",
-    "vite": "^7.1.0"
+    "vite": "^7.1.0",
+    "js-yaml": "4.3.2"
   },
   "build": {
     "appId": "local.musebench.desktop",
@@ -84,28 +86,28 @@
       "package.json",
       "src/shared/*.mjs"
     ],
-    "extraResources": [
-      {
-        "from": "native/bin/MuseBenchJob.exe",
-        "to": "native/MuseBenchJob.exe"
-      },
-      {
-        "from": "native/bin/MuseBenchJob.build.json",
-        "to": "native/MuseBenchJob.build.json"
-      },
-      {
-        "from": "native/bin/MuseBenchSpeech.exe",
-        "to": "native/MuseBenchSpeech.exe"
-      },
-      {
-        "from": "native/bin/MuseBenchSpeech.build.json",
-        "to": "native/MuseBenchSpeech.build.json"
-      }
-    ],
     "win": {
       "target": "dir",
       "icon": "electron/assets/musebench.ico",
-      "signExecutable": false
+      "signExecutable": false,
+      "extraResources": [
+        {
+          "from": "native/bin/MuseBenchJob.exe",
+          "to": "native/MuseBenchJob.exe"
+        },
+        {
+          "from": "native/bin/MuseBenchJob.build.json",
+          "to": "native/MuseBenchJob.build.json"
+        },
+        {
+          "from": "native/bin/MuseBenchSpeech.exe",
+          "to": "native/MuseBenchSpeech.exe"
+        },
+        {
+          "from": "native/bin/MuseBenchSpeech.build.json",
+          "to": "native/MuseBenchSpeech.build.json"
+        }
+      ]
     },
     "publish": [
       {
@@ -122,6 +124,30 @@
       "deleteAppDataOnUninstall": false,
       "artifactName": "MuseBench-Setup-${version}.${ext}",
       "runAfterFinish": true
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "icon": "electron/assets/musebench.png",
+      "artifactName": "MuseBench-${version}-linux-${arch}.${ext}",
+      "maintainer": "MuseBench contributors",
+      "executableName": "musebench"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "electron/assets/musebench.png",
+      "artifactName": "MuseBench-${version}-mac-${arch}.${ext}",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "notarize": false
     }
   }
 }
