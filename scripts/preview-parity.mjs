@@ -20,14 +20,18 @@ const errors=[],report={checks:[],errors,status:'running'};
 try{
  const browserPage=await browser.newPage({viewport:{width:1440,height:960},timezoneId:Intl.DateTimeFormat().resolvedOptions().timeZone});
  const env={...process.env,MUSEBENCH_PARITY_DATA:await mkdtemp(path.join(output,'profile-'))};delete env.ELECTRON_RUN_AS_NODE;
- app=await electron.launch({args:['scripts/preview-parity-electron.mjs'],env});
- await app.evaluate(async({BrowserWindow})=>{const window=new BrowserWindow({width:1440,height:960,useContentSize:true,show:false,backgroundColor:'#181818',...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{height:42,color:'#181818',symbolColor:'#eeeeee'}}:{}),webPreferences:{backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}});void window.loadURL('http://127.0.0.1:4322/__desktop__/index.html');});
+ app=await electron.launch({args:['scripts/preview-parity-electron.mjs','--disable-features=CalculateNativeWinOcclusion','--disable-renderer-backgrounding','--disable-background-timer-throttling'],env});
+ // A normally hidden Windows window may stall at an entrance's first frame.
+ // Use the motion suite's deterministic compositor; native windows have separate tests.
+ await app.evaluate(async({BrowserWindow})=>{const window=new BrowserWindow({width:1440,height:960,useContentSize:true,show:false,backgroundColor:'#181818',...(process.platform==='win32'?{titleBarStyle:'hidden',titleBarOverlay:{height:42,color:'#181818',symbolColor:'#eeeeee'}}:{}),webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}});window.webContents.setFrameRate(60);void window.loadURL('http://127.0.0.1:4322/__desktop__/index.html');});
  console.log('Electron fixture window created');
  const desktopPage={evaluate:async(fn,arg)=>app.evaluate(async({BrowserWindow},{code,arg})=>BrowserWindow.getAllWindows()[0].webContents.executeJavaScript(`(${code})(${JSON.stringify(arg)})`,true),{code:fn.toString(),arg}),waitForTimeout:ms=>new Promise(resolve=>setTimeout(resolve,ms)),screenshot:async({path:file})=>{const png=await app.evaluate(async({BrowserWindow})=>(await BrowserWindow.getAllWindows()[0].webContents.capturePage()).toPNG().toString('base64'));await writeFile(file,Buffer.from(png,'base64'));}};
  await browserPage.addInitScript({content:offline});browserPage.setDefaultTimeout(15000);browserPage.setDefaultNavigationTimeout(60000);browserPage.on('pageerror',error=>errors.push(error.message));
  console.log('Loading browser preview');await browserPage.goto('http://127.0.0.1:4322/preview.html',{waitUntil:'domcontentloaded'});console.log('Browser preview loaded');
  await browserPage.getByRole('button',{name:'Profile menu',exact:true}).waitFor();
  for(let i=0;i<100;i++){if(await desktopPage.evaluate(()=>!!document.querySelector('button[aria-label="Profile menu"]')))break;await desktopPage.waitForTimeout(100);}
+ // Reproduce staggered native-details animation starts on a slow hidden renderer.
+ if(process.argv.includes('--slow-details'))await desktopPage.evaluate(()=>{const style=document.createElement('style');style.textContent='.app details::details-content{transition-duration:900ms!important;transition-delay:180ms!important}';document.head.append(style);});
  const measure=page=>page.evaluate(()=>[...document.querySelectorAll('#root button,#root input,#root textarea,#root h1,#root h2,#root .topbar,#root .sidebar,#root [role="dialog"]')].filter(element=>!element.closest('.personal-browser-slot')&&element.getBoundingClientRect().width>0&&element.getBoundingClientRect().height>0).map(element=>{const r=element.getBoundingClientRect(),s=getComputedStyle(element);return {tag:element.tagName,label:element.getAttribute('aria-label')||element.textContent?.trim(),class:element.className,box:[r.x,r.y,r.width,r.height].map(n=>Math.round(n*10)/10),font:s.font,color:s.color,background:s.backgroundColor,border:s.borderRadius};}));
  async function compare(name){
   const zones=await Promise.all([browserPage,desktopPage].map(page=>page.evaluate(()=>Intl.DateTimeFormat().resolvedOptions().timeZone)));
@@ -53,11 +57,23 @@ try{
   }
   // Native hidden windows and Chromium can start transitions on different frames.
   // Measure settled UI, including the finite brand typing and sidebar accordion.
-  await Promise.all([browserPage,desktopPage].map(page=>page.evaluate(async()=>{
+  const settled=await Promise.all([browserPage,desktopPage].map(page=>page.evaluate(async()=>{
    document.body.getBoundingClientRect();
    const animations=document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity);
-   await Promise.race([Promise.allSettled(animations.map(a=>a.finished)),new Promise(resolve=>setTimeout(resolve,3000))]);
+   // Chromium does not expose ::details-content transitions in getAnimations().
+   // Include their computed duration/delay rather than sampling a closing frame.
+   const ms=value=>parseFloat(value)*(value.trim().endsWith('ms')?1:1000);
+   const nativeWait=Math.max(0,...[...document.querySelectorAll('.app details')].filter(el=>el.getBoundingClientRect().width>0).flatMap(el=>{
+    const style=getComputedStyle(el,'::details-content'),durations=style.transitionDuration.split(',').map(ms),delays=style.transitionDelay.split(',').map(ms);
+    return durations.map((duration,index)=>Math.max(0,duration+delays[index%delays.length]));
+   }).filter(Number.isFinite));
+   if(nativeWait>3000)throw Error('Native disclosure transition exceeds the parity settling budget');
+   await Promise.all([new Promise(resolve=>setTimeout(resolve,nativeWait)),Promise.race([Promise.allSettled(animations.map(a=>a.finished)),new Promise(resolve=>setTimeout(resolve,3000))])]);
+   const unsettled=document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity&&a.playState==='running');
+   if(unsettled.length)throw Error('Finite renderer motion did not settle before geometry capture');
+   return {scriptedAnimations:animations.length,nativeDetailsWaitMs:nativeWait};
   })));
+  report.motionSettling??={};report.motionSettling[name]=settled;
   const [a,b]=await Promise.all([measure(browserPage),measure(desktopPage)]);
   const differences=[];if(a.length!==b.length)differences.push(`Element count ${a.length} / ${b.length}`);
   for(let i=0;i<Math.min(a.length,b.length);i++){const {box:abox,...aa}=a[i],{box:bbox,...bb}=b[i];if(JSON.stringify(aa)!==JSON.stringify(bb)||abox.some((n,j)=>Math.abs(n-bbox[j])>1))differences.push({index:i,browser:a[i],electron:b[i]});}
@@ -77,7 +93,12 @@ try{
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),true);
  await click('[role="menuitemcheckbox"]','Full access');await compare('composer-sandbox-restored');
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),false);
- await click('button','Add to chat');await click('button','Workspace tools');await compare('workspace-tools');await click('summary','Input and result contract');await compare('workspace-tool-contract');await click('button','Open Code navigation');await compare('semantic-navigation');await click('button','Find symbol');await compare('semantic-navigation-results');for(const page of [browserPage,desktopPage])assert.ok(await page.evaluate(()=>document.querySelector('[aria-label="Code navigation results"]')?.textContent.includes('src/ProjectOverview.tsx:1:17')));await click('button','Close dialog');
+ await click('button','Add to chat');await click('button','Workspace tools');await compare('workspace-tools');await click('summary','Input and result contract');await compare('workspace-tool-contract');
+ await click('summary','Input and result contract');await compare('workspace-tool-contract-collapsed');
+ await desktopPage.evaluate(()=>{const style=document.createElement('style');style.id='parity-details-delay';style.textContent='.app details::details-content{transition-duration:900ms!important;transition-delay:180ms!important}';document.head.append(style);});
+ await click('summary','Input and result contract');await compare('workspace-tool-contract-delayed');
+ await desktopPage.evaluate(()=>document.getElementById('parity-details-delay').remove());
+ await click('button','Open Code navigation');await compare('semantic-navigation');await click('button','Find symbol');await compare('semantic-navigation-results');for(const page of [browserPage,desktopPage])assert.ok(await page.evaluate(()=>document.querySelector('[aria-label="Code navigation results"]')?.textContent.includes('src/ProjectOverview.tsx:1:17')));await click('button','Close dialog');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',ctrlKey:true,bubbles:true})));await compare('history-search');await click('button','History');await compare('history-source');await click('button','Add excerpt to draft');await compare('history-draft');await escape();
  await click('button','Add to chat');await click('button','Skills');await compare('skills-picker');await click('button','Close skills');
  await click('button','Add to chat');await click('button','Worktrees');await compare('worktrees-dialog');await click('button','Close worktrees');
