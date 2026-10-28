@@ -139,6 +139,8 @@ export function createPreviewBridge():MuseBenchBridge {
  function selectSite(key:string){sites.site=sites.items.find(i=>i.id===key)??site;sites.activeId=sites.site.id;sites.files=Object.entries(siteFiles).map(([path,text])=>({path,bytes:new TextEncoder().encode(text).length,sha1:'sample',mime:'text/html'}));sites.previewUrl=`data:text/html;charset=utf-8,${encodeURIComponent(siteFiles['index.html'])}`;}
  const hookPresets=createPreviewHookPresets();
  const hookProjects=new Map<string,NonNullable<CustomizeState['hooks']>>();
+ const reviewedInstructionRoots=new Set<string>();
+ const previewInstructionText='Preview sample: keep shared desktop and browser controls in sync.';
  const customize:CustomizeState={simulation:true,available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only',contextCost:{startupBytes:0,startupTokens:0,invokeBytes:2080,invokeTokens:520},diagnostics:[]}],skillCatalog:{diagnostics:[],omitted:0},plugins:[],servers:[]};
  const updateListeners=new Set<(state:import('../shared/types').AppUpdateState)=>void>();
  let appUpdate:import('../shared/types').AppUpdateState={version:'0.2.0',status:'idle',availableVersion:null,percent:0,lastChecked:null,error:null,simulation:true};
@@ -218,6 +220,10 @@ export function createPreviewBridge():MuseBenchBridge {
    return siteChannel.emit();
   },
   customize:async command=>{
+   if(command.type==='inspectProject'){
+    const root=state.activeProject?.root??project.root,bytes=new TextEncoder().encode(previewInstructionText).length;
+    return{projectInstructions:{simulation:true,root,checkedAt:new Date().toISOString(),boundary:{kind:'git',root},selectedCount:1,selectedBytes:bytes,measuredBytes:bytes,complete:true,trust:{status:reviewedInstructionRoots.has(root)?'reviewed':'required'},levels:[{root,files:[{path:'AGENTS.md',selected:true,bytes,text:previewInstructionText}]}]}};
+   }
    if(command.type==='catalogSearch'){
     const fixtures:CatalogEntry[]=command.source==='community'?[...CURATED_EXTENSIONS.filter(item=>item.kind===command.kind).map(item=>({...item,id:'preview-community:'+item.id,source:'community' as const})),{id:'preview-validation-failure',title:'Unsupported package sample',description:'A deterministic validation failure for preview review.',kind:command.kind,source:'community',publisher:'Preview fixture',homepage:'https://github.com/FahadArfin/MuseBench',compatibility:'unverified',setup:'Preparation demonstrates a rejected unsupported capability.',tags:[],package:{repo:'https://github.com/FahadArfin/MuseBench',path:'.',kind:command.kind==='skills'?'skill':'plugin'},provenance:{source:'Simulated fixture',url:'https://github.com/FahadArfin/MuseBench'}}]:CURATED_EXTENSIONS.filter(item=>item.kind===command.kind);
     const entries=fixtures.filter(item=>[item.title,item.description,item.publisher,item.summary,item.category,...item.tags].join(' ').toLowerCase().includes(command.query.toLowerCase())),offset=Number(command.cursor??0),limit=6;
@@ -258,7 +264,13 @@ export function createPreviewBridge():MuseBenchBridge {
    if(command.type==='saveHookPreset'||command.type==='deleteHookPreset'){customize.hookPresets=(await hookPresets.dispatch(command))!;return{state:copy(customize),message:'Preview hook preset saved. Project hooks unchanged.'};}
    const hookRoot=state.activeProject?.root;if(hookRoot&&!hookProjects.has(hookRoot))hookProjects.set(hookRoot,{root:hookRoot,revision:'preview-hooks',items:[]});customize.hooks=hookRoot?hookProjects.get(hookRoot):null;
    if(command.type==='saveHooks'){if(command.root!==state.activeProject?.root||command.revision!==customize.hooks?.revision||!command.reviewed)throw Error('Project hooks changed. Refresh and review again.');customize.hooks={root:command.root,revision:id(),items:validateHooks(command.hooks)};hookProjects.set(command.root,customize.hooks);return{state:copy(customize),message:'Sample project hooks saved. No commands run in preview.'};}
-   if(['reviewProject','approveProject','revokeProject'].includes(command.type))return {state:copy(customize),projectReview:{root:state.activeProject?.root??project.root,fingerprint:'Preview sample',reviewed:command.type==='approveProject',files:[{path:'AGENTS.md',text:'Preview sample: keep shared desktop and browser controls in sync.'}]}};
+   if(command.type==='reviewProject'||command.type==='approveProject'||command.type==='revokeProject'){
+    const root=state.activeProject?.root??project.root;
+    if(command.type!=='reviewProject'&&command.root!==root)throw Error('The selected project changed.');
+    if(command.type==='approveProject'){if(!command.reviewed||command.fingerprint!=='Preview sample')throw Error('Review the current sample first.');reviewedInstructionRoots.add(root);}
+    if(command.type==='revokeProject')reviewedInstructionRoots.delete(root);
+    return{state:copy(customize),projectReview:{root,fingerprint:'Preview sample',reviewed:reviewedInstructionRoots.has(root),files:[{path:'AGENTS.md',text:previewInstructionText}]}};
+   }
    if(command.type==='preparePackSkill'){
     const item=MUSEBENCH_SKILL_PACK.find(item=>item.id===command.id);if(!item)throw Error('Unknown skill.');
     const instructions=({'musebench-ui-parity':uiSkill,'musebench-runtime-check':runtimeSkill,'musebench-release-check':releaseSkill} as Record<string,string>)[item.id];

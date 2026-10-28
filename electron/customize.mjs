@@ -3,6 +3,7 @@ import {createHookPresetStore} from './hook-presets.mjs';
 import {MUSEBENCH_SKILL_PACK} from '../src/shared/skill-pack.mjs';
 import {CURATED_EXTENSIONS} from '../src/shared/extension-catalog.mjs';
 import {normalizeSkillCatalog} from '../src/shared/skill-context.mjs';
+import {inspectProjectInstructions,matchesProjectInstructionReview} from '../src/runtime/project-instructions.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {randomUUID} from 'node:crypto';
@@ -119,9 +120,20 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  }
  async function dispatch(command){
   if(closed)throw Error('Customize is closed.');
-  const supported=['catalogSearch','prepareCatalog','catalogServer','saveHookPreset','deleteHookPreset','saveHooks','refresh','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
+  const supported=['catalogSearch','prepareCatalog','catalogServer','saveHookPreset','deleteHookPreset','saveHooks','refresh','inspectProject','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
   if(!object(command)||!supported.includes(command.type)||JSON.stringify(command).length>40000)throw Error('Unsupported Customize action.');
   if(command.type==='refresh')return{state:await snapshot()};
+  if(command.type==='inspectProject'){
+   const root=getState().activeProject?.root;if(!root)throw Error('Choose a project first.');
+   const projectInstructions=await inspectProjectInstructions(root);
+   try{
+    const state=await review.projectState(root);
+    projectInstructions.trust=matchesProjectInstructionReview(projectInstructions,state)?{status:state.reviewed?'reviewed':'required'}:{status:'unavailable',reason:'Project rules changed during inspection or could not be fully compared. Refresh before reviewing.'};
+   }
+   catch(error){projectInstructions.trust={status:'unavailable',reason:clean(error.message,350)};}
+   if(closed||getState().activeProject?.root!==root)throw Error('The selected project changed. Inspect it again.');
+   return{projectInstructions};
+  }
   if(command.type==='catalogSearch'){const {kind,query,source,cursor,refresh}=command;return{catalog:await(await catalogService()).search({kind,query,source,cursor,refresh})};}
   if(busy)throw Error('Wait for the current setup operation to finish.');
   if(customizeBlocked(getState())||isActive())throw Error('Let the running task finish and confirm it has stopped before changing extensions.');

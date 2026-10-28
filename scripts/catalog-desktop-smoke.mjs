@@ -4,6 +4,7 @@ import {mkdir,mkdtemp,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {CURATED_EXTENSIONS} from '../src/shared/extension-catalog.mjs';
 import {checkSkillContext} from './skill-context-checks.mjs';
+import {checkProjectInstructions} from './project-instructions-checks.mjs';
 
 // The real desktop renderer and preload talk to a deterministic main-process
 // catalog fixture. A fresh profile, disabled DNS and blocked HTTP(S) prevent
@@ -34,6 +35,11 @@ try{
   ipcMain.handle('musebench:customize',async(_event,command)=>{
    globalThis.__catalogFixture.commands.push(structuredClone(command));
    if(command.type==='refresh')return{state};
+   if(command.type==='inspectProject'&&globalThis.__catalogFixture.instructions){
+    globalThis.__catalogFixture.instructionCalls++;
+    if(globalThis.__catalogFixture.instructionFail)throw Error('Inspection temporarily unavailable');
+    return{projectInstructions:globalThis.__catalogFixture.instructions};
+   }
    if(command.type==='skillActivation'&&globalThis.__catalogFixture.skillContextActive){
     const skill=state.skills.find(s=>s.id===command.id);if(!skill)throw Error('Unknown inspector fixture');
     skill.activation=command.activation;skill.contextCost.startupTokens=command.activation==='on'?100:0;skill.contextCost.startupBytes=skill.contextCost.startupTokens*4;return{state};
@@ -71,6 +77,7 @@ try{
  const open=async entry=>{await search(entry.title);await dialog.getByRole('button',{name:`View ${entry.title}`,exact:true}).first().click();};
  await ready();assert.equal(await dialog.locator('.extensions-sidebar [role="tab"]').count(),5);
  await checkSkillContext({page,dialog,pass,screenshot,desktopApp:app});await ready();
+ await checkProjectInstructions({page,dialog,pass,screenshot,desktopApp:app});await ready();
  await dialog.getByRole('button',{name:'See all Popular',exact:true}).click();await dialog.getByRole('button',{name:'Back to all categories',exact:true}).click();
  assert.equal(await dialog.getByText(/Catalog operations are simulated/).count(),0,'Desktop must use native action text');
  pass('Desktop renderer and preload show the same compact rail and curated drilldown with native action labels');

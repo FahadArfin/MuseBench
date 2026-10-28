@@ -10,6 +10,23 @@ import {customizeBlocked} from '../src/shared/customize-policy.mjs';
 import {CURATED_EXTENSIONS} from '../src/shared/extension-catalog.mjs';
 import {APPROVED_LOCAL_CATALOG_RECIPES} from '../electron/catalog-local-server.mjs';
 test('Customize exposes its finite setup service',()=>assert.equal(typeof api.createCustomize,'function'));
+
+test('project inspection uses only the active root and remains read-only while a task runs',async()=>{
+ const f=await fixture();await writeFile(path.join(f.root,'.git'),'gitdir: ignored');await writeFile(path.join(f.root,'AGENTS.md'),'Project rules');let calls=0;
+ const current={activeProject:{root:f.root},runtime:{status:'running'}};
+ const service=api.createCustomize({getState:()=>current,isActive:()=>true,environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:async()=>{calls++;throw Error('Must not call Muse');}});
+ try{const result=await service.dispatch({type:'inspectProject',root:'C:/not-the-selected-project'});assert.equal(result.projectInstructions.root,f.root);assert.equal(result.projectInstructions.selectedBytes,13);assert.notEqual(result.projectInstructions.trust.status,'reviewed');assert.equal(calls,0);assert.equal(await f.review.allowProject(f.root),false);}finally{await service.close();}
+});
+test('project inspection rejects a selection change instead of returning another project observation',async()=>{
+ const f=await fixture();await writeFile(path.join(f.root,'.git'),'');let root=f.root;
+ const service=api.createCustomize({getState:()=>({activeProject:{root}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:{...f.review,projectState:async()=>{root=path.join(f.root,'other');return{reviewed:false};}},run:async()=>{throw Error('Must not call Muse');}});
+ try{await assert.rejects(service.dispatch({type:'inspectProject'}),/project changed/i);}finally{await service.close();}
+});
+test('inspection explains the existing ancestor trust restriction without hiding the hierarchy',async()=>{
+ const f=await fixture();await writeFile(path.join(f.root,'.git'),'');await writeFile(path.join(f.root,'AGENTS.md'),'Parent');const child=path.join(f.root,'child');await mkdir(child);
+ const service=api.createCustomize({getState:()=>({activeProject:{root:child}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:async()=>{throw Error('Must not call Muse');}});
+ try{const {projectInstructions:result}=await service.dispatch({type:'inspectProject'});assert.equal(result.selectedBytes,6);assert.equal(result.trust.status,'unavailable');assert.match(result.trust.reason,/ancestor/i);assert.equal(await f.review.allowProject(child),false);}finally{await service.close();}
+});
 test('Customize refresh retains native context costs and global loader diagnostics',async()=>{
  const f=await fixture(),calls=[];
  const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:async(_binary,args)=>{calls.push(args);return{stdout:JSON.stringify(args[0]==='skills'?{skills:[{id:'bundled:plan',name:'plan',scope:'bundled',activation:'on',context_cost:{startup_estimated_tokens:97,invoke_estimated_tokens:null},diagnostics:[{message:'Skill warning'}]}],diagnostics:[{code:'project-skills-untrusted'}]}:{plugins:[]})};}});
