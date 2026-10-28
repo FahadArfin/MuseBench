@@ -37,6 +37,7 @@ jobs:
       - run: npm run test:session-recovery
       - run: npm run test:profile-identity
       - run: npm run test:typography
+      - run: npm run test:motion
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness
       - run: npm run test:navigation-cache
@@ -58,6 +59,7 @@ jobs:
             artifacts/catalog-preview/**/report.json
             artifacts/catalog-desktop/**/report.json
             artifacts/billing-ui/**/report.json
+            artifacts/motion/**/report.json
       - uses: actions/upload-artifact@v4
         with:
           name: windows-update

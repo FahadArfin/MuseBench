@@ -1,5 +1,6 @@
 import { useId, useState, type ReactNode } from 'react';
 import { ChevronDown } from 'lucide-react';
+import {MotionDisclosure} from './MotionDisclosure';
 
 export function SidebarSection({ title, children, actions, fullRow=false }: { title: string; children: ReactNode; actions?: ReactNode; fullRow?:boolean }) {
   const [open, setOpen] = useState(true);
@@ -9,6 +10,6 @@ export function SidebarSection({ title, children, actions, fullRow=false }: { ti
       <button type="button" className="sidebar-section-toggle" aria-label={`${open ? 'Collapse' : 'Expand'} ${title}`} aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>{title}{!fullRow&&<ChevronDown size={12} className={open ? '' : 'folded'} />}</button>
       {actions}
     </div>
-    <div id={id} hidden={!open}>{children}</div>
+    <MotionDisclosure id={id} open={open}>{children}</MotionDisclosure>
   </section>;
 }

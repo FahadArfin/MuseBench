@@ -1,3 +1,4 @@
+import {useSurfaceMotion} from './useSurfaceMotion';
 import {useEffect,useMemo,useRef,useState} from 'react';
 import {ArrowUpRight,ChevronLeft,ChevronRight,Ellipsis,LoaderCircle,Plus,Search,RefreshCw} from 'lucide-react';
 import type {CatalogEntry,CatalogPage,ExtensionKind} from '../shared/extension-catalog-types';
@@ -43,6 +44,8 @@ export function ExtensionCatalog({kind,disabled,simulation,execute,onHook,onMana
  const [page,setPage]=useState<CatalogPage>(),[selected,setSelected]=useState<DirectoryEntry>();
  const [section,setSection]=useState<string>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[reviewed,setReviewed]=useState(false);
  const sequence=useRef(0),searchedQuery=useRef(''),cursorHistory=useRef(new Set<string>()),sectionHeading=useRef<HTMLHeadingElement>(null),directoryRoot=useRef<HTMLElement>(null),detailHeading=useRef<HTMLHeadingElement>(null);
+
+ useSurfaceMotion(directoryRoot,`${source}:${section??''}:${selected?.id??''}`);
 
  async function search(nextSource=source,cursor?:string,refresh=false,queryOverride?:string){
   const submitted=cursor?searchedQuery.current:(queryOverride??query).trim();

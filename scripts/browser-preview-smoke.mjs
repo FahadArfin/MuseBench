@@ -177,11 +177,11 @@ try {
  await page.screenshot({path:'artifacts/browser-preview/nested-chat-sections.png'});
  await page.getByRole('region',{name:'Desktop website snapshot'}).waitFor();
  await page.getByRole('navigation',{name:'Meta AI navigation',exact:true}).getByRole('button',{name:'Chat',exact:true}).click();
- assert.equal(await page.locator('.personal-service-content.expanded').count(),1);
+ assert.equal(await page.locator('.personal-service-content[aria-hidden="false"]').count(),1);
  assert.equal(await page.locator('.muse-agent-shortcut').getAttribute('aria-expanded'),'false');
  assert.equal(await page.locator('.personal-meta-chat').getAttribute('aria-expanded'),'true');
  await page.locator('.personal-meta-chat').click();
- assert.equal(await page.locator('.personal-service-content.expanded').count(),0);
+ assert.equal(await page.locator('.personal-service-content[aria-hidden="false"]').count(),0);
  assert.equal(await page.evaluate(async()=>(await window.musebench.personalState()).destination),'chat');
  await page.locator('.personal-meta-chat').click();
  await page.screenshot({path:'artifacts/browser-preview/service-pills.png'});

@@ -9,6 +9,7 @@ import type {CustomizeCommand,CustomizeState,CustomizeTab,PreparedExtension,Serv
 import type {PersonalServiceAction} from '../shared/types';
 import {Modal} from './WorkspacePanels';
 import './customize.css';
+import {useSurfaceMotion} from './useSurfaceMotion';
 
 const tabs=[{id:'skills',label:'Skills',icon:BookOpen},{id:'connectors',label:'Connectors',icon:Link2},{id:'plugins',label:'Plugins',icon:Puzzle},{id:'mcp',label:'MCP servers',icon:Plug},{id:'hooks',label:'Hooks',icon:Terminal}] as const;
 const descriptions={hooks:'Reviewed commands for events in this project.',skills:'Teach Muse the workflows you use every day.',connectors:'Bring your apps and tools into your workflow.',plugins:'Add reusable bundles of skills and tools to Muse Code.',mcp:'Connect Muse Code to tools through Model Context Protocol.'};
@@ -23,6 +24,8 @@ export function CustomizeDialog({initialTab='skills',initialQuery='',close,onCha
  const [form,setForm]=useState<'skill'|'mcp'|null>(null),[prepared,setPrepared]=useState<PreparedExtension|null>(null),[confirm,setConfirm]=useState<{title:string;description:string;command:CustomizeCommand}|null>(null),[reviewed,setReviewed]=useState(false);
  const alive=useRef(true),operation=useRef(0),operationType=useRef('refresh'),tabsRef=useRef<HTMLDivElement>(null);
  const [name,setName]=useState(''),[description,setDescription]=useState(''),[instructions,setInstructions]=useState(''),[transport,setTransport]=useState<'streamable_http'|'stdio'>('streamable_http'),[address,setAddress]=useState(''),[args,setArgs]=useState('[]');
+ const content=useRef<HTMLDivElement>(null);
+ useSurfaceMotion(content,`${tab}:${view}:${managedItem?.id??''}:${form??''}`);
  const disabled=busy||running;
  useEffect(()=>{alive.current=true;void execute({type:'refresh'});return()=>{alive.current=false;operation.current++;};},[]);
  async function execute(command:CustomizeCommand){
@@ -54,7 +57,7 @@ export function CustomizeDialog({initialTab='skills',initialQuery='',close,onCha
    <div className="extensions-tabs" role="tablist" aria-orientation="vertical" aria-label="Customize sections" ref={tabsRef} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key))return;event.preventDefault();const i=tabs.findIndex(item=>item.id===tab),next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(i+(['ArrowRight','ArrowDown'].includes(event.key)?1:-1)+tabs.length)%tabs.length;selectTab(tabs[next].id);tabsRef.current?.querySelectorAll<HTMLButtonElement>('[role=tab]')[next]?.focus();}}>{tabs.map(item=><button key={item.id} role="tab" id={`customize-tab-${item.id}`} aria-controls="customize-content" aria-selected={tab===item.id} tabIndex={tab===item.id?0:-1} disabled={busy} onClick={()=>selectTab(item.id)}><item.icon size={16}/>{item.label}</button>)}</div>
    <section className="extensions-installed-nav" aria-label="Installed extensions"><h3>Installed</h3>{installed.length?installed.map(item=><button key={`${item.kind}:${item.id}`} disabled={busy} title={item.title} aria-label={`Manage ${item.title}`} onClick={()=>manageItem(item.kind,item.id,item.title)}><ExtensionIcon title={item.title} kind={item.kind} size={18}/><span>{item.title}</span></button>):<p>Your installed tools will appear here.</p>}</section>
   </aside>
-  <div className="extensions-content" role="tabpanel" id="customize-content" aria-labelledby={`customize-tab-${tab}`}>
+  <div ref={content} className="extensions-content" role="tabpanel" id="customize-content" aria-labelledby={`customize-tab-${tab}`}>
    {running&&<p className="extensions-alert">A task is running. You can browse; setup will be available when it finishes.</p>}
    {error&&<div className="extensions-alert error" role="alert">{error}</div>}
    {notice&&<div className="extensions-alert success" role="status"><Check size={15}/>{notice}</div>}

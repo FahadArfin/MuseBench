@@ -9,6 +9,7 @@ import {findSettings, type SettingsCategory} from './settings-catalog.mjs';
 import {REASONING_LEVELS} from '../shared/run-options.mjs';
 import type {Action, AppState, PersonalDestination} from '../shared/types';
 import './preferences.css';
+import {useSurfaceMotion} from './useSurfaceMotion';
 export type {Preferences} from './preferences.mjs';
 
 export function usePreferences(): [Preferences, Dispatch<SetStateAction<Preferences>>] {
@@ -59,6 +60,7 @@ export function SettingsDialog({preferences, onChange, close, openConnection, st
   const categories=findSettings(query);
   const selected=categories.find(item=>item.id===category)??categories[0];
   const active=selected?.id;
+  useSurfaceMotion(content,active??'empty');
   useEffect(()=>{content.current?.scrollTo(0,0);},[active]);
   const update = <K extends keyof Preferences>(key:K, value:Preferences[K]) => onChange(current => ({...current,[key]:value}));
   async function saveMemory(){

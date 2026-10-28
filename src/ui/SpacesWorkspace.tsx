@@ -1,3 +1,4 @@
+import {useSurfaceMotion} from './useSurfaceMotion';
 import {UpdateToolbar} from './AppUpdates';
 import {NavigationButtons} from './NavigationHistory';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
@@ -213,6 +214,8 @@ export function SpacesWorkspace({ active, state, command, workItems, onOpenWork,
   const connection = state?.spaces.find(space => space.id === state.activeId);
   const localConnection = Boolean(connection && localOrigin(connection.url));
   const page = state?.page ?? null;
+  const surface=useRef<HTMLElement>(null);
+  useSurfaceMotion(surface,`${showHome}:${state?.activeId}:${view}:${page?.id}:${tab}`,active);
   const role = snapshot?.self.role ?? 'viewer';
   const canEdit = role === 'owner' || role === 'editor';
   const canComment = role !== 'viewer';
@@ -309,7 +312,7 @@ export function SpacesWorkspace({ active, state, command, workItems, onOpenWork,
   };
 
   if (!active) return null;
-  return <section className="workspace spaces-workspace" aria-label="Shared Spaces">
+  return <section ref={surface} className="workspace spaces-workspace" aria-label="Shared Spaces">
     <header className="topbar spaces-topbar"><button type="button" className="icon-button spaces-navigation-toggle" aria-label="Open navigation" title="Open navigation" onClick={onNavigationOpen}><PanelLeft size={17} /></button><NavigationButtons/><button type="button" className="spaces-breadcrumb-home" onClick={() => changeHome(true)}><Users size={15} /><span>Spaces</span></button>{!showHome && snapshot && <><ChevronRight className="spaces-breadcrumb-separator" size={13} /><span className="spaces-breadcrumb-current">{snapshot.space.name}</span></>}<span className="spaces-topbar-spacer" /><button type="button" className="icon-button" aria-label="Refresh shared space" title="Refresh shared space" disabled={blocked || !state?.activeId} onClick={() => void safely(() => command({ type: 'refresh' }), 'refresh')}><RefreshCw size={15} className={pending === 'refresh' ? 'spin' : ''} /></button><UpdateToolbar/></header>
     {modeSwitch && <div className="workspace-mode-row">{modeSwitch}</div>}
     {displayedError && <div className="spaces-banner error" role="alert"><CircleAlert size={16} /><div><strong>{state?.conflict ? 'This page has a newer revision' : 'The request could not be completed'}</strong><p>{displayedError}</p>{state?.conflict && <p>Your local draft is kept. Read the latest revision, reload the editor explicitly, or save your draft as a new page.</p>}</div><button type="button" className="icon-button" aria-label="Dismiss Spaces error" disabled={Boolean(pending)} onClick={() => { setLocalError(''); void safely(() => command({ type: 'clearError' }), 'dismiss'); }}><X size={15} /></button></div>}

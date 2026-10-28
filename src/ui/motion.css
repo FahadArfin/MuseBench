@@ -1,0 +1,21 @@
+/* Shared preview/desktop motion. No permanent compositing layers or per-message animations. */
+:root{--motion-fast:120ms;--motion-popover:140ms;--motion-dialog:200ms;--motion-disclosure:280ms;--motion-ease:cubic-bezier(.22,1,.36,1)}
+.motion-disclosure{display:grid;grid-template-rows:0fr;opacity:0;visibility:hidden;transition:grid-template-rows var(--motion-disclosure) var(--motion-ease),opacity 160ms ease,visibility 0s linear var(--motion-disclosure)}
+.motion-disclosure[data-open="true"]{grid-template-rows:1fr;opacity:1;visibility:visible;transition:grid-template-rows var(--motion-disclosure) var(--motion-ease),opacity 180ms ease,visibility 0s}
+.motion-disclosure-clip{min-height:0;overflow:hidden}
+:is(.sidebar-section-toggle,.project-toggle,.personal-collection-collapse,.muse-service-collapse) svg,.personal-service-chevron{transition:transform var(--motion-disclosure) var(--motion-ease),opacity var(--motion-fast) ease}
+:is(.navigation-row,.chat-row,.personal-item-row,.compact-nav-button,.sidebar-section-toggle,.project-row,.toolbar-button,.icon-button,.settings-nav button,.extensions-tabs button,.usage-tabs button,.work-mode-switch button){transition:background-color var(--motion-fast) ease,color var(--motion-fast) ease,border-color var(--motion-fast) ease}
+@keyframes muse-surface-enter{from{opacity:0;translate:0 5px}to{opacity:1;translate:none}}
+@keyframes muse-scrim-enter{from{opacity:0}to{opacity:1}}
+@keyframes muse-dock-enter{from{opacity:0;translate:8px 0}to{opacity:1;translate:none}}
+@keyframes muse-nav-enter{from{opacity:0;translate:-10px 0}to{opacity:1;translate:none}}
+:is(.modal-scrim,.spaces-dialog-scrim,.sites-dialog-scrim,.nav-scrim){animation:muse-scrim-enter var(--motion-fast) ease backwards}
+:is(.modal,.spaces-dialog,.sites-dialog){animation:muse-surface-enter var(--motion-dialog) var(--motion-ease) backwards}
+:is(.profile-popover,.composer-popover,.reasoning-popover,.chat-context-menu,.rail-shortcut-popover,.work-export-menu,.slash-palette){animation:muse-surface-enter var(--motion-popover) var(--motion-ease) backwards}
+:is(.review-dock,.work-activity-overlay){animation:muse-dock-enter var(--motion-dialog) var(--motion-ease) backwards}
+:is(.sidebar-scroll,.personal-navigation,.compact-navigation){animation:muse-scrim-enter 180ms ease backwards}
+:is(.error-toast,.sites-banner){animation:muse-surface-enter var(--motion-popover) var(--motion-ease) backwards}
+@media(max-width:700px){.nav-open .sidebar:not([hidden]){animation:muse-nav-enter var(--motion-dialog) var(--motion-ease) backwards}}
+/* Settle final state, including delays, pseudo-elements and infinite loaders. */
+:root[data-reduced-motion="true"] *,:root[data-reduced-motion="true"] *::before,:root[data-reduced-motion="true"] *::after{animation:none!important;animation-delay:0s!important;transition:none!important;transition-delay:0s!important;scroll-behavior:auto!important}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;animation-delay:0s!important;transition:none!important;transition-delay:0s!important;scroll-behavior:auto!important}}

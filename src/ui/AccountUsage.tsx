@@ -1,7 +1,8 @@
 import {BillingSourceSettings,BillingPlans} from './CodeBilling';
 import {UsageAnalytics} from './UsageAnalytics';
 import {UsageResets} from './UsageResets';
-import {useCallback,useEffect,useState} from 'react';
+import {useCallback,useEffect,useState,useRef} from 'react';
+import {useSurfaceMotion} from './useSurfaceMotion';
 import {money,type AccountUsage} from '../shared/account-usage.mjs';
 import {nextUsageRefreshDelay,USAGE_REFRESH_MS} from '../shared/usage-resets.mjs';
 import './account-usage.css';
@@ -41,4 +42,4 @@ function AccountUsageOverview({showPlans}:{showPlans:()=>void}){
  {error&&<p className="usage-note" role="status">{error}</p>}{usage?.observedAt&&<p className="usage-note">Allowance observed {new Date(usage.observedAt).toLocaleString()}</p>}{usage?.checkedAt&&<p className="usage-note">Checked {new Date(usage.checkedAt).toLocaleTimeString()} · Updates every 5 minutes while open</p>}</section>;
 }
 
-export function AccountUsagePanel(){const [tab,setTab]=useState<'overview'|'plans'|'analytics'>('overview');const labels={overview:'Overview',plans:'Plans',analytics:'Analytics'};return <><div className="usage-tabs" role="tablist" aria-label="Usage and billing sections">{(['overview','plans','analytics'] as const).map(id=><button type="button" role="tab" key={id} aria-selected={tab===id} onClick={()=>setTab(id)}>{labels[id]}</button>)}</div><div role="tabpanel" aria-label={labels[tab]}>{tab==='overview'?<AccountUsageOverview showPlans={()=>setTab('plans')}/>:tab==='plans'?<BillingPlans/>:<UsageAnalytics/>}</div></>;}
+export function AccountUsagePanel(){const [tab,setTab]=useState<'overview'|'plans'|'analytics'>('overview');const content=useRef<HTMLDivElement>(null);useSurfaceMotion(content,tab);const labels={overview:'Overview',plans:'Plans',analytics:'Analytics'};return <><div className="usage-tabs" role="tablist" aria-label="Usage and billing sections">{(['overview','plans','analytics'] as const).map(id=><button type="button" role="tab" key={id} aria-selected={tab===id} onClick={()=>setTab(id)}>{labels[id]}</button>)}</div><div ref={content} role="tabpanel" aria-label={labels[tab]}>{tab==='overview'?<AccountUsageOverview showPlans={()=>setTab('plans')}/>:tab==='plans'?<BillingPlans/>:<UsageAnalytics/>}</div></>;}

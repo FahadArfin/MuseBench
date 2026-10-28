@@ -1,4 +1,5 @@
 import {TypedText} from './TypedText';
+import {MotionDisclosure} from './MotionDisclosure';
 import {UpdateToolbar} from './AppUpdates';
 import {NavigationButtons} from './NavigationHistory';
 import {useContext} from 'react';
@@ -69,14 +70,14 @@ function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active
       {onCreate && <button type="button" className="icon-button personal-collection-add" aria-label="Create a side chat" title="Create a side chat" disabled={!available} onClick={()=>{setExpanded(true);onCreate();}}><Plus size={15}/></button>}
       {!onCreate && (loading ? <LoaderCircle size={12} className="spin personal-collection-loading" aria-label={`Loading ${label}`} /> : (group.status === 'ready' || group.items.length > 0) && <span className="personal-collection-count" title={`${group.items.length} loaded ${noun}`}>{normalizedQuery ? `${items.length}/${group.items.length}` : group.items.length}</span>)}
     </div>
-    <div id={listId} className="personal-collection-list" hidden={!open}>
+    <MotionDisclosure id={listId} innerClassName="personal-collection-list" open={open}>
       {onMain && <button type="button" className={`personal-item-row ${mainActive ? 'selected' : ''}`} aria-current={mainActive ? 'page' : undefined} onClick={onMain}>Main conversation</button>}
       {shown.map(item => <button type="button" key={item.id} className={`personal-item-row ${item.id === selectedId ? 'selected' : ''}`} aria-label={item.title} aria-current={item.id === selectedId ? 'page' : undefined} title={item.title} onClick={() => onSelect(item.id)}><span>{item.title}</span></button>)}
       {!shown.length && <p className="personal-collection-empty" role="status">{loading ? `Loading ${noun}…` : group.status === 'signed-out' ? <>Sign in to Muse to see your {noun}. <button type="button" className="text-link" onClick={onNavigate}>Open Muse</button></> : group.status === 'idle' ? <>Open {label} to load your {noun}. <button type="button" className="text-link" onClick={onNavigate}>Open {label}</button></> : group.status === 'unavailable' ? <>Couldn’t load {noun}. <button type="button" className="text-link" onClick={onNavigate}>Open {label}</button></> : normalizedQuery ? 'No matching titles.' : `No ${noun} to show yet.`}</p>}
       {!!shown.length && group.status === 'unavailable' && <p className="personal-collection-empty" role="status">Couldn’t refresh. Showing loaded titles.</p>}
       {items.length > limit && <button type="button" className="personal-show-more" aria-label={`Show more ${label}`} onClick={() => setLimit(value => value + 6)}>Show more<span>{items.length - shown.length}</span><ChevronDown size={12} /></button>}
       {limit > 6 && items.length > 6 && <button type="button" className="personal-show-more" aria-label={`Show fewer ${label}`} onClick={() => setLimit(6)}>Show fewer</button>}
-    </div>
+    </MotionDisclosure>
   </section>;
 }
 
@@ -140,7 +141,7 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
   return <div className="personal-navigation">
     <div className="personal-navigation-scroll">
       <div className="personal-sidebar-controls">{agentButton}<button type="button" className="icon-button muse-service-collapse" aria-label={museOpen?'Collapse Muse':'Expand Muse'} aria-expanded={museOpen} aria-controls={museSectionId} {...warmOnIntent('bot')} onClick={()=>setExpandedService(museOpen?null:'muse')}><ChevronRight size={15} className={museOpen?'rotated':''}/></button></div>
-      <div id={museSectionId} className={`personal-service-content ${museOpen?'expanded':''}`} aria-hidden={!museOpen} inert={!museOpen}><div className="personal-service-inner">
+      <MotionDisclosure id={museSectionId} className="personal-service-content" open={museOpen}>
       <div className="personal-filter-row" hidden={!searchOpen || destination==='chat'}>
         <div className="personal-filter"><Search size={14} aria-hidden="true" /><input ref={input} aria-label="Filter Muse sidebar" aria-describedby={filterId} placeholder="Search your Muse" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); event.stopPropagation(); setQuery(''); } }} />{query && <button type="button" aria-label="Clear Muse filter" onClick={() => { setQuery(''); input.current?.focus(); }}><X size={12} /></button>}</div>
         <button type="button" className="icon-button personal-refresh" aria-label="Refresh Muse sidebar" title="Refresh Muse chats, ideas, and goals" disabled={refreshing || !available.bot} onClick={() => onCommand({ type: 'refreshLibrary' })}><RefreshCw size={14} className={refreshing ? 'spin' : ''} /></button>
@@ -156,13 +157,13 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
         <button className="navigation-row" type="button" aria-label="Muse feed" {...warmOnIntent('muse-feed')} onClick={() => onAction('feed')}><Newspaper size={15} /><span>Feed</span></button>
         <button className="navigation-row" type="button" aria-label="Muse library" {...warmOnIntent('muse-library')} onClick={() => onAction('library')}><Library size={15} /><span>Library</span></button>
       </nav></div>
-      </div></div>
+      </MotionDisclosure>
       <nav className="meta-native-navigation" aria-label="Meta AI navigation">
         <button type="button" className={`navigation-row personal-service-heading personal-meta-chat ${metaOpen?'active':''}`} aria-current={destination==='chat'?'page':undefined} aria-label="Chat" aria-expanded={metaOpen} aria-controls={metaSectionId} disabled={!available.chat} title="Regular Meta AI chat" {...warmOnIntent('meta-chat')} onClick={() => openService('meta')}><MessageCircle size={20} /><span className="personal-service-label"><strong>Meta AI Chat</strong><small>Chat &amp; create</small></span><ChevronRight className="personal-service-chevron" size={15} aria-hidden="true"/></button>
-        <div id={metaSectionId} className={`personal-service-content ${metaOpen?'expanded':''}`} aria-hidden={!metaOpen} inert={!metaOpen}><div className="personal-service-inner">
+        <MotionDisclosure id={metaSectionId} className="personal-service-content" open={metaOpen}>
     {([{action:'newChat',label:'New chat',icon:SquarePen},{action:'search',label:'Search',icon:Search},{action:'media',label:'Media',icon:Images},{action:'artifacts',label:'Artifacts',icon:Shapes},{action:'scheduled',label:'Scheduled',icon:CalendarDays},{action:'vibes',label:'Vibes',icon:Clapperboard}] as const).map(item=><button key={item.action} type="button" aria-label={item.label} aria-current={item.action==='scheduled'&&schedules?'page':undefined} className={`navigation-row ${item.action==='scheduled'&&schedules?'active':''}`} disabled={!available.chat} {...warmOnIntent(item.action==='newChat'?'meta-chat':`meta-${item.action}`)} onClick={()=>onCommand({type:'metaAction',action:item.action})}><item.icon size={17}/><span>{item.label}</span>{destination==='chat'&&item.action==='search'&&<kbd>Ctrl K</kbd>}{destination==='chat'&&item.action==='newChat'&&<kbd>Ctrl N</kbd>}</button>)}
     {destination==='chat'&&schedules&&<ScheduledTasks schedules={schedules} onCommand={onCommand}/>}
-        </div></div>
+        </MotionDisclosure>
       </nav>
     </div>
   </div>;

@@ -3,6 +3,8 @@ import {NavigationButtons} from './NavigationHistory';
 import {useContext} from 'react';
 import {BrowserPreviewContext} from './BrowserPreviewContext';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import {useSurfaceMotion} from './useSurfaceMotion';
+import {motionScrollBehavior} from './motion.mjs';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUp, BriefcaseBusiness, Check, ChevronDown, CircleAlert, Clapperboard, Code2, ExternalLink, FileJson2, FileText, FolderOpen, LayoutDashboard, LoaderCircle, MessageSquare, PanelLeft, Paperclip, Play, Presentation, RefreshCw, Search, Settings2, Square, SquarePen, X, type LucideIcon } from 'lucide-react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -158,6 +160,8 @@ export function WorkWorkspace({ active, obscured, state, command, importSources,
   const item = state?.item;
   const task = state?.task;
   const showingHome = (home ?? localHome) || !item;
+  const surface=useRef<HTMLElement>(null);
+  useSurfaceMotion(surface,`${showingHome}:${item?.id}:${pane}:${artifactTab}`,active);
   const running = Boolean(state && (activeStatuses.includes(state.runtime.status) || state.task?.runs?.some(run => ['working', 'queued', 'waiting'].includes(run.status))));
   const blocked = Boolean(pending || state?.busy || running || !state);
   const error = localError || state?.error;
@@ -212,7 +216,7 @@ export function WorkWorkspace({ active, obscured, state, command, importSources,
   };
   const messages = (task?.messages ?? []).filter(entry => entry.role !== 'system');
   const options = workExportOptions(state?.artifact ?? null, state?.capabilities);
-  return <section className="workspace work-workspace" hidden={!active} inert={!active || obscured ? true : undefined} aria-label="Work workspace">
+  return <section ref={surface} className="workspace work-workspace" hidden={!active} inert={!active || obscured ? true : undefined} aria-label="Work workspace">
     <header className="topbar work-topbar"><button type="button" className="icon-button mobile-toggle" aria-label="Open navigation" onClick={onNavigationOpen}><PanelLeft size={17} /></button>{collapsed && <button type="button" className="icon-button collapsed-toggle" aria-label="Show sidebar" onClick={onToggleSidebar}><PanelLeft size={17} /></button>}<NavigationButtons/>{!showingHome && <div className="work-task-breadcrumb"><button type="button" className="icon-button" aria-label="Back to Work home" onClick={() => setHome(true)}><ArrowLeft size={15} /></button><span title={item?.title}>{item?.title}</span>{item?.demo && <span className="work-inline-sample">Sample</span>}</div>}<div className="work-topbar-spacer" />{showingHome && running && item && <button type="button" className="work-return-running" onClick={() => setHome(false)}><LoaderCircle size={13} className="spin" /><span>Return to active work</span><ArrowRight size={13} /></button>}<button type="button" className="icon-button" aria-label="Work settings" title="MuseBench settings" onClick={onSettings}><Settings2 size={16} /></button><UpdateToolbar/></header>
     {modeSwitch && <div className="workspace-mode-row">{modeSwitch}</div>}
     {error && <div className="work-banner error" role="alert"><CircleAlert size={15} /><div><strong>Work needs attention</strong><p>{error}</p></div><button type="button" className="icon-button" aria-label="Dismiss Work error" onClick={() => { setLocalError(''); void safely(() => command({ type: 'clearError' })); }}><X size={14} /></button></div>}
@@ -245,7 +249,7 @@ export function WorkWorkspace({ active, obscured, state, command, importSources,
           {state?.artifact && <div className="work-artifact-footer"><span>{kindLabel(state.artifact.kind)}{item?.demo ? ' · Sample content' : ''}</span><span>{state.artifact.sources.length} {state.artifact.sources.length === 1 ? 'source reference' : 'source references'}</span></div>}
         </section>
       </div>
-      {activityRun && task && <div className="work-activity-overlay"><WorkThreads runs={task.runs ?? []} selectedRunId={activityRun} shellResults={task.shellResults} active={active && !obscured} onClose={() => setActivityRun(null)} onStop={() => void safely(() => command({ type: 'stop' }))} onSelectRun={id => { setActivityRun(null); setPane('chat'); const run = task.runs?.find(entry => entry.id === id); if (run) document.getElementById(`work-message-${run.promptId}`)?.scrollIntoView({ block: 'start', behavior: preferences.reducedMotion ? 'instant' : 'smooth' }); }} /></div>}
+      {activityRun && task && <div className="work-activity-overlay"><WorkThreads runs={task.runs ?? []} selectedRunId={activityRun} shellResults={task.shellResults} active={active && !obscured} onClose={() => setActivityRun(null)} onStop={() => void safely(() => command({ type: 'stop' }))} onSelectRun={id => { setActivityRun(null); setPane('chat'); const run = task.runs?.find(entry => entry.id === id); if (run) document.getElementById(`work-message-${run.promptId}`)?.scrollIntoView({ block: 'start', behavior: motionScrollBehavior() }); }} /></div>}
     </>}
   </section>;
 }

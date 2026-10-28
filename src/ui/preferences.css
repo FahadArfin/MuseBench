@@ -3,7 +3,6 @@
 :root[data-text-size="large"] { --transcript-size: 16px; }
 :root[data-font="system"] { --transcript-font: inherit; }
 :root[data-font="mono"] { --transcript-font: var(--mono-font); }
-:root[data-reduced-motion="true"] *, :root[data-reduced-motion="true"] *::before, :root[data-reduced-motion="true"] *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
 :root[data-transcript-width="narrow"] { --conversation-width: 800px; }
 :root[data-transcript-width="wide"] { --conversation-width: 1080px; }
 .conversation .transcript-inner, .conversation .composer-region, .conversation .new-chat-content { max-width: var(--conversation-width,800px); }
