@@ -2,7 +2,7 @@
 :root{--motion-fast:120ms;--motion-popover:140ms;--motion-dialog:200ms;--motion-disclosure:280ms;--motion-ease:cubic-bezier(.22,1,.36,1)}
 .motion-disclosure{display:grid;grid-template-rows:0fr;opacity:0;visibility:hidden;transition:grid-template-rows var(--motion-disclosure) var(--motion-ease),opacity 160ms ease,visibility 0s linear var(--motion-disclosure)}
 .motion-disclosure[data-open="true"]{grid-template-rows:1fr;opacity:1;visibility:visible;transition:grid-template-rows var(--motion-disclosure) var(--motion-ease),opacity 180ms ease,visibility 0s}
-.motion-disclosure-clip{min-height:0;overflow:hidden}
+.motion-disclosure-clip{min-height:0;overflow:clip}
 :is(.sidebar-section-toggle,.project-toggle,.personal-collection-collapse,.muse-service-collapse) svg,.personal-service-chevron{transition:transform var(--motion-disclosure) var(--motion-ease),opacity var(--motion-fast) ease}
 :is(.navigation-row,.chat-row,.personal-item-row,.compact-nav-button,.sidebar-section-toggle,.project-row,.toolbar-button,.icon-button,.settings-nav button,.extensions-tabs button,.usage-tabs button,.work-mode-switch button){transition:background-color var(--motion-fast) ease,color var(--motion-fast) ease,border-color var(--motion-fast) ease}
 @keyframes muse-surface-enter{from{opacity:0;translate:0 5px}to{opacity:1;translate:none}}

@@ -20,6 +20,7 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
     let disposed = false, finished = false, frame = 0;
     const animations: Animation[] = [];
     const timers: ReturnType<typeof setTimeout>[] = [];
+    const deadline = performance.now() + 2100;
     const later = (callback:()=>void, delay:number) => timers.push(setTimeout(callback, delay));
     const finish = () => {
       if (disposed || finished) return;
@@ -34,6 +35,13 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
       const animation = element.animate(keyframes, {...options, fill:'forwards'});
       animations.push(animation);
       return animation;
+    };
+    const finishAfterPaint = (animation:Animation) => {
+      void animation.finished.then(() => {
+        if (disposed || finished) return;
+        // Keep one fully landed frame before revealing the real sidebar title.
+        frame = requestAnimationFrame(() => { frame = requestAnimationFrame(finish); });
+      }, () => { if (!disposed) finish(); });
     };
     const reduce = () => motion.matches || readPreferences().reducedMotion;
     const skip = (event:KeyboardEvent) => { if (event.key === 'Escape') finish(); };
@@ -89,11 +97,13 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
           const text = target?.querySelector<HTMLElement>('.typed-text');
           const targetBox = target?.getBoundingClientRect();
           const textBox = text?.getBoundingClientRect();
+          // A busy cold renderer may consume some of the presentation budget.
+          // Shorten the flight as a whole instead of cutting it off mid-frame.
+          const available = Math.max(0, deadline - performance.now() - 100);
           // Narrow/collapsed sidebars have no visible title; fade gracefully in place.
-          if (!targetBox || !textBox || !targetBox.width || !textBox.width || targetBox.right <= 0 || targetBox.left >= innerWidth) {
+          if (!targetBox || !textBox || !targetBox.width || !textBox.width || targetBox.right <= 0 || targetBox.left >= innerWidth || available < 240) {
             layer.dataset.phase = 'fading';
-            animate(layer, [{opacity:1}, {opacity:0}], {duration:240});
-            later(finish, 250);
+            finishAfterPaint(animate(layer, [{opacity:1}, {opacity:0}], {duration:Math.min(240, available)}));
             return;
           }
           layer.dataset.phase = 'moving';
@@ -101,18 +111,19 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
           const destination = `translate(${targetBox.left}px, ${targetBox.top}px) scale(1)`;
           // Start at rest, accelerate, and settle. A pure ease-out would launch
           // toward the corner at full speed and make the mark feel disconnected.
-          const travel = {duration:740, easing:'cubic-bezier(.65, 0, .22, 1)'};
+          const travel = {duration:Math.min(740, available), easing:'cubic-bezier(.65, 0, .22, 1)'};
+          const pace = travel.duration / 740;
           // The sidebar uses a 28px icon beside smaller type. Scaling the whole
           // wordmark to its font size would leave a visible jump at handoff.
-          animate(mark, [
+          const flight = animate(mark, [
             {transform:origin, color:'#1877f2', fontSize:'17px', fontWeight:'500', lineHeight:'17px', gap:'5px', height:'28px'},
             {transform:destination, color:textStyle.color, fontSize:textStyle.fontSize, fontWeight:textStyle.fontWeight, lineHeight:`${textBox.height}px`, gap:targetStyle.columnGap, height:`${targetBox.height}px`},
           ], travel);
           animate(layer.querySelector('.launch-symbol')!, [{width:'20px'}, {width:'28px'}], travel);
-          animate(layer.querySelector('.launch-backdrop')!, [{opacity:1}, {opacity:0}], {duration:560, delay:100, easing:'cubic-bezier(.4, 0, .2, 1)'});
-          animate(layer.querySelector('.launch-terminal')!, [{opacity:1}, {opacity:0}], {duration:160, delay:530});
-          animate(layer.querySelector('.launch-chat-icon')!, [{opacity:0}, {opacity:1}], {duration:160, delay:530});
-          later(finish, 760);
+          animate(layer.querySelector('.launch-backdrop')!, [{opacity:1}, {opacity:0}], {duration:560*pace, delay:100*pace, easing:'cubic-bezier(.4, 0, .2, 1)'});
+          animate(layer.querySelector('.launch-terminal')!, [{opacity:1}, {opacity:0}], {duration:160*pace, delay:530*pace});
+          animate(layer.querySelector('.launch-chat-icon')!, [{opacity:0}, {opacity:1}], {duration:160*pace, delay:530*pace});
+          finishAfterPaint(flight);
         } catch { finish(); }
       }, 850);
     };

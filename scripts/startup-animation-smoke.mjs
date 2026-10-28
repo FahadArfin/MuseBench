@@ -56,7 +56,7 @@ async function until(check,label,timeout=12000){
 const settled=page=>page.waitForFunction(()=>document.querySelector('.launch-content')&&!document.querySelector('.launch-overlay')&&document.documentElement.dataset.launchActive!=='true'&&!document.querySelector('.launch-content').inert);
 const observation=page=>page.evaluate(()=>window.__launchObservation);
 
-async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,skip}={}){
+async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,skip}={}){
   const page=lastPage=await browser.newPage({viewport,reducedMotion,...(name==='preview-launch'?{recordVideo:{dir:output,size:viewport}}:{})});
   page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(`${name}: ${error.message}`));
   const load=report.sceneLoads??={};load[name]={failedRequests:[],failedResponses:[],crashed:false};
@@ -71,10 +71,18 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
     return route.continue();
   });
   await page.addInitScript(observeLaunch);
-  await page.addInitScript(({preferences,brokenAnimation})=>{
+  await page.addInitScript(({preferences,brokenAnimation,slowFirstPaint})=>{
     localStorage.setItem('musebench.preferences.v1',JSON.stringify(preferences));
     if(brokenAnimation)Element.prototype.animate=function(){throw Error('Simulated unavailable animation compositor');};
-  },{preferences,brokenAnimation});
+    if(slowFirstPaint){
+      const animate=Element.prototype.animate;let delayed=false;
+      Element.prototype.animate=function(...args){
+        // Reproduce a busy cold renderer consuming part of the launch deadline.
+        if(!delayed&&this.classList.contains('launch-wordmark')){delayed=true;const until=performance.now()+slowFirstPaint;while(performance.now()<until){}}
+        return animate.apply(this,args);
+      };
+    }
+  },{preferences,brokenAnimation,slowFirstPaint});
   await page.goto(`${server.resolvedUrls.local[0]}preview.html${query}`,{waitUntil:'domcontentloaded'});
   if(name==='preview-launch'||name==='light-launch'){
     await page.waitForFunction(()=>{const letter=document.querySelector('.launch-name>span:last-child');return letter&&Number(getComputedStyle(letter).opacity)>.9;});
@@ -169,6 +177,14 @@ async function checkBrowser(){
 
   const light=await browserScene('light-launch',{preferences:{theme:'light'}});checkLaunchMotion(light.frames,'light theme');await light.page.close();
   pass('Light theme retains the same typing, cursor, motion and exact sidebar landing');
+
+  const slow=await browserScene('slow-first-paint',{slowFirstPaint:550});checkLaunchMotion(slow.frames,'slow first paint');await slow.page.close();
+  pass('A busy cold renderer still completes the flight and icon handoff before the launch deadline');
+  const exhausted=await browserScene('low-flight-budget',{slowFirstPaint:1000});
+  assert(exhausted.frames.some(frame=>frame.phase==='fading'),'Low flight budget fades in place');
+  assert(!exhausted.frames.some(frame=>frame.phase==='moving'),'Low flight budget does not begin a flight it cannot complete');
+  await exhausted.page.close();
+  pass('A severely delayed first paint fades in place and releases app interaction within the launch watchdog');
 
   const ordinary=await browserScene('preview-normal',{query:''});
   assert(!ordinary.frames.some(frame=>frame.active));await ordinary.page.close();

@@ -37,7 +37,7 @@ async function entrance(button,selector){
 try{
  const offline=`window.fetch=async(input)=>{if(String(input).includes('/__musebench_snapshots/manifest.json'))return new Response(JSON.stringify({version:1,pages:{}}));throw Error('Offline motion fixture');};`;
  const fixture=offline+(await build({stdin:{contents:"import {createPreviewBridge} from './src/preview/bridge.ts';window.musebench=createPreviewBridge();",resolveDir:process.cwd()},bundle:true,write:false,loader:{'.md':'text'},format:'iife',platform:'browser'})).outputFiles[0].text;
- server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-motion',server:{host:'127.0.0.1',port:0},plugins:[{name:'motion-production-fixture',configureServer(server){server.middlewares.use('/__motion__',async(req,res)=>{
+ server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-motion',server:{host:'127.0.0.1',port:0,strictPort:false},plugins:[{name:'motion-production-fixture',configureServer(server){server.middlewares.use('/__motion__',async(req,res)=>{
   const file=(req.url??'').split('?')[0];
   try{
    if(file==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixture);return;}

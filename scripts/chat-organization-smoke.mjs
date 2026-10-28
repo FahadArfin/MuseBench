@@ -99,6 +99,7 @@ async function exercise(page,{variant,projectName,firstTitle,secondTitle,project
     menu=await openMenu(pinned,renamed);
     assert.deepEqual((await menu.getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Unpin','Edit details','Archive','Delete']);
     await screenshot('pinned-menu');
+    assert.equal(await menu.isVisible(),true,'Opening and focusing a pinned menu must not scroll a disclosure and dismiss it');
     await menu.getByRole('menuitem',{name:'Unpin',exact:true}).click();
     await row(recents,renamed).waitFor();
     assert.equal(await row(pinned,renamed).count(),0);
