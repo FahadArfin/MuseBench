@@ -35,7 +35,7 @@ export function ProductSwitcher({ product, onChange, sidebarToggle }: {product: 
   </div>;
 }
 
-function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active, query, available, onNavigate, onSelect, onCreate }: {
+function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active, query, available, onNavigate, onSelect, onCreate, onMain, mainActive }: {
   label: string;
   noun: string;
   icon: LucideIcon;
@@ -47,6 +47,8 @@ function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active
   onNavigate: () => void;
   onSelect: (id: string) => void;
   onCreate?: () => void;
+  onMain?: () => void;
+  mainActive?: boolean;
 }) {
   const [expanded, setExpanded] = useState(label === 'Chat');
   const [limit, setLimit] = useState(6);
@@ -62,11 +64,12 @@ function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active
   return <section className="personal-collection" role="group" aria-label={label}>
     <div className={`personal-collection-heading ${active && !selectedId ? 'active' : ''}`}>
       <button type="button" className="personal-collection-collapse" aria-label={`${open ? 'Collapse' : 'Expand'} ${label}`} aria-expanded={open} aria-controls={listId} disabled={Boolean(normalizedQuery)} title={normalizedQuery ? 'Collections stay open while filtering' : `${open ? 'Collapse' : 'Expand'} ${label}`} onClick={() => setExpanded(!expanded)}><ChevronRight size={13} className={open ? 'rotated' : ''} /></button>
-      <button type="button" className="personal-collection-title" aria-label={label} aria-current={active && !selectedId ? 'page' : undefined} disabled={!available} aria-expanded={open} aria-controls={listId} onClick={() => { if (!normalizedQuery) setExpanded(!open); if (!open) onNavigate(); }}><Icon size={15} /><span>{label}</span></button>
+      <button type="button" className="personal-collection-title" aria-label={label} aria-current={active && !selectedId ? 'page' : undefined} disabled={!available} aria-expanded={open} aria-controls={listId} onClick={() => { if (!normalizedQuery) setExpanded(!open); if (!open && !onMain) onNavigate(); }}><Icon size={15} /><span>{label}</span></button>
       {onCreate && <button type="button" className="icon-button personal-collection-add" aria-label="Create a side chat" title="Create a side chat" disabled={!available} onClick={()=>{setExpanded(true);onCreate();}}><Plus size={15}/></button>}
       {!onCreate && (loading ? <LoaderCircle size={12} className="spin personal-collection-loading" aria-label={`Loading ${label}`} /> : <span className="personal-collection-count" title={`${group.items.length} loaded ${noun}`}>{normalizedQuery ? `${items.length}/${group.items.length}` : group.items.length}</span>)}
     </div>
     <div id={listId} className="personal-collection-list" hidden={!open}>
+      {onMain && <button type="button" className={`personal-item-row ${mainActive ? 'selected' : ''}`} aria-current={mainActive ? 'page' : undefined} onClick={onMain}>Main conversation</button>}
       {shown.map(item => <button type="button" key={item.id} className={`personal-item-row ${item.id === selectedId ? 'selected' : ''}`} aria-label={item.title} aria-current={item.id === selectedId ? 'page' : undefined} title={item.title} onClick={() => onSelect(item.id)}><span>{item.title}</span></button>)}
       {!shown.length && <p className="personal-collection-empty" role="status">{loading ? `Loading ${noun}…` : group.status === 'unavailable' ? `Open Muse, then refresh to load your ${noun}.` : normalizedQuery ? 'No matching titles.' : `No ${noun} to show yet.`}</p>}
       {!!shown.length && group.status === 'unavailable' && <p className="personal-collection-empty" role="status">Couldn’t refresh. Showing loaded titles.</p>}
@@ -118,14 +121,22 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
     onSearchOpenChange(false);
     if (!collapse) onNavigate(service==='muse'?'bot':'chat');
   };
+  const mainChat = library.chats.items.find(item=>item.main);
+  const mainActive = destination==='bot' && Boolean(mainChat && library.selectedId===mainChat.id);
+  const openMain = () => {
+    setExpandedService('muse');
+    onSearchOpenChange(false);
+    if (mainChat) onCommand({type:'selectItem',id:mainChat.id});
+    else onNavigate('bot');
+  };
   const museSectionId = useId(), metaSectionId = useId();
   const agentName=agentProfile?.name?.trim()||'Muse';
-  const agentButton=<button type="button" className={`navigation-row personal-service-heading muse-agent-shortcut ${museOpen?'active':''}`} aria-label={agentName} title={agentName} aria-expanded={museOpen} aria-controls={museSectionId} aria-current={destination==='bot'&&!library.selectedId?'page':undefined} disabled={!available.bot} onClick={()=>openService('muse')}>
-    {agentProfile?.avatar?<img className="muse-agent-avatar" src={agentProfile.avatar} alt="" draggable={false}/>:<Bot size={20} aria-hidden="true"/>}<span className="personal-service-label"><strong>{agentName}</strong><small>Personal assistant</small></span><ChevronRight className="personal-service-chevron" size={15} aria-hidden="true"/>
+  const agentButton=<button type="button" className={`navigation-row personal-service-heading muse-agent-shortcut ${museOpen?'active':''}`} aria-label={agentName} title={agentName} aria-expanded={museOpen} aria-controls={museSectionId} aria-current={destination==='bot'&&!library.selectedId?'page':undefined} disabled={!available.bot} onClick={openMain}>
+    {agentProfile?.avatar?<img className="muse-agent-avatar" src={agentProfile.avatar} alt="" draggable={false}/>:<Bot size={20} aria-hidden="true"/>}<span className="personal-service-label"><strong>{agentName}</strong><small>Personal assistant</small></span>
   </button>;
   return <div className="personal-navigation">
     <div className="personal-navigation-scroll">
-      <div className="personal-sidebar-controls">{agentButton}</div>
+      <div className="personal-sidebar-controls">{agentButton}<button type="button" className="icon-button muse-service-collapse" aria-label={museOpen?'Collapse Muse':'Expand Muse'} aria-expanded={museOpen} aria-controls={museSectionId} onClick={()=>setExpandedService(museOpen?null:'muse')}><ChevronRight size={15} className={museOpen?'rotated':''}/></button></div>
       <div id={museSectionId} className={`personal-service-content ${museOpen?'expanded':''}`} aria-hidden={!museOpen} inert={!museOpen}><div className="personal-service-inner">
       <div className="personal-filter-row" hidden={!searchOpen || destination==='chat'}>
         <div className="personal-filter"><Search size={14} aria-hidden="true" /><input ref={input} aria-label="Filter Muse sidebar" aria-describedby={filterId} placeholder="Search your Muse" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); event.stopPropagation(); setQuery(''); } }} />{query && <button type="button" aria-label="Clear Muse filter" onClick={() => { setQuery(''); input.current?.focus(); }}><X size={12} /></button>}</div>
@@ -133,7 +144,7 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
       </div>
       <p className="sr-only" id={filterId}>Filters the loaded chat, idea, and goal titles in this sidebar.</p>
       <nav aria-label="Muse collections">
-        <PersonalCollection label="Chat" noun="side chats" icon={MessageCircle} group={{...library.chats,items:library.chats.items.filter(item=>!item.main)}} selectedId={library.selectedId} active={destination==='bot'} query={query} available={available.bot} onNavigate={()=>onNavigate('bot')} onSelect={id=>onCommand({type:'selectItem',id})} onCreate={()=>onCommand({type:'newMuseChat'})}/>
+        <PersonalCollection label="Chat" noun="side chats" icon={MessageCircle} group={{...library.chats,items:library.chats.items.filter(item=>!item.main)}} selectedId={library.selectedId} active={destination==='bot'} query={query} available={available.bot} onMain={openMain} mainActive={mainActive} onNavigate={()=>onNavigate('bot')} onSelect={id=>onCommand({type:'selectItem',id})} onCreate={()=>onCommand({type:'newMuseChat'})}/>
         <PersonalCollection label="Ideas" noun="ideas" icon={Lightbulb} group={library.ideas} selectedId={library.selectedId} active={destination === 'ideas'} query={query} available={available.ideas} onNavigate={() => onNavigate('ideas')} onSelect={id => onCommand({ type: 'selectItem', id })} />
         <PersonalCollection label="Goals" noun="goals" icon={Target} group={library.goals} selectedId={library.selectedId} active={destination === 'goals'} query={query} available={available.goals} onNavigate={() => onNavigate('goals')} onSelect={id => onCommand({ type: 'selectItem', id })} />
       </nav>

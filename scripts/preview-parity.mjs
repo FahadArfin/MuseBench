@@ -175,6 +175,20 @@ try{
  await browserPage.getByRole('button',{name:'Profile menu',exact:true}).waitFor();
  await compare('direct-chat-startup');
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(()=>document.querySelectorAll('.onboarding').length),0);
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.querySelector('.muse-agent-shortcut').click());
+ await compare('muse-main-and-side-chats');
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>[...document.querySelectorAll('.personal-item-row')].find(e=>e.textContent==='Plan a thoughtful week').click());
+ await compare('muse-selected-side-chat');
+ for(const page of [browserPage,desktopPage]){
+  assert.equal(await page.evaluate(()=>document.querySelector('.personal-item-row[aria-current="page"]')?.textContent),'Plan a thoughtful week');
+  await page.evaluate(()=>document.querySelector('.personal-collection-title[aria-label="Chat"]').click());
+  assert.equal(await page.evaluate(async()=>(await window.musebench.personalState()).library.selectedId),'sample-chat');
+ }
+ await compare('muse-chat-list-collapsed');
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.querySelector('.personal-collection-title[aria-label="Chat"]').click());
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.querySelector('.muse-agent-shortcut').click());
+ await compare('muse-return-to-main');
+ for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(()=>document.querySelector('.personal-item-row[aria-current="page"]')?.textContent),'Main conversation');
  assert.deepEqual(errors,[]);report.status='passed';
 }catch(error){report.status='failed';report.failure=String(error.stack??error);console.error(report.failure);process.exitCode=1;}
 finally{if(app){await app.evaluate(({app})=>app.exit(0)).catch(()=>{});}await browser.close();await server.close();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));}

@@ -145,7 +145,7 @@ try {
  await page.screenshot({path:'artifacts/browser-preview/personal.png'});
  assert.equal(await page.locator('.personal-service-content.expanded').count(),0);
  await page.locator('.muse-agent-shortcut').click();
- await page.locator('.muse-agent-shortcut').click();
+ await page.getByRole('button',{name:'Collapse Muse',exact:true}).click();
  assert.equal(await page.locator('.personal-service-content.expanded').count(),0);
  assert.equal(await page.evaluate(async()=>(await window.musebench.personalState()).destination),'bot');
  await page.locator('.muse-agent-shortcut').click();
@@ -155,7 +155,14 @@ try {
  assert.equal(await chatSection.getByRole('button',{name:'Chat',exact:true}).getAttribute('aria-expanded'),'false');
  await chatSection.getByRole('button',{name:'Create a side chat',exact:true}).click();
  assert.equal(await chatSection.getByRole('button',{name:'Chat',exact:true}).getAttribute('aria-expanded'),'true');
- assert.equal(await chatSection.getByRole('button',{name:'Main conversation',exact:true}).count(),0);
+ assert.equal(await chatSection.getByRole('button',{name:'Main conversation',exact:true}).count(),1);
+ await chatSection.getByRole('button',{name:'Main conversation',exact:true}).click();
+ const mainState=await page.evaluate(()=>window.musebench.personalState());
+ await chatSection.getByRole('button',{name:'Chat',exact:true}).click();
+ await chatSection.getByRole('button',{name:'Chat',exact:true}).click();
+ assert.equal((await page.evaluate(()=>window.musebench.personalState())).library.selectedId,mainState.library.selectedId,'Chat only toggles the list');
+ await page.locator('.muse-agent-shortcut').click();
+ assert.equal(await page.locator('.muse-agent-shortcut').getAttribute('aria-expanded'),'true','Agent shortcut keeps the list open');
  assert.equal(await page.getByRole('region',{name:'Muse chats',exact:true}).count(),0);
  await page.getByRole('button',{name:'Ideas',exact:true}).click();
  await page.getByRole('button',{name:'Ideas',exact:true}).click();

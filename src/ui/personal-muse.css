@@ -139,3 +139,10 @@
 @media(prefers-reduced-motion:reduce){.personal-service-heading .personal-service-chevron{transition:none}}
 
 .personal-collection-add{flex:none;width:28px;height:28px;margin-left:auto;color:var(--muted)}
+
+.personal-navigation .personal-sidebar-controls{position:relative}
+.personal-navigation .personal-sidebar-controls .muse-agent-shortcut{padding-right:48px}
+.muse-service-collapse{position:absolute;right:22px;top:17px;border-radius:50%;width:30px;height:30px}
+.muse-service-collapse svg{transition:transform 380ms cubic-bezier(.22,1,.36,1)}
+.muse-service-collapse .rotated{transform:rotate(90deg)}
+@media(prefers-reduced-motion:reduce){.muse-service-collapse svg{transition:none}}
