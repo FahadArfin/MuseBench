@@ -34,6 +34,7 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run test:startup-animation
+      - run: npm run test:session-recovery
       - run: npm run test:profile-identity
       - run: npm run test:typography
       - run: npm run test:chat-organization

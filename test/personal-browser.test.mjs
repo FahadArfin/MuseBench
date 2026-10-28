@@ -443,8 +443,68 @@ test('signed-out Muse polling preserves a Meta tool draft when no Muse account w
     assert.equal(media.visible, true); assert.equal(media.webContents.unsentDraft, 'Unfinished Meta creation');
     assert.equal(media.webContents.loads.length, 1); assert.equal(h.browser.snapshot().destination, 'chat');
     assert.equal(h.browser.snapshot().library.chats.items.length, 0);
+    for (const section of ['chats','ideas','goals']) assert.equal(h.browser.snapshot().library[section].status, 'signed-out', 'missing sign-in must never render an endless loading state');
   }
   assert.equal(h.metaActions.filter(call => call.contents === media.webContents && call.action === 'media').length, 1);
+});
+
+test('ready Muse authentication loads ideas and goals when the side-chat menu is unavailable', async t => {
+  const adapter = {prepare:async()=>false, read:async(_contents,section)=>section==='chats'?{status:'unavailable',items:[]}:{status:'ready',items:[libraryItem(section)]},profile:async()=>({name:'jarvis',avatar:null})};
+  const h = harness({libraryAdapter:adapter,authReader:async()=> 'ready',warmLimit:0}); t.after(()=>h.browser.close());
+  await h.browser.dispatch({type:'refreshLibrary'});
+  assert.equal(h.browser.snapshot().library.chats.status,'unavailable');
+  for (const section of ['ideas','goals']) assert.equal(h.browser.snapshot().library[section].items.length,1);
+  assert.equal(h.browser.snapshot().agentProfile.name,'jarvis');
+});
+
+test('verified sign-in clears a retained sign-in message even when side-chat metadata is unavailable', async t => {
+  t.mock.timers.enable({apis:['setTimeout','Date']});
+  let signedIn=false;
+  const adapter={prepare:async()=>false,read:async(_contents,section)=>!signedIn?{status:'signed-out',items:[]}:section==='chats'?{status:'unavailable',items:[]}:{status:'ready',items:[libraryItem(section)]}};
+  const h=harness({libraryAdapter:adapter,authReader:async()=>signedIn?'ready':'required',warmLimit:0}); t.after(()=>h.browser.close());
+  await h.browser.dispatch(layout); t.mock.timers.tick(250); await microtasks();
+  assert.equal(h.browser.snapshot().library.chats.status,'signed-out');
+  signedIn=true; t.mock.timers.tick(1800); await microtasks(); await microtasks();
+  assert.equal(h.browser.snapshot().library.chats.status,'unavailable','confirmed authentication must replace the old sign-in requirement');
+  assert.equal(h.browser.snapshot().library.ideas.status,'ready');
+});
+
+test('an unresponsive collection reader releases the refresh lock and can recover', async t => {
+  t.mock.timers.enable({apis:['setTimeout','Date']});
+  const h = libraryHarness(); t.after(()=>h.browser.close());
+  const original = h.libraryAdapter.read;
+  let release;
+  h.libraryAdapter.read = () => new Promise(resolve=>{release=resolve;});
+  const pending = h.browser.dispatch({type:'refreshLibrary'}); await microtasks();
+  assert.equal(typeof release,'function');
+  t.mock.timers.tick(8000); await microtasks(); await pending;
+  assert.equal(h.browser.snapshot().library.chats.status,'unavailable');
+  h.libraryAdapter.read = original;
+  await h.browser.dispatch({type:'refreshLibrary'});
+  assert.equal(h.browser.snapshot().library.ideas.items.length,1);
+  release({status:'ready',items:[libraryItem('chats','late')]}); await microtasks();
+  assert.equal(h.browser.snapshot().library.chats.items[0].title,'chats item');
+});
+
+test('automatic collection polling expires repeated loading and keeps the error stable during retry', async t => {
+  t.mock.timers.enable({apis:['setTimeout','Date']});
+  const h=libraryHarness(); t.after(()=>h.browser.close());
+  const original=h.libraryAdapter.read;
+  h.libraryAdapter.read=(contents,section)=>section==='chats'?original(contents,section):{status:'loading',items:[]};
+  await h.browser.dispatch(layout);
+  t.mock.timers.tick(250); await microtasks();
+  assert.equal(h.browser.snapshot().library.ideas.status,'loading');
+  for(let attempt=0;attempt<10;attempt++){t.mock.timers.tick(1800);await microtasks();}
+  for(const section of ['ideas','goals'])assert.equal(h.browser.snapshot().library[section].status,'unavailable');
+  h.libraryAdapter.prepare=async(_contents,section)=>section==='chats'?true:new Promise(()=>{});
+  const previousStates=h.states.length;
+  t.mock.timers.tick(1800);await microtasks();
+  assert(h.states.slice(previousStates).length>0);
+  assert(h.states.slice(previousStates).every(value=>value.library.ideas.status==='unavailable'&&value.library.goals.status==='unavailable'),'background retries retain useful errors while the remote scripts wait');
+  t.mock.timers.tick(6500);await microtasks();
+  h.libraryAdapter.prepare=async()=>true;h.libraryAdapter.read=original;
+  await h.browser.dispatch({type:'refreshLibrary'});
+  assert.equal(h.browser.snapshot().library.ideas.status,'ready');
 });
 
 test('an established Muse account signing out invalidates cached account documents only once', async t => {

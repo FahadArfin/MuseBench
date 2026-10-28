@@ -40,6 +40,13 @@ test('offline fonts load in recognized Muse views, follow attribute hydration, a
     assert.deepEqual(await registered(), [], 'An old font load must not reactivate a disabled view');
     assert.equal(await adapter.applyPersonalFonts(contents, true), true);
     await page.waitForFunction(() => ['MuseBench Inter Variable','MuseBench JetBrains Mono Variable'].every(family=>[...document.fonts].some(face=>face.family===family&&face.status==='loaded')));
+    // Loaded FontFace objects can precede layout's font swap. Synchronize the
+    // rendered nodes before asking CDP which fonts supplied their glyphs.
+    await page.evaluate(async () => {
+      await document.fonts.ready;
+      await new Promise(requestAnimationFrame);
+      for (const selector of ['#ui','#mono']) document.querySelector(selector).getBoundingClientRect();
+    });
     const faces = await registered();
     const client = await page.context().newCDPSession(page);
     await client.send('DOM.enable'); await client.send('CSS.enable');

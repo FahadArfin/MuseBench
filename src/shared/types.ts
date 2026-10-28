@@ -51,7 +51,7 @@ export type Action = {type:'saveValidationProfile';projectId:string;scripts:stri
   | {type:'removeQueued';id:string} | {type:'pauseQueue'|'resumeQueue'};
 export type PersonalDestination = 'bot' | 'chat' | 'ideas' | 'goals';
 export interface PersonalLibraryItem { id: string; kind: 'chat' | 'idea' | 'goal'; title: string; main?: boolean; }
-export interface PersonalLibraryGroup { status: 'idle' | 'loading' | 'ready' | 'unavailable'; items: PersonalLibraryItem[]; }
+export interface PersonalLibraryGroup { status: 'idle' | 'loading' | 'ready' | 'unavailable' | 'signed-out'; items: PersonalLibraryItem[]; }
 export interface PersonalLibrary { chats: PersonalLibraryGroup; ideas: PersonalLibraryGroup; goals: PersonalLibraryGroup; selectedId: string | null; }
 export interface PersonalAppearance { theme: 'dark' | 'light'; textSize: 'small' | 'medium' | 'large'; font: 'system' | 'mono'; reducedMotion: boolean; }
 // Frontend auth contract: clear on logout/account switch; no display name is inferred from the OS.

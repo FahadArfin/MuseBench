@@ -32,15 +32,17 @@ import { allowedExternal, trustedSender, validateAction } from './security.mjs';
 import { createPersonalBrowser } from './personal.mjs';
 import { createStartupFailureHandler } from './startup.mjs';
 import { createLaunchAnimation } from './launch-animation.mjs';
+import { createSessionDurability } from './session-durability.mjs';
 import { titleBarOverlay, updateWindowTheme } from './window-chrome.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataOverride = process.env.MUSEBENCH_DATA_DIR;
 if (dataOverride && path.isAbsolute(dataOverride)) app.setPath('userData', dataOverride);
+const sessionDurability = createSessionDurability({ app });
 const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
-let window, controller, customize, personal, dictation, work, workExporter, spaces, sites, updates, closing = false, updateInstalling=false, updateShutdown, pendingIpc=0;
+let window, controller, customize, personal, billingReader, dictation, work, workExporter, spaces, sites, updates, closing = false, updateInstalling=false, updateShutdown, pendingIpc=0;
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -77,6 +79,7 @@ else {
     }).catch(()=>workCapabilities);
     protocol.handle('musebench-artifact',createArtifactHandler({getArtifact:async id=>(await work.getArtifact(id))??(await spaces.getArtifact(id)),render:renderArtifactHtml,getTheme:()=>nativeTheme.shouldUseDarkColors?'dark':'light'}));
     protocol.handle('musebench-site',createSitePreviewHandler({getBundle:(id,hash)=>sites.getBundle(id,hash)}));
+    sessionDurability.track(session.defaultSession);
     session.defaultSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
     session.defaultSession.setPermissionCheckHandler(()=>false);
     window = new BrowserWindow({ width:1480, height:960, minWidth:390, minHeight:600, show:false, title:'MuseBench', icon:path.join(root,'electron','assets','musebench.ico'), backgroundColor:'#181818', autoHideMenuBar:true,
@@ -143,8 +146,9 @@ else {
     const {autoUpdater}=updaterPackage;
     autoUpdater.setFeedURL({provider:'github',owner:'FahadArfin',repo:'MuseBench',private:false});
     updateShutdown=createUpdateShutdown({isBusy:updateBusy,voice:()=>dictation.dispatch('status'),lock:value=>{updateInstalling=value;},closeServices:async()=>{
-      closing=true;personal.close();
+      closing=true;personal.close();billingReader?.close();
       const results=await Promise.allSettled([customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close()]);
+      await sessionDurability.close();
       if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
     },verifyClosed:()=>!updateBlocked(controller.getState(),work.getState(),sites.getState())});
     updates=createAppUpdates({updater:autoUpdater,version:app.getVersion(),enabled:app.isPackaged&&process.platform==='win32'&&existsSync(path.join(path.dirname(app.getPath('exe')),'Uninstall MuseBench.exe')),isBusy:updateBusy,onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('musebench:app-update-state',value);},prepareInstall:()=>updateShutdown.prepare()});
@@ -193,7 +197,7 @@ else {
       return workExporter.export({artifact,format,filePath:result.filePath,theme:nativeTheme.shouldUseDarkColors?'dark':'light',updatedAt:snapshot.artifactUpdatedAt});
     });
     work.subscribe(publishWork);
-    const billingReader=createBillingReader({BrowserWindow,session,parent:window});
+    billingReader=createBillingReader({BrowserWindow,session,parent:window});
     window.on('closed',()=>billingReader.close());
     const commandInfo=createCommandInfo({extensionReview,getState:()=>controller.getState()});
     handler('musebench:analytics',options=>controller.readAnalytics({days:options?.days,offset:options?.offset}));
@@ -248,4 +252,4 @@ else {
   }).catch(startupFailed);
 }
 app.on('window-all-closed',()=>app.quit());
-app.on('before-quit',event=>{if(updateShutdown?.preparing()){event.preventDefault();return;}updates?.close();personal?.close();if(controller&&!closing){event.preventDefault();closing=true;Promise.allSettled([customize?.close(),sites?.close(),spaces?.close(),controller.close(),work?.close(),workExporter?.close(),dictation?.close()]).finally(()=>app.quit());}});
+app.on('before-quit',event=>{if(updateShutdown?.preparing()){event.preventDefault();return;}updates?.close();personal?.close();billingReader?.close();if(!closing){event.preventDefault();closing=true;Promise.allSettled([customize?.close(),sites?.close(),spaces?.close(),controller?.close(),work?.close(),workExporter?.close(),dictation?.close()]).then(()=>sessionDurability.close()).catch(()=>{}).finally(()=>app.quit());}});

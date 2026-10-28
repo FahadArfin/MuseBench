@@ -21,24 +21,36 @@ function targetFor(section, target) {
 
 // Only display metadata leaves this memory-only catalog. The renderer receives
 // opaque IDs; every actionable navigation target stays in the main process.
-export function createPersonalCatalog() {
+export function createPersonalCatalog({now = Date.now} = {}) {
   const groups = new Map(sections.map(section => [section, { status: 'idle', items: [] }]));
   const records = new Map();
+  const pending = new Map();
   let selectedId = null;
   function snapshot() {
     return { ...Object.fromEntries([...groups].map(([section, group]) => [section, { status: group.status, items: group.items.map(({ id, title, target }) => ({ id, title, kind: kinds[section], ...(target.type==='main'?{main:true}:{}) })) }])), selectedId };
   }
-  function reset() {
-    records.clear(); selectedId = null;
-    for (const section of sections) groups.set(section, { status: 'idle', items: [] });
+  function reset(status = 'idle') {
+    records.clear(); pending.clear(); selectedId = null;
+    for (const section of sections) groups.set(section, { status: status === 'signed-out' ? 'signed-out' : 'idle', items: [] });
   }
-  function update(section, result, active = false) {
+  function update(section, result, active = false, {loadingKey = null, retry = false} = {}) {
     if (!groups.has(section)) return;
     const old = groups.get(section);
     if (result?.status !== 'ready') {
-      groups.set(section, { ...old, status: result?.status === 'loading' ? (old.status === 'ready' ? 'ready' : 'loading') : 'unavailable' });
+      let status = old.status === 'signed-out' && !retry ? 'signed-out' : 'unavailable';
+      if (result?.status === 'loading') {
+        const previous = pending.get(section);
+        const attempt = retry || !previous || previous.key !== loadingKey ? {key:loadingKey,startedAt:now()} : previous;
+        pending.set(section,attempt);
+        // Polling a stalled service must not repeatedly replace an actionable
+        // failure/sign-in state with another spinner. Explicit retries may.
+        status = old.status === 'ready' || (!retry && ['unavailable','signed-out'].includes(old.status))
+          ? old.status : now()-attempt.startedAt >= 15000 ? 'unavailable' : 'loading';
+      } else { pending.delete(section); }
+      groups.set(section, { ...old, status });
       return;
     }
+    pending.delete(section);
     const candidates = Array.isArray(result.items) ? result.items.slice(0, 500) : [];
     const counts = new Map();
     for (const item of candidates) if (typeof item?.key === 'string') counts.set(item.key, (counts.get(item.key) ?? 0) + 1);

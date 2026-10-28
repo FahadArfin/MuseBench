@@ -7,6 +7,17 @@ function onMuse(contents) {
   try { const url = new URL(contents.getURL()); return !contents.isDestroyed() && url.origin === 'https://muse.ai' && !url.username && !url.password; }
   catch { return false; }
 }
+async function readDocument(contents, script, userGesture = false, timeout = 1500) {
+  const url = contents.getURL();
+  let timer;
+  try {
+    const value = await Promise.race([
+      contents.executeJavaScript(script, userGesture),
+      new Promise(resolve => { timer = setTimeout(() => resolve(null), timeout); timer.unref?.(); }),
+    ]);
+    return onMuse(contents) && contents.getURL() === url ? value : null;
+  } finally { clearTimeout(timer); }
+}
 function targetFor(section, item) {
   const target = item?.target;
   if (!target || !sections.has(section)) return null;
@@ -44,11 +55,15 @@ function collectionDOM(section) {
   const clean = value => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g,' ').replace(/\s+/g,' ').trim() : '';
   const empty = status => ({status,items:[],selectedKey:null,selectionKnown:false});
   if (location.origin !== 'https://muse.ai') return empty('unavailable');
-  if (!document.querySelector('[data-hatch-dock]')) return empty(document.querySelector('input[type="password"],form[action*="login"]') ? 'signed-out' : 'loading');
+  if (!document.querySelector('[data-hatch-dock]')) {
+    const signIn = document.querySelector('input[type="password"],form[action*="login"]') || [...document.querySelectorAll('button,[role="button"]')].some(control => control.getClientRects().length > 0 && /^(log in|sign in|log in with.*|continue with (facebook|instagram|meta).*)$/i.test(clean(control.textContent || control.getAttribute('aria-label'))));
+    return empty(signIn ? 'signed-out' : document.readyState === 'complete' ? 'unavailable' : 'loading');
+  }
   if (section === 'chats') {
     if (location.pathname !== '/' && !/^\/thread\/[A-Za-z0-9_-]+$/.test(location.pathname)) return empty('unavailable');
     const nav = document.querySelector('nav[aria-label="Side chats"]');
-    if (!nav || /Loading side chats/i.test(nav.textContent ?? '')) return empty('loading');
+    if (!nav) return empty(document.readyState === 'complete' ? 'unavailable' : 'loading');
+    if (/Loading side chats/i.test(nav.textContent ?? '')) return empty('loading');
     const items = [{title:'Main conversation',target:{type:'main',value:'/'}}];
     for (const anchor of Array.from(nav.querySelectorAll('a[href]')).slice(0,150)) {
       const href = anchor.getAttribute('href');
@@ -62,7 +77,8 @@ function collectionDOM(section) {
   const name = section === 'ideas' ? 'Ideas' : 'Goals';
   const heading = Array.from(document.querySelectorAll('h1')).find(e=>e.textContent?.trim() === name);
   const scope = heading?.closest('header')?.parentElement;
-  if (!scope || new RegExp(`Loading ${section}`,'i').test(scope.textContent ?? '')) return empty('loading');
+  if (!scope) return empty(document.readyState === 'complete' ? 'unavailable' : 'loading');
+  if (new RegExp(`Loading ${section}`,'i').test(scope.textContent ?? '')) return empty('loading');
   const items = [];
   const controls = section === 'ideas' ? scope.querySelectorAll('button[data-pel-click="idea_group_row_click"],a[href]') : scope.querySelectorAll('button:has(h3),a[href]:has(h3)');
   for (const control of Array.from(controls).slice(0,150)) {
@@ -81,7 +97,7 @@ function collectionDOM(section) {
 }
 export async function readPersonalCollection(contents, section) {
   if (!sections.has(section) || !onMuse(contents)) return empty('unavailable');
-  try { return normalizePersonalCollection(section,await contents.executeJavaScript(`(${collectionDOM.toString()})(${JSON.stringify(section)})`)); }
+  try { return normalizePersonalCollection(section,await readDocument(contents,`(${collectionDOM.toString()})(${JSON.stringify(section)})`)); }
   catch { return empty('unavailable'); }
 }
 
@@ -89,17 +105,21 @@ export async function preparePersonalCollection(contents, section) {
   if (!sections.has(section) || !onMuse(contents)) return false;
   if (section !== 'chats') return true;
   try {
-    return await contents.executeJavaScript(`(${async function() {
+    return await readDocument(contents,`(${async function() {
       const deadline = Date.now()+5000; let nextAttempt = 0;
       while (location.origin === 'https://muse.ai' && Date.now()<deadline) {
         if (document.querySelector('nav[aria-label="Side chats"]')) return true;
         if (location.pathname !== '/') return false;
+        // Login pages have no side-chat switcher; do not wait five seconds on
+        // every background refresh before reporting the sign-in requirement.
+        if (!document.querySelector('[data-hatch-dock]') && document.readyState === 'complete') return false;
         const trigger = document.querySelector('[data-testid="hatch-chat-switcher-trigger"]');
+        if (!trigger && document.readyState === 'complete') return false;
         if (trigger && document.readyState === 'complete' && Date.now()>=nextAttempt) { trigger.click(); nextAttempt=Date.now()+500; }
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       return false;
-    }.toString()})()`,true) === true;
+    }.toString()})()`,true,6000) === true;
   } catch { return false; }
 }
 

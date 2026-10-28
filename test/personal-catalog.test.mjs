@@ -54,3 +54,41 @@ test('catalog caps collections and rejects unbounded or malformed remote metadat
   c.update('ideas', { status: 'ready', items: [{ key: 'x'.repeat(3000), title: 'No', target: { type: 'title', value: 'No' } }, { key: 'normal', title: {}, target: { type: 'title', value: 'No' } }] });
   assert.equal(c.snapshot().ideas.items.length, 0);
 });
+
+test('signed-out catalogs clear all account metadata without implying an active load', () => {
+  const c = catalog(); c.update('chats', { status: 'ready', items: [sample()], selectedKey: 'trip' }, true);
+  const id = c.snapshot().selectedId;
+  c.reset('signed-out');
+  assert.equal(c.snapshot().selectedId, null); assert.equal(c.get(id), null);
+  for (const section of ['chats', 'ideas', 'goals']) assert.deepEqual(c.snapshot()[section], {status:'signed-out',items:[]});
+});
+
+test('repeated immediate loading responses have a total deadline for each document', () => {
+  let now = 0; const c = implementation.createPersonalCatalog({now:()=>now});
+  for (now = 0; now < 15000; now += 1000) {
+    c.update('ideas',{status:'loading'},false,{loadingKey:'document-a'});
+    assert.equal(c.snapshot().ideas.status,'loading');
+  }
+  c.update('ideas',{status:'loading'},false,{loadingKey:'document-a'});
+  assert.equal(c.snapshot().ideas.status,'unavailable');
+  now = 20000;
+  c.update('ideas',{status:'loading'},false,{loadingKey:'document-a'});
+  assert.equal(c.snapshot().ideas.status,'unavailable','background retries cannot restart the spinner');
+  c.update('ideas',{status:'loading'},false,{loadingKey:'document-a',retry:true});
+  assert.equal(c.snapshot().ideas.status,'loading','an explicit retry gets a fresh bounded attempt');
+  now = 35000;
+  c.update('ideas',{status:'loading'},false,{loadingKey:'document-a'});
+  assert.equal(c.snapshot().ideas.status,'unavailable');
+});
+
+test('background refresh preserves ready, unavailable and signed-out presentation until a useful result', () => {
+  const c = catalog();
+  c.update('chats',{status:'ready',items:[sample()]});
+  c.update('ideas',{status:'unavailable'});
+  c.update('chats',{status:'loading'}); c.update('ideas',{status:'loading'});
+  assert.equal(c.snapshot().chats.status,'ready'); assert.equal(c.snapshot().ideas.status,'unavailable');
+  c.reset('signed-out'); c.update('ideas',{status:'loading'});
+  assert.equal(c.snapshot().ideas.status,'signed-out');
+  c.update('ideas',{status:'unavailable'}); assert.equal(c.snapshot().ideas.status,'signed-out','an unsuccessful retry cannot infer that sign-in has happened');
+  c.update('ideas',{status:'ready',items:[]}); assert.equal(c.snapshot().ideas.status,'ready');
+});

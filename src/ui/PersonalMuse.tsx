@@ -56,7 +56,7 @@ function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active
   const listId = useId();
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const items = group.items.filter(item => item.title.toLocaleLowerCase().includes(normalizedQuery));
-  const loading = group.status === 'loading' || group.status === 'idle';
+  const loading = group.status === 'loading';
   const shown = items.slice(0, limit);
   // Keep search results discoverable even if a collection was collapsed.
   const open = expanded || Boolean(normalizedQuery);
@@ -67,12 +67,12 @@ function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active
       <button type="button" className="personal-collection-collapse" aria-label={`${open ? 'Collapse' : 'Expand'} ${label}`} aria-expanded={open} aria-controls={listId} disabled={Boolean(normalizedQuery)} title={normalizedQuery ? 'Collections stay open while filtering' : `${open ? 'Collapse' : 'Expand'} ${label}`} onClick={() => setExpanded(!expanded)}><ChevronRight size={13} className={open ? 'rotated' : ''} /></button>
       <button type="button" className="personal-collection-title" aria-label={label} aria-current={active && !selectedId ? 'page' : undefined} disabled={!available} aria-expanded={open} aria-controls={listId} onClick={() => { if (!normalizedQuery) setExpanded(!open); if (!open && !onMain) onNavigate(); }}><Icon size={15} /><span>{label}</span></button>
       {onCreate && <button type="button" className="icon-button personal-collection-add" aria-label="Create a side chat" title="Create a side chat" disabled={!available} onClick={()=>{setExpanded(true);onCreate();}}><Plus size={15}/></button>}
-      {!onCreate && (loading ? <LoaderCircle size={12} className="spin personal-collection-loading" aria-label={`Loading ${label}`} /> : <span className="personal-collection-count" title={`${group.items.length} loaded ${noun}`}>{normalizedQuery ? `${items.length}/${group.items.length}` : group.items.length}</span>)}
+      {!onCreate && (loading ? <LoaderCircle size={12} className="spin personal-collection-loading" aria-label={`Loading ${label}`} /> : (group.status === 'ready' || group.items.length > 0) && <span className="personal-collection-count" title={`${group.items.length} loaded ${noun}`}>{normalizedQuery ? `${items.length}/${group.items.length}` : group.items.length}</span>)}
     </div>
     <div id={listId} className="personal-collection-list" hidden={!open}>
       {onMain && <button type="button" className={`personal-item-row ${mainActive ? 'selected' : ''}`} aria-current={mainActive ? 'page' : undefined} onClick={onMain}>Main conversation</button>}
       {shown.map(item => <button type="button" key={item.id} className={`personal-item-row ${item.id === selectedId ? 'selected' : ''}`} aria-label={item.title} aria-current={item.id === selectedId ? 'page' : undefined} title={item.title} onClick={() => onSelect(item.id)}><span>{item.title}</span></button>)}
-      {!shown.length && <p className="personal-collection-empty" role="status">{loading ? `Loading ${noun}…` : group.status === 'unavailable' ? `Open Muse, then refresh to load your ${noun}.` : normalizedQuery ? 'No matching titles.' : `No ${noun} to show yet.`}</p>}
+      {!shown.length && <p className="personal-collection-empty" role="status">{loading ? `Loading ${noun}…` : group.status === 'signed-out' ? <>Sign in to Muse to see your {noun}. <button type="button" className="text-link" onClick={onNavigate}>Open Muse</button></> : group.status === 'idle' ? <>Open {label} to load your {noun}. <button type="button" className="text-link" onClick={onNavigate}>Open {label}</button></> : group.status === 'unavailable' ? <>Couldn’t load {noun}. <button type="button" className="text-link" onClick={onNavigate}>Open {label}</button></> : normalizedQuery ? 'No matching titles.' : `No ${noun} to show yet.`}</p>}
       {!!shown.length && group.status === 'unavailable' && <p className="personal-collection-empty" role="status">Couldn’t refresh. Showing loaded titles.</p>}
       {items.length > limit && <button type="button" className="personal-show-more" aria-label={`Show more ${label}`} onClick={() => setLimit(value => value + 6)}>Show more<span>{items.length - shown.length}</span><ChevronDown size={12} /></button>}
       {limit > 6 && items.length > 6 && <button type="button" className="personal-show-more" aria-label={`Show fewer ${label}`} onClick={() => setLimit(6)}>Show fewer</button>}

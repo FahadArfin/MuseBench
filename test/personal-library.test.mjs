@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {runInNewContext} from 'node:vm';
 const adapter = await import('../electron/personal-library.mjs').catch(() => ({}));
 
 test('collection reader refuses authentication, unrelated origins, and destroyed contents', async () => {
@@ -45,4 +46,41 @@ test('known closed previews are distinct from unavailable selection markers', ()
   assert.equal(adapter.normalizePersonalCollection('ideas',{...value,selectionKnown:true}).selectionKnown,true);
   assert.equal(adapter.normalizePersonalCollection('ideas',{...value,selectionKnown:'true'}).selectionKnown,false);
   assert.equal(adapter.normalizePersonalCollection('ideas',{...value,status:'loading',selectionKnown:true}).selectionKnown,false);
+});
+
+test('visible button sign-in is distinct from an unknown page and ordinary chat login links', async () => {
+  const read = async ({dock=false,button=false,link=false,hidden=false}={}) => adapter.readPersonalCollection({
+    isDestroyed:()=>false,getURL:()=> 'https://muse.ai/',
+    executeJavaScript:script=>runInNewContext(script,{
+      location:{origin:'https://muse.ai',pathname:'/'},
+      document:{readyState:'complete',querySelector:selector=>selector==='[data-hatch-dock]'&&dock?{}:selector==='nav[aria-label="Side chats"]'&&dock?{textContent:'',querySelectorAll:()=>[]}:null,
+        querySelectorAll:selector=>selector==='button,[role="button"]'&&button?[{textContent:'Continue with Facebook',getClientRects:()=>hidden?[]:[{}]}]:selector==='a'&&link?[{textContent:'Sign in'}]:[]},
+    }),
+  },'chats');
+  assert.equal((await read({button:true})).status,'signed-out');
+  assert.equal((await read()).status,'unavailable');
+  assert.equal((await read({button:true,hidden:true})).status,'unavailable');
+  assert.equal((await read({dock:true,link:true,button:true})).status,'ready','the signed-in dock takes precedence over words in user chat content');
+});
+
+test('a hung collection script times out instead of holding every sidebar refresh forever', async t => {
+  t.mock.timers.enable({apis:['setTimeout']});
+  const contents={isDestroyed:()=>false,getURL:()=> 'https://muse.ai/',executeJavaScript:()=>new Promise(()=>{})};
+  const pending=adapter.readPersonalCollection(contents,'ideas');
+  t.mock.timers.tick(1500);
+  assert.equal((await pending).status,'unavailable');
+  const preparing=adapter.preparePersonalCollection(contents,'chats');
+  t.mock.timers.tick(6000);
+  assert.equal(await preparing,false);
+});
+
+test('a completed Muse root without the side-chat trigger does not delay independent collections', async () => {
+  let waits=0;
+  const contents={isDestroyed:()=>false,getURL:()=> 'https://muse.ai/',executeJavaScript:script=>runInNewContext(script,{
+    location:{origin:'https://muse.ai',pathname:'/'},
+    document:{readyState:'complete',querySelector:selector=>selector==='[data-hatch-dock]'?{}:null},
+    setTimeout:()=>{waits++;throw Error('fixture refuses a preparation wait');},
+  })};
+  assert.equal(await adapter.preparePersonalCollection(contents,'chats'),false);
+  assert.equal(waits,0,'missing controls must not start the five-second preparation loop');
 });

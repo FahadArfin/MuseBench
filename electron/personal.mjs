@@ -243,6 +243,16 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     }
     return entry;
   }
+  async function boundedLibraryRead(work, milliseconds = 6500) {
+    let timer, expired = false;
+    try {
+      return await Promise.race([
+        Promise.resolve().then(() => work(() => !expired)),
+        new Promise(resolve => { timer = setTimeout(() => { expired = true; resolve(null); }, milliseconds); timer.unref?.(); }),
+      ]);
+    } catch { return null; }
+    finally { expired = true; clearTimeout(timer); }
+  }
   async function refreshLibrary(force = false) {
     if (closed || museAuthPending() || (!requestedVisible && !force)) return;
     if (refreshingLibrary) return refreshingLibrary;
@@ -251,13 +261,17 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       if (closed || generation !== libraryGeneration || !alive(entry)) return null;
       if (entry.awaitingCommit || personalOrigin(entry.contents.getURL()) !== 'https://muse.ai') return null;
       const documentEpoch = entry.documentEpoch, loadEpoch = entry.epoch, url = entry.contents.getURL(), selectionEpoch = actionEpoch;
+      const loadingKey = `${generation}:${documentEpoch}:${loadEpoch}`;
       const valid = () => !closed && !museAuthPending() && generation === libraryGeneration && alive(entry) && !entry.awaitingCommit && loadEpoch === entry.epoch && documentEpoch === entry.documentEpoch && url === entry.contents.getURL();
-      catalog.update(section, { status: 'loading' }); publish();
+      catalog.update(section, { status: 'loading' }, false, {loadingKey,retry:force}); publish();
       let result;
       try {
-        await libraryAdapter.prepare(entry.contents, section);
-        if (!valid()) return null;
-        result = await libraryAdapter.read(entry.contents, section);
+        result = await boundedLibraryRead(async withinDeadline => {
+          await libraryAdapter.prepare(entry.contents, section);
+          if (!withinDeadline() || !valid()) return null;
+          return libraryAdapter.read(entry.contents, section);
+        });
+        if (!result) result = { status: 'unavailable', items: [] };
       } catch { result = { status: 'unavailable', items: [] }; }
       if (!valid()) return null;
       if (result?.status === 'signed-out') {
@@ -266,18 +280,19 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
         // on every background Muse poll. Real ready -> signed-out transitions
         // and explicit authentication navigation still invalidate all caches.
         if (libraryEstablished) { clearLibrary(entry); entry.collectionGeneration = libraryGeneration; }
-        else { catalog.reset(); agentProfile = null; }
-        publish(); return null;
+        else { agentProfile = null; }
+        catalog.reset('signed-out');
+        publish(); return 'signed-out';
       }
       if(section==='chats'&&result?.status==='ready'&&libraryAdapter.profile){
-        const profile=await libraryAdapter.profile(entry.contents);
+        const profile=await boundedLibraryRead(() => libraryAdapter.profile(entry.contents),1500);
         if(!valid())return null;
         if(profile)agentProfile={...profile,avatar:profile.avatar??(profile.name===agentProfile?.name?agentProfile.avatar:null)};
       }
       // Idea/goal previews can remain in the same page without exposing a
       // selected marker. Keep a native selection until navigation or removal.
       const explicitPreview = section !== 'chats' && result?.selectionKnown !== true && !result?.selectedKey && selectedDocument?.entry === entry && selectedDocument.epoch === entry.documentEpoch && catalog.snapshot().selectedId === selectedDocument.id;
-      catalog.update(section, result, entry === current() && selectionEpoch === actionEpoch && !explicitPreview);
+      catalog.update(section, result, entry === current() && selectionEpoch === actionEpoch && !explicitPreview, {loadingKey});
       if (section === 'chats' && selectionEpoch === actionEpoch) syncChatSelection();
       publish();
       return result?.status;
@@ -288,6 +303,25 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       const status = await read(bot, 'chats');
       if (closed || generation !== libraryGeneration) return;
       if (status === 'ready') { libraryEstablished = true; warmBlocked = false; }
+      // The provider's side-chat menu can change independently of its Ideas
+      // and Goals pages. A confirmed signed-in root is enough to read those
+      // pages, but never use a stale document across an account boundary.
+      if (!libraryEstablished && status !== 'signed-out' && alive(bot) && !bot.awaitingCommit && !bot.museAuth && bot.collectionGeneration === generation) {
+        const epoch = bot.documentEpoch, url = bot.contents.getURL();
+        const auth = await boundedLibraryRead(() => authReader(bot.contents),1500);
+        if (closed || generation !== libraryGeneration || museAuthPending() || !alive(bot) || bot.awaitingCommit || bot.documentEpoch !== epoch || bot.contents.getURL() !== url) return;
+        if (auth === 'ready') {
+          libraryEstablished = true; warmBlocked = false;
+          // A failed background read cannot prove authentication, but this
+          // explicit ready signal can retire the previous sign-in message.
+          if (catalog.snapshot().chats.status === 'signed-out') catalog.update('chats',{status:'unavailable'},false,{retry:true});
+          if (libraryAdapter.profile) {
+            const profile = await boundedLibraryRead(() => libraryAdapter.profile(bot.contents),1500);
+            if (closed || generation !== libraryGeneration || museAuthPending() || !alive(bot) || bot.awaitingCommit || bot.documentEpoch !== epoch || bot.contents.getURL() !== url) return;
+            if (profile) agentProfile = {...profile,avatar:profile.avatar??(profile.name===agentProfile?.name?agentProfile.avatar:null)};
+          }
+        } else if (auth === 'required') { catalog.reset('signed-out'); agentProfile = null; publish(); }
+      }
       if (libraryEstablished) await Promise.all(['ideas', 'goals'].map(section => read(collectionEntry(section), section)));
     }).finally(() => { refreshingLibrary = null; scheduleLibrary(1800); });
     return refreshingLibrary;
