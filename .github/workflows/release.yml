@@ -47,6 +47,11 @@ jobs:
       - run: npx electron-builder --win nsis --publish never
       - run: node scripts/verify-personal-package.mjs
       - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: startup-check-report
+          path: artifacts/startup-animation/**/report.json
+      - uses: actions/upload-artifact@v4
         with:
           name: windows-update
           if-no-files-found: error

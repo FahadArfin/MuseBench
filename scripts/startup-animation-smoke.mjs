@@ -22,6 +22,12 @@ function observeLaunch(){
   const rect=element=>{if(!element)return null;const r=element.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
   const sample=()=>{
     const layer=document.querySelector('.launch-overlay'),mark=document.querySelector('.launch-wordmark');
+    // Vite can spend several seconds compiling before React mounts on a cold
+    // Windows runner. Observe the application window, not that module-load gap.
+    // Keep a separate deadline for a renderer that never mounts.
+    const now=performance.now();
+    if(result.appObservedAt===undefined&&(document.querySelector('.launch-content')||document.documentElement.dataset.launchActive==='true'))result.appObservedAt=now;
+    if(result.appObservedAt===undefined){if(now-result.startedAt<30000)requestAnimationFrame(sample);return;}
     const target=[...document.querySelectorAll('[data-launch-brand="personal"]')].find(element=>element.getBoundingClientRect().width>0);
     const style=mark?getComputedStyle(mark):null;
     result.frames.push({at:performance.now(),active:document.documentElement.dataset.launchActive==='true',phase:layer?.dataset.phase??null,
@@ -29,7 +35,7 @@ function observeLaunch(){
       letters:mark?[...mark.querySelectorAll('.launch-name>span')].filter(element=>Number(getComputedStyle(element).opacity)>.9).map(element=>element.textContent).join(''):'',
       mark:rect(mark),target:rect(target),color:style?.color,viewport:{width:innerWidth,height:innerHeight},overflow:document.documentElement.scrollWidth>innerWidth+1,
       inert:Boolean(document.querySelector('.launch-content')?.inert)});
-    if(performance.now()-result.startedAt<6500)requestAnimationFrame(sample);
+    if(performance.now()-result.appObservedAt<6500)requestAnimationFrame(sample);
   };
   requestAnimationFrame(sample);
 }
@@ -45,7 +51,13 @@ const observation=page=>page.evaluate(()=>window.__launchObservation);
 async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,skip}={}){
   const page=lastPage=await browser.newPage({viewport,reducedMotion,...(name==='preview-launch'?{recordVideo:{dir:output,size:viewport}}:{})});
   page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(`${name}: ${error.message}`));
-  await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
+  await page.route('**/*',async route=>{
+    const url=new URL(route.request().url());
+    if(url.hostname!=='127.0.0.1')return route.abort();
+    // Reproduce a cold CI dev-server compile without changing app timing.
+    if(name==='preview-launch'&&process.argv.includes('--slow-renderer')&&url.pathname==='/src/preview/main.tsx')await delay(7000);
+    return route.continue();
+  });
   await page.addInitScript(observeLaunch);
   await page.addInitScript(({preferences,brokenAnimation})=>{
     localStorage.setItem('musebench.preferences.v1',JSON.stringify(preferences));
@@ -238,5 +250,9 @@ try{
   if(!process.argv.includes('--desktop-only'))await checkBrowser();
   if(!process.argv.includes('--browser-only'))await checkDesktop();
   assert.deepEqual(report.errors,[]);report.status='passed';
-}catch(error){report.status='failed';report.error=String(error.stack??error);console.error(error);process.exitCode=1;await lastPage?.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});}
+}catch(error){
+  report.status='failed';report.error=String(error.stack??error);console.error(error);process.exitCode=1;
+  console.error('Launch diagnostics:',JSON.stringify(Object.fromEntries(Object.entries(report.scenes).filter(([,scene])=>scene?.frames).map(([name,scene])=>[name,{appMountMs:scene.appObservedAt===undefined?null:Math.round(scene.appObservedAt-scene.startedAt),phases:scene.frames.reduce((counts,frame)=>({...counts,[frame.phase??'settled']:(counts[frame.phase??'settled']??0)+1}),{})}]))));
+  await lastPage?.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});
+}
 finally{await app?.close().catch(()=>{});await browser?.close().catch(()=>{});await server?.close();await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log(`Report: ${path.join(output,'report.json')}`);}

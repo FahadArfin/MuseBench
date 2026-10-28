@@ -40,3 +40,4 @@ jobs:
           path: |
             artifacts/browser-preview/report.json
             artifacts/preview-parity/report.json
+            artifacts/startup-animation/**/report.json
