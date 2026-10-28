@@ -1,0 +1,8 @@
+{
+  "retrieved": "2026-10-28",
+  "commit": "a45cb67cd2e27c8b6b4b55dcbaae6e6341123ea4",
+  "source": "https://raw.githubusercontent.com/meta-models/muse-code-sdk/a45cb67cd2e27c8b6b4b55dcbaae6e6341123ea4/schema/msp/stable/manifest.json",
+  "sdk": "@muse-code/sdk@1.4.14",
+  "native": "1.4.14-R7309.1",
+  "method": "Read-only initialize/account probes; no model turn or credential mutation."
+}

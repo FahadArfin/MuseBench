@@ -1,4 +1,6 @@
 import {createBillingReader} from './billing-reader.mjs';
+import {createCodeBilling} from './code-billing.mjs';
+import {createBillingPayments} from './billing-payments.mjs';
 import {createOnboarding} from './onboarding.mjs';
 import {createFileEditor} from './file-editor.mjs';
 import {createWorkspaceMcpConfig} from './workspace-mcp-config.mjs';
@@ -42,7 +44,7 @@ const sessionDurability = createSessionDurability({ app });
 const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
-let window, controller, customize, personal, billingReader, dictation, work, workExporter, spaces, sites, updates, closing = false, updateInstalling=false, updateShutdown, pendingIpc=0;
+let window, controller, customize, personal, billingReader, billingPayments, codeBilling, onboarding, dictation, work, workExporter, spaces, sites, updates, closing = false, updateInstalling=false, updateShutdown, pendingIpc=0;
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -52,7 +54,8 @@ else {
     const dataDir = app.getPath('userData');
     const extensionReview=createExtensionReview({dataDir,profile:process.env.USERPROFILE});
     const workspaceMcp=createWorkspaceMcpConfig({appRoot:root});
-    const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({helperPath,extensionReview,workspaceMcp,durableSessions:true}) : createRuntime({extensionReview,workspaceMcp});
+    codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>!!onboarding?.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>billingReader.read()});
+    const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp});
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.13 can stall before shell launch inside the user profile.
     // New working copies have their own location; saved originals stay put.
@@ -120,6 +123,7 @@ else {
     const handler = (name, fn) => ipcMain.handle(name, async (event,...args) => {
       if (!trustedSender(event,window.webContents,uiURL)) throw Error('Workspace access is restricted to the main MuseBench window.');
       if(updateInstalling&&name!=='musebench:app-update')throw Error('MuseBench is restarting to install an update.');
+      if((codeBilling.isBusy()||onboarding?.isBusy())&&['musebench:action','musebench:work','musebench:sites','musebench:customize'].includes(name))throw Error('Finish the billing source change or sign-in before starting work.');
       if(name==='musebench:app-update')return fn(...args);
       pendingIpc++;try{return await fn(...args);}finally{pendingIpc--;}
     });
@@ -142,7 +146,7 @@ else {
     handler('musebench:chat-search',input=>controller.searchChats(input));
     handler('musebench:code-draft',async input=>{const result=await controller.dispatch(validateAction({...input,type:'saveDraft'}));if(result.error)throw Error(result.error);});
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
-    const updateBusy=()=>pendingIpc>0||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation);
+    const updateBusy=()=>pendingIpc>0||codeBilling.isBusy()||onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation);
     const {autoUpdater}=updaterPackage;
     autoUpdater.setFeedURL({provider:'github',owner:'FahadArfin',repo:'MuseBench',private:false});
     updateShutdown=createUpdateShutdown({isBusy:updateBusy,voice:()=>dictation.dispatch('status'),lock:value=>{updateInstalling=value;},closeServices:async()=>{
@@ -198,12 +202,19 @@ else {
     });
     work.subscribe(publishWork);
     billingReader=createBillingReader({BrowserWindow,session,parent:window});
+    const billingChanged=()=>{if(!window.isDestroyed())window.webContents.send('musebench:billing-update');};
+    billingPayments=createBillingPayments({BrowserWindow,session,shell,parent:window,onClosed:billingChanged});
     window.on('closed',()=>billingReader.close());
+    window.on('closed',()=>billingPayments.close());
+    handler('musebench:code-billing',async command=>{
+      if(command?.type==='checkout')return billingPayments.open(command);
+      const result=await codeBilling.command(command);if(command.type!=='status')billingChanged();return{state:result};
+    });
     const commandInfo=createCommandInfo({extensionReview,getState:()=>controller.getState()});
     handler('musebench:analytics',options=>controller.readAnalytics({days:options?.days,offset:options?.offset}));
     handler('musebench:command-info',async type=>{
       if(type==='billing'){billingReader.open();return{status:'ready'};}
-      if(type==='usage'){const [result,billing]=await Promise.all([commandInfo(type),billingReader.read()]);return{...result,usage:{...(result.usage??{windows:[]}),billing,checkedAt:new Date().toISOString()}};}
+      if(type==='usage'){const [account,billing]=await Promise.all([codeBilling.status(),billingReader.read()]);return{status:account.status,message:account.message,usage:{...account.usage,billing,billingSource:account.source,billingMatched:account.source==='api'&&!!billing?.accountId&&account.billingAccountId===billing.accountId,checkedAt:new Date().toISOString()}};}
       if(type==='skills')return commandInfo(type);
       if(type==='export'){
         const transcript=exportTranscript(controller.getState());
@@ -218,8 +229,12 @@ else {
       if(type==='close'){window.close();return{status:'ready'};}
       throw Error('Unsupported command.');
     });
-    const onboarding=createOnboarding({getBinary:()=>controller.getState().runtime.binary,getRuntime:()=>controller.getState().runtime,personal});
-    handler('musebench:onboarding',command=>onboarding.command(command));
+    onboarding=createOnboarding({getBinary:()=>controller.getState().runtime.binary,getRuntime:()=>controller.getState().runtime,personal});
+    handler('musebench:onboarding',async command=>{
+      if(command?.type==='apiKey'){await codeBilling.command({type:'saveApiKey',key:command.key});billingChanged();return{code:{status:'ready',method:'api'},personal:{status:'unknown'}};}
+      if(command?.type==='loginCode')return codeBilling.signIn(()=>onboarding.command(command));
+      return onboarding.command(command);
+    });
     window.once('closed',()=>onboarding.close());
     handler('musebench:personal-state',()=>personal.snapshot());
     handler('musebench:personal',async command=>{if(command?.type==='layout'&&command.visible)await dictation.stop(true);const result=await personal.dispatch(command);if(command?.type==='appearance')nativeTheme.themeSource=result.appearance.theme;return result;});

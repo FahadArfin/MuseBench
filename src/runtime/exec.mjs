@@ -14,7 +14,7 @@ import {createExecConversationFold} from './exec-conversation-events.mjs';
 import {createJobSpawner} from './windows-job.mjs';
 import {validateRunOptions,approvalArguments,runBudget} from '../shared/run-options.mjs';
 
-const HOST_VERSION='1.4.13';
+const HOST_VERSION='1.4.14';
 const execFileAsync=promisify(execFile);
 const readyFlags=['runner_trusted','runner_version_matches','sandbox_users_ready','capabilities_ready','restricted_network_required','wfp_ready'];
 const fullDescription='Full access: shell commands run without OS filesystem or network sandboxing, with your Windows account permissions. Ask me still applies; requests needing interactive approval stop. Web and input tools remain disabled. Planning is not read-only.';
@@ -110,12 +110,12 @@ function deadline(promise,timeoutMs,message) {
 /** The synthetic sessionId is a readiness handle used by the controller. Actual
  * native session/command/run identifiers are separate and change on every send.
  * The injected process boundary is used by contract tests, never by product UI. */
-export function createExecRuntime({loadModels=readNativeModels,durableSessions=false,environment=process.env,platform=process.platform,helperPath=defaultHelperPath,spawnProcess,stopProcess=stopNativeProcess,verifyConfiguration=checkConfiguration,extensionReview,timeoutMs=10000,runTimeoutMs=180000,maxModelSteps=8}={}) {
+export function createExecRuntime({credentials,loadModels=readNativeModels,durableSessions=false,environment=process.env,platform=process.platform,helperPath=defaultHelperPath,spawnProcess,stopProcess=stopNativeProcess,verifyConfiguration=checkConfiguration,extensionReview,timeoutMs=10000,runTimeoutMs=180000,maxModelSteps=8}={}) {
  if(platform!=='win32')throw Error('The native exec compatibility mode is supported only on Windows.');
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000||!Number.isInteger(runTimeoutMs)||runTimeoutMs<1||runTimeoutMs>3600000||!Number.isInteger(maxModelSteps)||maxModelSteps<1||maxModelSteps>128)throw Error('Invalid Muse runtime limits.');
  const env=curateEnvironment(environment),candidates=discoverMuseBinaries({environment,platform});
  const spawnNative=spawnProcess??createJobSpawner({helperPath});
- let modelRead=null;
+ let modelRead=null,credentialContext=null;
  let state={status:'unavailable',reason:candidates.length?'Connect to verify the native Windows sandbox and exec format.':'Install official Muse, then select its native executable.',binary:candidates[0]??null,sdkVersion:HOST_VERSION,transport:'exec',durableSessions,inputAccepted:false,sessionId:null,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,usage:null,skills:[],liveVerified:false,messages:[],shellEnabled:false,shellUnavailableReason:null,shellResults:[],activity:{items:[],truncated:false},pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,permissionDescription:fileDescription,planReadOnlyEnforced:false};
  let epoch=0,owner=null,connecting=false,workspace=null,closing=null;
  state.fullAccess=false;
@@ -176,7 +176,7 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
     }
    }
   }
-  try{p.child=spawnNative(state.binary,args,{cwd:workspace,env:{...env},windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']});}
+  try{p.child=spawnNative(state.binary,args,{cwd:workspace,env:{...(model?credentialContext?.environment??env:env)},windowsHide:true,shell:false,stdio:['ignore','pipe','pipe']});}
   catch{const error=Error('Muse could not start. Verify the native executable.');settle(null,error);if(model&&token===epoch)update({status:'uncertain',reason:error.message,failureCode:'protocol',permissionVerified:false,cleanup:'not-started'});throw error;}
   owner=p;
   p.child.stdout.on('data',chunk=>{
@@ -259,6 +259,7 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
    const version=await begin(['--version'],{token,maxBytes:16384}).result;current(token);
    if(parseMuseVersion(version.stdout)!==HOST_VERSION)throw Error(`Muse version mismatch. This mode requires ${HOST_VERSION}.`);
    update({hostVersion:HOST_VERSION});
+   credentialContext=await credentials?.({binary,environment:env});current(token);update({billingSource:credentialContext?.source??'cli'});
    await verifySandbox(token);current(token);
    await verifyManagedConfiguration(token);current(token);
    await begin(execArgs(workspace,'echo','Reply with MUSEBENCH_FORMAT_PROBE_ONLY',1,state.shellEnabled,undefined,null,fullAccess),{token,probe:true,maxBytes:1024*1024}).result;current(token);
@@ -272,7 +273,7 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
 
  async function refreshModels(){
   if(connecting||closing||!usable.has(state.status)||!state.permissionVerified||modelRead)throw Error('Connect an idle runtime before refreshing models.');
-  const token=epoch;modelRead=loadModels({binary:state.binary,environment:env,workspace});
+  const token=epoch;if(credentialContext)await credentialContext.verify();current(token);modelRead=loadModels({binary:state.binary,environment:credentialContext?.environment??env,workspace});
   try{const catalog=await modelRead;current(token);update({modelCatalog:catalog});return snapshot();}
   catch(error){if(error.code==='CATALOG_CLEANUP')update({status:'unavailable',cleanup:'unconfirmed',permissionVerified:false});throw error;}finally{modelRead=null;}
  }
@@ -280,6 +281,7 @@ export function createExecRuntime({loadModels=readNativeModels,durableSessions=f
   const options=validateRunOptions(runOptions);
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a message up to 64,000 characters in chat or plan mode.');
   if(connecting||closing||!state.permissionVerified||!usable.has(state.status)||owner&&!owner.closed)throw Error('Muse is blocked or uncertain. Connect a verified native runtime first.');
+  const credentialEpoch=epoch;if(credentialContext)await credentialContext.verify();current(credentialEpoch);
   if(options.model||state.modelCatalog){await refreshModels();modelForOptions(state.modelCatalog,options);}
   const selectedBudget=options.budget?runBudget(options.budget):null;
   const limits={steps:selectedBudget?.steps??maxModelSteps,wallTimeMs:selectedBudget?selectedBudget.minutes*60000:runTimeoutMs,tokenBudget:null};

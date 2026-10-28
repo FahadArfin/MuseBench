@@ -44,6 +44,8 @@ jobs:
       - run: npm run test:onboarding-preview
       - run: npm run test:catalog-preview
       - run: npm run test:catalog-desktop
+      - run: npm run test:billing-preview
+      - run: npm run test:billing-desktop
       - run: npm run test:preview-parity
       - run: npx electron-builder --win nsis --publish never
       - run: node scripts/verify-personal-package.mjs
@@ -55,6 +57,7 @@ jobs:
             artifacts/startup-animation/**/report.json
             artifacts/catalog-preview/**/report.json
             artifacts/catalog-desktop/**/report.json
+            artifacts/billing-ui/**/report.json
       - uses: actions/upload-artifact@v4
         with:
           name: windows-update

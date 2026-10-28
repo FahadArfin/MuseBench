@@ -135,3 +135,6 @@ export interface SignInState {status:'ready'|'required'|'pending'|'unknown';mess
 export interface OnboardingState {code:SignInState;personal:SignInState;simulation?:boolean}
 export type OnboardingCommand={type:'status'|'loginCode'|'loginPersonal'|'cancel'}|{type:'apiKey';key:string};
 export interface MuseBenchBridge {onboarding(command:OnboardingCommand):Promise<OnboardingState>}
+export interface CodeBillingState {mode:'cli'|'account'|'api';source?:'account'|'api'|'unknown';status:'ready'|'error';hasApiKey:boolean;billingAccountId:string|null;busy:boolean;accountState?:string;message?:string;simulation?:boolean}
+export type CodeBillingCommand={type:'status'}|{type:'select';source:'account'|'api'}|{type:'saveApiKey';key:string}|{type:'linkBilling';accountId:string}|{type:'checkout';destination:'subscriptions'|'apiBilling'|'apiKeys'|'planDetails';external?:boolean};
+export interface MuseBenchBridge {codeBilling(command:CodeBillingCommand):Promise<{state?:CodeBillingState;opened?:boolean;external?:boolean;simulation?:boolean}>;onBillingChanged(callback:()=>void):()=>void;}

@@ -128,10 +128,10 @@ function displayPending(value,revision) {
 
 /** One process/session owner. Startup and model submission are separate explicit
  * actions. Injection replaces the external process boundary for contract tests. */
-export function createRuntime({environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,workspaceMcp,extensionReview,timeoutMs=10000}={}) {
+export function createRuntime({credentials,environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,workspaceMcp,extensionReview,timeoutMs=10000}={}) {
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000)throw Error('Invalid runtime timeout.');
  const candidates=discoverMuseBinaries({environment,platform});
- const childEnvironment=curateEnvironment(environment);
+ const childEnvironment=curateEnvironment(environment);let credentialContext=null;
  let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
  const deferredInputs=new Map(),settledInputs=new Set(),settledApprovals=new Set();
@@ -276,9 +276,10 @@ export function createRuntime({environment=process.env,platform=process.platform
    const version=await bounded(probeVersion(binary,{environment:childEnvironment,timeoutMs}),timeoutMs);assertCurrent(token);
    if(version!==TARGET.hostVersion)throw Error(`Muse version mismatch: this app requires ${TARGET.hostVersion}.`);
    update({binary,hostVersion:version});assertCurrent(token);
+   credentialContext=await credentials?.({binary,environment:childEnvironment});assertCurrent(token);update({billingSource:credentialContext?.source??'cli'});
    const trustProject=await extensionReview?.allowProject(workspace)===true;assertCurrent(token);
    const hooks=await extensionReview?.nativeHooks(workspace)??{};assertCurrent(token);
-   const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),...(trustProject?['--trust-workspace']:[]),'-c','hooks='+JSON.stringify(hooks),'-c','managed_hooks_path=null'],cwd:workspace,env:{...childEnvironment},shutdownTimeoutMs:timeoutMs});
+   const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),...(trustProject?['--trust-workspace']:[]),'-c','hooks='+JSON.stringify(hooks),'-c','managed_hooks_path=null'],cwd:workspace,env:{...(credentialContext?.environment??childEnvironment)},shutdownTimeoutMs:timeoutMs});
    owner=handshake;
    const host=await bounded(handshake.initialize({clientInfo:{name:'musebench',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:true,...(workspaceTools?{requestedCapabilities:['sessionMcp']}:{})}}),timeoutMs);assertCurrent(token);
    owner=host;
@@ -375,6 +376,7 @@ export function createRuntime({environment=process.env,platform=process.platform
   if(options.approval!=='ask'||options.budget)throw Error('Interactive mode requires Ask for approval and no exec budget preset.');
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a prepared request up to 64,000 characters and a supported chat or plan mode.');
   if(!owner||!adapter||connecting||sending||state.childrenBusy||compaction.pending()||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
+  const credentialEpoch=epoch;if(credentialContext)await credentialContext.verify();assertCurrent(credentialEpoch);
   if(modelReading)throw Error('Wait for the native model catalog.');
   const token=epoch;const images=await readImages(imagePaths);assertCurrent(token);
   await refreshModels();assertCurrent(token);

@@ -32,6 +32,8 @@ jobs:
       - run: npm run test:onboarding-preview
       - run: npm run test:catalog-preview
       - run: npm run test:catalog-desktop
+      - run: npm run test:billing-preview
+      - run: npm run test:billing-desktop
       - run: npm run test:preview-parity
       # These runs use only clean fixtures. Never upload local account captures.
       - uses: actions/upload-artifact@v4
@@ -44,3 +46,4 @@ jobs:
             artifacts/startup-animation/**/report.json
             artifacts/catalog-preview/**/report.json
             artifacts/catalog-desktop/**/report.json
+            artifacts/billing-ui/**/report.json

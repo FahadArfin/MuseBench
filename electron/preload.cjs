@@ -3,6 +3,8 @@ const launchActive = process.argv.includes('--musebench-launch-animation') && Bo
 contextBridge.exposeInMainWorld('musebench', Object.freeze({
   launch: Object.freeze({active:launchActive,complete:()=>ipcRenderer.invoke('musebench:launch-complete')}),
   onboarding: command => ipcRenderer.invoke('musebench:onboarding',command),
+  codeBilling: command => ipcRenderer.invoke('musebench:code-billing',command),
+  onBillingChanged: callback => {const listener=()=>callback();ipcRenderer.on('musebench:billing-update',listener);return()=>ipcRenderer.removeListener('musebench:billing-update',listener);},
   appUpdate: command => ipcRenderer.invoke('musebench:app-update',command),
   onAppUpdate: callback => {const listener=(_event,state)=>callback(state);ipcRenderer.on('musebench:app-update-state',listener);return()=>ipcRenderer.removeListener('musebench:app-update-state',listener);},
   inspectWorktrees: input => ipcRenderer.invoke('musebench:worktrees',input),

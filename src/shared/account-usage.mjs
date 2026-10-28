@@ -3,11 +3,11 @@ export function normalizeAllowance(value){
  const root=value?.subs_usage??value?.usage??value;
  const windows=[];
  for(const [key,label] of [['window','Current window'],['weekly','Weekly']]){
-  const v=root?.[key];if(!valid(v?.used_percent)||v.used_percent>100)continue;
-  const reset=typeof v.resets_at==='number'?v.resets_at*1000:Date.parse(v.resets_at);
-  windows.push({label,remainingPercent:100-v.used_percent,...(Number.isFinite(reset)&&reset>0?{resetsAt:new Date(reset).toISOString()}: {})});
+  const v=root?.[key],used=v?.usedPercent??v?.used_percent;if(!valid(used))continue;
+  const reset=v.resetsAtMs??(typeof v.resets_at==='number'?v.resets_at*1000:Date.parse(v.resets_at));
+  windows.push({label,remainingPercent:Math.max(0,100-used),...(Number.isFinite(reset)&&reset>0&&reset<8640000000000000?{resetsAt:new Date(reset).toISOString()}: {})});
  }
- return {windows};
+ return {windows,...(typeof root?.tier==='string'?{tier:root.tier.replace(/[\x00-\x1f]/g,'').slice(0,80)}:{}),...(valid(root?.observedAtMs)&&root.observedAtMs<8640000000000000?{observedAt:new Date(root.observedAtMs).toISOString()}:{})};
 }
 // Only explicit labels; balances and payment thresholds are never treated as spend.
 export function parseBillingText(text){
@@ -28,6 +28,9 @@ export function parseBillingText(text){
 }
 export const money=(n,currency='USD')=>currency==='$'?`$${new Intl.NumberFormat('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}).format(n)}`:new Intl.NumberFormat('en-US',{style:'currency',currency}).format(n);
 export function usageHeadline(usage){
+ if(usage?.billingSource==='unknown')return 'Unavailable';
+ if(usage?.billingSource==='account')return `Plan · ${usage.windows?.length?Math.floor(Math.min(...usage.windows.map(w=>w.remainingPercent)))+'% left':'Unavailable'}`;
+ if(usage?.billingSource==='api')return usage.billingMatched?`API · ${usageHeadline({billing:usage.billing})}`:'API · Link billing';
  if(usage?.windows?.length)return `${Math.floor(Math.min(...usage.windows.map(w=>w.remainingPercent)))}% left`;
  const b=usage?.billing;if(!b)return 'Unavailable';
  if(valid(b.freeCredits))return `${money(b.freeCredits,b.currency)} free credits`;

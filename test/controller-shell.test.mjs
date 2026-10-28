@@ -30,6 +30,11 @@ async function fixture(t,initial={},options={}){
   return{controller,publish,send,dataDir,controllers,project,projectsDir,root};
 }
 
+test('billing source reset closes idle connections and refuses running work',async t=>{
+ const f=await fixture(t);const before=f.controller.getState().task.id;await f.controller.resetCodeConnections();assert.equal(f.controller.getState().runtime.permissionVerified,false);assert.equal(f.controller.getState().task.id,before);
+ f.publish({status:'running',permissionVerified:true});await assert.rejects(f.controller.resetCodeConnections(),/running|work/i);
+});
+
 test('native command results remain separate from assistant prose and revision checks',async t=>{
   const {controller:c,publish,send}=await fixture(t);await send();
   publish({runId:'run-current',messages:[{id:'answer',kind:'agentMessage',text:'The command ran.'}],shellResults:[result(),result('run-current','shell-failed',{command:'node fail.mjs',output:'Native exception',exitCode:-1073741819,terminalStatus:'failed',terminalReason:'process exited',outcome:'failure'})]});

@@ -91,7 +91,7 @@ async function harness(t,overrides={}) {
   children.push(child);calls.push({command,args,options,child});
   queueMicrotask(()=>{
    child.emit('spawn');
-   if(args[0]==='--version'){child.stdout.emit('data',Buffer.from(overrides.version??'Muse Code 1.4.13 (1.4.13-R6996.1)'));child.finish();}
+   if(args[0]==='--version'){child.stdout.emit('data',Buffer.from(overrides.version??'Muse Code 1.4.14 (1.4.14-R7309.1)'));child.finish();}
    else if(args[0]==='sandbox'){child.stdout.emit('data',Buffer.from(typeof overrides.ready==='function'?overrides.ready():overrides.ready??ready));child.finish();}
    else if(args[0]==='config'){child.stdout.emit('data',Buffer.from(overrides.managed??unmanaged));child.finish();}
    else if(args.includes('echo')){child.stdout.emit('data',Buffer.from(jsonl(records({model:false}))));child.finish();}
@@ -103,6 +103,16 @@ async function harness(t,overrides={}) {
  const connect=()=>runtime.connect({binary,workspaceRoot:root});
  return {root,profile,binary,runtime,calls,children,connect,model:()=>calls.findLast(call=>call.args.includes('meta')).child};
 }
+
+test('explicit API credentials reach model processes and discovery, never readiness probes or snapshots',async t=>{
+ let reject=false,discoveryEnv;const key='fixture-api-private';
+ const h=await harness(t,{credentials:async({environment})=>({source:'api',environment:{...environment,META_API_KEY:key},verify:async()=>{if(reject)throw Error('Billing source changed');}}),loadModels:async({environment})=>{discoveryEnv=environment;return{models:[{id:'fixture-model',efforts:['high'],isDefault:true}]};}});
+ await h.connect();assert.ok(h.calls.every(c=>!c.options.env.META_API_KEY));await h.runtime.refreshModels();assert.equal(discoveryEnv.META_API_KEY,key);
+ reject=true;await assert.rejects(h.runtime.send({text:'Go'}),/changed/);assert.equal(h.calls.filter(c=>c.args.includes('meta')).length,0);
+ assert.ok(!JSON.stringify(h.runtime.snapshot()).includes(key));
+ reject=false;await h.runtime.send({text:'Go',runOptions:{model:'fixture-model',reasoning:'high',approval:'ask'}});
+ assert.equal(h.calls.at(-1).options.env.META_API_KEY,key);assert.equal(h.calls.at(-1).args.includes('meta'),true);assert.ok(!JSON.stringify(h.runtime.snapshot()).includes(key));
+});
 
 test('exec connect checks native version, sandbox readiness and inert format without calling a model',async t=>{
  const h=await harness(t);await h.connect();const state=h.runtime.snapshot();

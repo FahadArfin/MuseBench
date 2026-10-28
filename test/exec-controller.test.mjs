@@ -49,7 +49,7 @@ async function harness(t,{durableSessions=false,missingSession=false,background=
     calls.push({command,args,options,child});
     queueMicrotask(()=>{
       child.emit('spawn');
-      if(args[0]==='--version'){child.stdout.emit('data',Buffer.from('Muse Code 1.4.13 (1.4.13-R6996.1)'));child.finish();}
+      if(args[0]==='--version'){child.stdout.emit('data',Buffer.from('Muse Code 1.4.14 (1.4.14-R7309.1)'));child.finish();}
       else if(args[0]==='sandbox'){child.stdout.emit('data',Buffer.from(readiness));child.finish();}
       else if(args[0]==='export'){child.finish(missingSession?1:0);}
       else if(args[0]==='config'){child.stdout.emit('data',Buffer.from(configuration));child.finish();}

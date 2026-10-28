@@ -35,7 +35,7 @@ export function createBillingReader({BrowserWindow,session,parent}){
    const target=frames[0]??contents;
    const text=await Promise.race([target.executeJavaScript(billingTextScript),new Promise(resolve=>{timeout=setTimeout(()=>resolve(''),2000);})]);
    if(topUrl&&contents.getURL()!==topUrl)return null;
-   return parseBillingText(text);
+   const billing=parseBillingText(text);return billing?{...billing,accountId:team??null}:null;
   }catch{return null;}finally{clearTimeout(timeout);}
  }
  return {open,read,close(){shuttingDown=true;if(view&&!view.isDestroyed())view.close();}};

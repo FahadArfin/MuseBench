@@ -1,4 +1,4 @@
-export const TARGET = Object.freeze({sdkVersion:'1.4.13',hostVersion:'1.4.13',schemaVersion:1,fingerprint:'sha256:7fddaf646dbc317e5fcac0785e135eb04df14fbb0db1863089dfd6da21730e5b'});
+export const TARGET = Object.freeze({sdkVersion:'1.4.14',hostVersion:'1.4.14',schemaVersion:1,fingerprint:'sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6'});
 // Exact candidate only: matching metadata is eligibility, never live verification.
 export function compatibility({sdkVersion,initializeResult:h,fullAccess=false}={}){
  let reason;

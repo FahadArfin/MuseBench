@@ -21,3 +21,15 @@ test('rendered Meta billing separates credits, owed balance and charge threshold
  const b=parseBillingText("Current balance\n$0.09\nYour balance won't increase while using free credits.\nFree credits in use\n$149.74\nYour balance reaches\n$20.00\nSpend limits\nEmail notifications\nSet a monthly amount to get email alerts as you approach it.\nSet up");
  assert.equal(b.currentBalance,0.09);assert.equal(b.freeCredits,149.74);assert.equal(b.paymentThreshold,20);assert.equal(b.spent,undefined);assert.equal(b.alertLimit,undefined);assert.equal(b.alertStatus,'not-set');assert.equal(usageHeadline({windows:[],billing:b}),'$149.74 free credits');
 });
+test('MSP allowance uses milliseconds and clamps over-quota remaining to zero',()=>{
+ const a=normalizeAllowance({usage:{tier:'power',observedAtMs:1800000000000,window:{usedPercent:101,resetsAtMs:1800000300000,windowDurationMins:300},weekly:{usedPercent:40,resetsAtMs:1800100000000}}});
+ assert.equal(a.windows[0].remainingPercent,0);assert.equal(a.windows[0].resetsAt,'2027-01-15T08:05:00.000Z');assert.equal(a.windows[1].remainingPercent,60);assert.equal(a.tier,'power');
+});
+test('usage headline follows the chosen payer and does not combine unrelated accounts',()=>{
+ const usage={windows:[{label:'Weekly',remainingPercent:9}],billing:{spent:12,currency:'USD'},billingSource:'api',billingMatched:true};
+ assert.equal(usageHeadline(usage),'API · $12.00 spent');
+ assert.equal(usageHeadline({...usage,billingMatched:false}),'API · Link billing');
+ assert.equal(usageHeadline({...usage,billingSource:'account'}),'Plan · 9% left');
+ assert.equal(usageHeadline({...usage,billingSource:'account',windows:[]}),'Plan · Unavailable');
+ assert.equal(usageHeadline({...usage,billingSource:'unknown'}),'Unavailable');
+});

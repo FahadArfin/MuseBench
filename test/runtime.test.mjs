@@ -7,7 +7,13 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/runtime/index.mjs';
 
-const pin='sha256:7fddaf646dbc317e5fcac0785e135eb04df14fbb0db1863089dfd6da21730e5b';
+const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
+test('interactive credentials are private and verified before a turn can start',async t=>{
+ let changed=false;const key='fixture-api-private';
+ const h=await harness(t,{credentials:async({environment})=>({source:'api',environment:{...environment,META_API_KEY:key},verify:async()=>{if(changed)throw Error('Billing source changed');}})});
+ await h.connect();assert.equal(h.calls.find(c=>c.method==='spawn').spec.env.META_API_KEY,key);assert.ok(!JSON.stringify(h.runtime.snapshot()).includes(key));
+ changed=true;await assert.rejects(h.runtime.send({text:'Go'}),/changed/);assert.equal(h.calls.some(c=>c.method==='turn/start'),false);
+});
 const inputRequest=()=>({sessionId:'session-one',turnId:'turn-one',userInputId:'question-one',questions:[{id:'color',header:'Color',question:'Which color?',options:[{label:'Blue'},{label:'Green'}],selection:{mode:'single'}}]});
 test('native question answers bind to the observed request and wait for settlement',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Ask'});await h.request({method:'userInput/request',params:inputRequest()});
@@ -44,7 +50,7 @@ async function harness(t,options={}) {
  t.after(()=>rm(root,{recursive:true,force:true}));
  const calls=[]; let notification=()=>{}, serverRequest=()=>{}, resolveExit;
  const session=()=>({sessionId:'session-one',workspaceRoot:root,status:'idle',activeTurnId:null,turnCount:0,providerId:'meta',modelId:'muse-spark-1.2',approvalMode:{mode:'onRequest',source:'sessionOverride',lastCommandId:null},permissionState:permissions()});
- const host={initializeResult:{serverInfo:{name:'muse-session-server',version:'1.4.13'},schema:{version:1,fingerprint:pin},sandboxAvailability:'available',experimentalApi:true},exited:new Promise(resolve=>{resolveExit=resolve;}),close:async()=>{calls.push({method:'close'});return {code:0,signal:null};}};
+ const host={initializeResult:{serverInfo:{name:'muse-session-server',version:'1.4.14'},schema:{version:1,fingerprint:pin},sandboxAvailability:'available',experimentalApi:true},exited:new Promise(resolve=>{resolveExit=resolve;}),close:async()=>{calls.push({method:'close'});return {code:0,signal:null};}};
  host.connection={
   mintCommandId:()=> '0198f0ab-9999-7000-8000-000000000001',
   onNotification:fn=>{notification=fn;},onServerRequest:fn=>{serverRequest=fn;},onProtocolError:()=>{},
@@ -52,7 +58,7 @@ async function harness(t,options={}) {
   command:async(method,params,opts)=>{calls.push({method,params,opts});if(method==='session/start')return {session:session(),viewCursor:'start-1'};if(method==='turn/start')return {commandId:opts.commandId,status:'accepted',disposition:'started',startedNewTurn:true,turnId:'turn-one'};if(method==='approval/decide')return {terminal:true};throw Error('Unexpected command '+method);}
  };
  const sdk={EXPECTED_SCHEMA_FINGERPRINT:pin,spawnMspConnection:spec=>{calls.push({method:'spawn',spec});return {initialize:async params=>{calls.push({method:'initialize',params});return host;},close:host.close};}};
- const runtime=createRuntime({environment:{PATH:'',SystemRoot:'C:\\Windows',META_API_KEY:'must-not-cross',MUSE_EXPERIMENTAL_SDK_ENABLED:'on'},loadSdk:async()=>({sdk,sdkVersion:'1.4.13'}),probeVersion:async()=>options.version??'1.4.13',timeoutMs:100,...options});
+ const runtime=createRuntime({environment:{PATH:'',SystemRoot:'C:\\Windows',META_API_KEY:'must-not-cross',MUSE_EXPERIMENTAL_SDK_ENABLED:'on'},loadSdk:async()=>({sdk,sdkVersion:'1.4.14'}),probeVersion:async()=>options.version??'1.4.14',timeoutMs:100,...options});
  t.after(()=>runtime.close());
  return {runtime,root,binary,calls,host,sdk,session,emit:frame=>notification(frame),request:frame=>serverRequest(frame),exit:resolveExit,connect:()=>runtime.connect({binary,workspaceRoot:root})};
 }
@@ -100,7 +106,7 @@ async function officialInstallFixture(t) {
  const localAppData=await mkdtemp(join(tmpdir(),'musebench-discovery-'));
  t.after(()=>rm(localAppData,{recursive:true,force:true}));
  const install=join(localAppData,'Programs','muse');await mkdir(install,{recursive:true});
- const version='1.4.13-R6996.1';const binary=join(install,`muse-bin-${version}.exe`);
+ const version='1.4.14-R7309.1';const binary=join(install,`muse-bin-${version}.exe`);
  return {localAppData,install,version,binary,marker:join(install,'.muse-version')};
 }
 
@@ -120,7 +126,7 @@ test('Windows discovery refuses missing, malformed and oversized version markers
  const f=await officialInstallFixture(t);await writeFile(f.binary,'discovery fixture only');
  const discover=()=>discoverMuseBinaries({platform:'win32',environment:{PATH:f.install}});
  assert.deepEqual(discover(),[]);
- for(const invalid of ['../escape','..\\escape','1.4.13-R6996.1/../../escape','1.4.13-R6996.1.exe:$DATA','1.4.13-R6996.1\nother','1'.repeat(1024)]){
+ for(const invalid of ['../escape','..\\escape','1.4.14-R7309.1/../../escape','1.4.14-R7309.1.exe:$DATA','1.4.14-R7309.1\nother','1'.repeat(1024)]){
   await writeFile(f.marker,invalid);assert.deepEqual(discover(),[],`Accepted invalid marker: ${invalid.slice(0,40)}`);
  }
 });
@@ -233,7 +239,7 @@ test('host exit invalidates readiness and later sends',async t=>{
 test('disconnect while version probing prevents a late host startup',async t=>{
  let release;const version=new Promise(resolve=>{release=resolve;});
  const h=await harness(t,{probeVersion:()=>version});const connecting=h.connect();await new Promise(resolve=>setImmediate(resolve));
- await h.runtime.disconnect();release('1.4.13');await assert.rejects(connecting,/interrupt|disconnect/i);
+ await h.runtime.disconnect();release('1.4.14');await assert.rejects(connecting,/interrupt|disconnect/i);
  assert.equal(h.calls.some(c=>c.method==='spawn'),false);assert.equal(h.runtime.snapshot().status,'unavailable');
 });
 

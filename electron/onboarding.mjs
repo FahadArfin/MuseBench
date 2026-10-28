@@ -1,5 +1,6 @@
 import {spawn} from 'node:child_process';
 import path from 'node:path';
+import {curateEnvironment} from '../src/runtime/index.mjs';
 
 // Credentials stay in the official CLI store. Never echo subprocess output or keys.
 export function createOnboarding({getBinary,getRuntime=()=>({}),personal,spawnProcess=spawn}) {
@@ -14,7 +15,7 @@ export function createOnboarding({getBinary,getRuntime=()=>({}),personal,spawnPr
   if(typeof binary!=='string'||!path.isAbsolute(binary)||!binary.endsWith('.exe'))throw Error('Install the official Muse CLI, then restart MuseBench.');
   const epoch=++generation;code={status:'pending',message:key?'Saving your API key in Muse…':'Approve the Muse sign-in in your browser.'};
   let process;
-  try{process=spawnProcess(binary,args,{shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});child=process;}catch{code={status:'required',message:'Muse could not start sign-in.'};throw Error(code.message);}
+  try{process=spawnProcess(binary,args,{env:curateEnvironment(),shell:false,windowsHide:true,stdio:['pipe','pipe','pipe']});child=process;}catch{code={status:'required',message:'Muse could not start sign-in.'};throw Error(code.message);}
   const timeout=setTimeout(()=>{if(epoch!==generation)return;generation++;process.kill();child=null;code={status:'required',message:'Sign-in timed out. Please try again.'};},180000);timeout.unref?.();
   let output='',settled=false;
   process.stdout.on('data',chunk=>{
@@ -40,5 +41,5 @@ export function createOnboarding({getBinary,getRuntime=()=>({}),personal,spawnPr
   if(input.type==='cancel'){generation++;child?.kill();child=null;code={status:'required',message:'Sign-in cancelled.'};}
   return state();
  }
- return {command,close(){generation++;child?.kill();child=null;}};
+ return {command,isBusy:()=>!!child,close(){generation++;child?.kill();child=null;}};
 }

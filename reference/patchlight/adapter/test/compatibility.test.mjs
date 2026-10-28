@@ -8,7 +8,7 @@ test('exact documented candidate is eligible but never marked live-verified',()=
  assert.equal(result.available,true);assert.equal(result.liveVerified,false);
 });
 test('unknown SDK, host, schema and sandbox each fail closed',()=>{
- for(const [field,value,reason] of [['sdk','2.0.0','sdk-version-mismatch'],['host','1.4.14','host-version-mismatch'],['schema',2,'schema-version-mismatch'],['fingerprint','sha256:wrong','schema-fingerprint-mismatch'],['sandbox',undefined,'sandbox-unverified']]){
+ for(const [field,value,reason] of [['sdk','2.0.0','sdk-version-mismatch'],['host','1.4.13','host-version-mismatch'],['schema',2,'schema-version-mismatch'],['fingerprint','sha256:wrong','schema-fingerprint-mismatch'],['sandbox',undefined,'sandbox-unverified']]){
   const h=init();let sdkVersion=TARGET.sdkVersion;
   if(field==='sdk')sdkVersion=value;if(field==='host')h.serverInfo.version=value;if(field==='schema')h.schema.version=value;if(field==='fingerprint')h.schema.fingerprint=value;if(field==='sandbox')delete h.sandboxAvailability;
   const r=compatibility({sdkVersion,initializeResult:h});assert.equal(r.available,false);assert.equal(r.reason,reason);
@@ -25,6 +25,6 @@ test('unmodified official recorded transcript is rejected, not silently relabele
  assert.equal(compatibility({sdkVersion:TARGET.sdkVersion,initializeResult:recorded}).available,false);
 });
 test('candidate pin matches downloaded official source schema manifest',()=>{
- const manifest=JSON.parse(readFileSync(new URL('../evidence/schema-manifest.json',import.meta.url)));
+ const manifest=JSON.parse(readFileSync(new URL('../evidence/schema-manifest-1.4.14.json',import.meta.url)));
  assert.equal(TARGET.fingerprint,manifest.fingerprint);assert.equal(TARGET.schemaVersion,manifest.schemaVersion);
 });

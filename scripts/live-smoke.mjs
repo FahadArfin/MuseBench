@@ -274,6 +274,7 @@ try {
   report.phase = 'electron'; await save();
   app = await launch(); page = await app.firstWindow(); page.setDefaultTimeout(15000);
   page.on('pageerror', error => report.rendererErrors.push(diagnosticText(error.message)));
+  await page.getByRole('button', { name: 'Muse Code', exact: true }).click();
   await page.getByRole('button', { name: 'Try sample project', exact: true }).waitFor();
   report.actualElectron = true;
   await capture('01-welcome.png');
