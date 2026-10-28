@@ -9,6 +9,8 @@ import android.view.WindowInsets;
 import android.webkit.*;
 import android.graphics.Color;
 import android.widget.TextView;
+import android.widget.FrameLayout;
+import android.view.ViewGroup;
 import androidx.webkit.*;
 import com.google.zxing.integration.android.IntentIntegrator;
 import com.google.zxing.integration.android.IntentResult;
@@ -33,11 +35,16 @@ public class MainActivity extends Activity {
             TextView message = new TextView(this); message.setText("Update Android System WebView to open MuseBench.");
             message.setPadding(32, 64, 32, 32); setContentView(message); return;
         }
-        view = new WebView(this); view.setBackgroundColor(Color.rgb(21, 23, 27)); setContentView(view);
-        view.setOnApplyWindowInsetsListener((v, insets) -> {
+        // WebView padding does not inset its HTML viewport. Apply system bars
+        // to a native parent so fixed headers and composers fit the safe area.
+        FrameLayout layout = new FrameLayout(this); layout.setBackgroundColor(Color.rgb(21, 23, 27));
+        view = new WebView(this); view.setBackgroundColor(Color.rgb(21, 23, 27));
+        layout.addView(view, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        layout.setOnApplyWindowInsetsListener((v, insets) -> {
             v.setPadding(insets.getSystemWindowInsetLeft(), insets.getSystemWindowInsetTop(), insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             return insets.consumeSystemWindowInsets();
         });
+        setContentView(layout);
         configure(view);
         WebViewAssetLoader assets = new WebViewAssetLoader.Builder().addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this)).build();
         view.setWebViewClient(new WebViewClient() {

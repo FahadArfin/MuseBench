@@ -60,6 +60,15 @@ public class CompanionTest {
             }
             assertTrue(result, result.contains("object"));
             assertTrue(result, result.contains("Muse AI"));
+            scenario.onActivity(activity -> {
+                WebView web = findWeb(activity.getWindow().getDecorView());
+                int[] position = new int[2]; web.getLocationOnScreen(position);
+                android.view.WindowInsets insets = activity.getWindow().getDecorView().getRootWindowInsets();
+                assertNotNull(insets);
+                assertTrue("App controls must stay below the status bar", position[1] >= insets.getSystemWindowInsetTop());
+                int screenHeight = activity.getWindow().getDecorView().getHeight();
+                assertTrue("App controls must stay above the navigation bar", position[1] + web.getHeight() <= screenHeight - insets.getSystemWindowInsetBottom());
+            });
         }
         Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
         try (ActivityScenario<ChatActivity> scenario = ActivityScenario.launch(new Intent(context, ChatActivity.class).putExtra("service", "meta"))) {

@@ -46,7 +46,7 @@
 **Files:** mobile/android Gradle app, native pinned HTTPS/Keystore code, build/staging scripts, release workflow, mobile docs.
 **Interfaces:** APK bundles the same built mobile UI; pairing protocol v1 is implemented in native Java with pinned certificates and no redirects.
 - [x] Implement separate local companion and remote chat WebViews, restrictive navigation and origin-checked WebMessageListener.
-- [ ] Add native tests for TLS pin rejection, protected persistence and chat isolation; build and launch on an Android emulator.
+- [x] Add native tests for TLS pin rejection, protected persistence and chat isolation; build and launch on an Android emulator.
 - [x] Generate a release signing key outside Git, back it up locally, configure GitHub secrets without printing them, and publish signed APKs with version/source hashes.
-- [ ] Add Android as a required release target; fresh review, full tests/build, commit and push.
+- [x] Add Android as a required release target; fresh review, full tests/build, commit and push.
 - [ ] Verify all platform CI results and release assets, install the verified Windows update and reopen. Record Android emulator coverage and unavailable real-device/provider checks honestly.
