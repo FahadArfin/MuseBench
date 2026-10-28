@@ -1,0 +1,8 @@
+/* Bundled, variable fonts. Unicode subsets load only when their glyphs are used. */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/inter/wght-italic.css';
+@import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource-variable/jetbrains-mono/wght-italic.css';
+
+/* Keep code operators literal and easy to distinguish in diffs and editors. */
+code, pre, kbd { font-variant-ligatures: none; }

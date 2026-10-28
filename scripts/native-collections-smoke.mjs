@@ -17,6 +17,7 @@ async function until(check,label){const deadline=Date.now()+10000;while(Date.now
 const command=value=>page.evaluate(value=>window.musebench.personal(value),value);
 async function visible(){let view;await until(async()=>view=await app.evaluate(({BrowserWindow})=>{const v=BrowserWindow.getAllWindows().find(w=>!w.getParentWindow()).contentView.children.find(v=>v.webContents&&v.getVisible());return v?{id:v.webContents.id,url:v.webContents.getURL()}:null;}),'visible view');return view;}
 const evaluate=(id,script)=>app.evaluate(({webContents},{id,script})=>webContents.fromId(id).executeJavaScript(script),{id,script});
+const loadedFonts=id=>evaluate(id,'[...document.fonts].filter(face=>face.family.startsWith("MuseBench ")&&face.status==="loaded").map(face=>face.family)');
 const click=(id,selector)=>evaluate(id,`document.querySelector(${JSON.stringify(selector)}).click()`);
 async function navigate(destination){await command({type:'navigate',destination});const view=await visible();await until(()=>evaluate(view.id,'Boolean(window.__collectionFixture)'),'fixture loaded');return view;}
 async function capture(id,name){await evaluate(id,'new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');const bytes=await app.evaluate(async({webContents},id)=>(await webContents.fromId(id).capturePage()).toPNG().toString('base64'),id);const file=path.join(output,`${++shot}-${name}.png`);await writeFile(file,Buffer.from(bytes,'base64'));report.captures.push(file);}
@@ -28,9 +29,14 @@ try{
   page=await app.firstWindow();page.on('pageerror',error=>report.errors.push(error.message));await page.waitForFunction(()=>Boolean(window.musebench));await resize(1440,900);
   await app.evaluate(async({session},html)=>{for(const name of ['persist:musebench-personal-muse','persist:musebench-personal-chat'])await session.fromPartition(name).protocol.handle('https',request=>['muse.ai','auth.muse.ai','www.meta.ai','meta.ai'].includes(new URL(request.url).hostname)?new Response(html,{headers:{'content-type':'text/html'}}):new Response('Offline',{status:451}));},html);
   await page.getByRole('button',{name:'Muse AI',exact:true}).click();
+  await page.locator('.muse-agent-shortcut').click();
+  await page.getByRole('button',{name:'Expand Ideas',exact:true}).click();
+  await page.getByRole('button',{name:'Expand Goals',exact:true}).click();
   let ideas=await navigate('ideas');const ideaIdentity=await evaluate(ideas.id,'window.__collectionFixture.documentId');
   stage='Native Ideas collection';await until(async()=>(await geometry(ideas.id)).native==='#181818','native collection presentation');
-  let g=await geometry(ideas.id);assert.equal(g.radius,'12px');assert.equal(g.background,'rgb(24, 24, 24)');assert.match(g.font,/Segoe UI/);assert(g.column.width<=900);assert(g.page<=g.viewport+1);await capture(ideas.id,'ideas-dark');record('Ideas groups and rows use native typography, surfaces and contained layout');
+  await until(async()=>{const fonts=await loadedFonts(ideas.id);return fonts.includes('MuseBench Inter Variable')&&fonts.includes('MuseBench JetBrains Mono Variable');},'Bundled collection fonts');
+  report.loadedFonts=[...new Set(await loadedFonts(ideas.id))];
+  let g=await geometry(ideas.id);assert.equal(g.radius,'12px');assert.equal(g.background,'rgb(24, 24, 24)');assert.match(g.font,/^"MuseBench Inter Variable"/);assert(g.column.width<=900);assert(g.page<=g.viewport+1);await capture(ideas.id,'ideas-dark');record('Ideas groups and rows use native typography, surfaces and contained layout');
 
   stage='Idea preview and reversible presentation';await click(ideas.id,'[data-pel-click="idea_group_row_click"]');
   await until(()=>evaluate(ideas.id,'Boolean(document.querySelector("[role=dialog]"))'),'idea preview');
@@ -38,11 +44,12 @@ try{
   assert.equal(await evaluate(ideas.id,'getComputedStyle(document.querySelector("[data-slot=content-area-dialog-surface]")).borderRadius'),'16px');
   await capture(ideas.id,'idea-preview-dark');
   await command({type:'presentation',compact:false});await until(async()=>(await geometry(ideas.id)).native==='','original layout');
+  assert.deepEqual(await loadedFonts(ideas.id), []);
   assert.equal(await evaluate(ideas.id,'getComputedStyle(document.querySelector("[data-slot=content-area-dialog-surface]")).borderRadius'),'32px');
   await command({type:'appearance',appearance:{...appearance,theme:'light',font:'mono',textSize:'large',reducedMotion:true}});assert.equal((await geometry(ideas.id)).native,'');
   await command({type:'presentation',compact:true});await until(async()=>(await geometry(ideas.id)).native==='#faf9f7','light native layout');
   assert.equal(await evaluate(ideas.id,'document.querySelector("[role=dialog] h2").textContent'),previewTitle);await unchanged(ideas.id,ideaIdentity);
-  const readable=await evaluate(ideas.id,`(()=>{const p=getComputedStyle(document.querySelector('[data-pel-impression="idea_preview_dialog_impression"] p'));return {font:p.fontFamily,size:p.fontSize,duration:parseFloat(getComputedStyle(document.querySelector('.fixture-motion')).animationDuration)}})()`);assert.match(readable.font,/Consolas/);assert.equal(readable.size,'16px');assert(readable.duration<0.01);
+  const readable=await evaluate(ideas.id,`(()=>{const p=getComputedStyle(document.querySelector('[data-pel-impression="idea_preview_dialog_impression"] p'));return {font:p.fontFamily,size:p.fontSize,duration:parseFloat(getComputedStyle(document.querySelector('.fixture-motion')).animationDuration)}})()`);assert.match(readable.font,/^"MuseBench JetBrains Mono Variable"/);assert.equal(readable.size,'16px');assert(readable.duration<0.01);
   await capture(ideas.id,'idea-preview-light');await click(ideas.id,'[aria-label="Close"]');record('Idea previews retain original controls and state across theme, font, motion and full-layout changes');
 
   stage='Synced Ideas metadata';await evaluate(ideas.id,'window.__collectionFixture.updateCollection()');await command({type:'refreshLibrary'});

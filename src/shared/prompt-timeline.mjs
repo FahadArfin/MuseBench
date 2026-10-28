@@ -3,7 +3,7 @@
 export function mountPromptTimeline({host,root,userSelector,answerSelector,scrollElement,reducedMotion=false}) {
  const shadow=host.attachShadow({mode:'open'}),doc=host.ownerDocument;
  const style=doc.createElement('style');style.textContent=`
- :host{position:fixed;z-index:30;width:30px;pointer-events:none;font:13px/1.55 "Segoe UI",sans-serif;color:var(--text,#ececec)}
+ :host{position:fixed;z-index:30;width:30px;pointer-events:none;font:13px/1.55 var(--font-ui,system-ui,sans-serif);color:var(--text,#ececec)}
  *{box-sizing:border-box}nav{pointer-events:auto;width:30px;max-height:100%;overflow:auto;scrollbar-width:none;padding:6px 0}nav::-webkit-scrollbar{display:none}nav[hidden],[hidden]{display:none!important}
  button{display:flex;align-items:center;width:28px;height:12px;min-height:12px;padding:0 5px;background:none;border:0;cursor:pointer;color:var(--muted,#999)}
  button::before{content:"";display:block;width:6px;height:2px;background:currentColor;opacity:.45;transition:width .12s,opacity .12s}

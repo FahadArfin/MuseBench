@@ -1,4 +1,5 @@
-.typed-text>span{animation:muse-type-in 1ms steps(1,end) var(--type-delay) both}
+/* A linear 1ms reveal avoids Chromium rounding a finished step just below 1. */
+.typed-text>span{animation:muse-type-in 1ms linear var(--type-delay) both}
 @keyframes muse-type-in{from{opacity:0}to{opacity:1}}
 .product-name .product-brand-icon{color:var(--accent);transform-origin:center;animation:muse-icon-enter 420ms cubic-bezier(.2,.8,.2,1) both}
 @keyframes muse-icon-enter{from{opacity:.25;transform:scale(.72) translateX(-3px)}to{opacity:1;transform:scale(1) translateX(0)}}

@@ -2,6 +2,7 @@ import {metaDocument,metaNavigationCSS} from './meta-navigation.mjs';
 import { applyPersonalTimeline } from './personal-timeline.mjs';
 import { personalChatCSS } from './personal-chat-style.mjs';
 import { personalCollectionsCSS } from './personal-collections-style.mjs';
+import { applyPersonalFonts } from './personal-fonts.mjs';
 
 // A deliberately small presentation adapter for the official Muse application.
 // These hooks were observed in its rendered UI on 2026-10-25. This is not an API:
@@ -68,7 +69,10 @@ export function applyPersonalPresentation(contents, compact, appearance) {
       try { await contents.removeInsertedCSS(old); } catch { /* A navigation discarded the old document. */ }
     }
     if(compact&&metaDocument(contents)){const key=await contents.insertCSS(metaNavigationCSS,{cssOrigin:'author'});styles.set(contents,key);return true;}
-    if (!compact || !museDocument(contents)) return applyPersonalTimeline(contents, compact, appearance);
+    if (!compact || !museDocument(contents)) {
+      await applyPersonalFonts(contents, false);
+      return applyPersonalTimeline(contents, compact, appearance);
+    }
     // Selector guards activate only when the application shell hydrates. The
     // login page and unrecognized layouts remain untouched, even if React mounts
     // after dom-ready. No account-state inspection is needed.
@@ -76,6 +80,7 @@ export function applyPersonalPresentation(contents, compact, appearance) {
     // Author-origin !important rules restore correctly through removeInsertedCSS.
     const key = await contents.insertCSS(compactCSS + personalChatCSS(appearance) + personalCollectionsCSS(appearance), { cssOrigin: 'author' });
     styles.set(contents, key);
+    await applyPersonalFonts(contents, true);
     await applyPersonalTimeline(contents, true, appearance);
     return true;
   }).catch(() => false);

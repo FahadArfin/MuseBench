@@ -46,6 +46,7 @@ async function load(id, url) { await app.evaluate(({ webContents }, { id, url })
 async function insert(id, text) { await evaluate(id, `(document.querySelector('textarea[data-hatch-composer-prehydration-input],[contenteditable="true"]')).focus()`); await app.evaluate(({ webContents }, { id, text }) => { const remote = webContents.fromId(id); remote.focus(); remote.insertText(text); }, { id, text }); }
 async function styles(id) { return evaluate(id, `(()=>{const style=selector=>getComputedStyle(document.querySelector(selector));const user=style('[data-message-role="user"] .hatch-chat-groupable-bubble'),assistant=style('[data-message-role="assistant"] .hatch-chat-groupable-bubble'),log=style('[role="log"]'),composer=style('[data-hatch-composer-chrome]'),input=style('textarea[data-hatch-composer-prehydration-input],[contenteditable="true"]');return {background:getComputedStyle(document.body).backgroundColor,userBackground:user.backgroundColor,userRadius:user.borderRadius,assistantBackground:assistant.backgroundColor,assistantPadding:assistant.padding,logSize:log.fontSize,logFont:log.fontFamily,logWidth:log.maxWidth,lineHeight:log.lineHeight,composerBackground:composer.backgroundColor,composerRadius:composer.borderRadius,inputMinHeight:input.minHeight,inputFontSize:input.fontSize,codeFont:style('pre code').fontFamily,dock:style('[data-hatch-dock]').display}})()`); }
 async function draft(id) { return evaluate(id, `(()=>{const input=document.querySelector('textarea[data-hatch-composer-prehydration-input],[contenteditable="true"]');return input.tagName==='TEXTAREA'?input.value:input.textContent})()`); }
+async function loadedFonts(id) { return evaluate(id, '[...document.fonts].filter(face=>face.family.startsWith("MuseBench ")&&face.status==="loaded").map(face=>face.family)'); }
 function contrast(foreground, background) {
   const luminance = color => { const [r, g, b] = color.match(/[\d.]+/g).slice(0, 3).map(value => { const channel = Number(value) / 255; return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4; }); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
   const values = [luminance(foreground), luminance(background)].sort((a, b) => b - a); return (values[0] + 0.05) / (values[1] + 0.05);
@@ -72,13 +73,15 @@ try {
     });
   }, html);
   await page.getByRole('button',{name:'Muse AI',exact:true}).click();
-  await page.getByRole('navigation', { name: 'Meta AI navigation', exact: true }).getByRole('button', { name: 'Muse AI bot', exact: true }).click();
+  await page.locator('.muse-agent-shortcut').click();
   let muse = await visible(); await until(async () => evaluate(muse.id, 'Boolean(window.__nativeChatFixture)'), 'Muse rich fixture loaded');
   const original = await evaluate(muse.id, `({documentId:window.__nativeChatFixture.documentId,messages:Array.from(document.querySelectorAll('[data-message-item]')).map(node=>node.textContent),streaming:document.querySelector('[data-hatch-markdown-streaming="true"]')?.getAttribute('data-hatch-markdown-streaming'),sends:window.__nativeChatFixture.sends.length,approvals:window.__nativeChatFixture.approvals,attachments:window.__nativeChatFixture.attachments,dictations:window.__nativeChatFixture.dictations})`);
   await until(async () => (await styles(muse.id)).userRadius === '18px', 'Native chat bubble styling is applied');
   let current = await styles(muse.id); report.initialStyles = current;
   assert.equal(current.userBackground, 'rgb(48, 48, 48)'); assert.equal(current.assistantBackground, 'rgba(0, 0, 0, 0)'); assert.equal(current.assistantPadding, '0px'); assert.equal(current.logSize, '14px'); assert.equal(current.logWidth, '800px'); assert.equal(current.composerRadius, '16px'); assert.equal(current.inputMinHeight, '52px');
-  assert.match(current.codeFont, /Cascadia|Consolas|monospace/i);
+  assert.match(current.logFont, /^"MuseBench Inter Variable"/); assert.match(current.codeFont, /^"MuseBench JetBrains Mono Variable"/);
+  await until(async()=>{const fonts=await loadedFonts(muse.id);return fonts.includes('MuseBench Inter Variable')&&fonts.includes('MuseBench JetBrains Mono Variable');},'Bundled fonts are decoded in the embedded view');
+  report.loadedFonts = [...new Set(await loadedFonts(muse.id))];
   const desktop = await evaluate(muse.id, `(()=>{const feedNode=document.querySelector('[data-hatch-vt-pane="chat-feed"]'),feed=feedNode.getBoundingClientRect(),log=document.querySelector('[role="log"]'),rect=log.getBoundingClientRect(),style=getComputedStyle(log),composer=document.querySelector('[data-hatch-composer-chrome]').getBoundingClientRect(),panel=document.querySelector('[data-hatch-status-panel-card]').getBoundingClientRect();return {feedRight:feed.right,scrollbarWidth:feed.width-feedNode.clientWidth,panelLeft:panel.left,logRight:rect.right,textLeft:rect.left+parseFloat(style.paddingLeft),textRight:rect.right-parseFloat(style.paddingRight),composerLeft:composer.left,composerRight:composer.right}})()`);
   assert(desktop.feedRight <= desktop.panelLeft + 1 && desktop.logRight <= desktop.feedRight + 1, JSON.stringify(desktop));
   assert(Math.abs(desktop.textLeft - desktop.composerLeft) <= 4 && Math.abs(desktop.textRight - desktop.composerRight) <= desktop.scrollbarWidth + 4, JSON.stringify(desktop));
@@ -97,6 +100,7 @@ try {
   const toggle = page.getByRole('button', { name: 'Use integrated Muse layout', exact: true });
   await toggle.click(); await until(async () => (await styles(muse.id)).userRadius === '30px', 'Full website styling restored');
   current = await styles(muse.id); assert.equal(current.userBackground, 'rgb(72, 94, 164)'); assert.equal(current.logSize, '18px'); assert.equal(current.composerRadius, '30px'); assert.notEqual(current.dock, 'none');
+  await until(async()=>(await loadedFonts(muse.id)).length===0,'Full website restores its original font set');
   assert.equal(await draft(muse.id), 'Keep this unfinished Muse draft.'); await invariants(muse.id, original); await capture('original-website');
   await toggle.click(); await until(async () => (await styles(muse.id)).userRadius === '18px', 'Native styling restored');
   record('Native/full-layout switching restores original website styles without recreating messages, losing drafts, or invoking controls');
@@ -109,7 +113,7 @@ try {
   await closeSettings();
   await until(async () => { const appearance = (await state()).appearance; return appearance?.theme === 'light' && appearance?.font === 'mono' && appearance?.textSize === 'large' && appearance?.reducedMotion; }, 'Settings appearance reaches the personal browser');
   await until(async () => (await styles(muse.id)).userBackground === 'rgb(229, 228, 224)', 'Light native colors applied');
-  current = await styles(muse.id); assert.equal(current.logSize, '16px'); assert.match(current.logFont, /Cascadia|Consolas|monospace/i); assert.equal(current.composerBackground, 'rgb(255, 255, 255)');
+  current = await styles(muse.id); assert.equal(current.logSize, '16px'); assert.match(current.logFont, /^"MuseBench JetBrains Mono Variable"/); assert.equal(current.composerBackground, 'rgb(255, 255, 255)');
   const lightApprovalColors = await evaluate(muse.id, `Array.from(document.querySelectorAll('[data-hatch-status-panel-card] button')).map(button=>{const style=getComputedStyle(button);return {title:button.textContent,foreground:style.color,background:style.backgroundColor==='rgba(0, 0, 0, 0)'?getComputedStyle(button.closest('[data-hatch-status-panel-card]')).backgroundColor:style.backgroundColor}})`);
   for (const color of lightApprovalColors) assert(contrast(color.foreground, color.background) >= 4.5, `Light approval control text contrast: ${JSON.stringify(color)}`);
   report.lightApprovalColors = lightApprovalColors;
@@ -141,8 +145,10 @@ try {
   await load(muse.id, 'https://muse.ai/fixture-unrecognized');
   await until(async () => (await styles(muse.id)).userRadius === '30px', 'Unrecognized chat structure retains its original styles');
   assert.equal((await styles(muse.id)).userBackground, 'rgb(72, 94, 164)');
+  assert.deepEqual(await loadedFonts(muse.id), []);
   await load(muse.id, 'https://auth.muse.ai/fixture-login');
   current = await styles(muse.id); assert.equal(current.userRadius, '30px'); assert.equal(current.composerRadius, '30px'); assert.notEqual(current.dock, 'none');
+  assert.deepEqual(await loadedFonts(muse.id), []);
   await page.getByRole('navigation', { name: 'Meta AI navigation', exact: true }).getByRole('button', { name: 'Chat', exact: true }).click();
   const meta = await visible(); await until(async () => evaluate(meta.id, 'Boolean(window.__nativeChatFixture)'), 'Meta AI fixture loaded');
   current = await styles(meta.id); assert.equal(current.userRadius, '30px'); assert.notEqual(current.dock, 'none');

@@ -49,6 +49,7 @@ ${log} .prose :is(p,ul,ol) { margin-block:0 12px !important; }
 ${log} .prose :is(h1,h2,h3,h4,h5,h6) { color:var(--mb-chat-text) !important; font-family:var(--mb-chat-font) !important; line-height:1.4 !important; margin-block:20px 10px !important; }
 ${log} .prose :is(strong,b) { color:inherit !important; }
 ${log} .prose a { color:var(--mb-chat-accent) !important; text-decoration:underline; text-underline-offset:3px; }
+${log} .prose :is(code,pre,kbd) { font-variant-ligatures:none !important; }
 ${log} .prose code { font-family:var(--mb-chat-mono) !important; font-size:.9em !important; background:var(--mb-chat-surface) !important; color:var(--mb-chat-text) !important; border-radius:4px; }
 ${log} .prose pre { box-sizing:border-box !important; max-width:100% !important; overflow-x:auto !important; white-space:pre !important; padding:16px !important; margin-block:14px !important; background:var(--mb-chat-code) !important; color:var(--mb-chat-text) !important; border:1px solid var(--mb-chat-border) !important; border-radius:8px !important; font-family:var(--mb-chat-mono) !important; }
 ${log} .prose pre code { background:transparent !important; padding:0 !important; font-size:12px !important; line-height:1.7 !important; }

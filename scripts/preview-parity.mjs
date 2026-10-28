@@ -12,7 +12,7 @@ const server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'
  if(file==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixture);return;}
  if(file!=='/index.html'&&!/^\/assets\/[a-zA-Z0-9._-]+$/.test(file)){res.statusCode=404;res.end();return;}
  let bytes=await readFile(path.join(process.cwd(),'dist',file));
- if(file==='/index.html'){bytes=Buffer.from(bytes.toString().replace('<head>','<head><script src="./fixture.js"></script>'));res.setHeader('Content-Type','text/html');}else res.setHeader('Content-Type',file.endsWith('.css')?'text/css':'text/javascript');res.end(bytes);
+ if(file==='/index.html'){bytes=Buffer.from(bytes.toString().replace('<head>','<head><script src="./fixture.js"></script>'));res.setHeader('Content-Type','text/html');}else res.setHeader('Content-Type',file.endsWith('.woff2')?'font/woff2':file.endsWith('.css')?'text/css':'text/javascript');res.end(bytes);
  }catch{res.statusCode=404;res.end();}});}}]});await server.listen();
 // Headless Chromium hides scrollbars by default; desktop reserves their width.
 const browser=await chromium.launch({ignoreDefaultArgs:['--hide-scrollbars']});let app;
@@ -37,6 +37,8 @@ try{
   const [width,height]=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].getContentSize());
   await browserPage.setViewportSize({width,height});
   report.viewports??={};report.viewports[name]={width,height};
+  // Compare actual bundled font metrics, not an early fallback-font frame.
+  await Promise.all([browserPage,desktopPage].map(page=>page.evaluate(()=>document.fonts.ready.then(()=>undefined))));
   // Wait for layout/motion, not requests to external services.
   await Promise.all([browserPage,desktopPage].map(page=>page.waitForTimeout(250)));
   for(const page of [browserPage,desktopPage]){

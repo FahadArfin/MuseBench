@@ -22,6 +22,7 @@ jobs:
       - run: npx playwright install chromium
       - run: npm test
       - run: npm run build
+      - run: npm run test:typography
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness
       - run: npm run test:browser-preview
