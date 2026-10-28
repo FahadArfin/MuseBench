@@ -2,6 +2,7 @@ import {fileURLToPath} from 'node:url';
 import {createHookPresetStore} from './hook-presets.mjs';
 import {MUSEBENCH_SKILL_PACK} from '../src/shared/skill-pack.mjs';
 import {CURATED_EXTENSIONS} from '../src/shared/extension-catalog.mjs';
+import {normalizeSkillCatalog} from '../src/shared/skill-context.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {randomUUID} from 'node:crypto';
@@ -47,15 +48,15 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  const settingsPath=path.join(profile,'.config','muse','settings.json');
  const importsFile=path.join(dataDir,'skill-imports.json');
  const imports=async()=>{try{const value=JSON.parse(await optionalText(importsFile)??'[]');return Array.isArray(value)?value.slice(-100):[];}catch{return[];}};
- const pending=new Map(),processes=new Map();let busy=false,closed=false;
+ const pending=new Map(),processes=new Map();let busy=false,closed=false,lastSkillCatalog;
  async function catalogService(){return catalog??= (await import('./extension-catalog.mjs')).createExtensionCatalog({dataDir});}
  async function removeStage(folder){await(await import('./extension-staging.mjs')).removeCatalogStage(folder,{dataDir});}
  async function clearPending(){const items=[...pending.values()];pending.clear();await Promise.all(items.filter(item=>item.catalog).map(item=>removeStage(item.folder)));}
  function binary(){const value=getState().runtime?.binary??discoverMuseBinaries({environment:env})[0];if(typeof value!=='string'||!(path.isAbsolute(value)||path.win32.isAbsolute(value))||!value.toLowerCase().endsWith('.exe'))throw Error('Install or select the official Muse CLI in Connection settings.');return value;}
- async function cli(args,{oauth=false,validation=false}={}){
+ async function cli(args,{oauth=false,validation=false,executable}={}){
   if(closed)throw Error('Customize is closed.');
   const abort=new AbortController();let operation;
-  try{operation=Promise.resolve(run(binary(),args,{shell:false,windowsHide:true,env,signal:abort.signal,encoding:'utf8',timeout:oauth?180000:30000,maxBuffer:4*1024*1024,cwd:profile}));processes.set(abort,operation);const result=await operation;return oauth?{}:JSON.parse(result.stdout);}
+  try{operation=Promise.resolve(run(executable??binary(),args,{shell:false,windowsHide:true,env,signal:abort.signal,encoding:'utf8',timeout:oauth?180000:30000,maxBuffer:4*1024*1024,cwd:profile}));processes.set(abort,operation);const result=await operation;return oauth?{}:JSON.parse(result.stdout);}
   catch(error){if(error.message?.startsWith('Install or select'))throw error;if(validation&&typeof error.stdout==='string'&&error.stdout.length<4*1024*1024){try{const result=JSON.parse(error.stdout);if(result.valid===false||Array.isArray(result.diagnostics))return{...result,valid:false};}catch{}}
    throw Error(oauth?'Sign-in did not finish. Retry in Customize or use muse mcp login in the official CLI.':'Muse could not complete this operation. Check the folder or configuration and try again.');}
   finally{processes.delete(abort);}
@@ -69,17 +70,30 @@ export function createCustomize({getState,environment=process.env,dataDir,review
   if(await optionalText(settingsPath)!==original)throw Error('Muse settings changed elsewhere. Refresh and try again.');
   await atomicJson(target,config,async()=>{if(await optionalText(settingsPath)!==original)throw Error('Muse settings changed elsewhere. Refresh and try again.');if(original!==null&&await realpath(settingsPath)!==await realpath(target))throw Error('Muse settings path changed elsewhere. Refresh and try again.');});
  }
- function skills(value){return(value.skills??[]).filter(item=>idOK(item.id)).slice(0,500).map(item=>({id:item.id,title:clean(item.display_name||item.name||item.id,200),description:clean(item.short_description||item.description,800),scope:clean(item.scope,30),activation:item.activation==='user-invocable-only'?'user-only':['on','off','user-only'].includes(item.activation)?item.activation:'off'}));}
  function plugins(value){return(value.plugins??[]).filter(item=>idOK(item.record?.id)).slice(0,250).map(item=>({id:item.record.id,title:clean(item.record.display_name||item.record.id,200),description:clean(item.record.description,800),version:clean(item.record.version,60),enabled:item.record.enabled===true,valid:item.valid===true,capabilities:capabilities(item.plugin?.capabilities),reviewRequired:!item.active}));}
  function capabilities(value){return Object.entries(value??{}).filter(([,items])=>Array.isArray(items)&&items.length).map(([kind,items])=>({kind:clean(kind,60),count:items.length}));}
- async function skillList(){const args=['skills','list','--json'];const workspace=getState().activeProject?.root;if(workspace){args.push('--workspace',workspace);if(await review.allowProject(workspace))args.push('--trust-workspace');}return skills(await cli(args));}
+ async function skillList({retainOnFailure=false}={}){
+  const args=['skills','list','--json'],executable=binary(),workspace=getState().activeProject?.root??null;
+  const trusted=workspace?await review.allowProject(workspace):false,key=JSON.stringify([executable,workspace,trusted]);
+  if(lastSkillCatalog?.key!==key)lastSkillCatalog=undefined;
+  if(workspace){args.push('--workspace',workspace);if(trusted)args.push('--trust-workspace');}
+  try{
+   const result=normalizeSkillCatalog(await cli(args,{executable}));result.skillCatalog.checkedAt=new Date().toISOString();
+   lastSkillCatalog={key,result:structuredClone(result)};return result;
+  }catch(error){
+   // Only snapshots may display old observations. Activation always requires a fresh list.
+   if(retainOnFailure&&lastSkillCatalog?.key===key){const result=structuredClone(lastSkillCatalog.result);result.skillCatalog.stale=true;return result;}
+   throw error;
+  }
+ }
  async function snapshot(){
-  const errors=[];let skillRows=[],pluginRows=[],servers=[],available=true,pluginsReviewed=false,pluginRevision=null,inventoryDisplayed=false;
+  const errors=[];let skillRows=[],skillCatalog,pluginRows=[],servers=[],available=true,pluginsReviewed=false,pluginRevision=null,inventoryDisplayed=false;
   let beforePlugins;try{beforePlugins=await review.pluginState();}catch{/* Invalid inventories stay unreviewed. */}
   try{binary();}catch(error){available=false;errors.push(error.message);}
   if(available){
-   const values=await Promise.allSettled([skillList(),cli(['plugins','list','--json'])]);
-   if(values[0].status==='fulfilled')skillRows=values[0].value;else errors.push('Skills could not be refreshed.');
+   const values=await Promise.allSettled([skillList({retainOnFailure:true}),cli(['plugins','list','--json'])]);
+   if(values[0].status==='fulfilled'){skillRows=values[0].value.skills;skillCatalog=values[0].value.skillCatalog;}
+   if(values[0].status==='rejected'||skillCatalog?.stale)errors.push('Skills could not be refreshed.');
    if(values[1].status==='fulfilled'&&Array.isArray(values[1].value.plugins)){
     pluginRows=plugins(values[1].value);
     inventoryDisplayed=values[1].value.plugins.every(item=>item.valid===true)&&pluginRows.length===values[1].value.plugins.length&&configurationDigest(pluginRows.map(item=>item.id).sort())===configurationDigest(Object.keys(beforePlugins?.entries??{}).sort());
@@ -89,7 +103,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
   try{const {config}=await settings();servers=await Promise.all(Object.entries(config.mcp_servers??{}).slice(0,250).map(async([name,entry])=>({name:clean(name,100),revision:configurationDigest(entry),transport:entry.transport==='stdio'?'stdio':'streamable_http',address:entry.transport==='stdio'?clean(entry.command,200):safeAddress(entry.url),enabled:entry.enabled!==false,reviewed:await review.allowMcp(name,entry),oauth:supportsOAuth(entry)})));pluginsReviewed=await review.pluginsReviewed();const afterPlugins=await review.pluginState();if(beforePlugins?.revision===afterPlugins.revision){if(inventoryDisplayed)pluginRevision=afterPlugins.revision;}else errors.push('Plugins changed while loading. Refresh before reviewing them.');}catch{errors.push('Muse configuration could not be read. Correct settings.json in the official CLI before editing.');}
   let hooks=null;try{const root=getState().activeProject?.root;if(root)hooks=await review.hookState(root);}catch{errors.push('Project hooks could not be read.');}
   let presetState=null;try{presetState=await hookPresets.snapshot();}catch(error){errors.push(error.message);}
-  return{hooks,hookPresets:presetState,skillImports:await imports(),available,skills:skillRows,plugins:pluginRows,servers,pluginsReviewed,pluginRevision,errors};
+  return{hooks,hookPresets:presetState,skillImports:await imports(),available,skills:skillRows,skillCatalog,plugins:pluginRows,servers,pluginsReviewed,pluginRevision,errors};
  }
  function safeAddress(value){try{const u=new URL(value);return u.origin+u.pathname;}catch{return'Configured server';}}
  function requireReview(command){if(command.reviewed!==true)throw Error('Review extension access before continuing.');}
@@ -154,7 +168,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
     pending.delete(command.token);
    }else if(command.type==='skillActivation'){
     if(!idOK(command.id)||!['on','off','user-only'].includes(command.activation))throw Error('Invalid skill action.');
-    const item=(await skillList()).find(s=>s.id===command.id);if(!item||!['bundled','user','project','plugin'].includes(item.scope))throw Error('This skill is no longer available. Refresh the list.');
+    const item=(await skillList()).skills.find(s=>s.id===command.id);if(!item||!['bundled','user','project','plugin'].includes(item.scope))throw Error('This skill is no longer available. Refresh the list.');
     const args=['skills',({'on':'enable','off':'disable','user-only':'user-only'})[command.activation],item.id,'--scope',scope(item.scope),'--json'];
     if(getState().activeProject?.root)args.push('--workspace',getState().activeProject.root);await cli(args);
    }else if(command.type==='createSkill'){

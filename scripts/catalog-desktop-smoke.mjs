@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {CURATED_EXTENSIONS} from '../src/shared/extension-catalog.mjs';
+import {checkSkillContext} from './skill-context-checks.mjs';
 
 // The real desktop renderer and preload talk to a deterministic main-process
 // catalog fixture. A fresh profile, disabled DNS and blocked HTTP(S) prevent
@@ -18,6 +19,7 @@ const report={variant,fixture:'isolated main-process catalog; real renderer and 
 const pass=message=>{report.checks.push(message);console.log(`PASS ${message}`);};
 async function until(check,label){const deadline=Date.now()+30000;while(Date.now()<deadline){const value=await check();if(value)return value;await new Promise(resolve=>setTimeout(resolve,70));}throw Error(`Timed out: ${label}`);}
 let app,page;
+const screenshot=async name=>{const file=path.join(output,`${name}.png`);await page.screenshot({path:file});report.screenshots.push(file);};
 try{
  app=await electron.launch({cwd:root,args:[...(process.env.MUSEBENCH_EXECUTABLE?[]:['.']),'--host-resolver-rules=MAP * ~NOTFOUND'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env,timeout:30000});
  page=await until(()=>app.windows().find(candidate=>!candidate.isClosed()&&candidate.url().startsWith('file:')&&/\/dist\/index\.html(?:[?#]|$)/.test(candidate.url())),'local desktop renderer');
@@ -32,6 +34,10 @@ try{
   ipcMain.handle('musebench:customize',async(_event,command)=>{
    globalThis.__catalogFixture.commands.push(structuredClone(command));
    if(command.type==='refresh')return{state};
+   if(command.type==='skillActivation'&&globalThis.__catalogFixture.skillContextActive){
+    const skill=state.skills.find(s=>s.id===command.id);if(!skill)throw Error('Unknown inspector fixture');
+    skill.activation=command.activation;skill.contextCost.startupTokens=command.activation==='on'?100:0;skill.contextCost.startupBytes=skill.contextCost.startupTokens*4;return{state};
+   }
    if(command.type==='catalogSearch'){
     const matches=entries.filter(entry=>entry.kind===command.kind&&`${entry.title} ${entry.description} ${entry.publisher}`.toLowerCase().includes(command.query.toLowerCase()));
     const offset=Number(command.cursor??0),limit=6;
@@ -64,6 +70,7 @@ try{
  const search=async title=>{await dialog.getByRole('textbox',{name:'Search catalog',exact:true}).fill(title);await dialog.getByRole('button',{name:'Search',exact:true}).click();await ready();};
  const open=async entry=>{await search(entry.title);await dialog.getByRole('button',{name:`View ${entry.title}`,exact:true}).first().click();};
  await ready();assert.equal(await dialog.locator('.extensions-sidebar [role="tab"]').count(),5);
+ await checkSkillContext({page,dialog,pass,screenshot,desktopApp:app});await ready();
  await dialog.getByRole('button',{name:'See all Popular',exact:true}).click();await dialog.getByRole('button',{name:'Back to all categories',exact:true}).click();
  assert.equal(await dialog.getByText(/Catalog operations are simulated/).count(),0,'Desktop must use native action text');
  pass('Desktop renderer and preload show the same compact rail and curated drilldown with native action labels');

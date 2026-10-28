@@ -1,5 +1,6 @@
 import type {CatalogPage,ExtensionKind} from './extension-catalog-types';
 import type {NativeHook} from './native-hooks.mjs';
+import type {InspectedSkill,SkillCatalogInfo} from './skill-context.mjs';
 export type CustomizeTab='skills'|'connectors'|'plugins'|'mcp'|'hooks';
 export interface ExtensionCapability {kind:string;count:number}
 export interface HookPreset {id:string;name:string;revision:string;hooks:NativeHook[]}
@@ -7,7 +8,7 @@ export interface HookPresetState {revision:string;items:HookPreset[]}
 export interface CustomizeState {simulation?:boolean;hooks?:{root:string;revision:string;items:NativeHook[]}|null;skillImports?:{title:string;folder:string;fingerprint:string;at:string}[];
  hookPresets?:HookPresetState|null;
  available:boolean;errors:string[];pluginsReviewed:boolean;pluginRevision:string|null;
- skills:{id:string;title:string;description:string;scope:string;activation:'on'|'off'|'user-only'}[];
+ skills:InspectedSkill[];skillCatalog?:SkillCatalogInfo;
  plugins:{id:string;title:string;description:string;version:string;enabled:boolean;valid:boolean;capabilities:ExtensionCapability[];reviewRequired:boolean}[];
  servers:{name:string;revision:string;transport:'stdio'|'streamable_http';address:string;enabled:boolean;reviewed:boolean;oauth:boolean}[];
 }

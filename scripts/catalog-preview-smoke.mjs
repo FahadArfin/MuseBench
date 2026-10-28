@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {CURATED_EXTENSIONS} from '../src/shared/extension-catalog.mjs';
+import {checkSkillContext} from './skill-context-checks.mjs';
 
 // All mutations use the preview's in-memory bridge in a new browser context.
 // No provider requests, downloads, account configuration or hooks are executed.
@@ -41,6 +42,7 @@ try{
  const back=()=>dialog.getByRole('button',{name:'Back to discovery',exact:true}).click();
 
  await catalogReady();
+ await checkSkillContext({page,dialog,pass,screenshot});await catalogReady();
  assert.deepEqual(await dialog.locator('.extensions-sidebar [role="tab"]').allTextContents(),['Skills','Connectors','Plugins','MCP servers','Hooks']);
  assert.equal(await dialog.getByRole('tab',{name:'Skills',exact:true}).getAttribute('aria-selected'),'true');
  assert.equal(await dialog.getByText(/Catalog operations are simulated/).count(),1);

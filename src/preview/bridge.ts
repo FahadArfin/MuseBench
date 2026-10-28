@@ -139,7 +139,7 @@ export function createPreviewBridge():MuseBenchBridge {
  function selectSite(key:string){sites.site=sites.items.find(i=>i.id===key)??site;sites.activeId=sites.site.id;sites.files=Object.entries(siteFiles).map(([path,text])=>({path,bytes:new TextEncoder().encode(text).length,sha1:'sample',mime:'text/html'}));sites.previewUrl=`data:text/html;charset=utf-8,${encodeURIComponent(siteFiles['index.html'])}`;}
  const hookPresets=createPreviewHookPresets();
  const hookProjects=new Map<string,NonNullable<CustomizeState['hooks']>>();
- const customize:CustomizeState={simulation:true,available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only'}],plugins:[],servers:[]};
+ const customize:CustomizeState={simulation:true,available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only',contextCost:{startupBytes:0,startupTokens:0,invokeBytes:2080,invokeTokens:520},diagnostics:[]}],skillCatalog:{diagnostics:[],omitted:0},plugins:[],servers:[]};
  const updateListeners=new Set<(state:import('../shared/types').AppUpdateState)=>void>();
  let appUpdate:import('../shared/types').AppUpdateState={version:'0.2.0',status:'idle',availableVersion:null,percent:0,lastChecked:null,error:null,simulation:true};
  const updateEmit=(patch:Partial<typeof appUpdate>)=>{appUpdate={...appUpdate,...patch};updateListeners.forEach(fn=>fn(copy(appUpdate)));};
@@ -271,7 +271,7 @@ export function createPreviewBridge():MuseBenchBridge {
     return {state:copy(customize),message:'Preview only: skill installation simulated.'};
    }
    if(command.type==='createSkill')customize.skills.push({id:id(),title:command.name,description:command.description,scope:'user',activation:'user-only'});
-   else if(command.type==='skillActivation'){const skill=customize.skills.find(s=>s.id===command.id);if(skill)skill.activation=command.activation;}
+   else if(command.type==='skillActivation'){const skill=customize.skills.find(s=>s.id===command.id);if(skill){skill.activation=command.activation;if(skill.id==='sample-skill')skill.contextCost={startupBytes:command.activation==='on'?288:0,startupTokens:command.activation==='on'?72:0,invokeBytes:2080,invokeTokens:520};}}
    else if(command.type!=='refresh')return desktop();
    return {state:copy(customize)};
   },

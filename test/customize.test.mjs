@@ -10,6 +10,33 @@ import {customizeBlocked} from '../src/shared/customize-policy.mjs';
 import {CURATED_EXTENSIONS} from '../src/shared/extension-catalog.mjs';
 import {APPROVED_LOCAL_CATALOG_RECIPES} from '../electron/catalog-local-server.mjs';
 test('Customize exposes its finite setup service',()=>assert.equal(typeof api.createCustomize,'function'));
+test('Customize refresh retains native context costs and global loader diagnostics',async()=>{
+ const f=await fixture(),calls=[];
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:async(_binary,args)=>{calls.push(args);return{stdout:JSON.stringify(args[0]==='skills'?{skills:[{id:'bundled:plan',name:'plan',scope:'bundled',activation:'on',context_cost:{startup_estimated_tokens:97,invoke_estimated_tokens:null},diagnostics:[{message:'Skill warning'}]}],diagnostics:[{code:'project-skills-untrusted'}]}:{plugins:[]})};}});
+ try{const {state}=await service.dispatch({type:'refresh'});assert.equal(state.skills[0].contextCost?.startupTokens,97);assert.deepEqual(state.skills[0].diagnostics,['Skill warning']);assert.deepEqual(state.skillCatalog.diagnostics,['project-skills-untrusted']);assert.equal(state.skillCatalog.omitted,0);assert.ok(Number.isFinite(Date.parse(state.skillCatalog.checkedAt)));assert(calls.every(args=>args[1]==='list'));}finally{await service.close();}
+});
+test('failed skill refresh keeps last observations visibly stale, rejects mutations, and recovers',async()=>{
+ const f=await fixture(),calls=[];let fail=false,tokens=97;
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:async(_binary,args)=>{calls.push(args);if(args[0]==='skills'&&fail)throw Error('offline');return{stdout:JSON.stringify(args[0]==='skills'?{skills:[{id:'bundled:plan',name:'plan',scope:'bundled',activation:'on',context_cost:{startup_estimated_tokens:tokens}}]}:{plugins:[]})};}});
+ try{
+  const first=await service.snapshot();fail=true;
+  const stale=await service.snapshot();assert.deepEqual(stale.skills,first.skills);assert.equal(stale.skillCatalog?.stale,true);assert.equal(stale.skillCatalog.checkedAt,first.skillCatalog.checkedAt);assert(stale.errors.includes('Skills could not be refreshed.'));
+  // A cached inventory is presentation data, never permission to change a skill.
+  await assert.rejects(service.dispatch({type:'skillActivation',id:'bundled:plan',activation:'off'}),/could not complete/);assert(calls.every(args=>args[1]==='list'));
+  stale.skills[0].title='changed returned object';assert.equal((await service.snapshot()).skills[0].title,'plan');
+  fail=false;tokens=61;const recovered=await service.snapshot();assert.equal(recovered.skills[0].contextCost.startupTokens,61);assert.notEqual(recovered.skillCatalog.stale,true);assert.equal(recovered.errors.length,0);
+ }finally{await service.close();}
+});
+for(const change of ['project','trust','binary'])test(`skill refresh does not reuse a catalog after ${change} changes`,async()=>{
+ const f=await fixture();let fail=false,trusted=true;
+ const current={runtime:{binary:'C:/muse.exe'},activeProject:{root:f.root}};
+ const service=api.createCustomize({getState:()=>current,environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:{...f.review,allowProject:async()=>trusted},run:async(_binary,args)=>{if(args[0]==='skills'&&fail)throw Error('offline');return{stdout:JSON.stringify({skills:[{id:'project:private',name:'private',scope:'project',activation:'on'}],plugins:[]})};}});
+ try{
+  assert.equal((await service.snapshot()).skills.length,1);fail=true;
+  if(change==='project')current.activeProject.root=path.join(f.root,'other');else if(change==='trust')trusted=false;else current.runtime.binary='C:/other-muse.exe';
+  const state=await service.snapshot();assert.deepEqual(state.skills,[]);assert.equal(state.skillCatalog,undefined);assert(state.errors.includes('Skills could not be refreshed.'));
+ }finally{await service.close();}
+});
 test('catalog discovery is read-only during active tasks and does not spawn Muse',async()=>{
  const f=await fixture();let calls=0;
  const catalog={search:async query=>({entries:[],query}),resolve:async()=>null};
