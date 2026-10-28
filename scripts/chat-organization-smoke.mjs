@@ -13,6 +13,17 @@ const root=await mkdtemp(path.resolve('artifacts/chat-organization','menu-'));
 const only=process.argv.includes('--preview-only')?'preview':process.argv.includes('--desktop-only')?'desktop':null;
 const reports=[];
 
+async function desktopPage(app){
+  const deadline=Date.now()+30000;
+  while(Date.now()<deadline){
+    // Hidden provider lookups may reach Playwright before the local renderer.
+    const page=app.windows().find(candidate=>!candidate.isClosed()&&candidate.url().startsWith('file:')&&/\/dist\/index\.html(?:[?#]|$)/.test(candidate.url()));
+    if(page)return page;
+    await new Promise(resolve=>setTimeout(resolve,70));
+  }
+  throw Error(`Local desktop renderer did not open; observed windows: ${JSON.stringify(app.windows().map(page=>page.url()))}`);
+}
+
 async function exercise(page,{variant,projectName,firstTitle,secondTitle,projectFile}){
   page.setDefaultTimeout(10000);
   const errors=[],report={variant,checks:[],errors};
@@ -227,7 +238,7 @@ try{
     const env={...process.env,MUSEBENCH_DATA_DIR:dataDir,MUSEBENCH_PROJECTS_DIR:path.join(root,'projects')};
     delete env.ELECTRON_RUN_AS_NODE;delete env.MUSEBENCH_DEV;
     const app=await electron.launch({args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});
-    try{await exercise(await app.firstWindow(),{variant:process.env.MUSEBENCH_EXECUTABLE?'packaged':'source',projectName:'Example project',firstTitle:'First chat',secondTitle:'Second chat',projectFile});}
+    try{await exercise(await desktopPage(app),{variant:process.env.MUSEBENCH_EXECUTABLE?'packaged':'source',projectName:'Example project',firstTitle:'First chat',secondTitle:'Second chat',projectFile});}
     finally{await app.close();}
   }
 }finally{

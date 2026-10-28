@@ -83,7 +83,11 @@ try{
     // and all subsequent navigation use the fixture sessions above.
     for(const window of BrowserWindow.getAllWindows())if(window.getParentWindow())window.webContents.stop();
   },dataDir);
-  page=await app.firstWindow();page.setDefaultTimeout(15000);page.on('pageerror',error=>report.errors.push(error.message));
+  // Account discovery may create a hidden provider window before Playwright
+  // observes the desktop renderer. Only the local app has the IPC bridge.
+  report.initialWindowURLs=app.windows().map(window=>window.url());
+  page=await until(()=>app.windows().find(candidate=>!candidate.isClosed()&&candidate.url().startsWith('file:')&&/\/dist\/index\.html(?:[?#]|$)/.test(candidate.url())),'local desktop renderer');
+  report.selectedRendererURL=page.url();page.setDefaultTimeout(15000);page.on('pageerror',error=>report.errors.push(error.message));
   await page.waitForFunction(()=>Boolean(window.musebench));
   await page.getByRole('group',{name:'Choose workspace',exact:true}).waitFor();
   await page.evaluate(()=>window.musebench.personal({type:'navigate',destination:'chat'}));
