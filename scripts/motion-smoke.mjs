@@ -5,6 +5,7 @@ import path from 'node:path';
 import {createServer} from 'vite';
 import {build} from 'esbuild';
 import {chromium,_electron as electron} from 'playwright';
+import {checkMotionRefinements} from './motion-refinement-checks.mjs';
 
 const desktop=process.argv.includes('--desktop'),audit=process.argv.includes('--audit');
 const variant=desktop?'desktop':'preview';
@@ -88,6 +89,7 @@ try{
   pass('Five rapid reversals settle at the correct height with no queued transitions');
  }
  await page.getByRole('button',{name:'Muse Code',exact:true}).click();await settle();await shot('code-chat');
+ if(!audit)await checkMotionRefinements({page,pass,report,shot});
  if(!audit){
   for(const name of ['Pinned chats','Recents','MuseBench sample']){
    const trigger=page.getByRole('button',{name:`Collapse ${name}`,exact:true});

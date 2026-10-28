@@ -40,7 +40,6 @@
 /* Active navigation has a quiet tint and retains its shape/label cues. */
 .rail-button.selected,
 .navigation-row.active,
-.work-mode-switch button[aria-pressed="true"],
 .settings-nav button.active,
 .theme-segments button[aria-pressed="true"],
 .work-team-filters button.selected,

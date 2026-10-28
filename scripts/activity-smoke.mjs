@@ -26,12 +26,13 @@ const record=name=>{report.checks.push(name);console.log(`PASS ${name}`);};
 const screenshot=async name=>page.screenshot({path:path.join(fixture,`${name}.png`)});
 try{
  app=await electron.launch({cwd:root,args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});page=await app.firstWindow();page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(error.message));await page.waitForFunction(()=>Boolean(window.musebench));await page.setViewportSize({width:1440,height:960});
+ await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.getByRole('button',{name:'Toggle Sub-Agents panel'}).waitFor();assert.equal(await page.getByRole('button',{name:'Toggle review panel'}).count(),0);assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);
  assert.equal(await page.getByRole('complementary',{name:'Sub-Agents panel',exact:true}).count(),0);
  assert.equal(await page.getByRole('complementary',{name:'File changes',exact:true}).isVisible(),false);record('Chat starts full width with both panels closed');
  const state=await page.evaluate(()=>window.musebench.getState());assert.equal(state.task.changes.length,2);assert.equal(state.task.changes.reduce((n,f)=>n+f.additions,0),3);assert.equal(state.task.changes.reduce((n,f)=>n+f.deletions,0),2);record('Real file snapshots report two files +3 -2 with unchanged middle lines excluded');
  await screenshot('conversation');
- await page.getByRole('button',{name:/Worked for/}).click();await page.getByText('Read file',{exact:true}).first().click();assert.match(await page.getByLabel('Read file output').first().innerText(),/# Shop/);record('Inline activity expands into the actual tool output');
+ await page.getByRole('button',{name:/Worked for/}).click();await page.getByText('Read file',{exact:true}).first().click();await page.evaluate(async()=>{document.body.getBoundingClientRect();await Promise.allSettled(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished));});assert.match(await page.getByLabel('Read file output').first().innerText(),/# Shop/);record('Inline activity expands into the actual tool output');
  await page.getByRole('button',{name:'Toggle Sub-Agents panel'}).click();await page.getByRole('tab',{name:/Tasks/}).waitFor();await screenshot('threads');
  await page.locator('.work-thread-row').first().click();await page.getByRole('button',{name:'Continue in chat'}).waitFor();assert.match(await page.locator('.work-thread-prompt').innerText(),/Improve the shop/);record('Threads lists saved requests and opens their activity details');
  await page.getByRole('button',{name:'All tasks'}).click();await page.getByRole('tab',{name:/Agents/}).click();assert.match(await page.locator('.work-threads-empty').innerText(),/No agents or workflows reported/);record('Agent view does not invent child agents');
@@ -47,7 +48,7 @@ try{
  assert.equal(await readme.locator('.code-line.context').filter({hasText:'KEEP THIS'}).count(),1);assert.equal(await readme.locator('.code-line.removed').count(),2);assert.equal(await readme.locator('.code-line.added').count(),2);
  assert.equal(await review.locator('.diff').count(),2);await review.getByLabel('File diff for notes.txt').waitFor();
  assert.equal(await review.getByRole('heading',{name:'Changed files',exact:true}).count(),0);assert.equal(await review.getByRole('button',{name:'Refresh',exact:true}).count(),0);
- await readme.getByRole('button',{name:'README.md',exact:true}).click();assert.equal(await readme.getByLabel('File diff for README.md').count(),0);await readme.getByRole('button',{name:'README.md',exact:true}).click();
+ await readme.getByRole('button',{name:'README.md',exact:true}).click();await readme.getByLabel('File diff for README.md').waitFor({state:'detached'});await readme.getByRole('button',{name:'README.md',exact:true}).click();
  await assert.rejects(page.evaluate(()=>window.musebench.openProjectFile({taskId:'stale',path:'README.md'})),/active task/);
  record('Review stacks every changed file, collapses independently, and rejects stale editor requests');record('Inline edited-files card exposes exact per-file counts and opens the selected diff');await screenshot('selected-diff');
  await page.getByRole('button',{name:'Close details panel'}).click();await card.getByRole('button',{name:'View changes',exact:true}).focus();await page.keyboard.press('Enter');await review.waitFor();await page.getByRole('button',{name:'Close details panel'}).click();record('View changes opens file details using the keyboard');
@@ -55,8 +56,14 @@ try{
  const moreFiles=structuredClone(state);moreFiles.task.changes.push(...Array.from({length:3},(_,i)=>({path:`extra-${i}.txt`,status:'added',additions:1,deletions:0,before:'',after:'fixture\n'})));
  await app.evaluate(({BrowserWindow},value)=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('MuseBench')).webContents.send('musebench:update',value),moreFiles);
  const moreCard=page.getByRole('region',{name:'Edited 5 files',exact:true});await moreCard.waitFor();assert.equal(await moreCard.locator('.changed-file-row').count(),3);
- await moreCard.getByRole('button',{name:'Show 2 more files',exact:true}).click();assert.equal(await moreCard.locator('.changed-file-row').count(),5);
- await moreCard.getByRole('button',{name:'Show fewer files',exact:true}).click();assert.equal(await moreCard.locator('.changed-file-row').count(),3);record('Long file lists expand and collapse without hiding the initial three files');
+ const fileFrames=async button=>button.evaluate(button=>new Promise(resolve=>{
+  const card=button.closest('.changed-files'),samples=[card.getBoundingClientRect().height],start=performance.now();button.click();
+  const sample=()=>{samples.push(card.getBoundingClientRect().height);if(performance.now()-start<450)requestAnimationFrame(sample);else resolve(samples);};requestAnimationFrame(sample);
+ }));
+ const expanded=await fileFrames(moreCard.getByRole('button',{name:'Show 2 more files',exact:true}));assert.equal(await moreCard.locator('.changed-file-row').count(),5);
+ assert(expanded.some(h=>h>expanded[0]+1&&h<expanded.at(-1)-1),'Additional changed files must expand smoothly');
+ const contracted=await fileFrames(moreCard.getByRole('button',{name:'Show fewer files',exact:true}));assert.equal(await moreCard.locator('.changed-file-row').count(),3);
+ assert(contracted.some(h=>h<contracted[0]-1&&h>contracted.at(-1)+1),'Additional changed files must collapse smoothly');record('Long file lists interpolate, release closed rows and keep the initial three files');
  await page.setViewportSize({width:430,height:860});const cardBounds=await moreCard.boundingBox();assert.ok(cardBounds.x>=0&&cardBounds.x+cardBounds.width<=431);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await screenshot('narrow-files');await page.setViewportSize({width:1440,height:960});
  // Simulate only renderer updates with labelled fixtures. Production controller
  // correlation/cancellation is verified in exec-controller.test.mjs.

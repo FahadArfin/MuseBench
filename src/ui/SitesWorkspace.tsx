@@ -1,4 +1,5 @@
 import {useSurfaceMotion} from './useSurfaceMotion';
+import {MotionDisclosure} from './MotionDisclosure';
 import {UpdateToolbar} from './AppUpdates';
 import {NavigationButtons} from './NavigationHistory';
 import {useContext} from 'react';
@@ -66,11 +67,12 @@ export function useSites(active: boolean): { state: SitesState | null } & SitesA
 
 export function SitesSidebar({ state, selected, onHome, onSelect }: { state: SitesState | null; selected: boolean; onHome: () => void; onSelect: (id: string) => void | Promise<void> }) {
   const [pending, setPending] = useState(false);
+  const listId=useId();
   const [error, setError] = useState('');
   const select = async (id: string) => { setPending(true); setError(''); try { await onSelect(id); } catch (caught) { setError(errorText(caught)); } finally { setPending(false); } };
   return <section className="sites-sidebar" aria-label="Sites">
-    <button type="button" className={`sites-sidebar-home ${selected ? 'selected' : ''}`} aria-label="All sites" onClick={onHome}><Globe2 size={17} /><span>Sites</span><small>{state?.items.length ?? 0}</small></button>
-    <nav aria-label="Saved sites" hidden={!selected}>{state?.items.map(site => <button type="button" key={site.id} className={`sites-sidebar-item ${selected && state.activeId === site.id ? 'selected' : ''}`} disabled={pending || state.busy || state.generation?.busy} onClick={() => void select(site.id)} title={`${site.title} · ${siteLabel(site)}`}><span className={`sites-status-dot ${site.status}`} /><span>{site.title}</span></button>)}</nav>
+    <button type="button" className={`sites-sidebar-home ${selected ? 'selected' : ''}`} aria-label="All sites" aria-expanded={selected} aria-controls={listId} onClick={onHome}><Globe2 size={17} /><span>Sites</span><small>{state?.items.length ?? 0}</small></button>
+    <MotionDisclosure id={listId} open={selected}><nav aria-label="Saved sites">{state?.items.map(site => <button type="button" key={site.id} className={`sites-sidebar-item ${selected && state.activeId === site.id ? 'selected' : ''}`} disabled={pending || state.busy || state.generation?.busy} onClick={() => void select(site.id)} title={`${site.title} · ${siteLabel(site)}`}><span className={`sites-status-dot ${site.status}`} /><span>{site.title}</span></button>)}</nav></MotionDisclosure>
     {error && <p role="alert" className="sites-danger-text">{error}</p>}
   </section>;
 }

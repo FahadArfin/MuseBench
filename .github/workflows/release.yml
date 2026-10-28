@@ -38,6 +38,7 @@ jobs:
       - run: npm run test:profile-identity
       - run: npm run test:typography
       - run: npm run test:motion
+      - run: npm run test:activity
       - run: npm run test:child-inspection
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness
@@ -61,6 +62,7 @@ jobs:
             artifacts/catalog-desktop/**/report.json
             artifacts/billing-ui/**/report.json
             artifacts/motion/**/report.json
+            artifacts/activity-ui/**/report.json
             artifacts/child-inspection-ui/**/report.json
       - uses: actions/upload-artifact@v4
         with:

@@ -4,6 +4,7 @@ import {useContext} from 'react';
 import {BrowserPreviewContext} from './BrowserPreviewContext';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import {useSurfaceMotion} from './useSurfaceMotion';
+import {MotionDisclosure} from './MotionDisclosure';
 import {motionScrollBehavior} from './motion.mjs';
 import { ArrowDownToLine, ArrowLeft, ArrowRight, ArrowUp, BriefcaseBusiness, Check, ChevronDown, CircleAlert, Clapperboard, Code2, ExternalLink, FileJson2, FileText, FolderOpen, LayoutDashboard, LoaderCircle, MessageSquare, PanelLeft, Paperclip, Play, Presentation, RefreshCw, Search, Settings2, Square, SquarePen, X, type LucideIcon } from 'lucide-react';
 import Markdown from 'react-markdown';
@@ -69,7 +70,7 @@ export function WorkSidebar({ state, onNew, onSelect, disabled = false, children
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(true);
   const search = useRef<HTMLInputElement>(null);
-  const listId = useId();
+  const listId = useId(), searchId=useId();
   useEffect(() => { if (searchOpen) { setExpanded(true); search.current?.focus(); } else setQuery(''); }, [searchOpen]);
   const [error, setError] = useState('');
   const items = (state?.items ?? []).filter(item => `${item.title} ${item.team} ${item.kind}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
@@ -77,12 +78,12 @@ export function WorkSidebar({ state, onNew, onSelect, disabled = false, children
   return <div className="work-library">
     <button type="button" className="navigation-row work-new" onClick={onNew} disabled={disabled}><SquarePen size={16} /><span>New work</span></button>
     {children}
-    <div className="section-label work-recents-heading"><button className="sidebar-section-toggle" type="button" aria-expanded={expanded || !!query} aria-controls={listId} onClick={()=>{setExpanded(!expanded);setQuery('');}}>Recents<ChevronDown size={12} className={expanded ? '' : 'folded'}/></button><button className="icon-button" type="button" aria-label="Search saved work" aria-expanded={searchOpen} onClick={()=>{onSearchOpenChange(!searchOpen);setExpanded(true);}}><Search size={15}/></button></div>
-    <label className="work-sidebar-search" hidden={!searchOpen}><Search size={14} /><input ref={search} aria-label="Search saved work" placeholder="Search your work" value={query} onChange={event => setQuery(event.target.value)} />{query && <button type="button" aria-label="Clear saved work search" onClick={() => setQuery('')}><X size={13} /></button>}</label>
-    <nav id={listId} className="work-library-list" aria-label="Saved work" hidden={!expanded && !query}>
+    <div className="section-label work-recents-heading"><button className="sidebar-section-toggle" type="button" aria-expanded={expanded || !!query} aria-controls={listId} onClick={()=>{setExpanded(!expanded);setQuery('');}}>Recents<ChevronDown size={12} className={expanded ? '' : 'folded'}/></button><button className="icon-button" type="button" aria-label="Search saved work" aria-controls={searchId} aria-expanded={searchOpen} onClick={()=>{onSearchOpenChange(!searchOpen);setExpanded(true);}}><Search size={15}/></button></div>
+    <MotionDisclosure id={searchId} open={searchOpen}><label className="work-sidebar-search"><Search size={14} /><input ref={search} aria-label="Search saved work" placeholder="Search your work" value={query} onChange={event => setQuery(event.target.value)} />{query && <button type="button" aria-label="Clear saved work search" onClick={() => setQuery('')}><X size={13} /></button>}</label></MotionDisclosure>
+    <MotionDisclosure id={listId} open={expanded || !!query}><nav className="work-library-list" aria-label="Saved work">
       {items.map(item => { const Icon = kindIcons[item.kind]; return <button key={item.id} type="button" className={`work-library-item ${state?.activeId === item.id ? 'selected' : ''}`} aria-current={state?.activeId === item.id ? 'page' : undefined} title={item.title} disabled={disabled} onClick={() => void select(item.id)}><Icon size={15} /><span><strong>{item.title}</strong><small>{teamLabel(item.team)}{item.demo ? ' · Sample' : ''}</small></span><time dateTime={item.updatedAt}>{shortDate(item.updatedAt)}</time></button>; })}
       {!items.length && <p className="work-library-empty">{!state ? 'Loading your work…' : query ? 'No work matches your search.' : 'Your dashboards, stories, and documents will appear here.'}</p>}
-    </nav>
+    </nav></MotionDisclosure>
     {error && <p className="work-sidebar-error" role="alert">{error}</p>}
   </div>;
 }

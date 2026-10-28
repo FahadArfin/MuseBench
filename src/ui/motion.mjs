@@ -30,3 +30,31 @@ export function observeMotionPreference(){
  media.addEventListener('change',settle);
  return()=>{observer.disconnect();media.removeEventListener('change',settle);for(const animation of active.values())animation.cancel();active.clear();};
 }
+
+// CSS keeps native details painted while their height closes. Remove that
+// content from keyboard navigation immediately, without measuring each row.
+export function observeDetailsMotion(root){
+ const owned=new WeakSet();
+ const restore=element=>{if(owned.has(element)){element.inert=false;owned.delete(element);}};
+ const update=details=>{
+  if(!details.closest('.app')||details.matches('.diff-editor-menu'))return;
+  const summary=details.querySelector(':scope > summary');
+  if(!details.open&&summary&&details.contains(document.activeElement)&&!summary.contains(document.activeElement))summary.focus({preventScroll:true});
+  for(const child of details.children){
+   if(!(child instanceof HTMLElement)||child===summary)continue;
+   if(details.open)restore(child);
+   else if(!child.inert){child.inert=true;owned.add(child);}
+  }
+ };
+ const observer=new MutationObserver(records=>{
+  const changed=new Set();
+  for(const record of records){
+   if(!(record.target instanceof HTMLDetailsElement))continue;
+   for(const removed of record.removedNodes)if(removed.parentElement!==record.target)restore(removed);
+   changed.add(record.target);
+  }
+  for(const details of changed)update(details);
+ });
+ observer.observe(root,{attributes:true,attributeFilter:['open'],childList:true,subtree:true});
+ return()=>{observer.disconnect();for(const element of root.querySelectorAll('[inert]'))restore(element);};
+}

@@ -1,4 +1,5 @@
 import {useSurfaceMotion} from './useSurfaceMotion';
+import {MotionDisclosure} from './MotionDisclosure';
 import {UpdateToolbar} from './AppUpdates';
 import {NavigationButtons} from './NavigationHistory';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
@@ -82,13 +83,14 @@ export function useSpaces(active: boolean): { state: SpacesState | null; command
 export function SpacesSidebar({ state, onSelect, onHome, selected }: { state: SpacesState | null; onSelect: (id: string) => void | Promise<void>; onHome: () => void; selected: boolean }) {
   const [error, setError] = useState('');
   const [selecting, setSelecting] = useState(false);
+  const listId=useId();
   const select = async (id: string) => {
     setError(''); setSelecting(true);
     try { await onSelect(id); } catch (caught) { setError(errorText(caught)); } finally { setSelecting(false); }
   };
   return <section className="spaces-sidebar" aria-label="Shared spaces">
-    <button type="button" className={`spaces-sidebar-home ${selected ? 'selected' : ''}`} aria-label="All spaces" onClick={onHome}><Users size={17} /><span>Spaces</span><small>{state?.spaces.length ?? 0}</small></button>
-    <nav aria-label="Saved spaces" hidden={!selected}>{state?.spaces.map(space => <button key={space.id} type="button" className={`spaces-sidebar-item ${selected && state.activeId === space.id ? 'selected' : ''}`} disabled={selecting || state.busy} title={`${space.name} · ${localOrigin(space.url) ? 'This computer only' : hostLabel(space.url)}`} onClick={() => void select(space.id)}><span className="spaces-mini-icon">{space.name.slice(0, 1).toLocaleUpperCase() || 'S'}</span><span>{space.name}</span>{localOrigin(space.url) ? <Monitor size={12} /> : <Globe2 size={12} />}</button>)}</nav>
+    <button type="button" className={`spaces-sidebar-home ${selected ? 'selected' : ''}`} aria-label="All spaces" aria-expanded={selected} aria-controls={listId} onClick={onHome}><Users size={17} /><span>Spaces</span><small>{state?.spaces.length ?? 0}</small></button>
+    <MotionDisclosure id={listId} open={selected}><nav aria-label="Saved spaces">{state?.spaces.map(space => <button key={space.id} type="button" className={`spaces-sidebar-item ${selected && state.activeId === space.id ? 'selected' : ''}`} disabled={selecting || state.busy} title={`${space.name} · ${localOrigin(space.url) ? 'This computer only' : hostLabel(space.url)}`} onClick={() => void select(space.id)}><span className="spaces-mini-icon">{space.name.slice(0, 1).toLocaleUpperCase() || 'S'}</span><span>{space.name}</span>{localOrigin(space.url) ? <Monitor size={12} /> : <Globe2 size={12} />}</button>)}</nav></MotionDisclosure>
     
     {error && <p className="spaces-sidebar-error" role="alert">{error}</p>}
   </section>;

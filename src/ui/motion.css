@@ -1,5 +1,14 @@
 /* Shared preview/desktop motion. No permanent compositing layers or per-message animations. */
 :root{--motion-fast:120ms;--motion-popover:140ms;--motion-dialog:200ms;--motion-disclosure:280ms;--motion-ease:cubic-bezier(.22,1,.36,1)}
+/* Native details retain their summary semantics and animate without measuring
+   every tool row in JavaScript. Positioned menus have no in-flow height. */
+@supports (interpolate-size:allow-keywords) and selector(::details-content){
+ .app details:not(.diff-editor-menu)::details-content{interpolate-size:allow-keywords;height:0;overflow:clip;opacity:0;transition:height var(--motion-disclosure) var(--motion-ease),opacity 160ms ease,content-visibility var(--motion-disclosure) allow-discrete}
+ .app details:not(.diff-editor-menu)[open]::details-content{height:auto;opacity:1}
+}
+.diff-disclosure,.work-disclosure,.changed-files-more>svg,.app details>summary>.lucide-chevron-down{transition:transform var(--motion-disclosure) var(--motion-ease)}
+.diff-file-toggle[aria-expanded="true"]>.diff-disclosure{transform:rotate(90deg)}
+.app details>summary{transition:background-color var(--motion-fast) ease,color var(--motion-fast) ease}
 .motion-disclosure{display:grid;grid-template-rows:0fr;opacity:0;visibility:hidden;transition:grid-template-rows var(--motion-disclosure) var(--motion-ease),opacity 160ms ease,visibility 0s linear var(--motion-disclosure)}
 .motion-disclosure[data-open="true"]{grid-template-rows:1fr;opacity:1;visibility:visible;transition:grid-template-rows var(--motion-disclosure) var(--motion-ease),opacity 180ms ease,visibility 0s}
 .motion-disclosure-clip{min-height:0;overflow:clip}
@@ -19,3 +28,5 @@
 /* Settle final state, including delays, pseudo-elements and infinite loaders. */
 :root[data-reduced-motion="true"] *,:root[data-reduced-motion="true"] *::before,:root[data-reduced-motion="true"] *::after{animation:none!important;animation-delay:0s!important;transition:none!important;transition-delay:0s!important;scroll-behavior:auto!important}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;animation-delay:0s!important;transition:none!important;transition-delay:0s!important;scroll-behavior:auto!important}}
+:root[data-reduced-motion="true"] details::details-content{transition:none!important}
+@media(prefers-reduced-motion:reduce){details::details-content{transition:none!important}}

@@ -9,7 +9,7 @@ import './brand.css';
 import './sidebar.css';
 import './window-chrome.css';
 import './motion.css';
-import {observeMotionPreference} from './motion.mjs';
+import {observeDetailsMotion,observeMotionPreference} from './motion.mjs';
 import {readPreferences} from './preferences.mjs';
 import {LaunchExperience} from './LaunchAnimation';
 
@@ -17,6 +17,7 @@ import {LaunchExperience} from './LaunchAnimation';
 export function mountApp(preview?:React.ContextType<typeof BrowserPreviewContext>){
  document.documentElement.dataset.reducedMotion=String(readPreferences().reducedMotion);
  observeMotionPreference();
+ observeDetailsMotion(document.getElementById('root')!);
  document.documentElement.style.setProperty('--font-ui',UI_FONT_FAMILY);
  document.documentElement.style.setProperty('--mono-font',MONO_FONT_FAMILY);
  // The native one-shot claim survives renderer reloads. Preview replay is explicit.

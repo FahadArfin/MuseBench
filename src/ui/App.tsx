@@ -8,6 +8,7 @@ import {CodeImages,useImageUploads} from './CodeImages';
 import {PromptQueue} from './PromptQueue';
 import {CreateProject} from './CreateProject';
 import {SidebarChrome} from './SidebarChrome';
+import {WorkModeSwitch,type WorkModeTransition} from './WorkModeSwitch';
 import {ChatFind} from './ChatFind';
 import {CustomizeIcon} from './CustomizeIcon';
 import {NavigationButtons,NavigationHistoryContext,useNavigationHistory} from './NavigationHistory';
@@ -121,7 +122,9 @@ export default function App() {
   const personalDestination = personalState?.destination ?? 'chat';
   const selectProduct = (next: 'code' | 'personal') => { setProduct(next); setMobileNav(false); requestAnimationFrame(()=>{const target=document.querySelector<HTMLButtonElement>('.sidebar:not([hidden]) .product-mode-switch [aria-pressed="true"]');if(target?.checkVisibility())target.focus({preventScroll:true});}); };
   const navigatePersonal = (destination: PersonalDestination) => { setProduct('personal'); setPersonalMode('chat'); setMobileNav(false); void personalCommand({ type: 'navigate', destination }); };
-  const workModeSwitch=<div className="work-mode-switch" role="group" aria-label="Chat or Work"><button type="button" aria-label="Chat" title="Meta AI chat" aria-pressed={personalMode==='chat'} onClick={()=>navigatePersonal('chat')}><MessageSquare size={14}/><span>Chat</span></button><button type="button" aria-label="Work" title="Documents, spreadsheets, and presentations" aria-pressed={personalMode==='work'} onClick={()=>setPersonalMode('work')}><Files size={14}/><span>Work</span></button></div>;
+  const workModeTransition=useRef<WorkModeTransition|undefined>(undefined);
+  useLayoutEffect(()=>{workModeTransition.current=undefined;},[personalMode]);
+  const workModeSwitch=<WorkModeSwitch mode={personalMode} origin={workModeTransition.current} onChange={(mode,fraction)=>{workModeTransition.current={mode,fraction};if(mode==='chat')navigatePersonal('chat');else setPersonalMode('work');}}/>;
   const [modal, setModal] = useState<'workflows' | 'handoff' | 'session' | 'worktrees' | 'updates' | 'create-project' | 'runtime' | 'settings' | 'search' | 'history' | 'command' | 'extensions' | 'context' | null>(null);
   const [commandView,setCommandView]=useState<CommandView>({id:'help'});
   const [skills,setSkills]=useState<MuseSkill[]>([]),[skillsStatus,setSkillsStatus]=useState('idle');

@@ -9,7 +9,7 @@
 .work-status-icon { display: inline-flex; }
 .run-activity-open { display: grid; place-items: center; color: var(--muted); width: 26px; height: 26px; border-radius: 5px; }
 .run-activity-open:hover { color: var(--text); background: var(--surface-hover); }
-.work-disclosure { transition: transform .15s ease; }
+.work-disclosure { transition: transform var(--motion-disclosure) var(--motion-ease); }
 .work-disclosure.is-open, .work-activity-item[open] > summary > .work-disclosure { transform: rotate(90deg); }
 .run-current-action { display: flex; align-items: baseline; gap: 7px; margin: 3px 0 2px 9px; min-width: 0; max-width: 100%; line-height: 1.7; font-size: 11px; }
 .run-current-line { align-self: stretch; min-height: 15px; width: 1px; background: var(--border); margin-right: 5px; flex-shrink: 0; }
@@ -21,7 +21,7 @@
 .run-activity-expanded .work-run-details { max-height: 420px; overflow: auto; padding-right: 5px; }
 .work-activity-list { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .work-activity-item { border: 1px solid transparent; border-radius: 6px; min-width: 0; }
-.work-activity-item[open] { border-color: var(--border); background: color-mix(in srgb, var(--surface) 45%, var(--bg)); margin: 3px 0; }
+.work-activity-item[open] { border-color: var(--border); background: color-mix(in srgb, var(--surface) 45%, var(--bg)); }
 .work-activity-item > summary { display: flex; align-items: center; gap: 8px; list-style: none; padding: 8px; cursor: pointer; min-width: 0; border-radius: 5px; font-size: 11px; }
 .work-activity-item > summary::-webkit-details-marker { display: none; }
 .work-activity-item > summary:hover { color: var(--text); background: var(--surface-hover); }

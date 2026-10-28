@@ -1,8 +1,9 @@
-.work-mode-switch{display:inline-flex;align-items:center;gap:2px;padding:3px;background:var(--surface,#232323);border:1px solid var(--border,#353535);border-radius:999px;flex-shrink:0}
+.work-mode-switch{position:relative;isolation:isolate;display:inline-grid;grid-template-columns:1fr 1fr;align-items:center;gap:2px;padding:3px;background:var(--surface,#232323);border:1px solid var(--border,#353535);border-radius:999px;flex-shrink:0}
+.work-mode-indicator{position:absolute;inset:3px auto 3px 3px;width:calc((100% - 8px)/2);border-radius:999px;background:var(--accent-soft);box-shadow:0 1px 3px #0002;pointer-events:none;z-index:-1}
 .work-spaces-navigation{display:flex;flex-direction:column;flex:1;min-height:0;overflow:auto}
 .work-spaces-navigation>.work-library{flex:1;min-height:160px}
 .work-mode-switch button{border:0;background:transparent;color:var(--muted,#a4a4a4);border-radius:999px;display:flex;align-items:center;justify-content:center;min-width:88px;gap:7px;padding:6px 16px;font-size:12px;cursor:pointer}
-.work-mode-switch button[aria-pressed=true]{background:var(--surface-hover,#363636);color:var(--text,#eee);box-shadow:0 1px 3px #0002}
+.work-mode-switch button[aria-pressed=true]{color:var(--accent)}
 .work-mode-switch button:hover{color:var(--text,#eee)}
 .personal-sidebar>.work-mode-switch{margin:2px 14px 16px;display:flex}
 .personal-sidebar>.work-mode-switch button{flex:1;justify-content:center}

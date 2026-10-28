@@ -2,7 +2,8 @@ import {NativeQuestion} from './NativeQuestion';
 import {ValidationPanel} from './ValidationPanel';
 import {RuntimeCapabilities} from './RuntimeCapabilities';
 import {computeFileDiff} from '../shared/file-diff.mjs';
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import {MotionDisclosure} from './MotionDisclosure';
 import { Check, ChevronDown, ChevronRight, Circle, ExternalLink, FileCode2, Files, FolderOpen, History, Info, LoaderCircle, Play, RefreshCw, ShieldCheck, Square, Terminal, X } from 'lucide-react';
 import type { Action, AppState, FileChange, ShellResult } from '../shared/types';
 import { permissionDetails } from './permissions.mjs';
@@ -37,6 +38,7 @@ export function Modal({ title, children, close, className = '' }: { title: strin
 
 function Diff({ file, taskId }: { file: FileChange; taskId: string }) {
   const [collapsed, setCollapsed] = useState(false);
+  const contentId = useId();
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState('');
   const menu = useRef<HTMLDetailsElement>(null);
@@ -57,8 +59,8 @@ function Diff({ file, taskId }: { file: FileChange; taskId: string }) {
   const unavailable = file.status === 'deleted';
   return <section className="diff" data-file-path={file.path} aria-label={`Changes in ${file.path}`}>
     <div className="diff-toolbar">
-      <button className="diff-file-toggle" aria-expanded={!collapsed} onClick={() => setCollapsed(!collapsed)} title={file.path}>
-        {collapsed ? <ChevronRight size={13}/> : <ChevronDown size={13}/>}<FileCode2 size={14}/><span>{file.path}</span>
+      <button className="diff-file-toggle" aria-expanded={!collapsed} aria-controls={contentId} onClick={() => setCollapsed(!collapsed)} title={file.path}>
+        <ChevronRight className="diff-disclosure" size={13}/><FileCode2 size={14}/><span>{file.path}</span>
       </button>
       <div className="diff-file-actions">
         {file.binary ? <span className="diff-file-kind">Binary</span> : <span className="diff-counts"><span className="additions">{file.approximate?'~':''}+{file.additions}</span><span className="deletions">−{file.deletions}</span></span>}
@@ -67,10 +69,10 @@ function Diff({ file, taskId }: { file: FileChange; taskId: string }) {
       </div>
     </div>
     {error && <p className="diff-open-error" role="alert">{error}</p>}
-    {!collapsed && (file.binary ? <p className="empty-copy">Binary file. Text comparison is unavailable.</p> : <>
+    <MotionDisclosure id={contentId} open={!collapsed} unmountWhenClosed>{()=>file.binary ? <p className="empty-copy">Binary file. Text comparison is unavailable.</p> : <>
       {(comparison.approximate || comparison.truncated || comparison.rows.length > 3000) && <p className="diff-notice">{comparison.approximate?'Large comparison: line counts are approximate. ':''}{comparison.truncated||comparison.rows.length>3000?'Showing the first 3,000 rows. Open in your editor for the full contents.':''}</p>}
       <div className="diff-code" tabIndex={0} aria-label={`File diff for ${file.path}`}>{comparison.rows.slice(0,3000).map((row,i)=><div className={`code-line ${row.kind}`} key={i}><span className="line-number">{row.oldLine ?? ''}</span><span className="line-number">{row.newLine ?? ''}</span><span className="line-sign">{row.kind==='added'?'+':row.kind==='removed'?'−':' '}</span><code>{row.text.replace(/\r$/,'')||' '}{row.noNewline&&<small className="no-newline"> No newline at end of file</small>}</code></div>)}</div>
-    </>)}
+    </>}</MotionDisclosure>
   </section>;
 }
 
