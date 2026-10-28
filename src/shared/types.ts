@@ -32,7 +32,7 @@ export type Action = {type:'saveValidationProfile';projectId:string;scripts:stri
   | {type:'createWorktree';projectId:string;branch:string;base:string} | {type:'openWorktree';projectId:string;id:string}
   | {type:'moveSidebarItem';kind:'project'|'chat';id:string;section:'projects'|'project'|'pinned'|'recents';projectId?:string;beforeId?:string|null}
   | {type:'createProject';name:string;goals:string;context:string}
-  | {type:"renameTask";title:string} | {type:"setMemories";text:string} | {type:"setGoal";objective:string;status:"active"|"paused"}
+  | {type:"renameTask";id?:string;title:string} | {type:"setMemories";text:string} | {type:"setGoal";objective:string;status:"active"|"paused"}
   | {type:'openProject';path:string} | {type:'selectProject';id:string} | {type:'selectTask';id:string} | {type:'createDemo'} | {type:'createCommandCopy'}
   | {type:'newTask';request:string;mode:'manual'|'muse'|'demo';runOptions?:RunOptions} | {type:'setRunOptions';runOptions:RunOptions} | {type:'setExecutionAccess';taskId:string;fullAccess:boolean}
   | {type:'updatePlan';plan:string;criteria:string[]} | {type:'approvePlan'} | {type:'applyDemo'}
@@ -43,7 +43,7 @@ export type Action = {type:'saveValidationProfile';projectId:string;scripts:stri
   | {type:'clearError'}
   | {type:'setProjectInstructions';projectId:string;text:string}
   | {type:'saveDraft';projectId:string;taskId:string|null;text:string;images?:CodeImage[];files?:ContextFile[];mode?:'chat'|'plan'}
-  | {type:'deleteTask';id:string}
+  | {type:'deleteTask';id:string;allowUnarchived?:boolean}
   | {type:'setTaskFlags';id:string;pinned?:boolean;archived?:boolean}
   | {type:'forkTask';messageId:string}
   | {type:'queueMessage';text:string;images?:CodeImage[];files?:ContextFile[];mode?:'chat'|'plan';runOptions?:RunOptions}

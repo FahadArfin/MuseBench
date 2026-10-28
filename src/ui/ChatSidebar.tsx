@@ -10,7 +10,7 @@ type Move=Extract<Action,{type:'moveSidebarItem'}>;
 type Props={orders?:Record<string,string[]>;projects:Project[];tasks:TaskSummary[];selectedId?:string;projectId?:string;overview:boolean;busy:boolean;active:boolean;onProject:(id:string)=>void;onChat:(id:string)=>void;onNew:(id:string)=>void;onFolder:()=>void;onSearch:()=>void;act:(action:Action)=>Promise<unknown>};
 export function ChatSidebar({orders,projects,tasks,selectedId,projectId,overview,busy,active,onProject,onChat,onNew,onFolder,onSearch,act}:Props){
  const [closed,setClosed]=useState<Set<string>>(new Set());
- const {open,overlay}=useChatActions({tasks,busy,active,act});
+ const {open,isOpen,overlay}=useChatActions({tasks,busy,active,act});
  const selected=tasks.find(t=>t.id===selectedId);
  useEffect(()=>{const id=selected?.projectId??projectId;if(id)setClosed(before=>{const next=new Set(before);next.delete(id);return next;});},[selectedId,projectId]);
  const dragging=useRef<{kind:'project'|'chat';id:string}|null>(null),suppressClick=useRef(false);
@@ -43,7 +43,7 @@ export function ChatSidebar({orders,projects,tasks,selectedId,projectId,overview
      <button className={`chat-row ${chat.id===selectedId&&!overview?'selected':''}`} title={`${chat.title}${chat.pinned?' · Pinned':''} · Drag to move, or Alt+Shift+Up/Down to reorder`} aria-label={chat.title} aria-description={chat.pinned?'Pinned chat. Drag to move or Alt+Shift+arrows to reorder.':'Drag to move or Alt+Shift+arrows to reorder.'} disabled={busy} onClick={()=>{if(!suppressClick.current)onChat(chat.id);}} onContextMenu={event=>open(chat,event)} onKeyDown={event=>{if(keyboardMove(event,'chat',chat.id,section,items,destinationId))return;if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')open(chat,event);}}>
        {chat.pinned&&!chat.archived&&<Pin size={12} className="chat-pinned-icon" aria-hidden="true"/>}<span>{chat.title}</span>{chat.runtimeStatus&&['running','starting','submitting','connecting','checking-permissions'].includes(chat.runtimeStatus)&&<span className="chat-running" role="status" aria-label="Chat running">●</span>}
      </button>
-     <button className="chat-options icon-button" aria-label={`Chat options for ${chat.title}`} disabled={busy} onClick={event=>open(chat,event)}><MoreHorizontal size={14}/></button>
+     <button className="chat-options icon-button" aria-label={`Chat options for ${chat.title}`} aria-haspopup="menu" aria-expanded={isOpen(chat.id)} disabled={busy} onClick={event=>open(chat,event)}><MoreHorizontal size={14}/></button>
    </div>;
  };
  return <>

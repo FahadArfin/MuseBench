@@ -17,7 +17,7 @@ export function ProjectOverview({ project, chats, busy, onOpenChat, composer, on
 }) {
   const scripts = Object.entries(project.scripts);
   const [archived,setArchived]=useState(false);
-  const {open,overlay}=useChatActions({tasks:chats,busy,active:true,act});
+  const {open,isOpen,overlay}=useChatActions({tasks:chats,busy,active:true,act});
   const visibleChats=chats.filter(chat=>Boolean(chat.archived)===archived).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
   return <main className="project-overview" aria-label="Project overview">
     <div className="project-overview-inner">
@@ -39,7 +39,7 @@ export function ProjectOverview({ project, chats, busy, onOpenChat, composer, on
           <span className="project-chat-icon"><MessageSquare size={18} strokeWidth={1.5} /></span>
           <span className="project-chat-copy"><strong>{chat.title}</strong><small>{chat.mode === 'muse' ? 'Muse' : chat.mode === 'demo' ? 'Sample chat' : 'Manual workspace'}{chat.acceptedRevision && <><span>·</span><Check size={12} />Checkpoint saved</>}</small></span>
           <time dateTime={chat.updatedAt}>{dateLabel(chat.updatedAt)}</time><ArrowUpRight className="project-chat-arrow" size={16} />
-        </button><button className="icon-button project-conversation-options" aria-label={`Chat options for ${chat.title}`} disabled={busy} onClick={event=>open(chat,event)}><MoreHorizontal size={17}/></button></div>)}</div> : archived ? <div className="project-empty"><Archive size={27} strokeWidth={1.3}/><h3>No archived chats</h3></div> : <div className="project-empty"><MessageSquare size={27} strokeWidth={1.3} /><h3>No chats yet</h3><p>Start a conversation above.</p></div>}
+        </button><button className="icon-button project-conversation-options" aria-label={`Chat options for ${chat.title}`} aria-haspopup="menu" aria-expanded={isOpen(chat.id)} disabled={busy} onClick={event=>open(chat,event)}><MoreHorizontal size={17}/></button></div>)}</div> : archived ? <div className="project-empty"><Archive size={27} strokeWidth={1.3}/><h3>No archived chats</h3></div> : <div className="project-empty"><MessageSquare size={27} strokeWidth={1.3} /><h3>No chats yet</h3><p>Start a conversation above.</p></div>}
         </div>
       </section>
 

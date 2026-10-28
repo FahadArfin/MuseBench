@@ -239,8 +239,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     try{await cleanup();state.runtime=runtime?.snapshot?.()??missingRuntime();if(state.runtime.cleanup==='unconfirmed')throw Error('Native shutdown could not be confirmed. Disconnect Muse before switching projects or tasks.');}
     finally{context.navigation=false;saveTask();context.messageBaseline=runtimeMessageIds(state.runtime);}
   };
-  const deleteArchivedChat=async id=>{
-    requireNavigationIdle();const target=taskRecords.get(id);if(!target)throw Error('Chat not found.');if(!target.archived)throw Error('Archive this chat before permanently deleting it.');if(contextBusy(contexts.get(id)))throw Error('Stop this chat before deleting it.');
+  const deleteArchivedChat=async (id,allowUnarchived=false)=>{
+    requireNavigationIdle();if(typeof allowUnarchived!=='boolean')throw Error('Invalid direct-delete choice.');const target=taskRecords.get(id);if(!target)throw Error('Chat not found.');if(!target.archived&&!allowUnarchived)throw Error('Archive this chat before permanently deleting it.');if(contextBusy(contexts.get(id)))throw Error('Stop this chat before deleting it.');
     const previous={state:structuredClone(state),baseline,records:new Map(taskRecords)};
     if(state.task?.id===id){await navigationCleanup();state.task=null;baseline={};diffCache.clear();state.runtime=missingRuntime();}
     db.exec('BEGIN IMMEDIATE');
@@ -627,7 +627,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(action.pinned!==undefined){if(t.archived&&action.pinned)throw Error('Restore this chat before pinning it.');t.pinned=action.pinned;}if(action.archived!==undefined){if(action.archived&&!t.archived)t.archivedAt=new Date(archiveNow()).toISOString();if(!action.archived)t.archivedAt=null;t.archived=action.archived;}if(t.archived){t.pinned=false;t.queuePaused=true;t.queueHold=true;}
         saveRecord(t);break;
       }
-      case 'deleteTask':await deleteArchivedChat(action.id);break;
+      case 'deleteTask':await deleteArchivedChat(action.id,action.allowUnarchived);break;
       case 'saveWorkflow':{const w=validateWorkflow(action.workflow),index=state.workflows.findIndex(item=>item.id===w.id);if(index<0){if(state.workflows.length>=30)throw Error('The library holds up to 30 workflows.');state.workflows.push(w);}else state.workflows[index]=w;break;}
       case 'deleteWorkflow':state.workflows=state.workflows.filter(w=>w.id!==action.id);break;
       case 'queueWorkflow':{
@@ -673,7 +673,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         t.messages=original.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,contextTruncated:m.contextTruncated===true,at:m.at,sources:m.sources,files:m.files,images:m.images,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));message('system',selected.role==='assistant'?'Branched conversation through the selected response. Current project files are unchanged.':'Branched conversation. Current project files are unchanged; the selected prompt is an unsent draft.');
         if(selected.role==='user')state.drafts[draftKey(t.projectId,t.id)]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:now()};break;
       }
-      case 'renameTask':{requireNavigationIdle();const t=requireTask();if(typeof action.title!=='string'||!action.title.trim()||action.title.length>100)throw Error('Use a chat name up to 100 characters.');t.title=action.title.trim();break;}
+      case 'renameTask':{requireNavigationIdle();if(action.id!==undefined&&(typeof action.id!=='string'||!action.id.trim()||action.id.length>200))throw Error('Invalid chat identifier.');const t=action.id===undefined?requireTask():state.task?.id===action.id?state.task:taskRecords.get(action.id);if(!t)throw Error('Chat not found.');if(contextBusy(contexts.get(t.id)))throw Error('Stop this chat before editing its details.');if(typeof action.title!=='string'||!action.title.trim()||action.title.length>100)throw Error('Use a chat name up to 100 characters.');t.title=action.title.trim();saveRecord(t);break;}
       case 'setMemories':{requireNavigationIdle();if(typeof action.text!=='string'||action.text.length>1500)throw Error('Memory instructions must be at most 1,500 characters.');state.memories=action.text.trim();break;}
       case 'createReviewer':{
         requireNavigationIdle();const parent=requireTask();if(action.parentTaskId!==parent.id)throw Error('Parent chat changed.');if(!runtimeFactory)throw Error('Independent review needs background runtime support.');if(parent.reviewContract)throw Error('Reviewer chats cannot recursively delegate.');if((parent.reviewChildren??[]).length>=3)throw Error('This parent has used its three review slots (up to 9 minutes / 24 steps).');if(checkProcess||contextBusy(context))throw Error('Finish the current work first.');

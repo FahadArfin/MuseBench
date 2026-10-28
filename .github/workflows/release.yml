@@ -33,6 +33,7 @@ jobs:
         run: node scripts/stamp-release.mjs
       - run: npm test
       - run: npm run build
+      - run: npm run test:chat-organization
       - run: npm run test:navigation-cache
       - run: npm run test:browser-preview
       - run: npm run test:onboarding-preview

@@ -11,3 +11,28 @@ test('30-day cleanup removes only expired archives and preserves active chats an
 test('legacy archives without a timestamp get a fresh retention window',async t=>{const f=await fixture(t);await f.c.dispatch({type:'setTaskFlags',id:f.id,archived:true});await f.close();const db=new DatabaseSync(path.join(f.dataDir,'musebench.sqlite'));const task=JSON.parse(db.prepare('SELECT json FROM tasks WHERE id=?').get(f.id).json);delete task.archivedAt;task.updatedAt='2000-01-01T00:00:00.000Z';db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(task),f.id);const app=JSON.parse(db.prepare('SELECT json FROM app').get().json);app.task=task;db.prepare('UPDATE app SET json=?').run(JSON.stringify(app));db.close();await f.reopen();assert.equal(f.c.getState().tasks.length,1);assert.ok(Date.parse(f.c.getState().task.archivedAt)>Date.now()-day);});
 
 test('desktop accepts delete only with a valid chat identifier',async()=>{const {validateAction}=await import('../electron/security.mjs');assert.deepEqual(validateAction({type:'deleteTask',id:'chat-123'}),{type:'deleteTask',id:'chat-123'});for(const id of [undefined,'',42,'x'.repeat(201)])assert.throws(()=>validateAction({type:'deleteTask',id}));});
+
+test('renaming an inactive chat preserves selection and persists the targeted title',async t=>{
+ const f=await fixture(t);const second=await f.c.dispatch({type:'newTask',request:'Current chat',mode:'manual'}),selected=second.task.id;
+ let s=await f.c.dispatch({type:'renameTask',id:f.id,title:'  Revised title  '});assert.equal(s.error,null);assert.equal(s.task.id,selected);assert.equal(s.task.title,'Current chat');assert.equal(s.tasks.find(item=>item.id===f.id).title,'Revised title');
+ await f.reopen();s=f.c.getState();assert.equal(s.task.id,selected);assert.equal(s.tasks.find(item=>item.id===f.id).title,'Revised title');
+ s=await f.c.dispatch({type:'selectTask',id:f.id});assert.equal(s.task.title,'Revised title');
+ s=await f.c.dispatch({type:'renameTask',title:'Legacy selected rename'});assert.equal(s.error,null);assert.equal(s.task.title,'Legacy selected rename');
+});
+
+test('a missing rename target never falls back to the selected chat',async t=>{
+ const f=await fixture(t);const s=await f.c.dispatch({type:'renameTask',id:'missing-chat',title:'Must not replace'});assert.match(s.error,/not found/i);assert.equal(s.task.title,'Chat retention fixture');
+});
+
+test('confirmed direct deletion removes the targeted active chat and leaves project files and other chats intact',async t=>{
+ const f=await fixture(t);await f.c.dispatch({type:'saveDraft',projectId:f.projectId,taskId:f.id,text:'Private draft',mode:'chat'});const second=await f.c.dispatch({type:'newTask',request:'Current chat',mode:'manual'}),selected=second.task.id;
+ let s=await f.c.dispatch({type:'deleteTask',id:f.id,allowUnarchived:false});assert.match(s.error,/Archive this chat/);assert.equal(s.tasks.length,2);
+ s=await f.c.dispatch({type:'deleteTask',id:f.id,allowUnarchived:true});assert.equal(s.error,null);assert.equal(s.task.id,selected);assert.deepEqual(s.tasks.map(item=>item.id),[selected]);assert.equal(s.drafts[`${f.projectId}:${f.id}`],undefined);assert.throws(()=>f.c.readChatHistory({taskId:f.id}),/not found/);
+ await f.reopen();assert.deepEqual(f.c.getState().tasks.map(item=>item.id),[selected]);assert.equal(await readFile(path.join(f.project,'note.txt'),'utf8'),'Project files must survive chat deletion.');
+});
+
+test('desktop validates targeted rename identifiers and explicit direct-delete flags',async()=>{
+ const {validateAction}=await import('../electron/security.mjs');for(const action of [{type:'renameTask',id:'chat-123',title:'Revised'},{type:'renameTask',title:'Selected'},{type:'deleteTask',id:'chat-123',allowUnarchived:true},{type:'deleteTask',id:'chat-123',allowUnarchived:false}])assert.deepEqual(validateAction(action),action);
+ for(const id of [null,'',42,'x'.repeat(201)])assert.throws(()=>validateAction({type:'renameTask',id,title:'Revised'}));
+ for(const allowUnarchived of [null,'true',1,{}])assert.throws(()=>validateAction({type:'deleteTask',id:'chat-123',allowUnarchived}));
+});

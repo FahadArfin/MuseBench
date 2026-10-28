@@ -45,7 +45,7 @@ export function validateAction(action) {
   if (action.type === 'updatePlan') { string('plan'); if (!Array.isArray(action.criteria) || !action.criteria.length || action.criteria.length > 30 || action.criteria.some(c=>typeof c !== 'string' || !c.trim() || c.length>2000)) throw Error('Add between 1 and 30 acceptance criteria.'); }
   if (action.type === 'setRunOptions') { if (!action.runOptions) throw Error('Run options are required.'); validateRunOptions(action.runOptions); }
   if (action.type === 'newTask' && action.runOptions !== undefined) validateRunOptions(action.runOptions);
-  if (action.type==='renameTask') string('title',100);
+  if (action.type==='renameTask') {string('title',100);if(action.id!==undefined)string('id',200);}
   if (action.type==='setMemories' && (typeof action.text!=='string'||action.text.length>1500)) throw Error('Invalid memory instructions.');
   if (action.type==='setGoal' && (typeof action.objective!=='string'||action.objective.length>1000||!['active','paused'].includes(action.status))) throw Error('Invalid chat goal.');
   if(['sendMessage','queueMessage','saveDraft'].includes(action.type)){fileReferences(action.files);imageReferences(action.images);if(action.fromGoal!==undefined||action.fromQueue!==undefined||action.type==='sendMessage'&&action.runOptions!==undefined)throw Error('Invalid request options.');}
@@ -54,6 +54,7 @@ export function validateAction(action) {
   if(action.type==='saveDraft'&&action.taskId!==null)string('taskId',200);
   if(action.type==='setProjectInstructions'&&(typeof action.text!=='string'||action.text.length>4000))throw Error('Invalid project instructions.');
   if(['setTaskFlags','deleteTask','removeQueued'].includes(action.type))string('id',200);
+  if(action.type==='deleteTask'&&action.allowUnarchived!==undefined&&typeof action.allowUnarchived!=='boolean')throw Error('Invalid direct-delete choice.');
   if(action.type==='setTaskFlags'&&(action.pinned!==undefined&&typeof action.pinned!=='boolean'||action.archived!==undefined&&typeof action.archived!=='boolean'))throw Error('Invalid chat flags.');
   if(action.type==='forkTask')string('messageId',200);
   return structuredClone(action);

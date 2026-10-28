@@ -48,3 +48,14 @@ test('deleting the selected chat keeps runtime events connected for the next cha
  const {act,id,c,runtimes}=await fixture(t);await act({type:'setTaskFlags',id,archived:true});await act({type:'deleteTask',id});await act({type:'newTask',mode:'muse',request:'Successor'});await act({type:'sendMessage',text:'Continue here'});
  runtimes.find(r=>r.sent.length).finish('Successor reply');await new Promise(r=>setTimeout(r,40));assert.ok(c.getState().task.messages.some(m=>m.text==='Successor reply'));assert.equal(c.getState().runtime.status,'completed');
 });
+
+test('renaming a retained chat updates its runtime context without selecting it',async t=>{
+ const {act,id}=await fixture(t);const second=(await act({type:'newTask',mode:'muse',request:'Second'})).task.id;
+ let s=await act({type:'renameTask',id,title:'First renamed'});assert.equal(s.task.id,second);assert.equal(s.task.title,'Second');
+ s=await act({type:'selectTask',id});assert.equal(s.task.title,'First renamed');
+});
+
+test('running background chats reject targeted rename and confirmed direct deletion',async t=>{
+ const {act,id,c,runtimes}=await fixture(t);await act({type:'sendMessage',text:'Keep working'});const running=runtimes.find(r=>r.sent.length);const second=(await act({type:'newTask',mode:'muse',request:'Second'})).task.id;
+ for(const action of [{type:'renameTask',id,title:'Must not rename'},{type:'deleteTask',id,allowUnarchived:true}]){const s=await c.dispatch(action);assert.match(s.error,/Stop this chat/i);assert.equal(s.task.id,second);assert.equal(s.tasks.find(item=>item.id===id).title,'First');assert.equal(running.snapshot().status,'running');}
+});
