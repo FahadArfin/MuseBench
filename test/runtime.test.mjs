@@ -128,9 +128,17 @@ test('curated Windows environment resolves a bare native shell command without i
   "$ErrorActionPreference='Stop'; $null=whoami; if($env:META_API_KEY -or $env:NODE_OPTIONS){throw 'Unexpected inherited environment'}; Write-Output 'native-command-resolved'",
  ],{env,windowsHide:true,shell:false,timeout:60000,maxBuffer:4096,encoding:'utf8'}));}
  catch(error){
-  const withoutPosix={...env};for(const key of ['HOME','TMPDIR','LANG','LC_ALL','LC_CTYPE','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_CACHE_HOME'])delete withoutPosix[key];
-  for(const [name,source] of [['curated',env],['withoutPosix',withoutPosix],['full',process.env]]){
-   try{await promisify(execFile)(binary,['-NoLogo','-NoProfile','-NonInteractive','-Command',"Write-Output 'probe'"],{env:source,windowsHide:true,timeout:15000,maxBuffer:4096});console.error('PowerShell startup probe: '+name+' passed');}
+  // Diagnostic variants never log values, inherit API credentials, or execute
+  // a profile. Identify which standard Windows environment group is required.
+  const withKeys=names=>{const result={...env};for(const name of names){const key=Object.keys(process.env).find(k=>k.toLowerCase()===name.toLowerCase());if(key){for(const old of Object.keys(result))if(old.toLowerCase()===name.toLowerCase())delete result[old];result[key]=process.env[key];}}return result;};
+  const variants=[
+   ['host-path',withKeys(['PATH'])],
+   ['profile-roots',withKeys(['ALLUSERSPROFILE','PUBLIC','COMPUTERNAME','USERDNSDOMAIN','LOGONSERVER'])],
+   ['powershell-module-path',withKeys(['PSModulePath'])],
+   ['powershell-cache',withKeys(['PSModuleAnalysisCachePath','PSDisableModuleAnalysisCacheCleanup','POWERSHELL_TELEMETRY_OPTOUT'])],
+  ];
+  for(const [name,source] of variants){
+   try{await promisify(execFile)(binary,['-NoLogo','-NoProfile','-NonInteractive','-Command',"Write-Output 'probe'"],{env:source,windowsHide:true,timeout:12000,maxBuffer:4096});console.error('PowerShell startup probe: '+name+' passed');}
    catch{console.error('PowerShell startup probe: '+name+' failed');}
   }
   throw error;

@@ -152,7 +152,10 @@ internal static class WindowsJobProbe
                 closing = true;
             }
             output.CompleteAdding();
-            if (!writer.Join(500))
+            // ARM startup/JIT and a busy owner can take longer than 500ms to
+            // consume the terminal frames. Keep this bounded below the
+            // owner's 8s stop deadline (5s job cleanup plus 2s output drain).
+            if (!writer.Join(2000))
             {
                 outputFailed = true;
                 RequestStop("outputDrainUnconfirmed", 125);
@@ -160,6 +163,8 @@ internal static class WindowsJobProbe
             int result = StopCode != 0 ? StopCode : (rootExited ? unchecked((int)rootExitCode) : 125);
             // A broken or stalled output channel is a helper failure, even if
             // native execution and job cleanup succeeded.
+            if (outputFailed)
+                Console.Error.WriteLine("Job output completion failed: " + StopReason);
             return confirmed && !outputFailed ? result : 125;
         }
 
