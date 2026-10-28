@@ -12,6 +12,9 @@ printf '::add-mask::%s\n' "$pair_link"
 version=$(node -p 'require("./package.json").version')
 code=$(git rev-list --count HEAD)
 gradle -p mobile/android connectedDebugAndroidTest "-Pandroid.testInstrumentationRunnerArguments.pairLink=$pair_link" -PmuseVersion="$version" -PmuseVersionCode="$code" --console plain
+# Connected tests clean up their installed packages. Install the exact tested
+# debug APK again for the launch screenshot after instrumentation completes.
+adb install -r mobile/android/app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -W -n io.github.fahadarfin.musebench.debug/io.github.fahadarfin.musebench.MainActivity
 sleep 2
 adb exec-out screencap -p > artifacts/mobile-emulator/android-home.png

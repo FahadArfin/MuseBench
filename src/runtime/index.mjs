@@ -17,7 +17,7 @@ import {MuseSessionAdapter} from '../../reference/patchlight/adapter/session-ada
 export const SETUP_URL='https://dev.meta.ai/docs/muse-code';
 const require=createRequire(import.meta.url);
 const execFileAsync=promisify(execFile);
-const environmentNames=['PATH','PATHEXT','SystemRoot','SystemDrive','windir','COMSPEC','TEMP','TMP','USERPROFILE','HOMEDRIVE','HOMEPATH','APPDATA','LOCALAPPDATA','ProgramFiles','ProgramFiles(x86)','ProgramW6432','CommonProgramFiles','CommonProgramFiles(x86)','CommonProgramW6432','OS','PROCESSOR_ARCHITECTURE','NUMBER_OF_PROCESSORS','USERNAME','USERDOMAIN','HOME','TMPDIR','LANG','LC_ALL','LC_CTYPE','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_CACHE_HOME'];
+const environmentNames=['PATH','PATHEXT','PSModulePath','SystemRoot','SystemDrive','windir','COMSPEC','TEMP','TMP','USERPROFILE','HOMEDRIVE','HOMEPATH','APPDATA','LOCALAPPDATA','ProgramFiles','ProgramFiles(x86)','ProgramW6432','CommonProgramFiles','CommonProgramFiles(x86)','CommonProgramW6432','OS','PROCESSOR_ARCHITECTURE','NUMBER_OF_PROCESSORS','USERNAME','USERDOMAIN','HOME','TMPDIR','LANG','LC_ALL','LC_CTYPE','XDG_CONFIG_HOME','XDG_DATA_HOME','XDG_CACHE_HOME'];
 const usable=new Set(['idle','completed','failed','cancelled']);
 const permissionReason='Muse permissions could not be verified. This app needs the built-in Ask me profile with a sandbox and human approvals. Update the official Muse installation or disconnect; no turn was sent.';
 
@@ -33,8 +33,9 @@ function sandboxFailureReason(handshake,platform) {
  return `Muse's native host sandbox is ${availability}. ${reason} No session was started and no turn was sent. ${guidance} Consult the official Muse docs: ${SETUP_URL}`;
 }
 
-/** Pass only OS essentials. Native Muse owns its own stored credentials;
- * unrelated API keys, Node hooks and tool-specific overrides never cross here. */
+/** Pass OS essentials and the host's command/module lookup paths. Native Muse
+ * owns its stored credentials; unrelated API keys, Node startup hooks and
+ * execution-policy overrides never cross here. */
 export function curateEnvironment(source=process.env) {
  const result={};
  for(const name of environmentNames){

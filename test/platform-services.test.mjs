@@ -17,10 +17,10 @@ test('POSIX Muse inherits its login home and locale without unrelated secrets or
  assert.deepEqual(env,{PATH:'/usr/bin',HOME:'/home/muse',TMPDIR:'/tmp/muse',LANG:'en_US.UTF-8',XDG_CONFIG_HOME:'/home/muse/.config'});
 });
 
-test('native Windows shells retain OS installation and architecture variables without custom module injection',()=>{
- const env=curateEnvironment({windir:'C:\\Windows',SystemDrive:'C:',ProgramFiles:'C:\\Program Files',CommonProgramFiles:'C:\\Program Files\\Common Files',PROCESSOR_ARCHITECTURE:'ARM64',NUMBER_OF_PROCESSORS:'4',OS:'Windows_NT',USERNAME:'runneradmin',PSModulePath:'unreviewed-modules',META_API_KEY:'secret'});
+test('native Windows shells retain OS and command lookup paths without credentials or startup hooks',()=>{
+ const env=curateEnvironment({windir:'C:\\Windows',SystemDrive:'C:',ProgramFiles:'C:\\Program Files',CommonProgramFiles:'C:\\Program Files\\Common Files',PROCESSOR_ARCHITECTURE:'ARM64',NUMBER_OF_PROCESSORS:'4',OS:'Windows_NT',USERNAME:'runneradmin',PSModulePath:'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules',META_API_KEY:'secret',NODE_OPTIONS:'--require private-hook',PSExecutionPolicyPreference:'Bypass'});
  assert.equal(env.windir,'C:\\Windows');assert.equal(env.ProgramFiles,'C:\\Program Files');assert.equal(env.PROCESSOR_ARCHITECTURE,'ARM64');assert.equal(env.NUMBER_OF_PROCESSORS,'4');
- assert.equal(env.PSModulePath,undefined);assert.equal(env.META_API_KEY,undefined);
+ assert.equal(env.PSModulePath,'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\Modules');assert.equal(env.META_API_KEY,undefined);assert.equal(env.NODE_OPTIONS,undefined);assert.equal(env.PSExecutionPolicyPreference,undefined);
 });
 test('a GUI launch finds the official user-local Muse binary when PATH is minimal',async t=>{
  const home=await mkdtemp(path.join(tmpdir(),'muse-platform-'));t.after(()=>rm(home,{recursive:true,force:true}));
