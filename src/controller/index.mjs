@@ -1,5 +1,6 @@
 import {createAnalyticsStore} from './analytics.mjs';
 import {createSemanticNavigation} from './semantic-navigation.mjs';
+import {workspaceSourcePaths} from './workspace-sources.mjs';
 import {reviewPrompt,parseReview} from '../shared/reviewer-contracts.mjs';
 import {newGoalDriver,goalDecision,pauseGoalDriver} from '../shared/goal-driver.mjs';
 import {createExecutionLedger} from './execution-ledger.mjs';
@@ -38,6 +39,7 @@ const MAX_FILE=2*1024*1024,MAX_TOTAL=24*1024*1024,MAX_FILES=4000,MAX_LOG=65536;
 const MAX_SHELL_HISTORY=512*1024;
 const EXCLUDED=new Set(['.git','.venv','venv','__pycache__','.pytest_cache','.mypy_cache','node_modules','dist','build','out','coverage','.next','.nuxt','.cache','.vite','.turbo','release','target','vendor','.ssh','.aws','.azure','.gnupg','.kube','.credentials','.secrets','secrets','credentials','.npmrc','.pypirc','.netrc','_netrc','.git-credentials','id_rsa','id_ed25519','service-account.json']);
 const excluded=name=>EXCLUDED.has(name.toLowerCase())||/^\.env/i.test(name)||/(?:^credentials(?:\.|$)|\.(?:pem|key|p12|pfx|keystore)$)/i.test(name);
+const EXCLUDED_PATTERNS=[...EXCLUDED,'.env*','credentials.*','*.pem','*.key','*.p12','*.pfx','*.keystore'];
 const hash=input=>createHash('sha256').update(input).digest('hex');
 const now=()=>new Date().toISOString();
 const runtimeMessageKey=item=>item?.id??JSON.stringify(item);
@@ -95,15 +97,19 @@ async function readSafe(root,relative){
   try{const stat=await handle.stat();if(!stat.isFile()||stat.size>MAX_FILE)throw Error(`Source file exceeds the 2 MiB limit: ${relative}`);await safeFile(root,relative);return await handle.readFile();}finally{await handle.close();}
 }
 async function snapshot(root){
-  const files=Object.create(null);let total=0,count=0;
-  const walk=async relative=>{
+  const files=Object.create(null),sourcePaths=await workspaceSourcePaths(root,EXCLUDED_PATTERNS);let total=0,count=0;
+  const walk=async (relative,includeAll=!sourcePaths)=>{
     const entries=await fs.readdir(path.join(root,relative),{withFileTypes:true});entries.sort((a,b)=>a.name.localeCompare(b.name,'en'));
     for(const entry of entries){
       if(excluded(entry.name))continue;
       const name=relative?`${relative}/${entry.name}`:entry.name;
+      const sourceKey=sourcePaths?.caseInsensitive?name.toLowerCase():name;
+      if(!includeAll&&!sourcePaths.files.has(sourceKey)&&!sourcePaths.parents.has(sourceKey))continue;
       if(entry.isSymbolicLink())throw Error(`Symbolic links are not allowed in source: ${name}`);
       await safeFile(root,name);
-      if(entry.isDirectory()){await walk(name);continue;}
+      // Git represents submodules and embedded untracked repositories as a single
+      // directory entry. Preserve their existing bounded filesystem inspection.
+      if(entry.isDirectory()){await walk(name,includeAll||sourcePaths.files.has(sourceKey));continue;}
       if(!entry.isFile())throw Error(`Unsupported source type: ${name}`);
       if(++count>MAX_FILES)throw Error('Project exceeds the 4,000 source-file limit.');
       const bytes=await readSafe(root,name);total+=bytes.length;if(total>MAX_TOTAL)throw Error('Project source exceeds the 24 MiB snapshot limit.');

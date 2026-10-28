@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import {mkdtemp,mkdir,writeFile,readFile,access,symlink,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {execFile} from 'node:child_process';
+import {promisify} from 'node:util';
 import {createController} from '../src/controller/index.mjs';
 
 const result=(runId='run-current',callId='shell-current',overrides={})=>({callId,runId,toolName:'powershell',command:'npm.cmd run --ignore-scripts test',output:'Project test passed',exitCode:0,terminalStatus:'completed',truncated:false,outcome:'success',...overrides});
@@ -111,6 +113,7 @@ test('command-compatible copies preserve supported bytes, exclude local dependen
   await mkdir(join(project,'assets'));await writeFile(join(project,'assets','icon.bin'),Buffer.from([0,255,42]));
   await writeFile(join(project,'.env.local'),'TOKEN=private');await writeFile(join(project,'.npmrc'),'private registry token');
   for(const name of ['node_modules','.git','secrets']){await mkdir(join(project,name));await writeFile(join(project,name,'private.txt'),'excluded');}
+  await promisify(execFile)('git',['-C',project,'init','--quiet'],{windowsHide:true});
   const original=await readFile(join(project,'index.html'));
   const first=await c.dispatch({type:'createCommandCopy'});
   assert.equal(first.error,null);assert.equal(first.activeProject.root.startsWith(projectsDir),true);
