@@ -543,6 +543,20 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   subscribeContext(context);
   const handle=async action=>{
     switch(action.type){
+      // Companion actions are deliberately absent from renderer validateAction.
+      // The paired host supplies only these bound operations to this same queue.
+      case 'mobileSelect':{
+        const task=taskRecords.get(action.taskId),project=state.projects.find(p=>p.id===task?.projectId);
+        if(!task||task.mode!=='muse'||task.archived||!project)throw Error('Chat is unavailable.');
+        await selectProject(project,task.id);break;
+      }
+      case 'mobileMessage':case 'mobileStop':{
+        const task=state.task;
+        if(!task||task.id!==action.taskId||task.mode!=='muse'||task.archived)throw Error('The selected desktop chat changed. Select the chat again.');
+        if(action.type==='mobileStop')await handle({type:'disconnectMuse'});
+        else {pauseGoalDriver(task.goal?.driver,'User input takes priority');await sendToTask({type:'sendMessage',text:action.text,mode:'chat'});}
+        break;
+      }
       case 'clearError':state.error=null;break;
       case 'createProject':{
         requireSwitchable();const {name,instructions}=projectDetails(action);

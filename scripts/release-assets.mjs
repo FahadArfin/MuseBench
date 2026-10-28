@@ -5,10 +5,12 @@ import {createHash} from 'node:crypto';
 import yaml from 'js-yaml';
 
 export const DESKTOP_TARGETS=['win32-x64','win32-arm64','linux-x64','linux-arm64','darwin-x64','darwin-arm64'];
+export const RELEASE_TARGETS=[...DESKTOP_TARGETS,'android-universal'];
 const digest=(bytes,algorithm='sha256')=>createHash(algorithm).update(bytes).digest(algorithm==='sha512'?'base64':'hex');
 const safe=name=>typeof name==='string'&&/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$/.test(name);
 function identity(version,commit){if(!/^\d+\.\d+\.\d+$/.test(version)||! /^[a-f0-9]{40}$/.test(commit))throw Error('Invalid release version or source commit.');}
 function coverage(names,platform,arch,version){
+ if(platform==='android') { if(!names.includes(`MuseBench-${version}-android.apk`))throw Error('Missing Android APK.'); return; }
  const expected=platform==='win32'?[`MuseBench-Setup-${version}${arch==='arm64'?'-arm64':''}.exe`,'latest.yml']:platform==='linux'?[`MuseBench-${version}-linux-${arch==='x64'?'x86_64':arch}.AppImage`,`MuseBench-${version}-linux-${arch==='x64'?'amd64':arch}.deb`,`latest-linux${arch==='x64'?'':'-'+arch}.yml`]:[`MuseBench-${version}-mac-${arch}.dmg`,`MuseBench-${version}-mac-${arch}.zip`,'latest-mac.yml'];
  for(const name of expected)if(!names.includes(name))throw Error(`Missing release artifact ${name}.`);
 }
@@ -26,8 +28,8 @@ async function metadataAt(directory,name,version,names){
 }
 
 export async function stageRelease({releaseDir,outDir,platform,arch,version,commit}){
- identity(version,commit);if(!DESKTOP_TARGETS.includes(`${platform}-${arch}`))throw Error('Unsupported release target.');
- const names=(await readdir(releaseDir)).filter(name=>safe(name)&&((name.startsWith('MuseBench-')&&name.includes(version)&&/\.(exe|blockmap|AppImage|deb|dmg|zip)$/.test(name))||/^latest(?:-[a-z0-9-]+)?\.yml$/.test(name)));
+ identity(version,commit);if(!RELEASE_TARGETS.includes(`${platform}-${arch}`))throw Error('Unsupported release target.');
+ const names=(await readdir(releaseDir)).filter(name=>safe(name)&&((name.startsWith('MuseBench-')&&name.includes(version)&&/\.(exe|blockmap|AppImage|deb|dmg|zip|apk)$/.test(name))||/^latest(?:-[a-z0-9-]+)?\.yml$/.test(name)));
  coverage(names,platform,arch,version);
  for(const name of names.filter(n=>n.endsWith('.yml')))await metadataAt(releaseDir,name,version,names);
  await mkdir(outDir,{recursive:true});const files=[];
@@ -35,7 +37,7 @@ export async function stageRelease({releaseDir,outDir,platform,arch,version,comm
  await writeFile(path.join(outDir,'asset-manifest.json'),JSON.stringify({version,commit,platform,arch,files},null,2)+'\n');
 }
 
-export async function collectRelease({inputDir,outputDir,expectedTargets=DESKTOP_TARGETS,version,commit}){
+export async function collectRelease({inputDir,outputDir,expectedTargets=RELEASE_TARGETS,version,commit}){
  identity(version,commit);const targets=new Map(),files=new Map(),metadata=new Map();
  for(const entry of await readdir(inputDir,{withFileTypes:true})){
   if(!entry.isDirectory())continue;
@@ -77,7 +79,7 @@ export async function collectRelease({inputDir,outputDir,expectedTargets=DESKTOP
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  const packageInfo=JSON.parse(await readFile('package.json','utf8'));
  const common={version:process.env.VERSION||packageInfo.version,commit:process.env.SOURCE_SHA||packageInfo.releaseCommit};
- if(process.argv[2]==='stage')await stageRelease({...common,releaseDir:'release',outDir:'release-assets',platform:process.platform,arch:process.arch});
+ if(process.argv[2]==='stage')await stageRelease({...common,releaseDir:'release',outDir:'release-assets',platform:process.argv.includes('--android')?'android':process.platform,arch:process.argv.includes('--android')?'universal':process.arch});
  else if(process.argv[2]==='collect')console.log(await collectRelease({...common,inputDir:'incoming',outputDir:'release'}));
  else throw Error('Use stage or collect.');
 }

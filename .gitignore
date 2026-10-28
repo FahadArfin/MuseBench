@@ -3,6 +3,12 @@ dist/
 release/
 release-assets/
 incoming/
+mobile-dist/
+mobile/android/.gradle/
+mobile/android/**/build/
+mobile/android/local.properties
+*.jks
+*.keystore
 .musebench/
 artifacts/
 output/

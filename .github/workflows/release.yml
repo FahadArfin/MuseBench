@@ -30,6 +30,7 @@ jobs:
         run: node scripts/stamp-release.mjs
       - run: npm test
       - run: npm run build
+      - run: node scripts/mobile-settings-smoke.mjs
       - run: npm run test:startup-animation
       - run: npm run test:session-recovery
       - run: npm run test:profile-identity
@@ -136,8 +137,79 @@ jobs:
           name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
           if-no-files-found: error
           path: release-assets/*
+  android:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - run: npm ci --ignore-scripts
+      - run: node scripts/stamp-release.mjs
+      - run: npm run build:mobile
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/mobile-ui-smoke.mjs
+      - run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Build and verify the signed Android package
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/musebench-android-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          chmod 600 "$ANDROID_KEYSTORE_PATH"
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          version=$(node -p 'require("./package.json").version')
+          code=$(git rev-list --count HEAD)
+          gradle -p mobile/android testDebugUnitTest assembleDebug assembleDebugAndroidTest assembleRelease -PmuseVersion="$version" -PmuseVersionCode="$code" --console plain
+          node scripts/stage-android.mjs
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Verify Android TLS, pairing, storage and isolated WebViews
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: bash scripts/test-android-emulator.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: checks-android
+          path: |
+            mobile/android/app/build/reports/tests/
+            mobile/android/app/build/reports/androidTests/
+            artifacts/mobile-ui/
+            artifacts/mobile-emulator/*.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-universal
+          if-no-files-found: error
+          path: release-assets/*
   publish:
-    needs: [build, native]
+    needs: [build, native, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -152,6 +224,10 @@ jobs:
         with:
           pattern: desktop-*
           path: incoming
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-universal
+          path: incoming/android-universal
       - name: Verify and combine platform assets
         run: node scripts/release-assets.mjs collect
         env:
@@ -184,5 +260,5 @@ jobs:
             gh release edit "$tag" --draft=false --latest
             exit 0
           fi
-          printf 'Built from commit %s after validation and native package launch checks.\n\nWindows x64/ARM64 installers, Linux x64/ARM64 AppImage/deb, and macOS Intel/Apple silicon dmg/zip. macOS downloads are ad-hoc signed, not notarized; update manually. Existing desktop chats and settings are retained. SHA256SUMS and release-manifest.json record integrity and source provenance.\n' "$SOURCE_SHA" > release-notes.txt
+          printf 'Built from commit %s after validation and native package launch checks.\n\nWindows x64/ARM64 installers, Linux x64/ARM64 AppImage/deb, macOS Intel/Apple silicon dmg/zip, and a signed Android phone/tablet APK. Android chat works independently; Code pairs with your desktop under Settings → Mobile devices. macOS downloads are ad-hoc signed, not notarized; update manually. iOS distribution awaits Apple provisioning. Existing app data is retained. SHA256SUMS and release-manifest.json record integrity and source provenance.\n' "$SOURCE_SHA" > release-notes.txt
           gh release create "$tag" release/* --target "$SOURCE_SHA" --title "MuseBench $VERSION" --notes-file release-notes.txt --latest

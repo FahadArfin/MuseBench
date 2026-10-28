@@ -93,6 +93,7 @@ export interface MuseBenchBridge {
  workExport(format:import('./work-types').WorkExport):Promise<{saved:boolean;path?:string}>;
  onWorkState(callback:(state:import('./work-types').WorkState)=>void):()=>void;
 }
+export interface MuseBenchBridge {mobileDevice(command:import('./mobile-types').MobileDeviceCommand):Promise<import('./mobile-types').MobileDeviceState>;}
 declare global { interface Window { musebench?: MuseBenchBridge } }
 export interface MuseBenchBridge {
   readonly windowControlsOverlay?: boolean;

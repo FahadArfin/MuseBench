@@ -41,3 +41,13 @@ test('Linux x64 staging accepts electron-builder native artifact architecture na
  await collectRelease({inputDir:path.join(root,'input'),outputDir:path.join(root,'out'),expectedTargets:['linux-x64'],version,commit});
  assert.deepEqual(await readFile(path.join(root,'out',deb)),bytes);
 });
+
+test('Android APK is required, hashed and tied to the same source release',async t=>{
+ const root=await fixture(t),releaseDir=path.join(root,'raw-android');await mkdir(releaseDir);
+ const name=`MuseBench-${version}-android.apk`;await writeFile(path.join(releaseDir,name),'signed-apk-fixture');
+ await stageRelease({releaseDir,outDir:path.join(root,'input','android'),platform:'android',arch:'universal',version,commit});
+ await collectRelease({inputDir:path.join(root,'input'),outputDir:path.join(root,'out'),expectedTargets:['android-universal'],version,commit});
+ assert.match(await readFile(path.join(root,'out','SHA256SUMS'),'utf8'),/android\.apk/);
+ await writeFile(path.join(root,'input','android',name),'changed');
+ await assert.rejects(collectRelease({inputDir:path.join(root,'input'),outputDir:path.join(root,'out'),expectedTargets:['android-universal'],version,commit}),/hash|integrity/i);
+});

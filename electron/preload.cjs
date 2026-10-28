@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   codeBilling: command => ipcRenderer.invoke('musebench:code-billing',command),
   onBillingChanged: callback => {const listener=()=>callback();ipcRenderer.on('musebench:billing-update',listener);return()=>ipcRenderer.removeListener('musebench:billing-update',listener);},
   appUpdate: command => ipcRenderer.invoke('musebench:app-update',command),
+  mobileDevice: command => ipcRenderer.invoke('musebench:mobile-device',command),
   onAppUpdate: callback => {const listener=(_event,state)=>callback(state);ipcRenderer.on('musebench:app-update-state',listener);return()=>ipcRenderer.removeListener('musebench:app-update-state',listener);},
   inspectWorktrees: input => ipcRenderer.invoke('musebench:worktrees',input),
   importCodeImage: input => ipcRenderer.invoke('musebench:code-image-import',input),

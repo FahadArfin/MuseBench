@@ -7,6 +7,7 @@ Every push to `main` stamps one version from the Git commit count. The release w
 | Windows | x64, ARM64 | Setup `.exe` | In-app download and restart |
 | Linux | x64, ARM64 | `.AppImage`, `.deb` | AppImage in-app; deb manual |
 | macOS | Intel x64, Apple silicon ARM64 | `.dmg`, `.zip` | Manual until Developer ID signing is configured |
+| Android | ARM, ARM64, x86_64 | Universal signed `.apk` | Download and install the newer APK over the existing app |
 
 The x64 Windows installer retains its existing name. ARM64 includes `arm64` in its filename. Combined Windows update metadata lists both files so the updater can choose the native architecture. Linux update channels are architecture-specific. `SHA256SUMS` and `release-manifest.json` accompany every release and identify source commit, target, file size and digest. The publisher also verifies the updater's SHA-512 download digests before uploading anything.
 
@@ -16,6 +17,6 @@ Muse Code still requires the official Muse CLI and a valid Meta account. Linux/m
 
 Local packaging: `npm run package:desktop` on the target OS/architecture. `node scripts/verify-personal-package.mjs` verifies its contents, and `node scripts/portable-desktop-smoke.mjs` launches it with a fresh isolated profile. Linux CI runs the latter under Xvfb. Production sandbox settings are not weakened by the CI launch flags.
 
-Android companion delivery is tracked in the multi-platform design. Mobile chat uses its own Meta session; Code connects to a paired desktop. iOS delivery is deferred pending Apple provisioning.
+The [Android companion](android-companion.md) uses its own Meta session for chat; Code connects to explicitly paired desktop sessions. Its signed APK is a required release target, verified against a stable certificate and exercised on an Android emulator. iOS delivery is deferred pending Apple provisioning.
 
 Sources: [GitHub native runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners), [electron-builder multi-platform builds](https://www.electron.build/v26/docs/features/multi-platform-build/), [updater signing requirements](https://www.electron.build/v26/docs/features/auto-update/), [official Muse setup](https://dev.meta.ai/docs/muse-code).
