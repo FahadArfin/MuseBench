@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { CURATED_EXTENSIONS, searchCuratedExtensions } from '../src/shared/extension-catalog.mjs';
 
 const service = async (t, fetch) => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'catalog-test-'));
@@ -118,10 +119,18 @@ test('registry omits deprecated listings and exposes repository setup provenance
   assert.equal(page.entries[0].recipe, undefined);
 });
 test('Codex host-specific community skills remain setup-only', async t => {
-  const { catalog } = await service(t, async url => Response.json({ tree: url.includes('/openai/skills/') ? [{ type: 'blob', path: 'skills/.curated/hatch-pet/SKILL.md' }] : [] }));
+  const restricted = ['hatch-pet', 'define-goal', 'migrate-to-codex', 'playwright', 'jupyter-notebook'];
+  const { catalog } = await service(t, async url => Response.json({ tree: url.includes('/openai/skills/') ? [...restricted, 'gh-fix-ci'].map(name => ({ type: 'blob', path: `skills/.curated/${name}/SKILL.md` })) : [] }));
   const page = await catalog.search({ kind: 'skills', source: 'community' });
-  assert.equal(page.entries[0].compatibility, 'setup-required');
-  assert.equal(page.entries[0].package, undefined);
+  for (const name of restricted) {
+    const entry = page.entries.find(item => item.title === name);
+    assert.equal(entry.compatibility, 'setup-required', `${name} must not offer automatic installation`);
+    assert.equal(entry.package, undefined);
+    const resolved = await catalog.resolve(entry.id);
+    assert.equal(resolved.compatibility, 'setup-required');assert.equal(resolved.package, undefined);
+  }
+  assert.equal(CURATED_EXTENSIONS.find(entry => entry.id === 'skill:openai/skills:jupyter-notebook').compatibility, 'setup-required');
+  assert.equal(page.entries.find(entry => entry.title === 'gh-fix-ci').package.path, 'skills/.curated/gh-fix-ci');
 });
 test('invalid plugin refresh preserves the last schema-valid snapshot', async t => {
   let malformed = false;
@@ -155,4 +164,54 @@ test('registry version is not mislabeled as a source commit or ref', async t => 
   const page = await catalog.search({ kind: 'mcp', source: 'community' });
   assert.equal(page.entries[0].provenance.version, '1.2.3');
   assert.equal(page.entries[0].provenance.ref, undefined);
+});
+
+test('curated rows have unique identities and compact local presentation metadata', () => {
+  const categories = new Set(['developer-tools', 'productivity', 'design', 'business', 'data', 'documents', 'workflows', 'research']);
+  assert.equal(new Set(CURATED_EXTENSIONS.map(item => item.id)).size, CURATED_EXTENSIONS.length);
+  for (const entry of CURATED_EXTENSIONS) {
+    assert.ok(categories.has(entry.category), `${entry.id}: category`);
+    assert.match(entry.icon, /^[a-z][a-z0-9-]*$/, `${entry.id}: local icon slug`);
+    assert.equal(typeof entry.popular, 'boolean');
+    assert.ok(entry.summary.length > 12 && entry.summary.length <= 160, `${entry.id}: compact summary`);
+    assert.ok(entry.tags.length > 0, `${entry.id}: search tags`);
+  }
+});
+
+test('curated search finds purpose tags and categories across stable pagination', () => {
+  assert.ok(searchCuratedExtensions({ kind: 'mcp', query: 'postgres' }).entries.some(item => item.id === 'mcp:neon'));
+  assert.ok(searchCuratedExtensions({ kind: 'plugins', query: 'workflows' }).entries.some(item => item.id === 'plugin:obra:superpowers'));
+  const entries = []; let cursor;
+  do {
+    const page = searchCuratedExtensions({ kind: 'skills', query: '', cursor });
+    entries.push(...page.entries); cursor = page.nextCursor;
+  } while (cursor);
+  assert.deepEqual(entries.map(item => item.id), CURATED_EXTENSIONS.filter(item => item.kind === 'skills').map(item => item.id));
+});
+
+test('qualified connectors use the same exact reviewed recipe as their server counterpart', () => {
+  for (const name of ['stripe', 'atlassian', 'neon', 'todoist', 'intercom', 'cloudflare']) {
+    const server = CURATED_EXTENSIONS.find(item => item.recipe?.name === name && item.kind === 'mcp');
+    const connector = CURATED_EXTENSIONS.find(item => item.id === `connector:${name}`);
+    assert.equal(server?.compatibility, 'recipe', name);
+    assert.deepEqual(connector?.recipe, server?.recipe, name);
+    assert.equal(server.recipe.oauth, true, name);
+    const url = new URL(server.recipe.url);
+    assert.equal(url.protocol, 'https:');
+    assert.equal(url.username + url.password + url.search + url.hash, '');
+  }
+  const docs = CURATED_EXTENSIONS.find(item => item.id === 'mcp:cloudflare-docs');
+  assert.equal(docs.recipe.oauth, false);
+  assert.equal(docs.recipe.url, 'https://docs.mcp.cloudflare.com/mcp');
+});
+
+test('account-bound Codex equivalents remain setup-only with no copied host package or credentials', () => {
+  for (const id of ['connector:gmail', 'connector:google-drive', 'connector:google-calendar', 'connector:outlook', 'connector:slack', 'connector:figma', 'setup:github', 'setup:vercel', 'connector:canva', 'connector:hubspot', 'connector:asana']) {
+    const entry = CURATED_EXTENSIONS.find(item => item.id === id);
+    assert.equal(entry?.compatibility, 'setup-required', id);
+    assert.equal(entry.recipe, undefined, id);
+    assert.equal(entry.package, undefined, id);
+    assert.ok(entry.setup.length > 70, id);
+  }
+  assert.ok(CURATED_EXTENSIONS.every(item => !JSON.stringify(item).includes('.codex/plugins/cache')));
 });

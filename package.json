@@ -15,6 +15,7 @@
     "test:navigation-cache": "node scripts/navigation-cache-smoke.mjs",
     "test:onboarding-preview": "node scripts/onboarding-preview-smoke.mjs",
     "test:catalog-preview": "node scripts/catalog-preview-smoke.mjs",
+    "test:catalog-desktop": "node scripts/catalog-desktop-smoke.mjs",
     "dev": "node scripts/dev.mjs",
     "start": "node scripts/start.mjs",
     "build": "node scripts/build-windows-job.mjs && node scripts/build-windows-speech.mjs && tsc --noEmit && vite build",

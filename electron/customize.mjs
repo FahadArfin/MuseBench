@@ -1,6 +1,7 @@
 import {fileURLToPath} from 'node:url';
 import {createHookPresetStore} from './hook-presets.mjs';
 import {MUSEBENCH_SKILL_PACK} from '../src/shared/skill-pack.mjs';
+import {CURATED_EXTENSIONS} from '../src/shared/extension-catalog.mjs';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {randomUUID} from 'node:crypto';
@@ -15,6 +16,13 @@ const idOK=value=>typeof value==='string'&&/^[a-zA-Z0-9][\w:./-]{0,199}$/.test(v
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const scope=value=>value==='bundled'?'built-in':value;
 const unchangedOthers=(before,after,id)=>configurationDigest(Object.fromEntries(Object.entries(before.entries).filter(([key])=>key!==id)))===configurationDigest(Object.fromEntries(Object.entries(after.entries).filter(([key])=>key!==id)));
+// Bundled endpoint metadata controls sign-in availability, never connection status.
+// Match the complete URL so an unrelated server cannot inherit another service's policy.
+const publicEndpoints=new Set(CURATED_EXTENSIONS.filter(item=>item.recipe?.transport==='http'&&item.recipe.oauth===false).map(item=>new URL(item.recipe.url).href));
+function supportsOAuth(entry){
+ if(entry.transport!=='streamable_http')return false;
+ try{return !publicEndpoints.has(new URL(entry.url).href);}catch{return true;}
+}
 export function validateServer(value){
  if(!object(value)||Object.keys(value).some(key=>!['name','transport','url','command','args'].includes(key)))throw Error('Invalid MCP configuration. Use official OAuth for sign-in.');
  const {name,transport}=value;
@@ -78,7 +86,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
     if(!inventoryDisplayed)errors.push('Some plugins could not be validated. Resolve them in the official CLI before reviewing.');
    }else errors.push('Plugins could not be refreshed.');
   }
-  try{const {config}=await settings();servers=await Promise.all(Object.entries(config.mcp_servers??{}).slice(0,250).map(async([name,entry])=>({name:clean(name,100),revision:configurationDigest(entry),transport:entry.transport==='stdio'?'stdio':'streamable_http',address:entry.transport==='stdio'?clean(entry.command,200):safeAddress(entry.url),enabled:entry.enabled!==false,reviewed:await review.allowMcp(name,entry),oauth:entry.transport==='streamable_http'})));pluginsReviewed=await review.pluginsReviewed();const afterPlugins=await review.pluginState();if(beforePlugins?.revision===afterPlugins.revision){if(inventoryDisplayed)pluginRevision=afterPlugins.revision;}else errors.push('Plugins changed while loading. Refresh before reviewing them.');}catch{errors.push('Muse configuration could not be read. Correct settings.json in the official CLI before editing.');}
+  try{const {config}=await settings();servers=await Promise.all(Object.entries(config.mcp_servers??{}).slice(0,250).map(async([name,entry])=>({name:clean(name,100),revision:configurationDigest(entry),transport:entry.transport==='stdio'?'stdio':'streamable_http',address:entry.transport==='stdio'?clean(entry.command,200):safeAddress(entry.url),enabled:entry.enabled!==false,reviewed:await review.allowMcp(name,entry),oauth:supportsOAuth(entry)})));pluginsReviewed=await review.pluginsReviewed();const afterPlugins=await review.pluginState();if(beforePlugins?.revision===afterPlugins.revision){if(inventoryDisplayed)pluginRevision=afterPlugins.revision;}else errors.push('Plugins changed while loading. Refresh before reviewing them.');}catch{errors.push('Muse configuration could not be read. Correct settings.json in the official CLI before editing.');}
   let hooks=null;try{const root=getState().activeProject?.root;if(root)hooks=await review.hookState(root);}catch{errors.push('Project hooks could not be read.');}
   let presetState=null;try{presetState=await hookPresets.snapshot();}catch(error){errors.push(error.message);}
   return{hooks,hookPresets:presetState,skillImports:await imports(),available,skills:skillRows,plugins:pluginRows,servers,pluginsReviewed,pluginRevision,errors};
@@ -174,6 +182,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
     if(command.revision!==configurationDigest(entry))throw Error('Server configuration changed after review. Refresh and review it again.');
     if(command.action==='login'||command.action==='logout'){
      if(entry.transport!=='streamable_http')throw Error('OAuth requires an HTTPS server.');
+     if(command.action==='login'&&!supportsOAuth(entry))throw Error('This public MCP endpoint does not require sign-in.');
      if(!await review.allowMcp(command.name,entry))throw Error('Review this server before signing in.');
      await cli(['mcp',command.action,command.name],{oauth:true});
     }else{

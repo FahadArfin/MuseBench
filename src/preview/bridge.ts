@@ -214,7 +214,7 @@ export function createPreviewBridge():MuseBenchBridge {
   customize:async command=>{
    if(command.type==='catalogSearch'){
     const fixtures:CatalogEntry[]=command.source==='community'?[...CURATED_EXTENSIONS.filter(item=>item.kind===command.kind).map(item=>({...item,id:'preview-community:'+item.id,source:'community' as const})),{id:'preview-validation-failure',title:'Unsupported package sample',description:'A deterministic validation failure for preview review.',kind:command.kind,source:'community',publisher:'Preview fixture',homepage:'https://github.com/FahadArfin/MuseBench',compatibility:'unverified',setup:'Preparation demonstrates a rejected unsupported capability.',tags:[],package:{repo:'https://github.com/FahadArfin/MuseBench',path:'.',kind:command.kind==='skills'?'skill':'plugin'},provenance:{source:'Simulated fixture',url:'https://github.com/FahadArfin/MuseBench'}}]:CURATED_EXTENSIONS.filter(item=>item.kind===command.kind);
-    const entries=fixtures.filter(item=>(item.title+' '+item.description+' '+item.publisher).toLowerCase().includes(command.query.toLowerCase())),offset=Number(command.cursor??0),limit=6;
+    const entries=fixtures.filter(item=>[item.title,item.description,item.publisher,item.summary,item.category,...item.tags].join(' ').toLowerCase().includes(command.query.toLowerCase())),offset=Number(command.cursor??0),limit=6;
     if(!Number.isSafeInteger(offset)||offset<0)throw Error('Invalid preview cursor.');
     return{catalog:{entries:copy(entries.slice(offset,offset+limit)),nextCursor:offset+limit<entries.length?String(offset+limit):null,stale:false,offline:false,fetchedAt:stamp,errors:[],disclosure:'Simulated catalog data. No network search, downloads or installation occur in preview.'}};
    }

@@ -1,0 +1,278 @@
+{
+  "repository": "https://github.com/simple-icons/simple-icons",
+  "revision": "90646e4bf7f3b89df6c37e65baf3e7bc759a517c",
+  "collectionLicense": "CC0-1.0",
+  "note": "Collection license does not override individual brand trademark, copyright, or guidelines. See LICENSE.md and DISCLAIMER.md.",
+  "icons": [
+    {
+      "title": "Asana",
+      "slug": "asana",
+      "color": "F06A6A",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/asana.svg",
+      "source": "https://asana.com/brand",
+      "guidelines": "https://asana.com/brand",
+      "license": null
+    },
+    {
+      "title": "Atlassian",
+      "slug": "atlassian",
+      "color": "0052CC",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/atlassian.svg",
+      "source": "https://atlassian.design/resources/logo-library",
+      "guidelines": "https://atlassian.design/foundations/logos",
+      "license": null
+    },
+    {
+      "title": "Box",
+      "slug": "box",
+      "color": "0061D5",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/box.svg",
+      "source": "https://www.box.com/en-gb/about-us/press",
+      "guidelines": "https://www.box.com/en-gb/about-us/press",
+      "license": null
+    },
+    {
+      "title": "Brave",
+      "slug": "brave",
+      "color": "FB542B",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/brave.svg",
+      "source": "https://brave.com/brave-branding-assets",
+      "guidelines": "https://brave.com/brave-branding-assets",
+      "license": null
+    },
+    {
+      "title": "Cloudflare",
+      "slug": "cloudflare",
+      "color": "F38020",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/cloudflare.svg",
+      "source": "https://www.cloudflare.com/logo/",
+      "guidelines": "https://www.cloudflare.com/trademark/",
+      "license": null
+    },
+    {
+      "title": "Dropbox",
+      "slug": "dropbox",
+      "color": "0061FF",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/dropbox.svg",
+      "source": "https://www.dropbox.com/branding",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Figma",
+      "slug": "figma",
+      "color": "F24E1E",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/figma.svg",
+      "source": "https://www.figma.com/using-the-figma-brand/",
+      "guidelines": "https://www.figma.com/using-the-figma-brand/",
+      "license": null
+    },
+    {
+      "title": "GitHub",
+      "slug": "github",
+      "color": "181717",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/github.svg",
+      "source": "https://github.com/logos",
+      "guidelines": "https://github.com/logos",
+      "license": null
+    },
+    {
+      "title": "GitLab",
+      "slug": "gitlab",
+      "color": "FC6D26",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/gitlab.svg",
+      "source": "https://about.gitlab.com/press/press-kit/",
+      "guidelines": "https://about.gitlab.com/handbook/marketing/corporate-marketing/brand-activation/trademark-guidelines/",
+      "license": null
+    },
+    {
+      "title": "Gmail",
+      "slug": "gmail",
+      "color": "EA4335",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/gmail.svg",
+      "source": "https://fonts.gstatic.com/s/i/productlogos/gmail_2020q4/v8/192px.svg",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Google Calendar",
+      "slug": "googlecalendar",
+      "color": "4285F4",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/googlecalendar.svg",
+      "source": "https://fonts.gstatic.com/s/i/productlogos/calendar_2020q4/v8/192px.svg",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Google Docs",
+      "slug": "googledocs",
+      "color": "4285F4",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/googledocs.svg",
+      "source": "https://www.google.com/docs/about",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Google Drive",
+      "slug": "googledrive",
+      "color": "4285F4",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/googledrive.svg",
+      "source": "https://developers.google.com/drive/web/branding",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Google Sheets",
+      "slug": "googlesheets",
+      "color": "34A853",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/googlesheets.svg",
+      "source": "https://sheets.google.com",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Google Slides",
+      "slug": "googleslides",
+      "color": "FBBC04",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/googleslides.svg",
+      "source": "https://slides.google.com",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "HubSpot",
+      "slug": "hubspot",
+      "color": "FF7A59",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/hubspot.svg",
+      "source": "https://www.hubspot.com/style-guide",
+      "guidelines": "https://www.hubspot.com/style-guide",
+      "license": null
+    },
+    {
+      "title": "Hugging Face",
+      "slug": "huggingface",
+      "color": "FFD21E",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/huggingface.svg",
+      "source": "https://huggingface.co/brand",
+      "guidelines": "https://huggingface.co/brand",
+      "license": null
+    },
+    {
+      "title": "Jira",
+      "slug": "jira",
+      "color": "0052CC",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/jira.svg",
+      "source": "https://atlassian.design/resources/logo-library",
+      "guidelines": "https://atlassian.design/foundations/logos/",
+      "license": null
+    },
+    {
+      "title": "Linear",
+      "slug": "linear",
+      "color": "5E6AD2",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/linear.svg",
+      "source": "https://linear.app",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "MongoDB",
+      "slug": "mongodb",
+      "color": "47A248",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/mongodb.svg",
+      "source": "https://www.mongodb.com/pressroom",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Netlify",
+      "slug": "netlify",
+      "color": "00C7B7",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/netlify.svg",
+      "source": "https://www.netlify.com/press/",
+      "guidelines": "https://www.netlify.com/press/",
+      "license": null
+    },
+    {
+      "title": "Notion",
+      "slug": "notion",
+      "color": "000000",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/notion.svg",
+      "source": "https://www.notion.so",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Obsidian",
+      "slug": "obsidian",
+      "color": "7C3AED",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/obsidian.svg",
+      "source": "https://obsidian.md",
+      "guidelines": "https://obsidian.md/brand",
+      "license": null
+    },
+    {
+      "title": "PostgreSQL",
+      "slug": "postgresql",
+      "color": "4169E1",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/postgresql.svg",
+      "source": "https://wiki.postgresql.org/wiki/Logo",
+      "guidelines": "https://www.postgresql.org/about/policies/trademarks/",
+      "license": null
+    },
+    {
+      "title": "Redis",
+      "slug": "redis",
+      "color": "FF4438",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/redis.svg",
+      "source": "https://redis.io/brand-guidelines",
+      "guidelines": "https://redis.io/brand-guidelines",
+      "license": null
+    },
+    {
+      "title": "Sentry",
+      "slug": "sentry",
+      "color": "362D59",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/sentry.svg",
+      "source": "https://sentry.io/branding/",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Stripe",
+      "slug": "stripe",
+      "color": "635BFF",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/stripe.svg",
+      "source": "https://stripe.com/newsroom/information",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Supabase",
+      "slug": "supabase",
+      "color": "3FCF8E",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/supabase.svg",
+      "source": "https://github.com/supabase/supabase/blob/4031a7549f5d46da7bc79c01d56be4177dc7c114/packages/common/assets/images/supabase-logo-wordmark--light.svg",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Todoist",
+      "slug": "todoist",
+      "color": "E44332",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/todoist.svg",
+      "source": "https://doist.com/press",
+      "guidelines": null,
+      "license": null
+    },
+    {
+      "title": "Vercel",
+      "slug": "vercel",
+      "color": "000000",
+      "asset": "https://raw.githubusercontent.com/simple-icons/simple-icons/90646e4bf7f3b89df6c37e65baf3e7bc759a517c/icons/vercel.svg",
+      "source": "https://vercel.com/geist/brands",
+      "guidelines": "https://vercel.com/geist/brands",
+      "license": null
+    }
+  ]
+}

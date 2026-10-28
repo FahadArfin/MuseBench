@@ -38,6 +38,47 @@ test('catalog server recipes require review and ignore renderer-supplied endpoin
  await service.dispatch({type:'catalogServer',id:'docs',reviewed:true,url:'https://evil.example/mcp'});
  const config=JSON.parse(await readFile(f.settings,'utf8'));assert.equal(config.mcp_servers.docs.url,'https://developers.openai.com/mcp');assert.equal(await f.review.allowMcp('docs',config.mcp_servers.docs),true);await service.close();
 });
+test('known public MCP endpoints do not advertise or start OAuth, while manual servers keep sign-in available',async()=>{
+ const f=await fixture(),calls=[];
+ const entries={
+  renamedDocs:{transport:'streamable_http',url:'https://DEVELOPERS.OPENAI.COM:443/mcp',enabled:true},
+  docs:{transport:'streamable_http',url:'https://manual.example/mcp',enabled:true},
+  otherDocsPath:{transport:'streamable_http',url:'https://developers.openai.com/private-mcp',enabled:true},
+  local:{transport:'stdio',command:'node',args:['server.mjs'],enabled:true},
+ };
+ await writeFile(f.settings,JSON.stringify({mcp_servers:entries}));
+ await f.review.approveMcp('renamedDocs',entries.renamedDocs);
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:async(_binary,args)=>{calls.push(args);return{stdout:'{"skills":[],"plugins":[]}'};}});
+ const state=await service.snapshot(),byName=Object.fromEntries(state.servers.map(server=>[server.name,server]));
+ assert.equal(byName.renamedDocs.oauth,false);assert.equal(byName.docs.oauth,true);assert.equal(byName.otherDocsPath.oauth,true);assert.equal(byName.local.oauth,false);
+ await assert.rejects(service.dispatch({type:'serverAction',name:'renamedDocs',action:'login',revision:byName.renamedDocs.revision}),/does not require|no sign-in/i);
+ assert.equal(calls.some(args=>args[0]==='mcp'),false);
+ await service.close();
+});
+for(const [id,name,url,oauth] of [
+ ['mcp:cloudflare-docs','cloudflare-docs','https://docs.mcp.cloudflare.com/mcp',false],
+ ['mcp:microsoft-learn','microsoft-learn','https://learn.microsoft.com/api/mcp',false],
+ ['mcp:todoist','todoist','https://ai.todoist.net/mcp',true],
+])test(`bundled ${name} recipe saves only the reviewed endpoint and delegates eligible sign-in to Muse`,async()=>{
+ const f=await fixture(),calls=[];
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:async(binary,args,options)=>{calls.push({binary,args,options});return{stdout:args[0]==='mcp'?'':'{"skills":[],"plugins":[]}'};}});
+ try{
+  await assert.rejects(service.dispatch({type:'catalogServer',id}),/review/i);
+  assert.equal(await policy.optionalText(f.settings),null);assert.equal(calls.length,0);
+  const result=await service.dispatch({type:'catalogServer',id,reviewed:true,url:'https://unreviewed.example/mcp',name:'unreviewed'});
+  const config=JSON.parse(await readFile(f.settings,'utf8')),server=config.mcp_servers[name];
+  assert.deepEqual(Object.keys(config.mcp_servers),[name]);assert.deepEqual(server,{transport:'streamable_http',enabled:true,mode:'optional',url});
+  assert.equal(await f.review.allowMcp(name,server),true);
+  const state=result.state.servers.find(item=>item.name===name);assert.equal(state.oauth,oauth);assert.equal(Object.hasOwn(state,'connected'),false);
+  assert.equal(calls.some(call=>call.args[0]==='mcp'),false);
+  const signIn={type:'serverAction',name,action:'login',revision:state.revision};
+  if(oauth){
+   const signedIn=await service.dispatch(signIn),login=calls.find(call=>call.args[0]==='mcp');
+   assert.deepEqual(login.args,['mcp','login',name]);assert.equal(login.binary,'C:/muse.exe');assert.equal(login.options.shell,false);assert.equal(login.options.timeout,180000);
+   assert.match(signedIn.message,/OAuth sign-in/);assert.equal(Object.hasOwn(signedIn.state.servers[0],'connected'),false);
+  }else await assert.rejects(service.dispatch(signIn),/does not require|no sign-in/i);
+ }finally{await service.close();}
+});
 test('catalog refuses setup-only packages even if renderer submits their ID',async()=>{
  const f=await fixture();let staged=false;const service=api.createCustomize({getState:()=>({}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,catalog:{resolve:async()=>({compatibility:'setup-required',package:{}})},stagePackage:async()=>{staged=true;}});
  await assert.rejects(service.dispatch({type:'prepareCatalog',id:'not-supported'}),/setup|catalog/i);assert.equal(staged,false);await service.close();

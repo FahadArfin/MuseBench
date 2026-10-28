@@ -142,7 +142,7 @@ export function createExtensionCatalog({ dataDir, fetch: fetcher = globalThis.fe
       entries = results.flatMap((r, i) => (Array.isArray(r.data.tree) ? r.data.tree : []).slice(0, 10000).filter(f => f.type === 'blob' && (skillRepos[i] === 'openai/skills' ? /^skills\/\.curated\/[^/]+\/SKILL\.md$/ : /^skills\/.+\/SKILL\.md$/).test(f.path)).slice(0, MAX_ENTRIES).map(f => {
         const subpath = packagePath(f.path.slice(0, -9)); if (!subpath) return null;
         const repo = skillRepos[i], title = subpath.split('/').at(-1), homepage = `https://github.com/${repo}/tree/main/${subpath}`;
-        if (repo === 'openai/skills' && ['hatch-pet', 'define-goal', 'migrate-to-codex', 'playwright'].includes(title)) {
+        if (repo === 'openai/skills' && ['hatch-pet', 'define-goal', 'migrate-to-codex', 'playwright', 'jupyter-notebook'].includes(title)) {
           return record(`skill:${repo}:${subpath}`, title, 'Public skill with Codex-specific host or wrapper dependencies.', kind, 'OpenAI', homepage, `https://github.com/${repo}`, { setup: 'Requires Codex-specific tools, paths or Bash wrappers. Read upstream instructions and adapt prerequisites before use.' });
         }
         return record(`skill:${repo}:${subpath}`, title, `Public skill from ${repo}. Review SKILL.md, licensing and helper dependencies before installing.`, kind, repo.split('/')[0], homepage, `https://github.com/${repo}`, { compatibility: 'unverified', package: { repo, ref: 'main', path: subpath, kind: 'skill' } });
