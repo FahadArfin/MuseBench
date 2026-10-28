@@ -8,6 +8,32 @@ import {promisify} from 'node:util';
 import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/runtime/index.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
+const inspectionItem={itemId:'inspect-item',kind:'subagent',childSessionId:'child-session',revision:2,status:'inProgress',controlStatus:'running'};
+const childRead=()=>({session:{sessionId:'child-session',parentSessionId:'session-one',kind:'subagent',status:'notLoaded'},history:{mode:'inline',items:[{itemId:'answer',kind:'agentMessage',revision:1,status:'completed',text:'Child answer'}],snapshot:null},viewCursor:'child-head',pendingRequests:[]});
+test('child inspection uses only session/read during running work and leaves parent ownership untouched',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Delegate'});h.emit({method:'item/updated',params:{sessionId:'session-one',item:inspectionItem}});
+ const before=h.runtime.snapshot(),commands=h.calls.filter(c=>c.opts).length,reads=[];
+ h.host.connection.request=async(method,params)=>{reads.push({method,params});return childRead();};
+ const input={sessionId:'session-one',itemId:'inspect-item',revision:2,childSessionId:'forged'};
+ await assert.rejects(h.runtime.inspectChild({...input,sessionId:'foreign'}));await assert.rejects(h.runtime.inspectChild({...input,revision:1}));assert.equal(reads.length,0);
+ await h.runtime.inspectChild(input);const after=h.runtime.snapshot();assert.deepEqual(reads,[{method:'session/read',params:{sessionId:'child-session',excludeItems:false}}]);assert.equal(after.childInspections[0].data.history.items[0].text,'Child answer');
+ for(const key of ['status','turnId','childrenBusy','permissionVerified'])assert.deepEqual(after[key],before[key]);assert.equal(h.calls.filter(c=>c.opts).length,commands);
+});
+test('child read accepts ordinary revision progress but rejects retargeting and clears failed refreshes',async t=>{
+ const h=await harness(t);await h.connect();h.emit({method:'item/updated',params:{sessionId:'session-one',item:inspectionItem}});let resolve;
+ h.host.connection.request=()=>new Promise(r=>resolve=r);const input={sessionId:'session-one',itemId:'inspect-item',revision:2};const pending=h.runtime.inspectChild(input);
+ await assert.rejects(h.runtime.inspectChild(input),/already/);h.emit({method:'item/updated',params:{sessionId:'session-one',item:{...inspectionItem,revision:3}}});resolve(childRead());await pending;assert.equal(h.runtime.snapshot().childInspections[0].revision,2);
+ const refresh=h.runtime.inspectChild({...input,revision:3});assert.equal(h.runtime.snapshot().childInspections[0].data,undefined);h.emit({method:'item/updated',params:{sessionId:'session-one',item:{...inspectionItem,revision:4,childSessionId:'different-child'}}});resolve(childRead());await assert.rejects(refresh,/changed/);assert.equal(h.runtime.snapshot().childInspections[0].data,undefined);
+});
+test('late child reads cannot populate a disconnected or replacement connection',async t=>{
+ const h=await harness(t);await h.connect();h.emit({method:'item/updated',params:{sessionId:'session-one',item:inspectionItem}});let resolve;h.host.connection.request=()=>new Promise(r=>resolve=r);
+ const pending=h.runtime.inspectChild({sessionId:'session-one',itemId:'inspect-item',revision:2});await h.runtime.disconnect();resolve(childRead());await assert.rejects(pending,/interrupted/);assert.deepEqual(h.runtime.snapshot().childInspections,[]);
+});
+test('protocol invalidation clears pending child reads instead of leaving a permanent loader',async t=>{
+ const h=await harness(t);await h.connect();h.emit({method:'item/updated',params:{sessionId:'session-one',item:inspectionItem}});let resolve;h.host.connection.request=()=>new Promise(r=>resolve=r);
+ const pending=h.runtime.inspectChild({sessionId:'session-one',itemId:'inspect-item',revision:2});h.protocolError(Error('Protocol invalidation fixture'));resolve(childRead());await assert.rejects(pending,/interrupted/);
+ assert.equal(h.runtime.snapshot().permissionVerified,false);assert.deepEqual(h.runtime.snapshot().childInspections,[]);
+});
 test('interactive credentials are private and verified before a turn can start',async t=>{
  let changed=false;const key='fixture-api-private';
  const h=await harness(t,{credentials:async({environment})=>({source:'api',environment:{...environment,META_API_KEY:key},verify:async()=>{if(changed)throw Error('Billing source changed');}})});
@@ -48,19 +74,19 @@ async function harness(t,options={}) {
  const binary=join(root,(options.platform??process.platform)==='win32'?'muse.exe':'muse');
  await writeFile(binary,'not executable: process boundary is injected');
  t.after(()=>rm(root,{recursive:true,force:true}));
- const calls=[]; let notification=()=>{}, serverRequest=()=>{}, resolveExit;
+ const calls=[]; let notification=()=>{}, serverRequest=()=>{}, protocolError=()=>{}, resolveExit;
  const session=()=>({sessionId:'session-one',workspaceRoot:root,status:'idle',activeTurnId:null,turnCount:0,providerId:'meta',modelId:'muse-spark-1.2',approvalMode:{mode:'onRequest',source:'sessionOverride',lastCommandId:null},permissionState:permissions()});
  const host={initializeResult:{serverInfo:{name:'muse-session-server',version:'1.4.14'},schema:{version:1,fingerprint:pin},sandboxAvailability:'available',experimentalApi:true},exited:new Promise(resolve=>{resolveExit=resolve;}),close:async()=>{calls.push({method:'close'});return {code:0,signal:null};}};
  host.connection={
   mintCommandId:()=> '0198f0ab-9999-7000-8000-000000000001',
-  onNotification:fn=>{notification=fn;},onServerRequest:fn=>{serverRequest=fn;},onProtocolError:()=>{},
+  onNotification:fn=>{notification=fn;},onServerRequest:fn=>{serverRequest=fn;},onProtocolError:fn=>{protocolError=fn;},
   request:async(method,params)=>{calls.push({method,params});if(method==='permissionProfile/list')return {profiles:[{profileId:':ask-me',label:'Ask me',available:true,reviewerAuthority:'human'}]};if(method==='model/list')return nativeCatalog();if(method==='session/read')return {session:session()};throw Error('Unexpected request '+method);},
   command:async(method,params,opts)=>{calls.push({method,params,opts});if(method==='session/start')return {session:session(),viewCursor:'start-1'};if(method==='turn/start')return {commandId:opts.commandId,status:'accepted',disposition:'started',startedNewTurn:true,turnId:'turn-one'};if(method==='approval/decide')return {terminal:true};throw Error('Unexpected command '+method);}
  };
  const sdk={EXPECTED_SCHEMA_FINGERPRINT:pin,spawnMspConnection:spec=>{calls.push({method:'spawn',spec});return {initialize:async params=>{calls.push({method:'initialize',params});return host;},close:host.close};}};
  const runtime=createRuntime({environment:{PATH:'',SystemRoot:'C:\\Windows',META_API_KEY:'must-not-cross',MUSE_EXPERIMENTAL_SDK_ENABLED:'on'},loadSdk:async()=>({sdk,sdkVersion:'1.4.14'}),probeVersion:async()=>options.version??'1.4.14',timeoutMs:100,...options});
  t.after(()=>runtime.close());
- return {runtime,root,binary,calls,host,sdk,session,emit:frame=>notification(frame),request:frame=>serverRequest(frame),exit:resolveExit,connect:()=>runtime.connect({binary,workspaceRoot:root})};
+ return {runtime,root,binary,calls,host,sdk,session,emit:frame=>notification(frame),protocolError:error=>protocolError(error),request:frame=>serverRequest(frame),exit:resolveExit,connect:()=>runtime.connect({binary,workspaceRoot:root})};
 }
 
 test('interactive Full access retains schema and Ask me verification while relaxing only sandbox availability',async t=>{

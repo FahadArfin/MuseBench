@@ -1,6 +1,7 @@
 import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
 import {childWorking} from '../shared/child-actions.mjs';
 import {createChildTracker} from './children.mjs';
+import {projectChildRead} from './child-inspection.mjs';
 import {createCompactionTracker} from './compaction.mjs';
 import {validateRunOptions} from '../shared/run-options.mjs';
 import {normalizeModels,modelForOptions} from '../shared/models.mjs';
@@ -147,9 +148,10 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  let revisionCounter=0;
  let awaitingChildReport=false,lastTerminal=null;
  const children=createChildTracker(),childCommands=new Set(),uncertainChildren=new Set(),childWork=new Map();
+ const childReads=new Set();
  const compaction=createCompactionTracker();let compactionTimer;
  const listeners=new Set();
- const snapshot=()=>structuredClone(state);
+ const snapshot=()=>structuredClone({...state,connectionEpoch:epoch});
  const emit=()=>{for(const fn of listeners){try{fn(snapshot());}catch{/* A renderer observer is never a protocol authority. */}}};
  const update=patch=>{state={...state,...patch,pendingRequests:pendingView()};emit();};
  const syncChildren=()=>{const view=children.snapshot();if(usable.has(adapter?.snapshot().status)&&view.items.some(childWorking))awaitingChildReport=true;for(const [key,target] of childWork){const i=view.items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&childWorking(i))childWork.delete(key);}update({children:view,childrenBusy:view.items.some(childWorking)||childWork.size>0||awaitingChildReport,childWorkPending:childWork.size});if(adapter)syncAdapter(adapter.snapshot());};
@@ -159,7 +161,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const assertCurrent=token=>{if(token!==epoch)throw Error('Muse connection was interrupted or disconnected.');};
  const syncAdapter=s=>{
   const terminalUnavailable=['unavailable','uncertain','closed'].includes(s.status);
-  if(terminalUnavailable){clearPending();blockedReason=null;interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Connection lost before compaction was confirmed.');syncCompaction();}
+  if(terminalUnavailable){childReads.clear();state={...state,childInspections:[]};clearPending();blockedReason=null;interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Connection lost before compaction was confirmed.');syncCompaction();}
   if(s.pending&&!pending){putPending({kind:s.pending.approvalId?'approval':'input',...s.pending});}
   const terminal=['completed','failed','cancelled'].includes(s.status)?`${s.turnId}:${s.status}`:null;
   if(terminal&&terminal!==lastTerminal){for(const [key,target] of childWork){const i=children.snapshot().items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&!childWorking(i))childWork.delete(key);}lastTerminal=terminal;awaitingChildReport=children.snapshot().items.some(childWorking)||childWork.size>0;}
@@ -181,7 +183,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const token=++epoch;connecting=false;sending=false;deciding=false;blockedReason=null;clearPending();
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('disconnected');adapter=null;
   closing=Promise.resolve().then(release);
-  update({status:'unavailable',reason,fullAccess:false,sessionSeeded:false,sessionId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:'pending'});
+  childReads.clear();
+  update({status:'unavailable',reason,fullAccess:false,sessionSeeded:false,sessionId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:'pending',childInspections:[]});
   const cleanup=await closing;closing=null;
   if(token===epoch)update({cleanup,childrenBusy:cleanup==='unconfirmed',...(cleanup==='unconfirmed'?{reason:'Muse shutdown could not be confirmed. Check the native process before reconnecting.'}:{})});
   return snapshot();
@@ -191,7 +194,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const token=epoch;blockedReason=permissionReason;clearPending();
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('permissions-unverified');adapter=null;
   closing=Promise.resolve().then(release);
-  update({status:'blocked',reason:permissionReason,permissionVerified:false,sessionId:null,pending:null,cleanup:'pending'});
+  childReads.clear();
+  update({status:'blocked',reason:permissionReason,permissionVerified:false,sessionId:null,pending:null,cleanup:'pending',childInspections:[]});
   const cleanup=await closing;closing=null;
   if(token===epoch)update({cleanup,...(cleanup==='unconfirmed'?{reason:permissionReason+' Host shutdown could not be confirmed; check the native process before reconnecting.'}:{})});
   return snapshot();
@@ -265,7 +269,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   if(platform==='win32'&&!binary.toLowerCase().endsWith('.exe'))throw Error('Select the native muse.exe, not a .cmd or PowerShell installer/launcher.');
   if(typeof workspaceRoot!=='string'||!isAbsolute(workspaceRoot))throw Error('Select an absolute project workspace first.');
   const preserveReceipts=sessionId&&state.nativeSessionId===sessionId;
-  const token=++epoch;connecting=true;blockedReason=null;clearPending();restoreAwaiting.clear();openingEvents=[];nativeCatalog=null;deferredInputs.clear();if(!preserveReceipts){settledInputs.clear();settledApprovals.clear();inputResponses.clear();approvalAttempts.clear();uncertainChildren.clear();update({inputResponse:null,inputResponses:[],childReceipts:[],steering:null});}compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0});syncCompaction();
+  const token=++epoch;connecting=true;blockedReason=null;clearPending();restoreAwaiting.clear();openingEvents=[];nativeCatalog=null;deferredInputs.clear();if(!preserveReceipts){settledInputs.clear();settledApprovals.clear();inputResponses.clear();approvalAttempts.clear();uncertainChildren.clear();update({inputResponse:null,inputResponses:[],childReceipts:[],steering:null});}childReads.clear();update({childInspections:[]});compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0});syncCompaction();
   update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,workspaceTools,sessionSeeded:false,sessionId:null,messages:[],restoredMessages:[],restoration:null,modelCatalog:undefined,modelId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
   let openedSession;
   try{
@@ -467,6 +471,28 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   try{const ack=await bounded(owner.connection.command(target.method,{sessionId,...target.params},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack.status!=='accepted')throw Error('Child command acknowledgement could not be verified.');publish({...receipt,status:'accepted'});return snapshot();}
   catch(error){if(token===epoch){if(error.code===-32030)childWork.delete(key);else uncertainChildren.add(key);publish({...receipt,status:error.code===-32030?'rejected':'unknown',reason:String(error.message).slice(0,1000)});syncChildren();}throw error;}finally{if(token===epoch)childCommands.delete(key);}
  }
+ async function inspectChild(input={}){
+  if(!owner||!adapter||connecting||!state.permissionVerified||input.sessionId!==state.sessionId)throw Error('Use the current interactive connection to read child activity.');
+  const target={...children.inspect(input),sessionId:state.sessionId},token=epoch,key=target.itemId,readOwner=owner;
+  if(childReads.has(key))throw Error('This child is already being read.');
+  if(childReads.size>=4)throw Error('Wait for another child activity read to finish.');
+  const publish=entry=>{
+   const entries=(state.childInspections??[]).filter(i=>i.itemId!==key);
+   if(entries.length>=8){const oldest=entries.findIndex(i=>i.status!=='loading');if(oldest>=0)entries.splice(oldest,1);}
+   // The controller publishes this read model separately from lifecycle events.
+   // A read must not trigger turn reconciliation or automatic goal continuation.
+   state={...state,childInspections:[...entries,entry]};
+  };
+  childReads.add(key);publish({...target,status:'loading'});
+  try{
+   const read=await bounded(owner.connection.request('session/read',{sessionId:target.childSessionId,excludeItems:false}),timeoutMs);assertCurrent(token);
+   if(owner!==readOwner||!state.permissionVerified)throw Error('Muse connection was interrupted or disconnected.');
+   const current=children.snapshot().items.find(i=>i.itemId===key);
+   if(current?.childSessionId!==target.childSessionId)throw Error('The child session changed while reading.');
+   const data=projectChildRead(read,target);publish({...target,status:'ready',readAt:new Date().toISOString(),data});return snapshot();
+  }catch(error){if(token===epoch&&state.permissionVerified)publish({...target,status:'error',error:'Could not read this child activity. Refresh to try again.'});throw error;}
+  finally{if(token===epoch)childReads.delete(key);}
+ }
  async function compact({sessionId,turnId}={}){
   if(!owner||!adapter||!state.permissionVerified||connecting||sending||steering||pending||childCommands.size||state.childrenBusy||!usable.has(state.status)||sessionId!==state.sessionId||!turnId||turnId!==state.turnId)throw Error('Finish the current turn and use this connection’s latest session before compacting.');
   const token=epoch,commandId=owner.connection.mintCommandId();compaction.start({sessionId,turnId,commandId});syncCompaction();
@@ -474,5 +500,5 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   try{const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();}
   catch(error){if(token===epoch){if(error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
  }
- return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,answerInput,decide,close:()=>disconnect()};
+ return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,inspectChild,answerInput,decide,close:()=>disconnect()};
 }

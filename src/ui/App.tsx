@@ -181,10 +181,12 @@ export default function App() {
   }, [bridge]);
   const act = useCallback(async (action: Action) => {
     if (!bridge) return null;
-    setPending(true);
-    try { const next = await bridge.dispatch(action); setState(next); return next; }
+    const inspection=action.type==='inspectChild';
+    if(!inspection)setPending(true);
+    // Reads publish through onState; a late read reply must not undo navigation.
+    try { const next = await bridge.dispatch(action); if(!inspection)setState(next); return next; }
     catch (error) { setLocalError(error instanceof Error ? error.message : String(error)); return null; }
-    finally { setPending(false); }
+    finally { if(!inspection)setPending(false); }
   }, [bridge]);
   const branchResponse = useCallback(async (messageId: string) => {
     const next = await act({ type: 'forkTask', messageId });

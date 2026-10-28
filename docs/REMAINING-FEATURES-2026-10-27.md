@@ -18,6 +18,8 @@ This audit supersedes the status table in [26 October's inventory](REMAINING-FEA
 
 ## Boundaries that still require a different supported contract or further proof
 
+**28 October follow-up:** Native child activity inspection now uses the observed child's `session/read` identity. Messages, tool output, and reported worktree/token facts appear in a bounded, on-demand disclosure. A read-only Muse 1.4.14 probe returned four real child items without loading the child or starting a model turn. [Implementation and validation](VALIDATION-child-inspection.md). This does not establish the remaining lifecycle operations below.
+
 - **Native peer messaging:** the official Muse contract excludes Windows/headless sessions. Existing explicit MuseBench context handoffs remain available; they are not native peer sessions.
 - **MSP budgets:** no supported per-turn model-step/token member was found in the pinned schema. Ignored configuration keys are not a valid workaround. Exec budget controls remain separate.
 - **Full child lifecycle acceptance:** eligibility corrections are delivered, but the host must expose a supported direct/recoverable/closed child before follow-up/resume/reopen can be proven. Attempt-specific workflow rejections are retained in the report.

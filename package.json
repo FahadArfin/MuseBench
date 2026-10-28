@@ -34,6 +34,7 @@
     "preview:snapshots": "node scripts/capture-preview-snapshots.mjs",
     "test:preview-parity": "node scripts/preview-parity.mjs",
     "test:motion": "node scripts/motion-smoke.mjs && node scripts/motion-smoke.mjs --desktop",
+    "test:child-inspection": "node scripts/child-inspection-smoke.mjs && node scripts/child-inspection-smoke.mjs --desktop",
     "test:typography": "node scripts/typography-smoke.mjs",
     "test:profile-identity": "node scripts/profile-identity-smoke.mjs && node scripts/profile-account-desktop-smoke.mjs",
     "test:startup-animation": "node scripts/startup-animation-smoke.mjs",
