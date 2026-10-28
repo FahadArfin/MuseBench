@@ -1,24 +1,22 @@
-import {useState} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import type {AccountProfile} from '../shared/types';
+import {migrateLocalProfile,profileStorageKey,readProfileOverrides,resolveLocalProfile,writeLocalProfile,type LocalProfileOverrides} from './local-profile.mjs';
 
 export function useLocalProfile(account?: AccountProfile | null) {
-  const key = `musebench-profile:${account?.sample ? 'sample' : 'account'}:${account?.avatarSeed || account?.displayName || 'local'}`;
-  const [overrides, setOverrides] = useState<Record<string, Partial<AccountProfile>>>({});
-  let saved: Partial<AccountProfile> = overrides[key] || {};
-  if (!(key in overrides)) {
-    try {
-      const value = JSON.parse(localStorage.getItem(key) || '{}');
-      for (const field of ['displayName', 'handle', 'bio', 'avatarSeed'] as const) {
-        if (typeof value?.[field] === 'string') saved[field] = value[field].slice(0, 240);
-      }
-      if(typeof value?.avatarImage==='string'&&value.avatarImage.length<500000&&/^data:image\/png;base64,[A-Za-z0-9+/]+=*$/.test(value.avatarImage))saved.avatarImage=value.avatarImage;
-      if(value?.setupComplete===true)saved.setupComplete=true;
-    } catch { /* An unreadable local preference does not block the profile. */ }
-  }
-  const profile: AccountProfile = {displayName: 'Your account', ...account, ...saved};
-  const save = (next: Pick<AccountProfile, 'displayName' | 'handle' | 'bio' | 'avatarSeed' | 'avatarImage' | 'setupComplete'>) => {
-    localStorage.setItem(key, JSON.stringify(next));
-    setOverrides(previous => ({...previous, [key]: next}));
+  const key = profileStorageKey(account), currentKey = useRef(key);
+  const [revision,refresh] = useState(0);
+  currentKey.current = key;
+  useEffect(() => {
+    if (migrateLocalProfile(account)) refresh(value => value + 1);
+  },[key]);
+  // Avatar data can be large. Do not parse local storage on every streamed
+  // chat update; account changes and explicit profile saves invalidate it.
+  const overrides = useMemo(() => readProfileOverrides(account),[key,revision]);
+  const profile = useMemo(() => resolveLocalProfile(account,overrides),[account,overrides]);
+  const save = (next: LocalProfileOverrides) => {
+    if (currentKey.current !== key) throw Error('The account changed. Reopen the profile editor.');
+    writeLocalProfile(account,next);
+    refresh(value => value + 1);
   };
-  return {profile, save};
+  return {profile,save,key};
 }

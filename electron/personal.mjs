@@ -1,4 +1,6 @@
 import {readPersonalAuth} from './personal-auth.mjs';
+import {readMetaAccount} from './personal-account.mjs';
+import {createPersonalAccountSync} from './personal-account-sync.mjs';
 import {readMetaSchedules,activateMetaSchedule,scheduledDocument} from './meta-schedules.mjs';
 import {runMetaAction,dismissMetaSearch,metaNavigationReady} from './meta-navigation.mjs';
 import {readAgentProfile} from './personal-agent.mjs';
@@ -30,7 +32,7 @@ const defaultLibraryAdapter = {
 
 // Only the trusted local main frame calls this controller. Remote contents have
 // no preload and never receive project state, credentials, or the local bridge.
-export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, dismiss: dismissMetaSearch, ready: metaNavigationReady }, authReader = readPersonalAuth, warmupDelay = 800, warmLimit = 3 }) {
+export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, dismiss: dismissMetaSearch, ready: metaNavigationReady }, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 3 }) {
   // Native getters can throw after destruction: cache contents while alive.
   const localContents = window.webContents;
   const entries = new Map(), serviceSessions = new Map(), popups = new Set(), pendingReady = new Set();
@@ -48,6 +50,21 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   const warmCapacity = Math.max(0, Math.min(3, Number.isFinite(warmLimit) ? warmLimit : 3));
   const alive = entry => Boolean(entry && !entry.contents.isDestroyed());
   const current = () => activeEntry;
+  const accountSync = createPersonalAccountSync({
+    ...accountTiming,
+    read: accountReader ?? readMetaAccount,
+    enabled: () => Boolean(accountReader) && !closed && !setupLoginWindow && !museAuthPending(),
+    source: () => {
+      const candidates = [...new Set([current(), entries.get('chat'), ...entries.values()])];
+      const eligible = entry => alive(entry) && !entry.error && !entry.awaitingCommit && !entry.museAuth && entry.collectionGeneration === libraryGeneration && ['https://www.meta.ai','https://meta.ai'].includes(personalOrigin(entry.contents.getURL()));
+      const entry = candidates.find(eligible);
+      if (!entry) return null;
+      const generation = libraryGeneration, epoch = entry.documentEpoch, url = entry.contents.getURL();
+      return { contents: entry.contents, valid: () => !closed && eligible(entry) && generation === libraryGeneration && epoch === entry.documentEpoch && url === entry.contents.getURL() };
+    },
+    openDocument: openAccountDocument,
+    onChange: () => { if (!closed) onState(snapshot()); },
+  });
 
   async function checkLogin(){
     if(closed)return {status:'unknown'};
@@ -83,7 +100,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       error: entry?.error ?? null, canGoBack: Boolean(contents?.navigationHistory.canGoBack()),
       canGoForward: Boolean(contents?.navigationHistory.canGoForward()), visible: Boolean(entry?.visible),
       available: personalAvailability(), compact, notice,
-      appearance: { ...appearance }, agentProfile, schedules: destination==='chat'&&alive(entry)&&scheduledDocument(contents)?schedules:null,
+      appearance: { ...appearance }, profile: accountSync.snapshot(), agentProfile, schedules: destination==='chat'&&alive(entry)&&scheduledDocument(contents)?schedules:null,
       authenticating: Boolean(personalAuthenticating(entry?.origin) || museAuthPending() || [...popups].some(popup => personalAuthenticating(popup.origin))),
       authWindowOpen: popups.size > 0,
       library: catalog.snapshot(),
@@ -193,6 +210,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     if (alive(entry)) entry.contents.close({ waitForBeforeUnload: false });
   }
   function clearLibrary(preserveEntry = null) {
+    accountSync.invalidate();
     knownLogin='unknown';
     warmBlocked = true; stopWarmup(); warmHints.clear(); warmAttempted.clear();
     libraryGeneration++; libraryEstablished = false; selectedDocument = null; agentProfile = null; catalog.reset();
@@ -343,6 +361,28 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     contents.on('content-bounds-updated', event => event.preventDefault());
   }
   const remotePreferences = webSession => ({ session: webSession, contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false, webSecurity: true, spellcheck: true });
+  function openAccountDocument(url, signal) {
+    // Read only the signed-in user's own public-facing profile, in the same
+    // official session. Never navigate a live chat or copy authentication data.
+    if (closed || signal.aborted || !/^https:\/\/www\.meta\.ai\/(?:@[A-Za-z0-9_.]{1,100})?$/.test(url)) throw Error('Account lookup unavailable');
+    const owner = getServiceSession('chat');
+    const document = new BrowserWindow({parent:window,show:false,skipTaskbar:true,width:1000,height:800,
+      webPreferences:{...remotePreferences(owner.webSession),backgroundThrottling:false}});
+    const contents = document.webContents;
+    owner.owned.add(contents);
+    const close = () => { if (!document.isDestroyed()) document.destroy(); };
+    const guard = (event, legacyURL, _inPage, legacyMainFrame) => {
+      if (!(event.isMainFrame ?? legacyMainFrame ?? true)) return;
+      if (!['https://www.meta.ai','https://meta.ai'].includes(personalOrigin(event.url ?? legacyURL))) event.preventDefault();
+    };
+    guardContents(contents, () => {});
+    contents.on('will-navigate', guard); contents.on('will-redirect', guard);
+    contents.setWindowOpenHandler(() => ({action:'deny'}));
+    document.once('closed', () => { owner.owned.delete(contents); signal.removeEventListener('abort', close); });
+    signal.addEventListener('abort', close, {once:true});
+    void document.loadURL(url).catch(close);
+    return {contents,close};
+  }
   function openHandler(entry, ownerSession, details) {
     // Background preparation cannot open authentication or other popup windows.
     if (entry.speculative && !entry.visited) return { action: 'deny' };
@@ -414,7 +454,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     guardContents(contents, () => fail(entry, 'This page tried to leave the supported Muse sign-in or service. Retry, or continue on the official website in your browser.'));
     contents.setWindowOpenHandler(details => openHandler(entry, ownerSession, details));
     contents.on('did-start-loading', () => { entry.loading = true; publish(); });
-    contents.on('did-stop-loading', () => { entry.loading = false; if (entry === current()) warmBlocked = false; publish(); });
+    contents.on('did-stop-loading', () => { entry.loading = false; if (entry === current()) warmBlocked = false; publish(); if (entry.visited) accountSync.request(); });
     contents.on('dom-ready', () => { void present(entry); });
     const navigated = (_event, url) => {
       entry.documentEpoch++;
@@ -445,6 +485,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       if (entry === current() && entry.route) destination = entry.route;
       if (entry === current() && entry.slot === 'bot') syncChatSelection();
       publish();
+      if (entry.visited) accountSync.request();
     };
     contents.on('did-navigate', (event, url) => { entry.awaitingCommit = false; navigated(event, url); });
     contents.on('did-navigate-in-page', (event, url, isMainFrame) => {
@@ -644,7 +685,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   window.on('resize', resize); window.on('close', close);
   function close() {
     if (closed) return;
-    closed = true; stopWarmup(true); if(setupLoginWindow&&!setupLoginWindow.isDestroyed())setupLoginWindow.destroy(); clearTimeout(scheduleTimer); requestedVisible = false; cancelActions(); clearLibrary(); clearTimeout(libraryTimer); libraryTimer = null;
+    closed = true; accountSync.close(); stopWarmup(true); if(setupLoginWindow&&!setupLoginWindow.isDestroyed())setupLoginWindow.destroy(); clearTimeout(scheduleTimer); requestedVisible = false; cancelActions(); clearLibrary(); clearTimeout(libraryTimer); libraryTimer = null;
     for (const popup of popups) {
       try { if (!popup.window.isDestroyed()) popup.window.destroy(); } catch { /* Native teardown may already have disposed the child. */ }
       if (!popup.contents.isDestroyed()) popup.contents.close({ waitForBeforeUnload: false });
@@ -661,5 +702,6 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     localContents.removeListener('did-start-navigation', localNavigation); localContents.removeListener('render-process-gone', hide); localContents.removeListener('destroyed', hide); localContents.removeListener('zoom-changed', resize);
     window.removeListener('resize', resize); window.removeListener('close', close);
   }
+  accountSync.start();
   return { snapshot, dispatch, hide, close, checkLogin, openLogin };
 }

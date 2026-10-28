@@ -33,6 +33,7 @@ jobs:
         run: node scripts/stamp-release.mjs
       - run: npm test
       - run: npm run build
+      - run: npm run test:profile-identity
       - run: npm run test:typography
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness

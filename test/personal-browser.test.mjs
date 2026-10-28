@@ -43,7 +43,7 @@ function harness(options = {}) {
     dismiss: async contents => { dismissals.push(contents); return true; },
   };
   const libraryAdapter = options.libraryAdapter ?? { prepare: async () => false, read: async () => ({ status: 'unavailable', items: [] }), activate: async () => false };
-  const browser = implementation.createPersonalBrowser({ window, BrowserWindow: Popup, WebContentsView: View, session, shell: { openExternal: async url => { external.push(url); } }, onState: value => states.push(value), onShortcut: value => shortcuts.push(value), presentation, libraryAdapter, metaAdapter, ...(options.authReader === undefined ? {} : { authReader: options.authReader }), ...(options.warmupDelay === undefined ? {} : { warmupDelay: options.warmupDelay }), ...(options.warmLimit === undefined ? {} : { warmLimit: options.warmLimit }) });
+  const browser = implementation.createPersonalBrowser({ window, BrowserWindow: Popup, WebContentsView: View, session, shell: { openExternal: async url => { external.push(url); } }, onState: value => states.push(value), onShortcut: value => shortcuts.push(value), presentation, libraryAdapter, metaAdapter, accountReader:options.accountReader ?? null, accountTiming:options.accountTiming ?? {}, ...(options.authReader === undefined ? {} : { authReader: options.authReader }), ...(options.warmupDelay === undefined ? {} : { warmupDelay: options.warmupDelay }), ...(options.warmLimit === undefined ? {} : { warmLimit: options.warmLimit }) });
   return { browser, views, sessions, states, external, shortcuts, window, popups, presentations, actions, presentation, libraryAdapter, metaAdapter, metaActions, dismissals };
 }
 const layout = { type: 'layout', visible: true, bounds: { x: 300, y: 80, width: 700, height: 620 } };
@@ -56,6 +56,63 @@ async function until(check, message, timeout = 1000) {
   }
   assert.fail(message);
 }
+
+test('account name reaches the snapshot through a temporary sandboxed profile document without navigating the chat', async t => {
+  const h = harness({warmLimit:0, accountTiming:{settleMs:5, retryMs:10}, accountReader:async contents => ({status:'ready',handle:'alice',...(contents.getURL().endsWith('/@alice')?{displayName:'Alice Rivera'}:{})})});
+  t.after(() => h.browser.close());
+  await h.browser.dispatch(layout);
+  const main = h.views[0].webContents;
+  main.unsentDraft = 'Keep my message';
+  await until(() => h.browser.snapshot().profile?.displayName === 'Alice Rivera', 'official profile name published');
+  assert.equal(h.browser.snapshot().profile.accountName, 'Alice Rivera');
+  assert.match(h.browser.snapshot().profile.accountId, /^meta:[a-f0-9]{64}$/);
+  assert.equal(h.browser.snapshot().profile.handle, 'alice');
+  assert.equal(main.unsentDraft, 'Keep my message');
+  assert.deepEqual(main.loads, ['https://www.meta.ai/']);
+  const reader = h.popups.find(popup => popup.webContents.loads.includes('https://www.meta.ai/@alice'));
+  assert(reader);
+  await until(() => reader.destroyed, 'temporary account reader disposed');
+  assert.equal(reader.options.show, false);
+  assert.equal(reader.options.webPreferences.session, h.sessions.get('persist:musebench-personal-muse'));
+  assert.equal(reader.options.webPreferences.nodeIntegration, false);
+  assert.equal(reader.options.webPreferences.sandbox, true);
+  assert.equal(reader.options.webPreferences.contextIsolation, true);
+  assert.equal(reader.options.webPreferences.preload, undefined);
+  assert.equal(reader.shown, undefined);
+  assert.deepEqual(reader.webContents.openHandler({url:'https://www.meta.ai/'}), {action:'deny'});
+  assert.equal(h.browser.snapshot().authWindowOpen, false);
+});
+
+test('account authentication boundaries clear the previous name and allow a different signed-in profile', async t => {
+  let account = {handle:'alice', displayName:'Alice Rivera'};
+  const h = harness({warmLimit:0, accountTiming:{settleMs:5,retryMs:10}, accountReader:async () => ({status:'ready',...account})});
+  t.after(() => h.browser.close());
+  await h.browser.dispatch(layout);
+  await until(() => h.browser.snapshot().profile?.displayName === 'Alice Rivera', 'first account');
+  const firstId = h.browser.snapshot().profile.accountId, main = h.views[0].webContents;
+  await main.loadURL('https://www.facebook.com/login');
+  assert.equal(h.browser.snapshot().profile, null);
+  account = {handle:'bob',displayName:'Bob Rivera'};
+  await main.loadURL('https://www.meta.ai/');
+  await until(() => h.browser.snapshot().profile?.displayName === 'Bob Rivera', 'second account');
+  assert.notEqual(h.browser.snapshot().profile.accountId, firstId);
+});
+
+test('closing the controller aborts a hidden account document and blocks provider popups and unrelated redirects', async () => {
+  let reading;
+  const h = harness({warmLimit:0,accountTiming:{settleMs:5,retryMs:10},accountReader:contents => contents.getURL().includes('/@')?new Promise(resolve => {reading=resolve;}):Promise.resolve({status:'ready',handle:'alice'})});
+  await h.browser.dispatch(layout);
+  await until(() => reading, 'profile lookup in flight');
+  const reader = h.popups[0];
+  let blocked = false;
+  reader.webContents.emit('will-navigate',{url:'https://example.com/',isMainFrame:true,preventDefault(){blocked=true;}});
+  assert.equal(blocked,true);
+  h.browser.close();
+  await until(() => reader.destroyed, 'pending lookup closed');
+  reading({status:'ready',handle:'alice',displayName:'Late name'});
+  await new Promise(resolve => setTimeout(resolve,20));
+  assert.equal(h.browser.snapshot().profile,null);
+});
 
 function routedTools(h) {
   const navigate = (contents, pathname) => {

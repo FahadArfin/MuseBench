@@ -13,10 +13,22 @@ const calendarDate=(value:string)=>new Date(`${value}T12:00:00`).toLocaleDateStr
 
 function EditProfile({profile,onSave,close}:{profile:AccountProfile;onSave:(value:AccountProfile)=>void;close:()=>void}){
  const [draft,setDraft]=useState(profile),[error,setError]=useState('');
+ const previousProfile=useRef(profile);
+ useEffect(()=>{
+  const previous=previousProfile.current;previousProfile.current=profile;
+  setDraft(current=>{
+   let next=current;
+   for(const field of ['displayName','handle','bio','avatarSeed','avatarImage'] as const){
+    if(current[field]===previous[field]&&current[field]!==profile[field])next={...next,[field]:profile[field]};
+   }
+   return next;
+  });
+ },[profile]);
  return <Modal title="Edit profile" close={close} className="profile-edit"><form onSubmit={event=>{event.preventDefault();try{onSave({...draft,displayName:draft.displayName.trim(),handle:draft.handle?.trim().replace(/^@/,'')});close();}catch{setError('Your profile could not be saved on this device. Please try again.');}}}>
   <p>Personalize your profile on this device.</p>
   <AvatarPicker value={draft} onChange={setDraft}/>
   <label>Display name<input data-autofocus required maxLength={60} value={draft.displayName} onChange={e=>setDraft({...draft,displayName:e.target.value})}/></label>
+  {profile.accountName&&draft.displayName.trim()!==profile.accountName&&<button type="button" className="text-link" onClick={()=>setDraft({...draft,displayName:profile.accountName!})}>Use account name</button>}
   <label>Handle<input maxLength={30} pattern="[a-zA-Z0-9_.-]*" title="Use letters, numbers, underscores, dots or hyphens" placeholder="your-name" value={draft.handle||''} onChange={e=>setDraft({...draft,handle:e.target.value})}/></label>
   <label>Bio<textarea maxLength={160} rows={3} placeholder="What are you building?" value={draft.bio||''} onChange={e=>setDraft({...draft,bio:e.target.value})}/></label>
   {error&&<p role="alert">{error}</p>}<div className="profile-edit-actions"><button type="button" className="button secondary" onClick={close}>Cancel</button><button className="button primary" disabled={!draft.displayName.trim()}>Save profile</button></div>

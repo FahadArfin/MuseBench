@@ -31,6 +31,7 @@
     "preview:snapshots": "node scripts/capture-preview-snapshots.mjs",
     "test:preview-parity": "node scripts/preview-parity.mjs",
     "test:typography": "node scripts/typography-smoke.mjs",
+    "test:profile-identity": "node scripts/profile-identity-smoke.mjs && node scripts/profile-account-desktop-smoke.mjs",
     "package:installer": "npm run build && electron-builder --win nsis --publish never"
   },
   "dependencies": {

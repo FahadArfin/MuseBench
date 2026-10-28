@@ -55,7 +55,7 @@ export interface PersonalLibraryGroup { status: 'idle' | 'loading' | 'ready' | '
 export interface PersonalLibrary { chats: PersonalLibraryGroup; ideas: PersonalLibraryGroup; goals: PersonalLibraryGroup; selectedId: string | null; }
 export interface PersonalAppearance { theme: 'dark' | 'light'; textSize: 'small' | 'medium' | 'large'; font: 'system' | 'mono'; reducedMotion: boolean; }
 // Frontend auth contract: clear on logout/account switch; no display name is inferred from the OS.
-export interface AccountProfile { displayName: string; avatarSeed?: string; avatarImage?: string; setupComplete?: boolean; sample?: boolean; handle?: string; bio?: string; }
+export interface AccountProfile { displayName: string; accountId?: string; accountName?: string; avatarSeed?: string; avatarImage?: string; setupComplete?: boolean; sample?: boolean; handle?: string; bio?: string; }
 export interface PersonalSchedules {status: 'ready'|'loading'|'unavailable';items:{id:string;title:string;timing:string;ambiguous:boolean}[];}
 export interface PersonalState { schedules?:PersonalSchedules|null; agentProfile?:{name:string;avatar:string|null}|null; profile?: AccountProfile | null; destination: PersonalDestination; loading: boolean; origin: string; error: string | null; canGoBack: boolean; canGoForward: boolean; visible: boolean; available: Record<PersonalDestination, boolean>; compact: boolean; notice: string | null; authenticating: boolean; authWindowOpen: boolean; library: PersonalLibrary; appearance?: PersonalAppearance; }
 export type PersonalServiceAction = 'search' | 'feed' | 'library' | 'settings' | 'connections' | 'whatsapp';
