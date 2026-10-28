@@ -88,6 +88,7 @@ export interface MuseBenchBridge {
 declare global { interface Window { musebench?: MuseBenchBridge } }
 export interface MuseBenchBridge {
   readonly windowControlsOverlay?: boolean;
+  readonly launch?: { readonly active:boolean; complete():Promise<void> };
   setWindowTheme?(theme:'light'|'dark'):Promise<void>;
 }
 

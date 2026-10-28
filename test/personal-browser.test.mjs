@@ -48,6 +48,39 @@ function harness(options = {}) {
 }
 const layout = { type: 'layout', visible: true, bounds: { x: 300, y: 80, width: 700, height: 620 } };
 
+test('launch prepares the default chat behind the animation and reveals the same native document', async t => {
+  const h = harness({warmLimit:0});
+  t.after(()=>h.browser.close());
+  h.browser.setLaunchHold(true);
+  h.browser.preloadInitial();
+  assert.equal(h.views.length,1);
+  assert.deepEqual(h.views[0].webContents.loads,['https://www.meta.ai/']);
+  await h.browser.dispatch(layout);
+  assert.equal(h.views[0].visible,false,'native WebContentsView must stay beneath the renderer animation');
+  assert.equal(h.browser.snapshot().visible,false);
+  assert.deepEqual(h.views[0].webContents.openHandler({url:'https://www.facebook.com/login'}),{action:'deny'});
+  h.views[0].webContents.unsentDraft = 'Retain this exact chat document';
+  h.browser.setLaunchHold(false);
+  assert.equal(h.views[0].visible,true);
+  assert.equal(h.browser.snapshot().visible,true);
+  await h.browser.dispatch({type:'navigate',destination:'chat'});
+  h.browser.preloadInitial();
+  assert.deepEqual(h.views[0].webContents.loads,['https://www.meta.ai/']);
+  assert.equal(h.views[0].webContents.unsentDraft,'Retain this exact chat document');
+});
+
+test('finishing launch respects the most recent hidden layout instead of reopening native content', async t => {
+  const h = harness({warmLimit:0});
+  t.after(()=>h.browser.close());
+  h.browser.setLaunchHold(true); h.browser.preloadInitial();
+  await h.browser.dispatch(layout);
+  await h.browser.dispatch({type:'layout',visible:false});
+  h.browser.setLaunchHold(false);
+  assert.equal(h.views[0].visible,false);
+  await h.browser.dispatch(layout);
+  assert.equal(h.views[0].visible,true);
+});
+
 async function until(check, message, timeout = 1000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {

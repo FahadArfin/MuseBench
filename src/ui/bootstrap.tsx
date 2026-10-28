@@ -8,10 +8,14 @@ import './styles.css';
 import './brand.css';
 import './sidebar.css';
 import './window-chrome.css';
+import {LaunchExperience} from './LaunchAnimation';
 
 // Both entry points use this exact component tree and stylesheet order.
 export function mountApp(preview?:React.ContextType<typeof BrowserPreviewContext>){
  document.documentElement.style.setProperty('--font-ui',UI_FONT_FAMILY);
  document.documentElement.style.setProperty('--mono-font',MONO_FONT_FAMILY);
- createRoot(document.getElementById('root')!).render(<React.StrictMode><BrowserPreviewContext.Provider value={preview??{}}><App/></BrowserPreviewContext.Provider></React.StrictMode>);
+ // The native one-shot claim survives renderer reloads. Preview replay is explicit.
+ const launch = window.musebench?.launch?.active === true || Boolean(preview && new URLSearchParams(location.search).get('launch') === '1');
+ if(launch)document.documentElement.dataset.launchActive='true';
+ createRoot(document.getElementById('root')!).render(<React.StrictMode><BrowserPreviewContext.Provider value={preview??{}}><LaunchExperience enabled={launch}><App/></LaunchExperience></BrowserPreviewContext.Provider></React.StrictMode>);
 }

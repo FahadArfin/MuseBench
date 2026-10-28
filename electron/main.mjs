@@ -31,6 +31,7 @@ import { createExecRuntime } from '../src/runtime/exec.mjs';
 import { allowedExternal, trustedSender, validateAction } from './security.mjs';
 import { createPersonalBrowser } from './personal.mjs';
 import { createStartupFailureHandler } from './startup.mjs';
+import { createLaunchAnimation } from './launch-animation.mjs';
 import { titleBarOverlay, updateWindowTheme } from './window-chrome.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -63,15 +64,24 @@ else {
     spaces=await createDesktopSpaces({dataDir:path.join(path.dirname(workDataDir),'spaces'),safeStorage,work});
     sites=await createDesktopSites({dataDir:path.join(path.dirname(workDataDir),'sites'),projectsDir:path.join(projectsDir||path.join(dataDir,'projects'),'sites'),runtime:process.platform==='win32'?createExecRuntime({helperPath,extensionReview}):createRuntime(),safeStorage,work,shell,clipboard});
     workExporter=createWorkExporter({BrowserWindow});
-    const workCapabilities=await workExporter.capabilities();
+    let workCapabilities={mp4:false};
     const workSnapshot=value=>({...value,capabilities:workCapabilities});
+    const publishWork=value=>{if(!closing&&window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:work-update',workSnapshot(value));};
+    // Optional executable discovery can take seconds on a slow PATH. It must
+    // not delay the first window or launch animation; MP4 stays unavailable
+    // until the probe finishes, and export awaits this same result.
+    const workCapabilitiesReady=Promise.resolve().then(()=>workExporter.capabilities()).then(value=>{
+      workCapabilities=value;
+      if(!closing)publishWork(work.getState());
+      return workCapabilities;
+    }).catch(()=>workCapabilities);
     protocol.handle('musebench-artifact',createArtifactHandler({getArtifact:async id=>(await work.getArtifact(id))??(await spaces.getArtifact(id)),render:renderArtifactHtml,getTheme:()=>nativeTheme.shouldUseDarkColors?'dark':'light'}));
     protocol.handle('musebench-site',createSitePreviewHandler({getBundle:(id,hash)=>sites.getBundle(id,hash)}));
     session.defaultSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
     session.defaultSession.setPermissionCheckHandler(()=>false);
     window = new BrowserWindow({ width:1480, height:960, minWidth:390, minHeight:600, show:false, title:'MuseBench', icon:path.join(root,'electron','assets','musebench.ico'), backgroundColor:'#181818', autoHideMenuBar:true,
       ...(process.platform === 'win32' ? {titleBarStyle:'hidden',titleBarOverlay:titleBarOverlay('dark')} : {}),
-      webPreferences:{preload:path.join(root,'electron','preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webviewTag:false,webSecurity:true,spellcheck:false} });
+      webPreferences:{preload:path.join(root,'electron','preload.cjs'),additionalArguments:['--musebench-launch-animation'],contextIsolation:true,nodeIntegration:false,sandbox:true,webviewTag:false,webSecurity:true,spellcheck:false} });
     dictation = createDictation({helperPath: app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchSpeech.exe') : path.join(root,'native','bin','MuseBenchSpeech.exe'), onState: value => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:dictation-update',value); }});
     window.on('close',event=>{if(updateShutdown?.preparing())event.preventDefault();});
     window.on('blur',()=>{ void dictation.stop(true).catch(()=>{}); });
@@ -90,12 +100,27 @@ else {
       onState: state => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:personal-update', state); },
       onShortcut: shortcut => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:personal-shortcut', shortcut); },
     });
+    const launch = createLaunchAnimation({setHeld: held => personal.setLaunchHold(held)});
+    personal.preloadInitial();
+    // Preload needs this one boolean before the renderer's first paint. The
+    // synchronous handler only consumes an in-memory ticket; it does no I/O.
+    const claimLaunch = event => { event.returnValue = trustedSender(event,window.webContents,uiURL) && launch.claim(); };
+    ipcMain.on('musebench:launch-claim',claimLaunch);
+    let initialNavigation = true;
+    window.webContents.on('did-start-navigation',(event,_url,inPlace,isMainFrame)=>{
+      if (!(event.isMainFrame ?? isMainFrame) || (event.isInPlace ?? inPlace)) return;
+      if (!initialNavigation) launch.complete();
+      initialNavigation = false;
+    });
+    window.webContents.on('render-process-gone',()=>launch.complete());
+    window.once('closed',()=>{launch.close();ipcMain.removeListener('musebench:launch-claim',claimLaunch);});
     const handler = (name, fn) => ipcMain.handle(name, async (event,...args) => {
       if (!trustedSender(event,window.webContents,uiURL)) throw Error('Workspace access is restricted to the main MuseBench window.');
       if(updateInstalling&&name!=='musebench:app-update')throw Error('MuseBench is restarting to install an update.');
       if(name==='musebench:app-update')return fn(...args);
       pendingIpc++;try{return await fn(...args);}finally{pendingIpc--;}
     });
+    handler('musebench:launch-complete',()=>launch.complete());
     const openFileEditor=createFileEditor({dataDir,getState:()=>controller.getState(),choose:async()=>{
       const result=await dialog.showOpenDialog(window,{title:'Choose your preferred text editor',properties:['openFile'],filters:[{name:'Editor application',extensions:['exe']}]});
       return result.canceled?null:result.filePaths[0];
@@ -157,6 +182,8 @@ else {
     });
     handler('musebench:work-export',async format=>{
       if(!['html','json','md','csv','pdf','mp4'].includes(format))throw Error('Unsupported export format.');
+      if(format==='mp4')await workCapabilitiesReady;
+      if(closing||window.isDestroyed())throw Error('MuseBench is closing. Export again after reopening it.');
       const snapshot=work.getState(),artifact=snapshot.artifact;
       if(!artifact)throw Error('Create a preview before exporting.');
       if(format==='mp4'&&(artifact.kind!=='motion'||!workCapabilities.mp4))throw Error('MP4 export needs an animation and FFmpeg.');
@@ -165,7 +192,7 @@ else {
       if(result.canceled||!result.filePath)return{saved:false};
       return workExporter.export({artifact,format,filePath:result.filePath,theme:nativeTheme.shouldUseDarkColors?'dark':'light',updatedAt:snapshot.artifactUpdatedAt});
     });
-    work.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:work-update',workSnapshot(value));});
+    work.subscribe(publishWork);
     const billingReader=createBillingReader({BrowserWindow,session,parent:window});
     window.on('closed',()=>billingReader.close());
     const commandInfo=createCommandInfo({extensionReview,getState:()=>controller.getState()});

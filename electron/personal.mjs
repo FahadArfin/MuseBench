@@ -36,7 +36,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   // Native getters can throw after destruction: cache contents while alive.
   const localContents = window.webContents;
   const entries = new Map(), serviceSessions = new Map(), popups = new Set(), pendingReady = new Set();
-  let destination = 'chat', activeEntry = null, requestedVisible = false, cssBounds = null, closed = false;
+  let destination = 'chat', activeEntry = null, requestedVisible = false, launchHeld = false, cssBounds = null, closed = false;
   let compact = true, notice = null, actionEpoch = 0;
   let appearance = { theme: 'dark', textSize: 'medium', font: 'system', reducedMotion: false };
   const catalog = createPersonalCatalog();
@@ -112,7 +112,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     let hiddenFocusedSurface = false;
     for (const entry of entries.values()) {
       if (!alive(entry)) continue;
-      const visible = Boolean(requestedVisible && entry === current() && !entry.error && bounds?.width && bounds?.height);
+      const visible = Boolean(requestedVisible && !launchHeld && entry === current() && !entry.error && bounds?.width && bounds?.height);
       if (bounds && entry === current()) entry.view.setBounds(bounds);
       if (entry.visible && !visible) hiddenFocusedSurface = true;
       entry.view.setVisible(visible); entry.visible = visible;
@@ -385,7 +385,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   }
   function openHandler(entry, ownerSession, details) {
     // Background preparation cannot open authentication or other popup windows.
-    if (entry.speculative && !entry.visited) return { action: 'deny' };
+    if (launchHeld || (entry.speculative && !entry.visited)) return { action: 'deny' };
     if (closed || !alive(entry) || !BrowserWindow || !allowedPersonalPopupURL(details.url, entry.contents.getURL())) {
       inform('This link cannot open inside MuseBench. You can continue on the official service in your browser.');
       return { action: 'deny' };
@@ -702,6 +702,13 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     localContents.removeListener('did-start-navigation', localNavigation); localContents.removeListener('render-process-gone', hide); localContents.removeListener('destroyed', hide); localContents.removeListener('zoom-changed', resize);
     window.removeListener('resize', resize); window.removeListener('close', close);
   }
+  function setLaunchHold(held) { if (!closed) { launchHeld = Boolean(held); publish(); } }
+  function preloadInitial() {
+    if (closed || alive(current())) return;
+    // Start only the default page. Normal navigation keeps this exact contents
+    // and its completed work; extra destinations still use the bounded cache.
+    selectDestination('chat'); publish();
+  }
   accountSync.start();
-  return { snapshot, dispatch, hide, close, checkLogin, openLogin };
+  return { snapshot, dispatch, hide, close, checkLogin, openLogin, setLaunchHold, preloadInitial };
 }

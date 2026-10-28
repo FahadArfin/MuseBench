@@ -1,5 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const launchActive = process.argv.includes('--musebench-launch-animation') && Boolean(ipcRenderer.sendSync('musebench:launch-claim'));
 contextBridge.exposeInMainWorld('musebench', Object.freeze({
+  launch: Object.freeze({active:launchActive,complete:()=>ipcRenderer.invoke('musebench:launch-complete')}),
   onboarding: command => ipcRenderer.invoke('musebench:onboarding',command),
   appUpdate: command => ipcRenderer.invoke('musebench:app-update',command),
   onAppUpdate: callback => {const listener=(_event,state)=>callback(state);ipcRenderer.on('musebench:app-update-state',listener);return()=>ipcRenderer.removeListener('musebench:app-update-state',listener);},
