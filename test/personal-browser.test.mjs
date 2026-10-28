@@ -5,7 +5,7 @@ const implementation = await import('../electron/personal.mjs').catch(() => ({})
 
 function harness(options = {}) {
   assert.equal(typeof implementation.createPersonalBrowser, 'function', 'personal browser controller is implemented');
-  const views = [], sessions = new Map(), states = [], external = [], shortcuts = [], popups = [], presentations = [], actions = [];
+  const views = [], sessions = new Map(), states = [], external = [], shortcuts = [], popups = [], presentations = [], actions = [], metaActions = [], dismissals = [];
   class Contents extends EventEmitter {
     constructor() { super(); this.url = ''; this.loads = []; this.destroyed = false; this.zoom = 1; this.focusCount = 0; this.navigationHistory = { canGoBack: () => false, canGoForward: () => false, goBack: () => {}, goForward: () => {} }; }
     setWindowOpenHandler(handler) { this.openHandler = handler; }
@@ -38,11 +38,358 @@ function harness(options = {}) {
   window.contentView = { children: [], addChildView(view) { this.children.push(view); }, removeChildView(view) { this.children = this.children.filter(item => item !== view); } };
   const session = { fromPartition(name) { if (!sessions.has(name)) { const value = new EventEmitter(); value.setPermissionRequestHandler = handler => { value.request = handler; }; value.setPermissionCheckHandler = handler => { value.check = handler; }; value.setDevicePermissionHandler = handler => { value.device = handler; }; sessions.set(name, value); } return sessions.get(name); } };
   const presentation = { apply: async (contents, compact, appearance) => { presentations.push({ contents, compact, appearance }); return true; }, action: async (contents, action) => { actions.push({ contents, action }); return true; } };
+  const metaAdapter = options.metaAdapter ?? {
+    action: async (contents, action) => { metaActions.push({ contents, action }); return true; },
+    dismiss: async contents => { dismissals.push(contents); return true; },
+  };
   const libraryAdapter = options.libraryAdapter ?? { prepare: async () => false, read: async () => ({ status: 'unavailable', items: [] }), activate: async () => false };
-  const browser = implementation.createPersonalBrowser({ window, BrowserWindow: Popup, WebContentsView: View, session, shell: { openExternal: async url => { external.push(url); } }, onState: value => states.push(value), onShortcut: value => shortcuts.push(value), presentation, libraryAdapter });
-  return { browser, views, sessions, states, external, shortcuts, window, popups, presentations, actions, presentation, libraryAdapter };
+  const browser = implementation.createPersonalBrowser({ window, BrowserWindow: Popup, WebContentsView: View, session, shell: { openExternal: async url => { external.push(url); } }, onState: value => states.push(value), onShortcut: value => shortcuts.push(value), presentation, libraryAdapter, metaAdapter, ...(options.authReader === undefined ? {} : { authReader: options.authReader }), ...(options.warmupDelay === undefined ? {} : { warmupDelay: options.warmupDelay }), ...(options.warmLimit === undefined ? {} : { warmLimit: options.warmLimit }) });
+  return { browser, views, sessions, states, external, shortcuts, window, popups, presentations, actions, presentation, libraryAdapter, metaAdapter, metaActions, dismissals };
 }
 const layout = { type: 'layout', visible: true, bounds: { x: 300, y: 80, width: 700, height: 620 } };
+
+async function until(check, message, timeout = 1000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (check()) return;
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  assert.fail(message);
+}
+
+function routedTools(h) {
+  const navigate = (contents, pathname) => {
+    if (!pathname) return;
+    contents.url = new URL(pathname, contents.getURL()).href;
+    contents.emit('did-navigate-in-page', {}, contents.url, true);
+  };
+  const muse = h.presentation.action, meta = h.metaAdapter.action;
+  h.presentation.action = async (contents, action) => {
+    const result = await muse(contents, action);
+    if (result) navigate(contents, { feed: '/feed', library: '/library' }[action]);
+    return result;
+  };
+  h.metaAdapter.action = async (contents, action) => {
+    const result = await meta(contents, action);
+    if (result) navigate(contents, { newChat: '/', media: '/create', artifacts: '/artifacts', scheduled: '/scheduled', vibes: '/vibes' }[action]);
+    return result;
+  };
+  return h;
+}
+
+test('retained Muse tools keep independent pages and restore drafts and scroll without another action', async t => {
+  const h = routedTools(harness()); t.after(() => h.browser.close());
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' }); await h.browser.dispatch(layout);
+  const main = h.views.find(view => view.visible); main.webContents.unsentDraft = 'Main draft';
+  const retained = new Map();
+  for (const action of ['search', 'feed', 'library']) {
+    await h.browser.dispatch({ type: 'serviceAction', action });
+    const view = h.views.find(candidate => candidate.visible);
+    assert.notEqual(view, main, `${action} must not navigate the main conversation`);
+    assert(![...retained.values()].includes(view), `${action} needs its own document`);
+    view.webContents.unsentDraft = `${action} draft`; view.webContents.scrollPosition = 425;
+    retained.set(action, view);
+  }
+  for (const [action, view] of retained) {
+    await h.browser.dispatch({ type: 'serviceAction', action });
+    assert.equal(view.visible, true); assert.equal(view.webContents.loads.length, 1);
+    assert.equal(h.actions.filter(call => call.contents === view.webContents && call.action === action).length, 1);
+    assert.equal(view.webContents.unsentDraft, `${action} draft`); assert.equal(view.webContents.scrollPosition, 425);
+  }
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
+  assert.equal(main.visible, true); assert.equal(main.webContents.unsentDraft, 'Main draft'); assert.equal(main.webContents.loads.length, 1);
+});
+
+test('retained Meta sections preserve the main chat and reuse their initialized documents', async t => {
+  const h = routedTools(harness()); t.after(() => h.browser.close());
+  await h.browser.dispatch(layout);
+  const main = h.views.find(view => view.visible); main.webContents.unsentDraft = 'Meta draft';
+  const retained = new Map();
+  for (const action of ['search', 'media', 'artifacts', 'scheduled', 'vibes']) {
+    await h.browser.dispatch({ type: 'metaAction', action });
+    const view = h.views.find(candidate => candidate.visible);
+    assert.notEqual(view, main, `${action} must not replace the active Meta conversation`);
+    assert(![...retained.values()].includes(view)); view.webContents.savedQuery = `${action} query`;
+    retained.set(action, view);
+  }
+  for (const [action, view] of retained) {
+    await h.browser.dispatch({ type: 'metaAction', action });
+    assert.equal(view.visible, true); assert.equal(view.webContents.loads.length, 1);
+    assert.equal(view.webContents.savedQuery, `${action} query`);
+    if (action !== 'search') assert.equal(h.metaActions.filter(call => call.contents === view.webContents && call.action === action).length, 1);
+  }
+  await h.browser.dispatch({ type: 'navigate', destination: 'chat' });
+  assert.equal(main.visible, true); assert.equal(main.webContents.unsentDraft, 'Meta draft'); assert.equal(main.webContents.loads.length, 1);
+});
+
+test('explicit New Meta chat still runs its action on the base conversation', async t => {
+  const h = routedTools(harness()); t.after(() => h.browser.close());
+  await h.browser.dispatch(layout); const main = h.views.find(view => view.visible);
+  await h.browser.dispatch({ type: 'metaAction', action: 'media' });
+  await h.browser.dispatch({ type: 'metaAction', action: 'newChat' });
+  await h.browser.dispatch({ type: 'metaAction', action: 'newChat' });
+  assert.equal(main.visible, true);
+  assert.equal(h.metaActions.filter(call => call.action === 'newChat' && call.contents === main.webContents).length, 2);
+});
+
+test('retained tool initialization coalesces repeated selection while the first action is pending', async t => {
+  const h = harness(); t.after(() => h.browser.close());
+  await h.browser.dispatch(layout);
+  let release, calls = 0;
+  h.presentation.action = () => { calls++; return new Promise(resolve => { release = resolve; }); };
+  const first = h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  await until(() => calls > 0, 'the first Feed action should start');
+  const feed = h.views.find(view => view.visible);
+  const second = h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  await microtasks();
+  assert.equal(calls, 1, 'rapid clicks must share the in-flight initialization');
+  release(true); await Promise.all([first, second]);
+  assert.equal(feed.visible, true); assert.equal(feed.webContents.loads.length, 1);
+});
+
+test('retained tools initialize again after their document navigates elsewhere', async t => {
+  const h = routedTools(harness()); t.after(() => h.browser.close());
+  await h.browser.dispatch(layout); await h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  const feed = h.views.find(view => view.visible);
+  feed.webContents.url = 'https://muse.ai/'; feed.webContents.emit('did-navigate', {}, feed.webContents.url);
+  await h.browser.dispatch({ type: 'navigate', destination: 'ideas' });
+  await h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  assert.equal(feed.visible, true); assert.equal(feed.webContents.getURL(), 'https://muse.ai/feed');
+  assert.equal(h.actions.filter(call => call.contents === feed.webContents && call.action === 'feed').length, 2);
+});
+
+test('a cached Muse revisit stays ready while its unchanged document signature is checked asynchronously', async t => {
+  const h = routedTools(harness()); t.after(() => h.browser.close());
+  h.presentation.state = async () => 'feed:open';
+  await h.browser.dispatch(layout); await h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  const feed = h.views.find(view => view.visible); feed.webContents.unsentDraft = 'Keep this ready document';
+  await h.browser.dispatch({ type: 'navigate', destination: 'ideas' });
+  let release;
+  h.presentation.state = async () => new Promise(resolve => { release = resolve; });
+  h.states.length = 0;
+  const revisiting = h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  await until(() => Boolean(release), 'the cached document signature check should be pending');
+  const pending = h.browser.snapshot(), publishedWhilePending = [...h.states];
+  release('feed:open'); await revisiting;
+  assert.equal(feed.visible, true); assert.equal(pending.loading, false, 'checking an existing document must not display a loading indicator');
+  assert(!publishedWhilePending.some(state => state.loading), 'no transient loading state may flash during the cache check');
+  assert.equal(feed.webContents.unsentDraft, 'Keep this ready document'); assert.equal(feed.webContents.loads.length, 1);
+  assert.equal(h.actions.filter(call => call.contents === feed.webContents && call.action === 'feed').length, 1);
+});
+
+test('prewarm prepares a hidden tool without changing foreground state and selection reuses it', async t => {
+  const h = routedTools(harness({ authReader: async () => 'ready', warmupDelay: 5, warmLimit: 3 })); t.after(() => h.browser.close());
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' }); await h.browser.dispatch(layout);
+  const main = h.views.find(view => view.visible); main.webContents.unsentDraft = 'Keep typing';
+  await h.browser.dispatch({ type: 'prewarm', target: 'muse-feed' });
+  await until(() => h.actions.some(call => call.action === 'feed'), 'Feed should initialize in the background');
+  const feed = h.views.find(view => h.actions.some(call => call.action === 'feed' && call.contents === view.webContents));
+  await microtasks();
+  assert.equal(main.visible, true); assert.equal(feed.visible, false); assert.equal(h.browser.snapshot().destination, 'bot');
+  assert.equal(main.webContents.unsentDraft, 'Keep typing'); assert.equal(h.popups.length, 0);
+  await h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  assert.equal(feed.visible, true); assert.equal(feed.webContents.loads.length, 1);
+  assert.equal(h.actions.filter(call => call.action === 'feed' && call.contents === feed.webContents).length, 1);
+});
+
+for (const condition of ['navigated', 'failed']) test(`prewarm leaves a visited ${condition} tool and its draft untouched`, async t => {
+  let authReads = 0;
+  const h = routedTools(harness({ authReader: async () => { authReads++; return 'ready'; }, warmupDelay: 5, warmLimit: 1 })); t.after(() => h.browser.close());
+  await h.browser.dispatch(layout); await h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  const feed = h.views.find(view => view.visible);
+  feed.webContents.unsentDraft = 'A draft that hover must not disturb';
+  feed.webContents.url = 'https://muse.ai/library'; feed.webContents.emit('did-navigate-in-page', {}, feed.webContents.url, true);
+  if (condition === 'failed') feed.webContents.emit('render-process-gone', {}, { reason: 'crashed' });
+  const loads = feed.webContents.loads.length;
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
+  await h.browser.dispatch({ type: 'prewarm', target: 'muse-feed' });
+  await until(() => authReads > 0, 'the background queue should have checked the visible account');
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(feed.visible, false); assert.equal(feed.webContents.isDestroyed(), false);
+  assert.equal(feed.webContents.getURL(), 'https://muse.ai/library', 'hover must not return an owned document to its tool route');
+  assert.equal(feed.webContents.unsentDraft, 'A draft that hover must not disturb');
+  assert.equal(feed.webContents.loads.length, loads, 'hover must not retry a failed user-owned page');
+  assert.equal(h.actions.filter(call => call.contents === feed.webContents && call.action === 'feed').length, 1, 'only the explicit original selection may invoke the tool action');
+});
+
+test('a sidebar chat gets its own retained document when a Muse tool already shows the same thread', async t => {
+  const h = routedTools(libraryHarness()); t.after(() => h.browser.close());
+  const read = h.libraryAdapter.read;
+  h.libraryAdapter.read = (contents, section) => section === 'chats'
+    ? { status: 'ready', items: [libraryItem('chats'), { key: 'saved', title: 'Saved chat', target: { type: 'link', value: '/thread/saved' } }], selectedKey: 'one' }
+    : read(contents, section);
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' }); await h.browser.dispatch(layout); await h.browser.dispatch({ type: 'refreshLibrary' });
+  const saved = h.browser.snapshot().library.chats.items.find(item => item.title === 'Saved chat'); assert(saved);
+  await h.browser.dispatch({ type: 'serviceAction', action: 'search' });
+  const search = h.views.find(view => view.visible);
+  search.webContents.url = 'https://muse.ai/thread/saved'; search.webContents.emit('did-navigate-in-page', {}, search.webContents.url, true);
+  await h.browser.dispatch({ type: 'selectItem', id: saved.id });
+  const chat = h.views.find(view => view.visible);
+  assert.notEqual(chat, search, 'a tool document cannot also own a retained sidebar conversation');
+  assert.equal(chat.webContents.getURL(), 'https://muse.ai/thread/saved'); chat.webContents.unsentDraft = 'Keep this chat draft';
+  await h.browser.dispatch({ type: 'serviceAction', action: 'search' });
+  assert.equal(search.visible, true); assert.equal(chat.visible, false);
+  assert.equal(chat.webContents.unsentDraft, 'Keep this chat draft'); assert.equal(chat.webContents.loads.length, 1);
+  assert.equal(chat.webContents.getURL(), 'https://muse.ai/thread/saved');
+});
+
+for (const [target, command, rootURL] of [
+  ['muse-feed', { type: 'serviceAction', action: 'feed' }, 'https://muse.ai/'],
+  ['meta-media', { type: 'metaAction', action: 'media' }, 'https://www.meta.ai/'],
+]) test(`selecting ${target} during its warm root load preserves the pending initialization`, async t => {
+  const h = routedTools(harness({ authReader: async () => 'ready', warmupDelay: 5, warmLimit: 1 })); t.after(() => h.browser.close());
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
+  const prototype = Object.getPrototypeOf(h.views[0].webContents), original = prototype.loadURL;
+  let finishLoad, delayedContents;
+  prototype.loadURL = function(url) {
+    if (finishLoad || url !== rootURL) return original.call(this, url);
+    delayedContents = this; this.loads.push(url); this.emit('did-start-loading');
+    return new Promise(resolve => {
+      finishLoad = () => { this.url = url; this.emit('did-navigate', {}, url); this.emit('did-stop-loading'); resolve(); };
+    });
+  };
+  t.after(() => { prototype.loadURL = original; });
+  await h.browser.dispatch(layout); await h.browser.dispatch({ type: 'prewarm', target });
+  await until(() => Boolean(finishLoad), 'the hinted tool should start loading its root document');
+  await microtasks();
+  const selected = h.browser.dispatch(command);
+  await microtasks();
+  finishLoad(); await selected;
+  const view = h.views.find(candidate => candidate.webContents === delayedContents);
+  assert.equal(view.visible, true); assert.equal(delayedContents.loads.length, 1);
+  assert.equal([...h.actions, ...h.metaActions].filter(call => call.contents === delayedContents && call.action === command.action).length, 1, 'foreground selection must finish the shared warm initialization once');
+  assert.equal(h.browser.snapshot().notice, null); assert.equal(h.browser.snapshot().compact, true);
+});
+
+test('an initialization completing after in-place account switching cannot cache the new account document', async t => {
+  const h = harness(); t.after(() => h.browser.close());
+  await h.browser.dispatch(layout);
+  let release, calls = 0;
+  h.presentation.action = async (contents, action) => {
+    h.actions.push({ contents, action }); calls++;
+    if (calls === 1) return new Promise(resolve => { release = resolve; });
+    return true;
+  };
+  const selecting = h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  await until(() => Boolean(release), 'the old-account action should be pending');
+  const feed = h.views.find(view => view.visible);
+  await feed.webContents.loadURL('https://auth.muse.ai/login');
+  await feed.webContents.loadURL('https://muse.ai/');
+  assert.equal(feed.webContents.isDestroyed(), false, 'in-place sign-in must retain its returning document');
+  release(true); await selecting;
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
+  await h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  assert.equal(feed.visible, true); assert.equal(calls, 2, 'a late old-account result must not skip initialization for the new account');
+  assert.equal(h.browser.snapshot().notice, null); assert.equal(h.browser.snapshot().authenticating, false);
+});
+
+test('automatic warmup waits for authenticated visible use and caps unvisited tool documents', async t => {
+  const h = routedTools(harness({ authReader: async () => 'ready', warmupDelay: 5, warmLimit: 2 })); t.after(() => h.browser.close());
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
+  await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(h.views.length, 1, 'hidden startup must not warm remote tools');
+  await h.browser.dispatch(layout);
+  await until(() => h.actions.length + h.metaActions.length >= 2, 'authenticated visible use should warm useful tools');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  const warmed = new Set([...h.actions, ...h.metaActions].filter(call => !call.contents.isDestroyed()).map(call => call.contents));
+  assert(warmed.size <= 2, 'speculative tool documents must stay within the supplied limit');
+  assert.equal(h.views.filter(view => view.visible).length, 1); assert.equal(h.browser.snapshot().destination, 'bot');
+  assert(!h.metaActions.some(call => call.action === 'newChat'));
+  assert(!h.actions.some(call => ['settings', 'connections', 'whatsapp'].includes(call.action)));
+});
+
+for (const { label, authStatus, navigationReady, shouldWarm, shouldCheckNavigation } of [
+  { label: 'an unknown account with ready navigation', authStatus: 'unknown', navigationReady: true, shouldWarm: true, shouldCheckNavigation: true },
+  { label: 'an explicitly signed-out account', authStatus: 'required', navigationReady: true, shouldWarm: false, shouldCheckNavigation: false },
+  { label: 'an unknown account with incomplete navigation', authStatus: 'unknown', navigationReady: false, shouldWarm: false, shouldCheckNavigation: true },
+]) test(`Meta warmup handles ${label}`, async t => {
+  let authReads = 0; const navigationReads = [];
+  const h = harness({ authReader: async () => { authReads++; return authStatus; }, warmupDelay: 1, warmLimit: 1 }); t.after(() => h.browser.close());
+  h.metaAdapter.ready = async contents => { navigationReads.push(contents); return navigationReady; };
+  await h.browser.dispatch(layout); const main = h.views.find(view => view.visible);
+  await until(() => authReads > 0, 'warmup should check the foreground Meta account');
+  if (shouldWarm) await until(() => h.metaActions.length > 0, 'a ready Meta sidebar should permit bounded background preparation');
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(navigationReads.length > 0, shouldCheckNavigation, 'required sign-in must never fall back to navigation readiness');
+  assert(navigationReads.every(contents => contents === main.webContents));
+  assert.equal(h.metaActions.length, shouldWarm ? 1 : 0); assert.equal(h.actions.length, 0);
+  assert.equal(h.views.filter(view => !view.webContents.isDestroyed()).length, shouldWarm ? 2 : 1);
+  assert.equal(main.visible, true); assert.equal(h.browser.snapshot().destination, 'chat'); assert.equal(h.popups.length, 0);
+});
+
+test('warmup does not run for signed-out pages or after the workspace hides', async t => {
+  const signedOut = harness({ authReader: async () => 'required', warmupDelay: 5 }); t.after(() => signedOut.browser.close());
+  await signedOut.browser.dispatch(layout);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(signedOut.views.length, 1); assert.equal(signedOut.actions.length + signedOut.metaActions.length, 0);
+  const hidden = harness({ authReader: async () => 'ready', warmupDelay: 20 }); t.after(() => hidden.browser.close());
+  await hidden.browser.dispatch(layout); await hidden.browser.dispatch({ type: 'layout', visible: false });
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(hidden.views.length, 1); assert.equal(hidden.actions.length + hidden.metaActions.length, 0);
+});
+
+test('account authentication disposes cached tools but preserves its opener until the popup closes', async t => {
+  const h = routedTools(harness()); t.after(() => h.browser.close());
+  await h.browser.dispatch(layout); await h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  const feed = h.views.find(view => view.visible);
+  await h.browser.dispatch({ type: 'metaAction', action: 'media' }); const media = h.views.find(view => view.visible);
+  media.webContents.openHandler({ url: 'https://auth.meta.ai/login' }).createWindow({});
+  assert.equal(feed.webContents.isDestroyed(), true); assert.equal(media.webContents.isDestroyed(), false);
+  assert.equal(h.browser.snapshot().authenticating, true);
+  h.popups[0].destroy(); assert.equal(media.webContents.isDestroyed(), true);
+  await h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  const fresh = h.views.find(view => view.visible);
+  assert.notEqual(fresh, feed); assert.equal(fresh.webContents.isDestroyed(), false);
+  assert.equal(h.actions.filter(call => call.action === 'feed' && call.contents === fresh.webContents).length, 1);
+});
+
+test('signed-out Muse polling preserves a Meta tool draft when no Muse account was established', async t => {
+  const h = routedTools(harness({ libraryAdapter: { prepare: async () => true, read: async () => ({ status: 'signed-out', items: [] }), activate: async () => false } }));
+  t.after(() => h.browser.close());
+  await h.browser.dispatch(layout); await h.browser.dispatch({ type: 'metaAction', action: 'media' });
+  const media = h.views.find(view => view.visible); media.webContents.unsentDraft = 'Unfinished Meta creation';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await h.browser.dispatch({ type: 'refreshLibrary' });
+    assert.equal(media.webContents.isDestroyed(), false, 'an unavailable initial Muse account must not dispose the active Meta document');
+    assert.equal(media.visible, true); assert.equal(media.webContents.unsentDraft, 'Unfinished Meta creation');
+    assert.equal(media.webContents.loads.length, 1); assert.equal(h.browser.snapshot().destination, 'chat');
+    assert.equal(h.browser.snapshot().library.chats.items.length, 0);
+  }
+  assert.equal(h.metaActions.filter(call => call.contents === media.webContents && call.action === 'media').length, 1);
+});
+
+test('an established Muse account signing out invalidates cached account documents only once', async t => {
+  const h = routedTools(libraryHarness()); t.after(() => h.browser.close());
+  await h.browser.dispatch(layout); await h.browser.dispatch({ type: 'refreshLibrary' });
+  assert(h.browser.snapshot().library.chats.items.length > 0);
+  await h.browser.dispatch({ type: 'metaAction', action: 'media' }); const oldMedia = h.views.find(view => view.visible);
+  h.libraryAdapter.read = async () => ({ status: 'signed-out', items: [] });
+  await h.browser.dispatch({ type: 'refreshLibrary' });
+  assert.equal(oldMedia.webContents.isDestroyed(), true, 'the ready-to-signed-out transition must invalidate retained account data');
+  assert.equal(h.browser.snapshot().library.chats.items.length, 0);
+  await h.browser.dispatch({ type: 'metaAction', action: 'media' });
+  const freshMedia = h.views.find(view => view.visible); assert.notEqual(freshMedia, oldMedia);
+  freshMedia.webContents.unsentDraft = 'New document after sign-out';
+  for (let attempt = 0; attempt < 3; attempt++) await h.browser.dispatch({ type: 'refreshLibrary' });
+  assert.equal(freshMedia.webContents.isDestroyed(), false, 'repeated signed-out reads must not repeat the account transition');
+  assert.equal(freshMedia.visible, true); assert.equal(freshMedia.webContents.unsentDraft, 'New document after sign-out');
+  assert.equal(freshMedia.webContents.loads.length, 1);
+});
+
+test('cached Muse tools clear sidebar chat selection and cannot adopt it by navigating to a thread', async t => {
+  const h = routedTools(libraryHarness()); t.after(() => h.browser.close());
+  const read = h.libraryAdapter.read;
+  h.libraryAdapter.read = (contents, section) => section === 'chats'
+    ? { status: 'ready', items: [libraryItem('chats'), { key: 'saved', title: 'Saved chat', target: { type: 'link', value: '/thread/saved' } }], selectedKey: 'one' }
+    : read(contents, section);
+  await h.browser.dispatch(layout); await h.browser.dispatch({ type: 'refreshLibrary' });
+  const saved = h.browser.snapshot().library.chats.items.find(item => item.title === 'Saved chat'); assert(saved);
+  await h.browser.dispatch({ type: 'serviceAction', action: 'feed' }); const feed = h.views.find(view => view.visible);
+  await h.browser.dispatch({ type: 'selectItem', id: saved.id }); assert.equal(h.browser.snapshot().library.selectedId, saved.id);
+  await h.browser.dispatch({ type: 'serviceAction', action: 'feed' });
+  assert.equal(feed.visible, true); assert.equal(h.browser.snapshot().library.selectedId, null, 'the title and highlight must describe the tool instead of the previous chat');
+  feed.webContents.url = 'https://muse.ai/thread/saved'; feed.webContents.emit('did-navigate-in-page', {}, feed.webContents.url, true);
+  assert.equal(h.browser.snapshot().library.selectedId, null, 'a tool-owned document must not become the selected sidebar chat');
+});
 
 test('agent profile refreshes custom names and clears when the shared account signs out',async()=>{
  let profile={name:'jarvis',avatar:'data:image/png;base64,aGVsbG8='};

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23555'/%3E%3C/svg%3E">
+  <title>Offline navigation cache fixture</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #222; background: #eee; font: 16px system-ui, sans-serif; }
+    nav { padding: 12px; border-bottom: 1px solid #aaa; }
+    button, input, textarea { font: inherit; }
+    button, nav a { display: inline-block; padding: 8px; margin: 4px; }
+    main { max-width: 760px; padding: 24px; }
+    label { display: block; margin-block: 12px; }
+    textarea, input { display: block; width: 100%; padding: 8px; }
+    textarea { height: 100px; }
+    #scroll { height: 180px; overflow-y: auto; border: 1px solid #888; padding: 8px; }
+    #scroll p { margin: 0; height: 32px; }
+    [role="dialog"] { position: fixed; inset: 60px 15% auto; padding: 24px; background: white; border: 1px solid #555; z-index: 10; }
+  </style>
+</head>
+<body>
+  <nav data-hatch-dock aria-label="Muse navigation">
+    <button type="button" data-testid="hatch-nav-search">Search</button>
+    <button type="button" role="button" aria-label="Feed">Feed</button>
+    <button type="button" role="button" aria-label="Library">Library</button>
+  </nav>
+  <nav data-slot="sidebar" aria-label="Sidebar">
+    <a data-testid="new-chat-button" href="/" data-action="newChat">New chat</a>
+    <button type="button" data-action="search">Search</button>
+    <a href="/create" data-action="media">Create</a>
+    <a href="/artifacts" data-action="artifacts">Artifacts</a>
+    <a href="/scheduled" data-action="scheduled">Scheduled</a>
+    <a href="/vibes" data-action="vibes">Vibes</a>
+  </nav>
+  <main data-hatch-full-page-shell>
+    <h1>Offline navigation cache fixture</h1>
+    <p>No account or model requests.</p>
+    <label for="draft">Draft<textarea id="draft"></textarea></label>
+    <label for="filter">Filter<input id="filter" type="text"></label>
+    <div id="scroll" tabindex="0" aria-label="Scrollable fixture content"></div>
+    <output id="fixture-action" aria-live="polite"></output>
+  </main>
+  <script>
+    const isMeta = ['meta.ai', 'www.meta.ai'].includes(location.hostname);
+    const museDock = document.querySelector('[data-hatch-dock]');
+    const metaSidebar = document.querySelector('nav[data-slot="sidebar"][aria-label="Sidebar"]');
+    (isMeta ? museDock : metaSidebar).remove();
+
+    const scroll = document.querySelector('#scroll');
+    for (let index = 1; index <= 80; index += 1) {
+      const row = document.createElement('p');
+      row.textContent = 'Persistent scroll row ' + index;
+      scroll.append(row);
+    }
+
+    function recordAction(action) {
+      const fixture = globalThis.__navigationFixture;
+      fixture.action = action;
+      fixture.actionCounts[action] = (fixture.actionCounts[action] || 0) + 1;
+      document.querySelector('#fixture-action').textContent = action;
+    }
+
+    function navigate(action, path) {
+      history.pushState({}, '', path);
+      recordAction(action);
+    }
+
+    function openMetaSearch() {
+      recordAction('search');
+      const existing = document.querySelector('[role="dialog"]');
+      if (existing) {
+        existing.querySelector('input').focus();
+        return;
+      }
+      const dialog = document.createElement('section');
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-label', 'Search chats');
+      const input = document.createElement('input');
+      input.id = 'search-query';
+      input.type = 'text';
+      input.placeholder = 'Search chats';
+      input.setAttribute('aria-label', 'Search chats');
+      const close = document.createElement('button');
+      close.type = 'button';
+      close.setAttribute('aria-label', 'Close');
+      close.textContent = 'Close';
+      close.addEventListener('click', () => dialog.remove());
+      dialog.append(input, close);
+      document.body.append(dialog);
+      input.focus();
+    }
+
+    if (isMeta) {
+      for (const anchor of metaSidebar.querySelectorAll('a')) {
+        anchor.addEventListener('click', event => {
+          event.preventDefault();
+          navigate(anchor.dataset.action, anchor.getAttribute('href'));
+        });
+      }
+      metaSidebar.querySelector('button[data-action="search"]').addEventListener('click', openMetaSearch);
+    } else {
+      museDock.querySelector('[data-testid="hatch-nav-search"]').addEventListener('click', () => {
+        if (!document.querySelector('[role="dialog"]')) {
+          const dialog = document.createElement('section');
+          dialog.setAttribute('role', 'dialog');
+          dialog.setAttribute('aria-label', 'Search Muse');
+          dialog.innerHTML = '<input id="search-query" placeholder="Search Muse"><button type="button" aria-label="Close Muse search">Close</button>';
+          dialog.querySelector('button').addEventListener('click', () => dialog.remove());
+          document.body.append(dialog);
+        }
+        recordAction('search');
+      });
+      museDock.querySelector('[role="button"][aria-label="Feed"]').addEventListener('click', () => navigate('feed', '/feed'));
+      museDock.querySelector('[role="button"][aria-label="Library"]').addEventListener('click', () => navigate('library', '/library'));
+    }
+
+    globalThis.__navigationFixture = {
+      documentId: crypto.randomUUID(),
+      // A full reload renders the fixture route without invoking its control.
+      // Leave every active marker unset so the smoke tests verified URL reuse.
+      action: !isMeta ? ({ '/feed': 'feed', '/library': 'library' }[location.pathname] ?? null) : null,
+      actionCounts: {},
+      ready: true,
+    };
+  </script>
+</body>
+</html>

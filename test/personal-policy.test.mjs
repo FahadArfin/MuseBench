@@ -3,6 +3,19 @@ import assert from 'node:assert/strict';
 
 const policy = await import('../electron/personal-policy.mjs').catch(() => ({}));
 
+test('prewarm accepts only known section hints without navigation or chat mutation fields', () => {
+  for (const target of ['bot', 'ideas', 'goals', 'muse-search', 'muse-feed', 'muse-library', 'meta-chat', 'meta-search', 'meta-media', 'meta-artifacts', 'meta-scheduled', 'meta-vibes']) {
+    const command = { type: 'prewarm', target };
+    assert.deepEqual(policy.validatePersonalCommand(command), command);
+  }
+  for (const target of [undefined, null, [], {}, '', 'chat', 'newChat', 'newMuseChat', 'settings', 'meta-newChat', 'https://www.meta.ai/', '__proto__', 'constructor', 'bot '.repeat(100)]) {
+    assert.throws(() => policy.validatePersonalCommand({ type: 'prewarm', target }));
+  }
+  for (const extra of [{ action: 'newChat' }, { destination: 'chat' }, { prompt: 'Send this now' }, { id: 'thread-123' }, { url: 'https://muse.ai/' }, { visible: true }]) {
+    assert.throws(() => policy.validatePersonalCommand({ type: 'prewarm', target: 'meta-chat', ...extra }));
+  }
+});
+
 test('the observed Meta AI authentication redirect is allowed as an exact HTTPS host',()=>{
  assert.equal(policy.allowedPersonalURL('https://auth.meta.ai/'),true);
  assert.equal(policy.personalAuthenticating('https://auth.meta.ai/'),true);

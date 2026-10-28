@@ -10,6 +10,7 @@
     "build:icon": "node scripts/build-app-icon.mjs",
     "preview:ui": "vite --config vite.preview.config.mjs",
     "test:browser-preview": "node scripts/browser-preview-smoke.mjs",
+    "test:navigation-cache": "node scripts/navigation-cache-smoke.mjs",
     "test:onboarding-preview": "node scripts/onboarding-preview-smoke.mjs",
     "test:catalog-preview": "node scripts/catalog-preview-smoke.mjs",
     "dev": "node scripts/dev.mjs",

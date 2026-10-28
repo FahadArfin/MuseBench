@@ -5,7 +5,7 @@ import {useContext} from 'react';
 import {BrowserPreviewContext} from './BrowserPreviewContext';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject, type ReactNode } from 'react';
 import { Plus, CalendarDays, Images, Shapes, Clapperboard, ArrowLeft, ArrowRight, Bot, ChevronDown, ChevronRight, ExternalLink, Globe2, Info, Library, Lightbulb, Link2, LoaderCircle, MessageCircle, MessagesSquare, MoreHorizontal, Newspaper, PanelLeft, PanelLeftClose, RefreshCw, Search, Settings2, ShieldCheck, Smartphone, SquarePen, Target, Terminal, UserRound, X, type LucideIcon } from 'lucide-react';
-import type { PersonalCommand, PersonalDestination, PersonalLibrary, PersonalLibraryGroup, PersonalServiceAction, PersonalState } from '../shared/types';
+import type { PersonalCommand, PersonalDestination, PersonalLibrary, PersonalLibraryGroup, PersonalServiceAction, PersonalState, PersonalWarmTarget } from '../shared/types';
 import { Modal } from './WorkspacePanels';
 import './personal-muse.css';
 
@@ -35,7 +35,7 @@ export function ProductSwitcher({ product, onChange, sidebarToggle }: {product: 
   </div>;
 }
 
-function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active, query, available, onNavigate, onSelect, onCreate, onMain, mainActive }: {
+function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active, query, available, onNavigate, onPrewarm, onSelect, onCreate, onMain, mainActive }: {
   label: string;
   noun: string;
   icon: LucideIcon;
@@ -45,6 +45,7 @@ function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active
   query: string;
   available: boolean;
   onNavigate: () => void;
+  onPrewarm: () => void;
   onSelect: (id: string) => void;
   onCreate?: () => void;
   onMain?: () => void;
@@ -61,7 +62,7 @@ function PersonalCollection({ label, noun, icon: Icon, group, selectedId, active
   const open = expanded || Boolean(normalizedQuery);
   useEffect(() => setLimit(6), [normalizedQuery]);
   useEffect(() => { if (selectedId && group.items.some(item => item.id === selectedId)) setExpanded(true); }, [selectedId]);
-  return <section className="personal-collection" role="group" aria-label={label}>
+  return <section className="personal-collection" role="group" aria-label={label} onPointerEnter={onPrewarm} onFocus={onPrewarm}>
     <div className={`personal-collection-heading ${active && !selectedId ? 'active' : ''}`}>
       <button type="button" className="personal-collection-collapse" aria-label={`${open ? 'Collapse' : 'Expand'} ${label}`} aria-expanded={open} aria-controls={listId} disabled={Boolean(normalizedQuery)} title={normalizedQuery ? 'Collections stay open while filtering' : `${open ? 'Collapse' : 'Expand'} ${label}`} onClick={() => setExpanded(!expanded)}><ChevronRight size={13} className={open ? 'rotated' : ''} /></button>
       <button type="button" className="personal-collection-title" aria-label={label} aria-current={active && !selectedId ? 'page' : undefined} disabled={!available} aria-expanded={open} aria-controls={listId} onClick={() => { if (!normalizedQuery) setExpanded(!open); if (!open && !onMain) onNavigate(); }}><Icon size={15} /><span>{label}</span></button>
@@ -107,6 +108,8 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
   onSearchOpenChange: (open: boolean) => void;
 }) {
   const [query, setQuery] = useState('');
+  const prewarm = (target: PersonalWarmTarget) => onCommand({type:'prewarm',target});
+  const warmOnIntent = (target: PersonalWarmTarget) => ({onPointerEnter:()=>prewarm(target),onFocus:()=>prewarm(target)});
   const filterId = useId();
   const localFilter = useRef<HTMLInputElement>(null);
   const input = filterRef ?? localFilter;
@@ -131,12 +134,12 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
   };
   const museSectionId = useId(), metaSectionId = useId();
   const agentName=agentProfile?.name?.trim()||'Muse';
-  const agentButton=<button type="button" className={`navigation-row personal-service-heading muse-agent-shortcut ${museOpen?'active':''}`} aria-label={agentName} title={agentName} aria-expanded={museOpen} aria-controls={museSectionId} aria-current={destination==='bot'&&!library.selectedId?'page':undefined} disabled={!available.bot} onClick={openMain}>
+  const agentButton=<button type="button" className={`navigation-row personal-service-heading muse-agent-shortcut ${museOpen?'active':''}`} aria-label={agentName} title={agentName} aria-expanded={museOpen} aria-controls={museSectionId} aria-current={destination==='bot'&&!library.selectedId?'page':undefined} disabled={!available.bot} {...warmOnIntent('bot')} onClick={openMain}>
     {agentProfile?.avatar?<img className="muse-agent-avatar" src={agentProfile.avatar} alt="" draggable={false}/>:<Bot size={20} aria-hidden="true"/>}<span className="personal-service-label"><strong>{agentName}</strong><small>Personal assistant</small></span>
   </button>;
   return <div className="personal-navigation">
     <div className="personal-navigation-scroll">
-      <div className="personal-sidebar-controls">{agentButton}<button type="button" className="icon-button muse-service-collapse" aria-label={museOpen?'Collapse Muse':'Expand Muse'} aria-expanded={museOpen} aria-controls={museSectionId} onClick={()=>setExpandedService(museOpen?null:'muse')}><ChevronRight size={15} className={museOpen?'rotated':''}/></button></div>
+      <div className="personal-sidebar-controls">{agentButton}<button type="button" className="icon-button muse-service-collapse" aria-label={museOpen?'Collapse Muse':'Expand Muse'} aria-expanded={museOpen} aria-controls={museSectionId} {...warmOnIntent('bot')} onClick={()=>setExpandedService(museOpen?null:'muse')}><ChevronRight size={15} className={museOpen?'rotated':''}/></button></div>
       <div id={museSectionId} className={`personal-service-content ${museOpen?'expanded':''}`} aria-hidden={!museOpen} inert={!museOpen}><div className="personal-service-inner">
       <div className="personal-filter-row" hidden={!searchOpen || destination==='chat'}>
         <div className="personal-filter"><Search size={14} aria-hidden="true" /><input ref={input} aria-label="Filter Muse sidebar" aria-describedby={filterId} placeholder="Search your Muse" value={query} onChange={event => setQuery(event.target.value)} onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); event.stopPropagation(); setQuery(''); } }} />{query && <button type="button" aria-label="Clear Muse filter" onClick={() => { setQuery(''); input.current?.focus(); }}><X size={12} /></button>}</div>
@@ -144,20 +147,20 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
       </div>
       <p className="sr-only" id={filterId}>Filters the loaded chat, idea, and goal titles in this sidebar.</p>
       <nav aria-label="Muse collections">
-        <PersonalCollection label="Chat" noun="side chats" icon={MessageCircle} group={{...library.chats,items:library.chats.items.filter(item=>!item.main)}} selectedId={library.selectedId} active={destination==='bot'} query={query} available={available.bot} onMain={openMain} mainActive={mainActive} onNavigate={()=>onNavigate('bot')} onSelect={id=>onCommand({type:'selectItem',id})} onCreate={()=>onCommand({type:'newMuseChat'})}/>
-        <PersonalCollection label="Ideas" noun="ideas" icon={Lightbulb} group={library.ideas} selectedId={library.selectedId} active={destination === 'ideas'} query={query} available={available.ideas} onNavigate={() => onNavigate('ideas')} onSelect={id => onCommand({ type: 'selectItem', id })} />
-        <PersonalCollection label="Goals" noun="goals" icon={Target} group={library.goals} selectedId={library.selectedId} active={destination === 'goals'} query={query} available={available.goals} onNavigate={() => onNavigate('goals')} onSelect={id => onCommand({ type: 'selectItem', id })} />
+        <PersonalCollection label="Chat" noun="side chats" icon={MessageCircle} group={{...library.chats,items:library.chats.items.filter(item=>!item.main)}} selectedId={library.selectedId} active={destination==='bot'} query={query} available={available.bot} onMain={openMain} mainActive={mainActive} onNavigate={()=>onNavigate('bot')} onPrewarm={()=>prewarm('bot')} onSelect={id=>onCommand({type:'selectItem',id})} onCreate={()=>onCommand({type:'newMuseChat'})}/>
+        <PersonalCollection label="Ideas" noun="ideas" icon={Lightbulb} group={library.ideas} selectedId={library.selectedId} active={destination === 'ideas'} query={query} available={available.ideas} onNavigate={() => onNavigate('ideas')} onPrewarm={()=>prewarm('ideas')} onSelect={id => onCommand({ type: 'selectItem', id })} />
+        <PersonalCollection label="Goals" noun="goals" icon={Target} group={library.goals} selectedId={library.selectedId} active={destination === 'goals'} query={query} available={available.goals} onNavigate={() => onNavigate('goals')} onPrewarm={()=>prewarm('goals')} onSelect={id => onCommand({ type: 'selectItem', id })} />
       </nav>
       <div className="personal-tools"><nav aria-label="Muse tools">
-        <button className="navigation-row" type="button" aria-label="Search Muse" onClick={() => onAction('search')}><Search size={15} /><span>Search Muse</span><ExternalLink size={11} /></button>
-        <button className="navigation-row" type="button" aria-label="Muse feed" onClick={() => onAction('feed')}><Newspaper size={15} /><span>Feed</span></button>
-        <button className="navigation-row" type="button" aria-label="Muse library" onClick={() => onAction('library')}><Library size={15} /><span>Library</span></button>
+        <button className="navigation-row" type="button" aria-label="Search Muse" {...warmOnIntent('muse-search')} onClick={() => onAction('search')}><Search size={15} /><span>Search Muse</span><ExternalLink size={11} /></button>
+        <button className="navigation-row" type="button" aria-label="Muse feed" {...warmOnIntent('muse-feed')} onClick={() => onAction('feed')}><Newspaper size={15} /><span>Feed</span></button>
+        <button className="navigation-row" type="button" aria-label="Muse library" {...warmOnIntent('muse-library')} onClick={() => onAction('library')}><Library size={15} /><span>Library</span></button>
       </nav></div>
       </div></div>
       <nav className="meta-native-navigation" aria-label="Meta AI navigation">
-        <button type="button" className={`navigation-row personal-service-heading personal-meta-chat ${metaOpen?'active':''}`} aria-current={destination==='chat'?'page':undefined} aria-label="Chat" aria-expanded={metaOpen} aria-controls={metaSectionId} disabled={!available.chat} title="Regular Meta AI chat" onClick={() => openService('meta')}><MessageCircle size={20} /><span className="personal-service-label"><strong>Meta AI Chat</strong><small>Chat &amp; create</small></span><ChevronRight className="personal-service-chevron" size={15} aria-hidden="true"/></button>
+        <button type="button" className={`navigation-row personal-service-heading personal-meta-chat ${metaOpen?'active':''}`} aria-current={destination==='chat'?'page':undefined} aria-label="Chat" aria-expanded={metaOpen} aria-controls={metaSectionId} disabled={!available.chat} title="Regular Meta AI chat" {...warmOnIntent('meta-chat')} onClick={() => openService('meta')}><MessageCircle size={20} /><span className="personal-service-label"><strong>Meta AI Chat</strong><small>Chat &amp; create</small></span><ChevronRight className="personal-service-chevron" size={15} aria-hidden="true"/></button>
         <div id={metaSectionId} className={`personal-service-content ${metaOpen?'expanded':''}`} aria-hidden={!metaOpen} inert={!metaOpen}><div className="personal-service-inner">
-    {([{action:'newChat',label:'New chat',icon:SquarePen},{action:'search',label:'Search',icon:Search},{action:'media',label:'Media',icon:Images},{action:'artifacts',label:'Artifacts',icon:Shapes},{action:'scheduled',label:'Scheduled',icon:CalendarDays},{action:'vibes',label:'Vibes',icon:Clapperboard}] as const).map(item=><button key={item.action} type="button" aria-label={item.label} aria-current={item.action==='scheduled'&&schedules?'page':undefined} className={`navigation-row ${item.action==='scheduled'&&schedules?'active':''}`} disabled={!available.chat} onClick={()=>onCommand({type:'metaAction',action:item.action})}><item.icon size={17}/><span>{item.label}</span>{destination==='chat'&&item.action==='search'&&<kbd>Ctrl K</kbd>}{destination==='chat'&&item.action==='newChat'&&<kbd>Ctrl N</kbd>}</button>)}
+    {([{action:'newChat',label:'New chat',icon:SquarePen},{action:'search',label:'Search',icon:Search},{action:'media',label:'Media',icon:Images},{action:'artifacts',label:'Artifacts',icon:Shapes},{action:'scheduled',label:'Scheduled',icon:CalendarDays},{action:'vibes',label:'Vibes',icon:Clapperboard}] as const).map(item=><button key={item.action} type="button" aria-label={item.label} aria-current={item.action==='scheduled'&&schedules?'page':undefined} className={`navigation-row ${item.action==='scheduled'&&schedules?'active':''}`} disabled={!available.chat} {...warmOnIntent(item.action==='newChat'?'meta-chat':`meta-${item.action}`)} onClick={()=>onCommand({type:'metaAction',action:item.action})}><item.icon size={17}/><span>{item.label}</span>{destination==='chat'&&item.action==='search'&&<kbd>Ctrl K</kbd>}{destination==='chat'&&item.action==='newChat'&&<kbd>Ctrl N</kbd>}</button>)}
     {destination==='chat'&&schedules&&<ScheduledTasks schedules={schedules} onCommand={onCommand}/>}
         </div></div>
       </nav>
@@ -183,7 +186,7 @@ export function usePersonalBrowser(): { state: PersonalState | null; command: (c
     if (!bridge?.personal) return;
     try { await bridge.personal(request); }
     catch {
-      if (alive.current && request.type !== 'layout') setState(current => current ? { ...current, error: 'The assistant could not complete that action. Try reloading the page.' } : null);
+      if (alive.current && request.type !== 'layout' && request.type !== 'prewarm') setState(current => current ? { ...current, error: 'The assistant could not complete that action. Try reloading the page.' } : null);
     }
   }, [bridge]);
   return { state, command };

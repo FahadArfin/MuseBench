@@ -36,7 +36,16 @@ if (location.pathname === '/fixture-no-shell') {
   }
 }
 function recordAction(action) { document.querySelector('#fixture-action').textContent = action; }
-document.querySelector('[data-testid="hatch-nav-search"]').onclick = () => recordAction('Search opened');
+document.querySelector('[data-testid="hatch-nav-search"]').onclick = () => {
+  if (!document.querySelector('[data-fixture-search]')) {
+    const dialog = document.createElement('section');
+    dialog.setAttribute('role', 'dialog'); dialog.setAttribute('aria-label', 'Search Muse'); dialog.setAttribute('data-fixture-search', '');
+    dialog.innerHTML = '<h2>Search Muse</h2><input placeholder="Search Muse"><button aria-label="Close Muse search">Close</button>';
+    dialog.querySelector('button').onclick = () => dialog.remove();
+    document.body.append(dialog);
+  }
+  recordAction('Search opened');
+};
 document.querySelector('[aria-label="Feed"]').onclick = () => { history.pushState({}, '', '/feed'); recordAction('Feed opened'); };
 document.querySelector('[aria-label="Library"]').onclick = () => { history.pushState({}, '', '/library'); recordAction('Library opened'); };
 // Model the real server-rendered dock: the initial trigger is inert, then gets

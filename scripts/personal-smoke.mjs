@@ -116,6 +116,23 @@ async function popupWindow() {
 async function switchProduct(product) {
   await page.getByRole('button', {name:product==='code'?'Muse Code':'Muse AI',exact:true}).click();
 }
+async function selectPersonalSection(destination) {
+  const sidebar = page.locator('aside.personal-sidebar');
+  if (destination === 'bot') { await sidebar.locator('.muse-agent-shortcut').click(); return; }
+  if (destination === 'chat') {
+    const heading = sidebar.locator('.personal-meta-chat');
+    if (await heading.getAttribute('aria-expanded') === 'true') await heading.click();
+    await heading.click(); return;
+  }
+  if (await sidebar.locator('.muse-service-collapse').getAttribute('aria-expanded') !== 'true') await sidebar.locator('.muse-service-collapse').click();
+  const label = destination === 'ideas' ? 'Ideas' : 'Goals';
+  const collection = sidebar.getByRole('group', {name:label,exact:true});
+  const heading = collection.getByRole('button', {name:label,exact:true});
+  // Collection headers preserve their accordion UX: collapse an already open
+  // collection before opening it to request its destination again.
+  if (await heading.getAttribute('aria-expanded') === 'true') await collection.getByRole('button', {name:`Collapse ${label}`,exact:true}).click();
+  await heading.click();
+}
 async function shot(name) {
   const file = path.join(screenshots, `${String(++screenshotIndex).padStart(2, '0')}-${name}.png`);
   await page.screenshot({ path: file, fullPage: true });
@@ -147,26 +164,25 @@ try {
   await page.getByRole('group', { name: 'Choose workspace', exact: true }).waitFor();
   record('Existing coding workspace exposes a product switcher');
 
+  await switchProduct('code');
   await page.getByRole('button', { name: 'Try sample project', exact: true }).click();
-  await page.getByRole('button', { name: 'Toggle review panel', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Task plan', exact: true }).waitFor();
-  const initialTask = await page.evaluate(() => window.musebench.getState());
-  const plan = 'Unsubmitted plan: inspect the tea filter, preserve its behavior, then add the edge case check.';
+  await page.getByRole('textbox', { name: 'Message Muse', exact: true }).waitFor();
+  const initialTask = await until(async () => {
+    const state = await page.evaluate(() => window.musebench.getState());
+    return state.task ? state : null;
+  }, 'Sample coding task loaded');
   const draft = 'Unsent code draft survives browsing my personal assistant.';
-  const criteria = 'Existing filters remain available.\nNo request runs before explicit approval.';
-  await page.getByRole('textbox', { name: 'Task plan', exact: true }).fill(plan);
-  await page.getByRole('textbox', { name: 'Acceptance criteria', exact: true }).fill(criteria);
   await page.getByRole('textbox', { name: 'Message Muse', exact: true }).fill(draft);
   await switchProduct('personal');
-  const navigation = page.locator('aside.personal-sidebar').getByRole('navigation', { name: 'Meta AI navigation', exact: true });
-  for (const name of ['Chat', 'Ideas', 'Goals', 'Muse AI bot']) await navigation.getByRole('button', { name, exact: true }).waitFor();
+  const navigation = page.locator('aside.personal-sidebar');
+  await navigation.locator('.personal-meta-chat').waitFor();
+  await navigation.locator('.muse-agent-shortcut').waitFor();
   const initialChat = await visibleView();
   await until(async () => await remoteEval(initialChat.id, 'document.title') === 'Meta AI offline integration fixture', 'Default Meta AI fixture loaded');
   assert.equal(new URL(initialChat.url).origin, 'https://www.meta.ai');
   assert.equal((await personalState()).destination, 'chat');
-  const destinationLabels = await navigation.getByRole('button').evaluateAll(buttons => buttons.map(button => button.getAttribute('aria-label')).filter(label => ['Chat', 'Muse AI bot', 'Ideas', 'Goals'].includes(label)));
-  assert.deepEqual(destinationLabels, ['Chat', 'Muse AI bot', 'Ideas', 'Goals']);
-  await navigation.getByRole('button', { name: 'Muse AI bot', exact: true }).click();
+  await selectPersonalSection('bot');
+  for (const name of ['Ideas', 'Goals']) await navigation.getByRole('button', { name, exact: true }).waitFor();
   const bot = await visibleView();
   await until(async () => await remoteEval(bot.id, 'document.title') === 'Muse offline integration fixture', 'Muse fixture loaded');
   assert.equal(new URL(bot.url).origin, 'https://muse.ai');
@@ -182,7 +198,7 @@ try {
   await nativeShot('muse-bot');
   record('Muse exposes all four sidebar destinations and an isolated official-origin browser with no local bridge');
 
-  const compactLayout = () => remoteEval(bot.id, `(()=>{const dock=document.querySelector('[data-hatch-dock]');const shell=document.querySelector('[data-hatch-full-page-shell]');const composer=document.querySelector('[data-hatch-shell-composer-layer]');return {dock:getComputedStyle(dock).display,shell:getComputedStyle(shell).marginInlineStart,composer:getComputedStyle(composer).left}})()`);
+  const compactLayout = (id = bot.id) => remoteEval(id, `(()=>{const dock=document.querySelector('[data-hatch-dock]');const shell=document.querySelector('[data-hatch-full-page-shell]');const composer=document.querySelector('[data-hatch-shell-composer-layer]');return {dock:getComputedStyle(dock).display,shell:getComputedStyle(shell).marginInlineStart,composer:getComputedStyle(composer).left}})()`);
   await until(async () => (await compactLayout()).dock === 'none', 'Integrated layout removes duplicated official navigation');
   assert.deepEqual(await compactLayout(), { dock: 'none', shell: '0px', composer: '0px' });
   const layoutToggle = page.getByRole('button', { name: 'Use integrated Muse layout', exact: true });
@@ -218,10 +234,12 @@ try {
   assert.equal((await visibleView()).id,bot.id);
   record('Personal profile menu opens once, covers the native browser and restores its page');
   await page.getByRole('button',{name:'Profile menu',exact:true}).click();
-  assert.deepEqual(await page.getByRole('menu',{name:'Your profile',exact:true}).getByRole('menuitem').allTextContents(),['Usage','SettingsCtrl+,','Help']);
+  const profileMenu = page.getByRole('menu',{name:'Your profile',exact:true});
+  assert.equal(await profileMenu.getByRole('menuitem').count(), 4);
+  for (const name of [/View profile/, /^Usage/, /^Settings/, /^Help$/]) await profileMenu.getByRole('menuitem', {name}).waitFor();
   await page.keyboard.press('Escape');
   assert.equal((await visibleView()).id,bot.id);
-  record('Personal profile contains only Usage, Settings and Help and restores the retained personal page');
+  record('Personal profile exposes profile, Usage, Settings and Help and restores the retained personal page');
 
 
 
@@ -244,21 +262,19 @@ try {
   record('Direct workspace navigation preserves search focus and the personal filter or selects a coding chat in Code mode, and preserves the personal browser');
 
   await switchProduct('code');
-  await page.getByRole('button', { name: 'Toggle review panel', exact: true }).click();
-  assert.equal(await page.getByRole('textbox', { name: 'Task plan', exact: true }).inputValue(), plan);
-  assert.equal(await page.getByRole('textbox', { name: 'Acceptance criteria', exact: true }).inputValue(), criteria);
   assert.equal(await page.getByRole('textbox', { name: 'Message Muse', exact: true }).inputValue(), draft);
   await until(async () => !(await nativeViews()).some(view => view.visible), 'Code mode hides all personal views');
   const unchangedTask = await page.evaluate(() => window.musebench.getState());
   assert.equal(unchangedTask.task.id, initialTask.task.id);
   assert.equal(unchangedTask.task.plan, initialTask.task.plan);
+  assert.deepEqual(unchangedTask.task.criteria, initialTask.task.criteria);
   assert.equal(unchangedTask.task.planApproved, false);
-  record('Switching products preserves the unsent coding message, unsaved plan and criteria without approval or execution');
+  record('Switching products preserves the unsent coding message and existing plan and criteria without approval or execution');
 
   await switchProduct('personal');
   assert.equal((await visibleView()).id, bot.id);
   assert.equal(await remoteEval(bot.id, 'document.querySelector("textarea").value'), 'Unsent personal Muse fixture draft');
-  await navigation.getByRole('button', { name: 'Chat', exact: true }).click();
+  await selectPersonalSection('chat');
   const chat = await until(async () => (await nativeViews()).find(view => view.visible && view.id !== bot.id), 'Separate normal Meta AI browser visible');
   await until(async () => await remoteEval(chat.id, 'document.title') === 'Meta AI offline integration fixture', 'Meta AI fixture loaded');
   assert.equal(new URL(chat.url).origin, 'https://www.meta.ai');
@@ -267,10 +283,10 @@ try {
   assert.equal(await remoteEval(chat.id, 'localStorage.getItem("musebench-test-marker")'), null);
   assert.equal(await remoteEval(chat.id, `getComputedStyle(document.querySelector('[data-hatch-dock]')).display`), 'block', 'Muse presentation must never alter another official service even if its DOM matches');
   await remoteEval(chat.id, `document.querySelector('textarea').value = 'Separate normal Meta AI fixture draft';`);
-  await navigation.getByRole('button', { name: 'Muse AI bot', exact: true }).click();
+  await selectPersonalSection('bot');
   assert.equal((await visibleView()).id, bot.id);
   assert.equal(await remoteEval(bot.id, 'document.querySelector("textarea").value'), 'Unsent personal Muse fixture draft');
-  await navigation.getByRole('button', { name: 'Chat', exact: true }).click();
+  await selectPersonalSection('chat');
   assert.equal((await visibleView()).id, chat.id);
   assert.equal(await remoteEval(chat.id, 'document.querySelector("textarea").value'), 'Separate normal Meta AI fixture draft');
   await nativeShot('normal-meta-chat');
@@ -280,9 +296,9 @@ try {
   assert.deepEqual(availability, { bot: true, chat: true, ideas: true, goals: true });
   const retained = { bot, chat };
   for (const destination of ['ideas', 'goals']) {
+    await selectPersonalSection(destination);
     const entry = navigation.getByRole('button', { name: destination === 'ideas' ? 'Ideas' : 'Goals', exact: true });
     assert.equal(await entry.isEnabled(), true);
-    await entry.click();
     const view = await until(async () => (await nativeViews()).find(view => view.visible && view.url === `https://muse.ai/${destination}`), `Verified ${destination} route loaded`);
     retained[destination] = view;
     assert.notEqual(view.id, bot.id);
@@ -294,11 +310,11 @@ try {
     await shot(`muse-${destination}-renderer`);
     await nativeShot(`muse-${destination}`);
   }
-  await navigation.getByRole('button', { name: 'Chat', exact: true }).click();
+  await selectPersonalSection('chat');
   assert.equal((await visibleView()).id, chat.id);
   record('All four destinations are available; Ideas and Goals navigate to their verified official routes', availability);
   for (const [destination, label, value] of [['bot', 'Muse AI bot', 'Unsent personal Muse fixture draft'], ['ideas', 'Ideas', 'Unsent ideas fixture draft'], ['goals', 'Goals', 'Unsent goals fixture draft'], ['chat', 'Chat', 'Separate normal Meta AI fixture draft']]) {
-    await navigation.getByRole('button', { name: label, exact: true }).click();
+    await selectPersonalSection(destination);
     assert.equal((await visibleView()).id, retained[destination].id);
     assert.equal(await remoteEval(retained[destination].id, 'document.querySelector("textarea").value'), value);
   }
@@ -308,7 +324,7 @@ try {
   assert.equal(allRetainedViews.filter(view => view.visible).length, 1);
   record('All four sections retain independent drafts and origin storage within the shared Meta browser session');
 
-  await navigation.getByRole('button', { name: 'Muse AI bot', exact: true }).click();
+  await selectPersonalSection('bot');
   await remoteEval(bot.id, `history.pushState({}, '', '/ideas/fixture-active');`);
   await until(async () => (await personalState()).destination === 'ideas', 'Active website navigation updates native sidebar selection');
   assert.equal((await visibleView()).id, bot.id, 'Route sync must not replace the currently visible website');
@@ -318,7 +334,7 @@ try {
   assert.equal((await visibleView()).id, bot.id);
   await remoteEval(bot.id, `history.replaceState({}, '', '/');`);
   await until(async () => (await personalState()).destination === 'bot', 'Active bot route restored');
-  await navigation.getByRole('button', { name: 'Chat', exact: true }).click();
+  await selectPersonalSection('chat');
   record('Native sidebar follows active Muse routes while hidden sections cannot steal selection or replace the current page');
 
   const accounts = page.getByRole('dialog', { name: 'Accounts and connections', exact: true });
@@ -344,25 +360,35 @@ try {
   record('Accounts panel safely overlays the website and waits for late Settings tab handlers before opening account, connectors, and WhatsApp destinations without pairing');
 
   assert.equal(await page.locator('.personal-tools > summary').count(), 0);
+  await selectPersonalSection('bot');
   await page.getByRole('button', { name: 'Muse feed', exact: true }).waitFor();
+  const toolViews = {};
   for (const [button, expected] of [['Search Muse', 'Search opened'], ['Muse feed', 'Feed opened'], ['Muse library', 'Library opened']]) {
     await page.locator('aside.personal-sidebar').getByRole('button', { name: button, exact: true }).click();
-    await until(async () => await remoteEval(bot.id, 'document.querySelector("#fixture-action")?.textContent') === expected, `${button} invokes the official website control`);
-    await remoteEval(bot.id, `history.replaceState({}, '', '/');`);
+    const view = await visibleView();
+    toolViews[button] = view;
+    assert.notEqual(view.id, bot.id, `${button} uses a dedicated retained tool page`);
+    await until(async () => await remoteEval(view.id, 'document.querySelector("#fixture-action")?.textContent') === expected, `${button} invokes the official website control`);
   }
-  record('Native search, feed, and library shortcuts invoke the official Muse controls');
+  assert.equal(new Set(Object.values(toolViews).map(view => view.id)).size, 3);
+  record('Native search, feed, and library shortcuts invoke the official Muse controls in independent retained pages');
 
-  await remoteEval(bot.id, `document.querySelector('[data-testid="hatch-nav-search"]').removeAttribute('data-testid');`);
+  const searchView = toolViews['Search Muse'];
+  // Invalidate the initialized Search document before revisiting it, so this
+  // still exercises missing-control recovery rather than a successful cache hit.
+  await remoteEval(searchView.id, `document.querySelector('[data-fixture-search]')?.remove();document.querySelector('[data-testid="hatch-nav-search"]').removeAttribute('data-testid');history.replaceState({}, '', '/fixture-search-reinitialize');`);
   await page.locator('aside.personal-sidebar').getByRole('button', { name: 'Search Muse', exact: true }).click();
   await until(async () => (await personalState()).notice && !(await personalState()).compact, 'Unrecognized website control restores original layout');
-  assert.equal((await visibleView()).id, bot.id);
+  assert.equal((await visibleView()).id, searchView.id);
   assert.equal((await personalState()).error, null);
-  await until(async () => (await compactLayout()).dock !== 'none', 'Failed shortcut leaves official navigation available');
+  await until(async () => (await compactLayout(searchView.id)).dock !== 'none', 'Failed shortcut leaves official navigation available');
   await page.getByRole('button', { name: 'Dismiss Meta AI notice', exact: true }).click();
   assert.equal((await personalState()).notice, null);
-  await remoteEval(bot.id, `document.querySelector('[data-hatch-dock] button').setAttribute('data-testid','hatch-nav-search');`);
+  await remoteEval(searchView.id, `document.querySelector('[data-hatch-dock] button').setAttribute('data-testid','hatch-nav-search');`);
   await layoutToggle.click();
-  await until(async () => (await compactLayout()).dock === 'none', 'Compact layout restored after fallback');
+  await until(async () => (await compactLayout(searchView.id)).dock === 'none', 'Compact layout restored after fallback');
+  await selectPersonalSection('bot');
+  assert.equal((await visibleView()).id, bot.id);
   record('Changed website controls produce a dismissible notice and recoverable original layout without losing the page');
 
   // CSS must wait for the observed shell itself, not assume the framework had
@@ -421,7 +447,7 @@ try {
   await until(async () => !(await personalState()).authWindowOpen, 'Blocked popup closes safely');
   await page.getByRole('button', { name: 'Dismiss Meta AI notice', exact: true }).click();
   record('Authentication popup redirects cannot escape the supported official origins or hide the parent page');
-  await navigation.getByRole('button', { name: 'Chat', exact: true }).click();
+  await selectPersonalSection('chat');
 
   await remoteClick(chat.id, '#fixture-next');
   await until(async () => (await nativeViews()).find(view => view.id === chat.id)?.url.endsWith('/fixture-second'), 'Official same-origin navigation completes');

@@ -1,12 +1,26 @@
 import {readPersonalAuth} from './personal-auth.mjs';
 import {readMetaSchedules,activateMetaSchedule,scheduledDocument} from './meta-schedules.mjs';
-import {runMetaAction,dismissMetaSearch} from './meta-navigation.mjs';
+import {runMetaAction,dismissMetaSearch,metaNavigationReady} from './meta-navigation.mjs';
 import {readAgentProfile} from './personal-agent.mjs';
 import { allowedPersonalPopupURL, allowedPersonalURL, clampPersonalBounds, personalAuthenticating, personalAvailability, personalOrigin, personalRoute, personalService, personalTarget, validatePersonalCommand } from './personal-policy.mjs';
-import { applyPersonalPresentation, runPersonalAction } from './personal-presentation.mjs';
+import { applyPersonalPresentation, runPersonalAction, readPersonalToolState } from './personal-presentation.mjs';
 import { createPersonalCatalog } from './personal-catalog.mjs';
 
 const collectionSlots = Object.freeze({ chats: 'bot', ideas: 'ideas', goals: 'goals' });
+const toolTargets = Object.freeze({
+  'muse-search': { slot: 'bot', action: 'search' },
+  'muse-feed': { slot: 'bot', action: 'feed' },
+  'muse-library': { slot: 'bot', action: 'library' },
+  'meta-search': { slot: 'chat', action: 'search' },
+  'meta-media': { slot: 'chat', action: 'media' },
+  'meta-artifacts': { slot: 'chat', action: 'artifacts' },
+  'meta-scheduled': { slot: 'chat', action: 'scheduled' },
+  'meta-vibes': { slot: 'chat', action: 'vibes' },
+});
+const warmDefaults = Object.freeze({
+  bot: ['ideas', 'goals', 'muse-feed', 'muse-library', 'muse-search'],
+  chat: ['meta-media', 'meta-artifacts', 'meta-search', 'meta-scheduled', 'meta-vibes'],
+});
 const defaultLibraryAdapter = {
   prepare: async (...args) => (await import('./personal-library.mjs')).preparePersonalCollection(...args),
   read: async (...args) => (await import('./personal-library.mjs')).readPersonalCollection(...args),
@@ -16,7 +30,7 @@ const defaultLibraryAdapter = {
 
 // Only the trusted local main frame calls this controller. Remote contents have
 // no preload and never receive project state, credentials, or the local bridge.
-export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction }, libraryAdapter = defaultLibraryAdapter }) {
+export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, dismiss: dismissMetaSearch, ready: metaNavigationReady }, authReader = readPersonalAuth, warmupDelay = 800, warmLimit = 3 }) {
   // Native getters can throw after destruction: cache contents while alive.
   const localContents = window.webContents;
   const entries = new Map(), serviceSessions = new Map(), popups = new Set(), pendingReady = new Set();
@@ -29,6 +43,9 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   let agentProfile = null;
   let schedules = null, scheduleReading = false, scheduleTimer = null;
   let extraEntrySequence = 0, setupLoginWindow = null, knownLogin = 'unknown';
+  const warmHints = new Set(), warmAttempted = new Set();
+  let warmTimer = null, warming = false, warmBlocked = false;
+  const warmCapacity = Math.max(0, Math.min(3, Number.isFinite(warmLimit) ? warmLimit : 3));
   const alive = entry => Boolean(entry && !entry.contents.isDestroyed());
   const current = () => activeEntry;
 
@@ -62,7 +79,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   function snapshot() {
     const entry = current(), contents = alive(entry) ? entry.contents : null;
     return {
-      destination, loading: Boolean(entry?.loading), origin: entry?.origin ?? personalOrigin(personalTarget(destination)),
+      destination, loading: Boolean(entry?.loading || (entry?.initializing && !entry?.initialized)), origin: entry?.origin ?? personalOrigin(personalTarget(destination)),
       error: entry?.error ?? null, canGoBack: Boolean(contents?.navigationHistory.canGoBack()),
       canGoForward: Boolean(contents?.navigationHistory.canGoForward()), visible: Boolean(entry?.visible),
       available: personalAvailability(), compact, notice,
@@ -85,7 +102,64 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     }
     if (hiddenFocusedSurface && !localContents.isDestroyed()) localContents.focus();
   }
-  function publish() { if (!closed) { applyLayout(); onState(snapshot()); scheduleLibrary(); scheduleRefresh(); } }
+  function publish() { if (!closed) { applyLayout(); onState(snapshot()); scheduleLibrary(); scheduleRefresh(); scheduleWarmup(); } }
+  function stopWarmup(discardPending = false) {
+    clearTimeout(warmTimer); warmTimer = null;
+    if (discardPending) {
+      warmHints.clear();
+      // Closing a speculative document also cancels its pending page script.
+      for (const entry of [...entries.values()]) if (entry.speculative && !entry.visited && (entry.loading || entry.initializing)) removeEntry(entry);
+    }
+  }
+  function warmCandidates() {
+    const defaults = warmDefaults[current()?.slot === 'chat' ? 'chat' : 'bot'];
+    return [...new Set([...warmHints, ...defaults])].filter(target => {
+      const entry = entries.get(target === 'meta-chat' ? 'chat' : target);
+      // Hover/focus is never permission to navigate a live document or draft.
+      if (alive(entry) && (entry.visited || entry === current())) { warmHints.delete(target); return false; }
+      return warmHints.has(target) || (!warmAttempted.has(target) && !alive(entry));
+    });
+  }
+  function scheduleWarmup() {
+    if (closed || !requestedVisible || museAuthPending() || !alive(current())) { stopWarmup(true); return; }
+    if (warming || warmTimer || warmBlocked || current().loading || current().initializing || !warmCandidates().length) return;
+    warmTimer = setTimeout(() => { warmTimer = null; void warmNext(); }, Math.max(0, warmupDelay));
+    warmTimer.unref?.();
+  }
+  async function warmNext() {
+    if (warming || closed || !requestedVisible || museAuthPending() || warmBlocked || !alive(current()) || current().loading || current().initializing) return;
+    warming = true;
+    const foreground = current(), generation = libraryGeneration;
+    try {
+      const status = await authReader(foreground.contents);
+      // Meta keeps sign-out inside its account menu. A complete usable sidebar
+      // can prepare read-only destinations without claiming account readiness.
+      const ready = status === 'ready' || (status === 'unknown' && foreground.slot === 'chat' && await metaAdapter.ready?.(foreground.contents));
+      if (closed || !requestedVisible || current() !== foreground || generation !== libraryGeneration || museAuthPending()) return;
+      if (!ready) { warmBlocked = true; return; }
+      const target = warmCandidates()[0];
+      if (!target) return;
+      const hinted = warmHints.delete(target);
+      const definition = toolTargets[target];
+      const existing = entries.get(target === 'meta-chat' ? 'chat' : target);
+      if (definition && !alive(existing)) {
+        const speculative = [...entries.values()].filter(entry => entry.tool && !entry.visited && alive(entry));
+        if (speculative.length >= warmCapacity) {
+          // Intent can replace only unused speculative content, never a draft.
+          const victim = hinted && speculative.find(entry => !entry.initializing && entry !== current());
+          if (!victim) { warmAttempted.add(target); return; }
+          removeEntry(victim);
+        }
+        if (!warmCapacity) { warmAttempted.add(target); return; }
+      }
+      warmAttempted.add(target);
+      const entry = sectionEntry(target, false);
+      if (!entry) return;
+      if (entry.tool) await initializeTool(entry);
+      else await waitForMuseDocument(entry, entry.slot === 'chat', false);
+    } catch { /* Speculative work must never interrupt the foreground. */ }
+    finally { warming = false; scheduleWarmup(); }
+  }
   function scheduleRefresh(){
     if(closed||!requestedVisible||destination!=='chat'||!alive(current())||!scheduledDocument(current().contents)){clearTimeout(scheduleTimer);scheduleTimer=null;schedules=null;return;}
     if(scheduleReading||scheduleTimer)return;
@@ -120,12 +194,14 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   }
   function clearLibrary(preserveEntry = null) {
     knownLogin='unknown';
+    warmBlocked = true; stopWarmup(); warmHints.clear(); warmAttempted.clear();
     libraryGeneration++; libraryEstablished = false; selectedDocument = null; agentProfile = null; catalog.reset();
     // Additional chat/draft documents belong to this account. Preserve an
     // authentication opener until its flow finishes; dispose the other copies.
+    const fallback = current()?.slot === 'chat' ? 'chat' : 'bot';
     const lostActive = [...entries.values()].some(entry => entry === current() && entry.key !== entry.slot && entry !== preserveEntry);
     for (const entry of [...entries.values()]) if (entry.key !== entry.slot && entry !== preserveEntry) removeEntry(entry);
-    if (lostActive && !closed) selectDestination('bot');
+    if (lostActive && !closed) selectDestination(fallback);
   }
   const museAuthPending = () => [...popups].some(popup => popup.museAuth) || [...entries.values()].some(entry => entry.museAuth);
   const ownsMuseAuth = entry => Boolean(entry.museAuth || [...popups].some(popup => popup.museAuth && popup.opener === entry));
@@ -167,7 +243,12 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       } catch { result = { status: 'unavailable', items: [] }; }
       if (!valid()) return null;
       if (result?.status === 'signed-out') {
-        clearLibrary(entry); entry.collectionGeneration = libraryGeneration;
+        // A fresh/consistently signed-out Muse page is not an account change.
+        // Meta AI can be usable independently; do not destroy its live drafts
+        // on every background Muse poll. Real ready -> signed-out transitions
+        // and explicit authentication navigation still invalidate all caches.
+        if (libraryEstablished) { clearLibrary(entry); entry.collectionGeneration = libraryGeneration; }
+        else { catalog.reset(); agentProfile = null; }
         publish(); return null;
       }
       if(section==='chats'&&result?.status==='ready'&&libraryAdapter.profile){
@@ -188,13 +269,13 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       const bot = collectionEntry('chats');
       const status = await read(bot, 'chats');
       if (closed || generation !== libraryGeneration) return;
-      if (status === 'ready') libraryEstablished = true;
+      if (status === 'ready') { libraryEstablished = true; warmBlocked = false; }
       if (libraryEstablished) await Promise.all(['ideas', 'goals'].map(section => read(collectionEntry(section), section)));
     }).finally(() => { refreshingLibrary = null; scheduleLibrary(1800); });
     return refreshingLibrary;
   }
-  function cancelActions() { actionEpoch++; for (const finish of pendingReady) finish(false); }
-  function waitForMuseDocument(entry,meta=false) {
+  function cancelActions() { actionEpoch++; for (const finish of pendingReady) if (closed || finish.cancelOnSelection) finish(false); }
+  function waitForMuseDocument(entry,meta=false,cancelOnSelection=true) {
     return new Promise(resolve => {
       const contents = entry.contents;
       let timer;
@@ -204,6 +285,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
         contents.removeListener('did-fail-load', failed); contents.removeListener('destroyed', destroyed);
         resolve(ready);
       };
+      finish.cancelOnSelection = cancelOnSelection;
       const inspect = () => {
         if (closed || !alive(entry) || entry.error) { finish(false); return; }
         if (entry.awaitingCommit) return;
@@ -262,6 +344,8 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   }
   const remotePreferences = webSession => ({ session: webSession, contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false, webSecurity: true, spellcheck: true });
   function openHandler(entry, ownerSession, details) {
+    // Background preparation cannot open authentication or other popup windows.
+    if (entry.speculative && !entry.visited) return { action: 'deny' };
     if (closed || !alive(entry) || !BrowserWindow || !allowedPersonalPopupURL(details.url, entry.contents.getURL())) {
       inform('This link cannot open inside MuseBench. You can continue on the official service in your browser.');
       return { action: 'deny' };
@@ -323,19 +407,22 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   function createEntry(section, key = section) {
     const ownerSession = getServiceSession(personalService(section));
     const view = new WebContentsView({ webPreferences: remotePreferences(ownerSession.webSession) });
-    const entry = { view, contents: view.webContents, key, slot: section, route: null, loading: false, awaitingCommit: false, origin: null, error: null, epoch: 0, documentEpoch: 0, collectionGeneration: libraryGeneration, museAuth: false, visible: false };
+    const entry = { view, contents: view.webContents, key, slot: section, route: null, loading: false, awaitingCommit: false, origin: null, error: null, epoch: 0, documentEpoch: 0, collectionGeneration: libraryGeneration, museAuth: false, visible: false, visited: false, speculative: false, tool: null, initializing: null, initialized: null };
     entries.set(key, entry); ownerSession.owned.add(entry.contents);
     view.setVisible(false); view.setBackgroundColor('#181818'); window.contentView.addChildView(view);
     const contents = entry.contents;
     guardContents(contents, () => fail(entry, 'This page tried to leave the supported Muse sign-in or service. Retry, or continue on the official website in your browser.'));
     contents.setWindowOpenHandler(details => openHandler(entry, ownerSession, details));
     contents.on('did-start-loading', () => { entry.loading = true; publish(); });
-    contents.on('did-stop-loading', () => { entry.loading = false; publish(); });
+    contents.on('did-stop-loading', () => { entry.loading = false; if (entry === current()) warmBlocked = false; publish(); });
     contents.on('dom-ready', () => { void present(entry); });
     const navigated = (_event, url) => {
       entry.documentEpoch++;
       {
         const authentication = personalAuthenticating(url);
+        if (authentication && entry.speculative && !entry.visited) {
+          warmBlocked = true; stopWarmup(); warmHints.clear(); removeEntry(entry); publish(); return;
+        }
         if (authentication && !entry.museAuth) {
           entry.museAuth = true; cancelActions(); clearLibrary(entry);
           entry.collectionGeneration = libraryGeneration;
@@ -380,7 +467,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     let entry = entries.get(section);
     const existing = alive(entry);
     if (!existing) entry = createEntry(section);
-    activeEntry = entry; destination = section;
+    activeEntry = entry; destination = section; entry.visited = true; entry.speculative = false;
     // Switching retained sections preserves drafts. If website navigation moved
     // that section's view elsewhere, explicitly selecting the section restores
     // its curated route. Authentication/unknown paths remain where they are.
@@ -390,9 +477,63 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     }
     return entry;
   }
+  function sectionEntry(target, activate = true) {
+    const tool = toolTargets[target];
+    const slot = tool?.slot ?? (target === 'meta-chat' ? 'chat' : target);
+    if (!tool && !personalTarget(slot)) return null;
+    const key = tool ? target : slot;
+    if (activate && tool) { catalog.select(null); selectedDocument = null; }
+    let entry = entries.get(key);
+    if (!alive(entry)) {
+      entry = createEntry(slot, key); entry.tool = tool ?? null; entry.speculative = !activate;
+      if (activate) { entry.visited = true; activeEntry = entry; destination = slot; }
+      load(entry, personalTarget(slot));
+    } else {
+      if (activate) { entry.visited = true; entry.speculative = false; activeEntry = entry; destination = slot; }
+      if (!ownsMuseAuth(entry) && (entry.collectionGeneration !== libraryGeneration || entry.error)) {
+        entry.collectionGeneration = libraryGeneration; entry.initialized = null; entry.toolURL = null; load(entry, personalTarget(slot));
+      }
+    }
+    return entry;
+  }
+  async function initializeTool(entry) {
+    if (!alive(entry) || !entry.tool) return false;
+    if (entry.initializing) return entry.initializing;
+    const cached = entry.initialized;
+    const generation = libraryGeneration;
+    const isCached = cached && cached.epoch === entry.documentEpoch && cached.url === entry.contents.getURL() && entry.collectionGeneration === generation;
+    if (isCached && entry.slot === 'chat') {
+      // Search is an overlay: the user may have closed it without navigating.
+      // Its adapter is idempotent and leaves an open search/query untouched.
+      if (entry.key === 'meta-search') return metaAdapter.action(entry.contents, 'search');
+      return true;
+    }
+    // Set the in-flight promise before the first publication; repeated clicks
+    // and a foreground selection of a warming view join the same operation.
+    const job = Promise.resolve().then(async () => {
+      if (isCached && (!presentation.state || (cached.state && cached.state === await presentation.state(entry.contents, entry.tool.action)))) return !closed && alive(entry) && generation === libraryGeneration;
+      if (closed || !alive(entry) || generation !== libraryGeneration) return false;
+      entry.initialized = null; publish();
+      const ready = await waitForMuseDocument(entry, entry.slot === 'chat', false);
+      if (!ready || closed || !alive(entry) || generation !== libraryGeneration) return false;
+      const action = entry.slot === 'chat' ? metaAdapter.action : presentation.action;
+      const succeeded = await action(entry.contents, entry.tool.action, entry.toolURL);
+      if (!succeeded || closed || !alive(entry) || generation !== libraryGeneration || entry.museAuth) return false;
+      const state = entry.slot === 'bot' && presentation.state ? await presentation.state(entry.contents, entry.tool.action) : null;
+      if (closed || !alive(entry) || generation !== libraryGeneration || entry.museAuth) return false;
+      entry.initialized = { epoch: entry.documentEpoch, url: entry.contents.getURL(), state };
+      if (entry.contents.getURL() !== personalTarget(entry.slot)) entry.toolURL = entry.contents.getURL();
+      return true;
+    }).catch(() => false).finally(() => {
+      if (entry.initializing === job) entry.initializing = null;
+      publish();
+    });
+    entry.initializing = job; publish(); return job;
+  }
   function syncChatSelection() {
     const entry = current();
     if (!alive(entry) || entry.slot !== 'bot' || entry.awaitingCommit) return;
+    if (entry.tool) { catalog.select(null); return; }
     const url = entry.contents.getURL();
     const selected = catalog.snapshot().chats.items.find(item => {
       const record = catalog.get(item.id);
@@ -402,23 +543,26 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   }
   function retainedChat(url) {
     // url comes only from the validated catalog or the fixed unsent draft path.
-    let entry = [...entries.values()].find(candidate => candidate.slot === 'bot' && candidate.key !== 'bot' && alive(candidate) && candidate.collectionGeneration === libraryGeneration && (candidate.contents.getURL() === url || (candidate.awaitingCommit && candidate.loadTarget === url)));
+    let entry = [...entries.values()].find(candidate => candidate.slot === 'bot' && !candidate.tool && candidate.key !== 'bot' && alive(candidate) && candidate.collectionGeneration === libraryGeneration && (candidate.contents.getURL() === url || (candidate.awaitingCommit && candidate.loadTarget === url)));
     if (!entry) {
       entry = createEntry('bot', `retained-chat-${++extraEntrySequence}`);
       activeEntry = entry; destination = 'bot'; load(entry, url);
     } else { activeEntry = entry; destination = 'bot'; }
+    entry.visited = true; entry.speculative = false;
     return entry;
   }
   async function dispatch(value) {
     const command = validatePersonalCommand(value);
     if (closed) throw Error('The personal Muse browser is closed.');
+    if (command.type === 'prewarm') {
+      if (requestedVisible && !museAuthPending()) { warmHints.delete(command.target); warmHints.add(command.target); warmBlocked = false; scheduleWarmup(); }
+      return snapshot();
+    }
     if (command.type === 'layout') {
-      if(!command.visible&&requestedVisible&&destination==='chat')await dismissMetaSearch(current()?.contents);
       requestedVisible = command.visible;
       if (command.bounds) cssBounds = command.bounds;
       if (requestedVisible && !alive(current())) selectDestination(destination);
     } else if (command.type === 'navigate') {
-      if(destination==='chat'&&command.destination!=='chat')await dismissMetaSearch(current()?.contents);
       cancelActions(); notice = null; catalog.select(null); selectDestination(command.destination);
     } else if (command.type === 'refreshLibrary') {
       notice = null; await refreshLibrary(true);
@@ -450,9 +594,10 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       if(!alive(entry)||!item||!await activateMetaSchedule(entry.contents,item,command.action))notice='This reminder changed or is unavailable. Refresh Scheduled and use its original controls.';
     } else if(command.type==='metaAction'){
       cancelActions();const requestEpoch=actionEpoch;notice=null;
-      const entry=selectDestination('chat');publish();const ready=await waitForMuseDocument(entry,true);
-      if(closed||requestEpoch!==actionEpoch)return snapshot();
-      const succeeded=ready&&await runMetaAction(entry.contents,command.action);
+      const entry=command.action==='newChat'?selectDestination('chat'):sectionEntry(`meta-${command.action}`);publish();
+      const succeeded=command.action==='newChat'
+        ? await waitForMuseDocument(entry,true)&&!closed&&requestEpoch===actionEpoch&&await metaAdapter.action(entry.contents,'newChat')
+        : await initializeTool(entry);
       if(!closed&&requestEpoch===actionEpoch&&!succeeded){compact=false;await presentAll();notice='This Meta AI shortcut is unavailable on the current page. The original navigation is shown so you can continue there.';}
     } else if (command.type === 'presentation') {
       compact = command.compact; await presentAll();
@@ -461,11 +606,13 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     } else if (command.type === 'dismissNotice') notice = null;
     else if (command.type === 'serviceAction') {
       cancelActions(); const requestEpoch = actionEpoch;
-      notice = null; const entry = selectDestination('bot'); publish();
-      const ready = await waitForMuseDocument(entry);
-      if (closed || requestEpoch !== actionEpoch) return snapshot();
+      const cachedTool = toolTargets[`muse-${command.action}`];
+      notice = null; const entry = cachedTool ? sectionEntry(`muse-${command.action}`) : selectDestination('bot'); publish();
       let succeeded = false;
-      try { if (ready) succeeded = await presentation.action(entry.contents, command.action); } catch { /* Safely restore the official controls below. */ }
+      try {
+        if (cachedTool) succeeded = await initializeTool(entry);
+        else if (await waitForMuseDocument(entry) && !closed && requestEpoch === actionEpoch) succeeded = await presentation.action(entry.contents, command.action);
+      } catch { /* Safely restore the official controls below. */ }
       if (!closed && requestEpoch === actionEpoch && !succeeded) {
         compact = false; await presentAll();
         notice = 'This shortcut is not available on the current page. The full Muse layout is restored so you can continue using its own controls.';
@@ -479,8 +626,10 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
         entry.error = null; notice = null;
         const contents = entry.contents;
         if (command.type === 'reload') {
-          if (allowedPersonalURL(contents.getURL())) { entry.loading = true; contents.reload(); }
+          entry.initialized = null;
+          if (allowedPersonalURL(contents.getURL())) { entry.loading = true; entry.awaitingCommit = true; contents.reload(); }
           else load(entry, personalTarget(destination));
+          if (entry.tool) void initializeTool(entry);
         } else if (command.type === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
         else if (command.type === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward();
       }
@@ -489,13 +638,13 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   }
   const localNavigation = (event, _url, _inPage, isMainFrame) => { if (event.isMainFrame ?? isMainFrame) hide(); };
   const resize = () => publish();
-  const shellPointer=(_event,input)=>{if(input.type==='mouseDown'&&requestedVisible&&destination==='chat'&&!closed)void dismissMetaSearch(current()?.contents);};
+  const shellPointer=(_event,input)=>{if(input.type==='mouseDown'&&requestedVisible&&destination==='chat'&&!closed&&current()?.key!=='meta-search')void metaAdapter.dismiss(current()?.contents);};
   localContents.on('before-mouse-event',shellPointer);
   localContents.on('did-start-navigation', localNavigation); localContents.on('render-process-gone', hide); localContents.on('destroyed', hide); localContents.on('zoom-changed', resize);
   window.on('resize', resize); window.on('close', close);
   function close() {
     if (closed) return;
-    closed = true; if(setupLoginWindow&&!setupLoginWindow.isDestroyed())setupLoginWindow.destroy(); clearTimeout(scheduleTimer); requestedVisible = false; cancelActions(); clearLibrary(); clearTimeout(libraryTimer); libraryTimer = null;
+    closed = true; stopWarmup(true); if(setupLoginWindow&&!setupLoginWindow.isDestroyed())setupLoginWindow.destroy(); clearTimeout(scheduleTimer); requestedVisible = false; cancelActions(); clearLibrary(); clearTimeout(libraryTimer); libraryTimer = null;
     for (const popup of popups) {
       try { if (!popup.window.isDestroyed()) popup.window.destroy(); } catch { /* Native teardown may already have disposed the child. */ }
       if (!popup.contents.isDestroyed()) popup.contents.close({ waitForBeforeUnload: false });

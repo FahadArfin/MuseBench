@@ -16,7 +16,7 @@ import {MUSEBENCH_SKILL_PACK} from '../shared/skill-pack.mjs';
 import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
 import {handoffText} from '../shared/context-handoff.mjs';
 import {moveQueuedPrompt} from '../shared/queued-prompts.mjs';
-import {loadSnapshots,selectSnapshot,selectedSnapshot,subscribeSnapshots,type SnapshotKey} from './snapshots';
+import {loadSnapshots,prewarmSnapshot,selectSnapshot,selectedSnapshot,subscribeSnapshots,type SnapshotKey} from './snapshots';
 import {planSidebarMove} from '../shared/sidebar-order.mjs';
 import {projectDetails} from '../shared/create-project.mjs';
 import type {OnboardingState,Action,AppState,MuseBenchBridge,PersonalState,Task,RuntimeState} from '../shared/types';
@@ -160,6 +160,7 @@ export function createPreviewBridge():MuseBenchBridge {
   commandInfo:async type=>{if(type==='skills')return {status:'ready',skills:[{id:'sample-skill',name:'clear-project-notes',title:'Clear project notes',description:'Sample skill',scope:'Personal',available:true},...['plan','grill','browser-app-delivery','git','create-skill','workflow-authoring'].map(name=>({id:`bundled:${name}`,name,title:name,description:'Bundled Muse skill. This preview shows catalog data without running Muse.',scope:'Bundled',activation:'on',source:`bundled://muse-core/skills/${name}/SKILL.md`,available:true})),{id:'project:sample',name:'project-sample',title:'Project skill example',description:'A project skill requiring workspace trust.',scope:'Project',available:false,unavailableReason:'Project skill trust is not supported by this connection'}]};if(type==='billing')return {status:'ready'};if(type==='usage')return {status:'ready',usage:{simulation:true,windows:[{label:'5-hour window',remainingPercent:64},{label:'Weekly',remainingPercent:9}],billing:{spent:18.25,currentBalance:2.50,freeCredits:125,paymentThreshold:20,currency:'USD',period:'This month',alertLimit:100,source:'Meta billing (sample)'}}};return desktop();},
   onboarding:async command=>{if(command.type==='loginCode'||command.type==='apiKey')onboardingState.code={status:'ready',message:'Preview sign-in complete. No credentials were used.'};if(command.type==='loginPersonal')onboardingState.personal={status:'ready',message:'Preview sign-in complete.'};return copy(onboardingState);},
   personalState:person.read,onPersonalState:person.on,onPersonalShortcut:()=>()=>{},personal:async command=>{
+   if(command.type==='prewarm'){prewarmSnapshot(command.target);return copy(personal);}
    personal.error=null;
    switch(command.type){
     case 'navigate':personal.notice=null;personal.destination=command.destination;personal.library.selectedId=null;selectSnapshot(command.destination);break;
