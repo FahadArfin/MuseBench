@@ -16,6 +16,12 @@ test('POSIX Muse inherits its login home and locale without unrelated secrets or
  const env=curateEnvironment({HOME:'/home/muse',TMPDIR:'/tmp/muse',LANG:'en_US.UTF-8',XDG_CONFIG_HOME:'/home/muse/.config',NODE_OPTIONS:'--require evil',PRIVATE_KEY:'secret',PATH:'/usr/bin'});
  assert.deepEqual(env,{PATH:'/usr/bin',HOME:'/home/muse',TMPDIR:'/tmp/muse',LANG:'en_US.UTF-8',XDG_CONFIG_HOME:'/home/muse/.config'});
 });
+
+test('native Windows shells retain OS installation and architecture variables without custom module injection',()=>{
+ const env=curateEnvironment({windir:'C:\\Windows',SystemDrive:'C:',ProgramFiles:'C:\\Program Files',CommonProgramFiles:'C:\\Program Files\\Common Files',PROCESSOR_ARCHITECTURE:'ARM64',NUMBER_OF_PROCESSORS:'4',OS:'Windows_NT',USERNAME:'runneradmin',PSModulePath:'unreviewed-modules',META_API_KEY:'secret'});
+ assert.equal(env.windir,'C:\\Windows');assert.equal(env.ProgramFiles,'C:\\Program Files');assert.equal(env.PROCESSOR_ARCHITECTURE,'ARM64');assert.equal(env.NUMBER_OF_PROCESSORS,'4');
+ assert.equal(env.PSModulePath,undefined);assert.equal(env.META_API_KEY,undefined);
+});
 test('a GUI launch finds the official user-local Muse binary when PATH is minimal',async t=>{
  const home=await mkdtemp(path.join(tmpdir(),'muse-platform-'));t.after(()=>rm(home,{recursive:true,force:true}));
  await mkdir(path.join(home,'.local','bin'),{recursive:true});const binary=path.join(home,'.local','bin','muse');await writeFile(binary,'fixture');
