@@ -106,7 +106,9 @@ jobs:
         run: node --test test/platform-services.test.mjs test/release-assets.test.mjs test/file-editor.test.mjs test/runtime.test.mjs test/onboarding.test.mjs
       - name: Windows ARM native process coverage
         if: runner.os == 'Windows'
-        run: npm test
+        run: |
+          npx playwright install chromium
+          npm test
       - run: npm run build
       - name: Install Linux browser dependencies
         if: runner.os == 'Linux'

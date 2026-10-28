@@ -19,7 +19,10 @@ test('background chats own events, queues and stops while navigation remains ind
  await act({type:'queueMessage',text:'Queued follow-up'});
  await act({type:'openProject',path:b});state=await act({type:'newTask',mode:'muse',request:'Second'});const second=state.task.id;await act({type:'sendMessage',text:'Second request'});const secondRuntime=runtimes.find(r=>r!==firstRuntime&&r.sent.length);
  assert.equal(firstRuntime.snapshot().status,'running');assert.equal(controller.getState().tasks.find(t=>t.id===first).runtimeStatus,'running');
- firstRuntime.finish('Only first chat gets this');await new Promise(r=>setTimeout(r,40));assert.equal(firstRuntime.sent.length,2,'background queue continues');
+ firstRuntime.finish('Only first chat gets this');
+ const deadline=Date.now()+5000;
+ while(firstRuntime.sent.length!==2&&Date.now()<deadline)await new Promise(r=>setTimeout(r,10));
+ assert.equal(firstRuntime.sent.length,2,'background queue continues');
  state=controller.getState();assert.equal(state.task.id,second);assert.ok(!state.task.messages.some(m=>m.text==='Only first chat gets this'));
  await act({type:'disconnectMuse'});assert.equal(secondRuntime.snapshot().status,'unavailable');assert.equal(firstRuntime.snapshot().status,'running');
  state=await act({type:'selectTask',id:first});assert.ok(state.task.messages.some(m=>m.text==='Only first chat gets this'));assert.equal(state.runtime.status,'running');
