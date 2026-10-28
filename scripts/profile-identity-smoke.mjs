@@ -93,12 +93,65 @@ try{
 
   await publish(null);await page.getByRole('heading',{name:'Your account',exact:true}).waitFor();await sidebarName().getByText('Your account',{exact:true}).waitFor();
   await publish(account);await page.getByRole('heading',{name:'Alice Rivera',exact:true}).waitFor();
+
+  dialog=await edit();const presets=dialog.locator('.profile-avatar-options button');
+  assert.equal(await presets.count(),12);
+  for(const preset of await presets.all()){
+    assert.match(await preset.getAttribute('aria-label'),/ mascot$/);
+    await preset.click();assert.equal(await preset.getAttribute('aria-pressed'),'true');
+    assert.equal(await dialog.locator('.profile-avatar-options button[aria-pressed="true"]').count(),1);
+  }
+  await dialog.getByRole('button',{name:'Rose mascot',exact:true}).click();
+  await dialog.screenshot({path:`${output}/avatar-picker-dark.png`});
+  await dialog.locator('.avatar-picker').screenshot({path:`${output}/mascot-presets.png`});
+  const fixture=await page.evaluate(()=>{
+    const canvas=document.createElement('canvas');canvas.width=480;canvas.height=320;
+    const context=canvas.getContext('2d');
+    for(const [color,x,y] of [['#2469df',0,0],['#e99838',240,0],['#18a783',0,160],['#ab59c9',240,160]]){
+      context.fillStyle=color;context.fillRect(x,y,240,160);
+    }
+    return canvas.toDataURL('image/png').split(',')[1];
+  });
+  const upload=async()=>{
+    await dialog.locator('input[type="file"]').setInputFiles({name:'avatar-fixture.png',mimeType:'image/png',buffer:Buffer.from(fixture,'base64')});
+    await dialog.getByRole('img',{name:'Profile picture crop preview',exact:true}).waitFor();
+    for(const [label,key,value] of [['Zoom','End','3'],['Horizontal position','Home','0'],['Vertical position','End','100']]){
+      const slider=dialog.getByRole('slider',{name:label,exact:true});await slider.focus();await slider.press(key);assert.equal(await slider.inputValue(),value);
+    }
+  };
+  await upload();await dialog.getByRole('button',{name:'Cancel crop',exact:true}).click();
+  assert.equal(await dialog.getByRole('button',{name:'Rose mascot',exact:true}).getAttribute('aria-pressed'),'true');
+  assert.equal(await dialog.getByRole('img',{name:'Profile picture crop preview',exact:true}).count(),0);
+  await upload();await dialog.getByRole('button',{name:'Use photo',exact:true}).click();
+  assert.equal(await dialog.locator('.profile-avatar-options button[aria-pressed="true"]').count(),0);
+  const photo=await dialog.locator('.avatar-chosen img').getAttribute('src');assert.match(photo,/^data:image\/png;base64,/);
+  await dialog.locator('.avatar-chosen img').evaluate(image=>image.decode());
+  assert.deepEqual(await dialog.locator('.avatar-chosen img').evaluate(image=>[image.naturalWidth,image.naturalHeight]),[256,256]);
+  await dialog.getByRole('button',{name:'Save profile',exact:true}).click();await page.reload();await openProfile();
+  assert.equal(await page.locator('.profile-hero .profile-avatar img').getAttribute('src'),photo);
+  dialog=await edit();await dialog.getByRole('button',{name:'Mint mascot',exact:true}).click();
+  assert.equal(await dialog.locator('.avatar-chosen').count(),0);
+  await dialog.getByRole('button',{name:'Save profile',exact:true}).click();await page.reload();await openProfile();
+  assert.equal(await page.locator('.profile-hero .profile-avatar img').count(),0);
+  dialog=await edit();assert.equal(await dialog.getByRole('button',{name:'Mint mascot',exact:true}).getAttribute('aria-pressed'),'true');
+  await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+  pass('All 12 mascot presets select exclusively; crop controls work, cancelling preserves the preset, uploaded photos survive reload, and choosing a mascot replaces the upload');
+
   await page.setViewportSize({width:430,height:820});dialog=await edit();await dialog.getByLabel('Display name',{exact:true}).fill('Mobile custom');
   await dialog.getByRole('button',{name:'Use account name',exact:true}).waitFor();
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  const mobileBounds=await dialog.boundingBox();assert(mobileBounds.x>=0&&mobileBounds.x+mobileBounds.width<=430);
+  assert(await dialog.locator('.avatar-picker').evaluate(element=>element.scrollWidth<=element.clientWidth));
   await page.screenshot({path:`${output}/edit-mobile.png`});await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
   await page.setViewportSize({width:1440,height:960});await page.screenshot({path:`${output}/profile-desktop.png`});
   pass('Signing out clears the previous account profile and the account-name control fits a narrow window');
+
+  await page.keyboard.press('Control+,');const settings=page.getByRole('dialog',{name:'Settings',exact:true});
+  await settings.getByRole('button',{name:'Light theme',exact:true}).click();await page.keyboard.press('Escape');
+  assert.equal(await page.locator('html').getAttribute('data-theme'),'light');dialog=await edit();
+  assert.equal(await dialog.locator('.profile-avatar-options button').count(),12);
+  await dialog.screenshot({path:`${output}/avatar-picker-light.png`});await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+  pass('The mascot picker renders in dark and light themes and remains contained in the narrow profile editor');
   assert.deepEqual(report.errors,[]);report.status='passed';
 }catch(error){report.status='failed';report.error=String(error.stack??error);await page.screenshot({path:`${output}/failure.png`}).catch(()=>{});process.exitCode=1;console.error(error);}
 finally{await browser.close();await server.close();await writeFile(`${output}/report.json`,JSON.stringify(report,null,2));}
