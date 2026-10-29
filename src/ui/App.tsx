@@ -257,12 +257,14 @@ export default function App() {
   useEffect(() => { if (transcript.current && !scrolledUp) transcript.current.scrollTop = transcript.current.scrollHeight; }, [task?.messages, task?.shellResults, runtimeActive, scrolledUp, task?.id]);
   useEffect(() => { const element = composer.current; if (element) { element.style.height = 'auto'; element.style.height = `${Math.min(element.scrollHeight, 180)}px`; } }, [message, creating]);
   useEffect(() => {
-    if (!bridge || !task || busy) return;
+    // Background workspace reads briefly take the controller's operation lock.
+    // While browsing Customize, keep live task events but avoid false busy banners.
+    if (!bridge || !task || busy || modal === 'extensions') return;
     let active = true, refreshing = false;
     const refresh = async () => { if (refreshing) return; refreshing = true; try { const next = await bridge.dispatch({ type: 'refresh' }); if (active) setState(next); } catch (error) { if (active) setLocalError(String(error)); } finally { refreshing = false; } };
     window.addEventListener('focus', refresh); const interval = setInterval(() => { if (!document.hidden) void refresh(); }, 5000);
     return () => { active = false; clearInterval(interval); window.removeEventListener('focus', refresh); };
-  }, [bridge, task?.id, busy, runtimeActive]);
+  }, [bridge, task?.id, busy, runtimeActive, modal]);
   const lastRuntimeStatus=useRef('');
   useEffect(()=>{const previous=lastRuntimeStatus.current;lastRuntimeStatus.current=state?.runtime.status??'';if(bridge&&task&&activeStatuses.includes(previous)&&!runtimeActive)void act({type:'refresh'});},[state?.runtime.status,task?.id]);
   useEffect(() => {

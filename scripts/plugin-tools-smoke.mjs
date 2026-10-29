@@ -18,7 +18,17 @@ try{
  page.setDefaultTimeout(12000);page.on('pageerror',error=>report.errors.push(error.message));
  await page.waitForFunction(()=>!!window.musebench);
  await page.evaluate(()=>{const original=window.musebench.customize;window.__toolCalls=[];window.musebench.customize=async command=>{window.__toolCalls.push(command);if(command.type==='inspectPluginMcp'&&window.__failInspection)throw Error('Fixture inspection unavailable');const result=await original(command);if(command.type==='inspectPluginMcp'&&window.__holdInspection)await new Promise(resolve=>{window.__releaseInspection=resolve});if(result.pluginMcp&&window.__multilineCommand)result.pluginMcp.servers.find(item=>item.title==='imported-check').command=[window.__multilineCommand];if(result.pluginMcp&&window.__unknownTool)result.pluginMcp.servers.push({stableId:'plugin:preview-tools:future:unsupported',title:'Future tool',kind:'future',supported:false,enabled:false,reviewed:false,reason:'This capability needs setup in the official Muse CLI.'});return result;};});
+ await page.evaluate(()=>{window.__chatRefreshCalls=0;const original=window.musebench.dispatch;window.musebench.dispatch=async action=>{if(action.type==='refresh')window.__chatRefreshCalls++;return original(action);};window.dispatchEvent(new Event('focus'));});
+ await page.waitForFunction(()=>window.__chatRefreshCalls>0);
  await page.getByRole('button',{name:'Customize',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Customize'});
+ for(const title of ['Skills','Connectors','Plugins','MCP servers','Hooks']){
+  await dialog.getByRole('tab',{name:title,exact:true}).click();await dialog.getByRole('heading',{name:title,exact:true}).waitFor();
+  const before=await page.evaluate(()=>window.__chatRefreshCalls);await page.evaluate(()=>window.dispatchEvent(new Event('focus')));await page.waitForTimeout(100);
+  assert.equal(await page.evaluate(()=>window.__chatRefreshCalls),before,`${title}: background focus refresh must pause while browsing Customize`);
+ }
+ const idleRefreshes=await page.evaluate(()=>window.__chatRefreshCalls);await page.waitForTimeout(6100);assert.equal(await page.evaluate(()=>window.__chatRefreshCalls),idleRefreshes,'Periodic chat refresh must pause while Customize stays open');pass('All five Customize pages pause background chat refresh without disabling catalog navigation');
+ await dialog.getByRole('button',{name:'Close dialog',exact:true}).click();await page.waitForFunction(before=>window.__chatRefreshCalls>before,idleRefreshes);pass('Periodic chat refresh resumes after Customize closes');
+ await page.getByRole('button',{name:'Customize',exact:true}).click();
  await dialog.getByRole('tab',{name:'Plugins',exact:true}).click();await dialog.getByRole('button',{name:'Installed',exact:true}).click();
  await dialog.getByRole('button',{name:'Manage Preview tools',exact:true}).click();
  const panel=dialog.getByRole('region',{name:'Tools & hooks',exact:true});
