@@ -19,6 +19,8 @@ Ignored evidence: `artifacts/reply-copy/preview-ZSPOVY`, `artifacts/response-act
 
 CI follow-up: runs 40963934313 and 40963934307 exposed an empty native clipboard item in the smoke setup, before any product action. The preservation helper now skips empty MIME lists and restores an initially empty clipboard with `clear()`. The browser and desktop copy suite passed again (6 + 8 checks), evidence `rich-copy-empty-clipboard.log` and `artifacts/response-actions/source-qBxEPS`. This corrects the validation harness; product copying is unchanged. Release acceptance still requires the replacement CI run.
 
+The next validation run, 40965719243, passed copying and stopped at the pre-existing real speech-engine check: the hosted Windows runner lists voices but has no usable audio session. Real speech startup remains exercised locally; CI uses the existing injected speech-interface check. `CI=true npm run test:reply-copy` passed with 6 browser and 7 desktop checks (`rich-copy-ci-environment.log`). No product speech code changed.
+
 ## Scope
 
 Source and actual-host clipboard verified, using isolated profiles and no model requests. Browser clipboard capability/error paths are injected. External editors may style pasted content differently; no external-editor fidelity claim is made. Published/installed release acceptance remains separate.
