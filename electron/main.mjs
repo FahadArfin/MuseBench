@@ -10,6 +10,7 @@ import {createNativeControlService,createNativeRenderer} from './native-control-
 import {createFileEditor} from './file-editor.mjs';
 import {createWorkspaceMcpConfig} from './workspace-mcp-config.mjs';
 import {createAppUpdates,createUpdateShutdown,updateBlocked} from './app-updates.mjs';
+import {readUpdateBlockers} from './update-readiness.mjs';
 import updaterPackage from 'electron-updater';
 import {existsSync} from 'node:fs';
 import {customizeBlocked} from '../src/shared/customize-policy.mjs';
@@ -159,6 +160,7 @@ else {
     nativeControl=await createNativeControlHost({dataDir,service:nativeService,connectionConfig:{command:process.execPath,args:[path.join(root,'electron','native-mcp-server.mjs'),'--data-dir',dataDir],env:{ELECTRON_RUN_AS_NODE:'1',NODE_OPTIONS:'',NODE_PATH:''}}});
     handler('musebench:native-control',command=>nativeControl.command(command));
     const updateBusy=()=>pendingIpc>0||nativeControl.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation);
+    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['app-control','App control',nativeControl.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',onboarding?.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
     const {autoUpdater}=updaterPackage;
     autoUpdater.setFeedURL({provider:'github',owner:'FahadArfin',repo:'MuseBench',private:false});
     updateShutdown=createUpdateShutdown({isBusy:updateBusy,voice:()=>dictation.dispatch('status'),lock:value=>{updateInstalling=value;},closeServices:async()=>{
@@ -168,7 +170,7 @@ else {
       await sessionDurability.close();
       if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
     },verifyClosed:()=>!updateBlocked(controller.getState(),work.getState(),sites.getState())});
-    updates=createAppUpdates({updater:autoUpdater,version:app.getVersion(),enabled:app.isPackaged&&(process.platform==='win32'&&existsSync(path.join(path.dirname(app.getPath('exe')),'Uninstall MuseBench.exe'))||process.platform==='linux'&&!!process.env.APPIMAGE),isBusy:updateBusy,onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('musebench:app-update-state',value);},prepareInstall:()=>updateShutdown.prepare()});
+    updates=createAppUpdates({updater:autoUpdater,version:app.getVersion(),enabled:app.isPackaged&&(process.platform==='win32'&&existsSync(path.join(path.dirname(app.getPath('exe')),'Uninstall MuseBench.exe'))||process.platform==='linux'&&!!process.env.APPIMAGE),isBusy:updateBusy,getBlockers:updateBlockers,onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('musebench:app-update-state',value);},prepareInstall:()=>updateShutdown.prepare()});
     handler('musebench:app-update',command=>updates.dispatch(command));
     updates.start();const updateStartup=setTimeout(()=>{void updates.dispatch('check').catch(()=>{});},15000);updateStartup.unref();
     handler('musebench:customize',command=>customize.dispatch(command));

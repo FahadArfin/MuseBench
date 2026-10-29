@@ -4,6 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {createController} from '../controller/index.mjs';
 import {validateRunOptions} from '../shared/run-options.mjs';
 import {validateArtifact,demoArtifact,artifactPrompt} from '../shared/work-artifacts.mjs';
+import {updateStateFlags} from '../shared/update-status.mjs';
 
 const MAX_SOURCE=2*1024*1024,MAX_ARTIFACT=512*1024,MAX_MANIFEST=8*1024*1024;
 const TEAMS=new Set(['finance','operations','marketing','sales','analytics','engineering']);
@@ -146,6 +147,7 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
     }
     return clone({items:[...records.values()].map(record=>record.item).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)),activeId,item,task,runtime:native.runtime,busy:operationBusy||native.busy||executing(),error:ownError??native.error??null,artifact:artifacts.get(activeId)??null,artifactError:artifactErrors.get(activeId)??null,artifactUpdatedAt:record?.artifactUpdatedAt??null,capabilities:{mp4:false}});
   }
+  function getUpdateState(){return{...updateStateFlags(native),busy:operationBusy||native.busy||executing(),item:{title:records.get(activeId)?.item?.title??null}};}
   const emit=()=>{if(closed||closing)return;const state=getState();for(const listener of listeners)try{listener(state);}catch{/* A renderer listener cannot interrupt persistence. */}};
   async function persist(){
     if(!manifestReadable)throw Error('The saved Work library is unreadable. Its original file was preserved.');
@@ -237,7 +239,7 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
     });
   }
   return{
-    getState,
+    getState,getUpdateState,
     copyArtifact(value,team){return run(async()=>{
       const artifact=validateArtifact(value);
       const draft=command({type:'create',team,kind:artifact.kind,title:artifact.title,brief:'Revise this private copy of the shared artifact. Publishing back to its space is a separate action.'});

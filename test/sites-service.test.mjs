@@ -20,6 +20,15 @@ async function fixture(options={}){
 const draft=s=>s.dispatch({type:'create',title:'Our studio',description:'A useful site',template:'landing'});
 const connect=s=>s.connect({token:'private-token-for-tests'});
 
+test('compact Sites observation never asks the generator for full state',async()=>{
+ let generation={busy:false},fullReads=0;
+ const f=await fixture({generatorFactory:async()=>({subscribe(){},getState(){fullReads++;return generation;},getUpdateState:()=>generation,async select(){},async close(){}})});
+ try{await draft(f.service);fullReads=0;generation={busy:true};
+  const status=f.service.getUpdateState();assert.equal(status.site.title,'Our studio');assert.equal(status.generation.busy,true);assert.equal(fullReads,0);
+  assert.equal(status.files,undefined);assert.equal(status.versions,undefined);assert.equal(status.hosting,undefined);
+ }finally{await f.service.close();}
+});
+
 test('explicit token connection cancels a pending browser sign-in',async()=>{
  const f=await fixture({clientId:'registered-app'});let polls=0;
  f.provider.beginAuth=async()=>({id:'ticket',url:'https://app.netlify.com/authorize'});

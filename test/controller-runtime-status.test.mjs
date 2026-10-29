@@ -38,6 +38,14 @@ test('compact runtime summaries do not copy retained native messages',async t=>{
  assert.equal(f.runtimes.reduce((n,r)=>n+r.compact,0),3);
 });
 
+test('restart diagnostics name background owners using only compact current observations',async t=>{
+ const f=await fixture(t,{count:2}),r=f.runtimes[0];r.state.status='running';r.state.messages=[{text:'private transcript'.repeat(50000)}];f.reset();
+ let rows=f.c.getUpdateBlockers();assert.ok(rows.some(row=>row.label.includes('Status fixture 0')));assert.equal(f.runtimes.reduce((n,r)=>n+r.full,0),0);assert.doesNotMatch(JSON.stringify(rows),/private transcript/);
+ r.state.status='idle';r.state.cleanup='unconfirmed';rows=f.c.getUpdateBlockers();assert.match(rows.find(row=>row.label.includes('Status fixture 0')).detail,/cleanup/i);
+ r.state.cleanup='pending';rows=f.c.getUpdateBlockers();assert.match(rows.find(row=>row.label.includes('Status fixture 0'))?.detail??'',/cleanup/i);
+ r.state.cleanup='confirmed';assert.deepEqual(f.c.getUpdateBlockers(),[]);assert.equal(f.c.canRestartForUpdate(),true);
+});
+
 test('legacy busy flag and status label use the same observation',async t=>{
  const f=await fixture(t,{compact:false}),r=f.runtimes[0];f.reset();r.flip=true;
  try{const summary=f.c.getState().tasks[0];assert.equal(summary.runtimeBusy,summary.runtimeStatus==='running');assert.equal(r.full,1);}

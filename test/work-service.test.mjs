@@ -40,6 +40,14 @@ test('demo selection writes a preview without model execution',async t=>{
   assert.equal(JSON.parse(await readFile(path.join(await h.root(),'work-artifact.json'),'utf8')).kind,'dashboard');
 });
 
+test('compact Work observations omit retained content and follow active work',async t=>{
+ const h=await fixture(t);await h.create({demo:true});
+ const idle=h.service.getUpdateState();assert.equal(idle.item.title,'Quarterly results');assert.equal(idle.busy,false);
+ assert.equal(idle.artifact,undefined);assert.equal(idle.task?.messages,undefined);assert.equal(idle.runtime.messages,undefined);
+ await h.service.dispatch({type:'send',text:'Update this report.'});assert.equal(h.service.getUpdateState().busy,true);
+ await h.service.dispatch({type:'stop'});assert.equal(h.service.getUpdateState().busy,false);
+});
+
 test('copying a shared artifact is atomic with respect to concurrent Work selection',async t=>{
  const h=await fixture(t),original=await h.create();await h.service.dispatch({type:'saveArtifact',artifact:artifact('Private revision')});
  const copy=h.service.copyArtifact(artifact('Shared revision'),'finance');

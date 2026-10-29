@@ -8,8 +8,10 @@ test('activity stops only the bound background owner and preserves selected draf
  const f=await fixture(t);let s=await f.add('First');const first=s.task.id;await f.act({type:'sendMessage',text:'Work first'});await f.act({type:'queueMessage',text:'Later'});const one=f.runtimes.find(r=>r.sent.length);
  s=await f.add('Second');await f.act({type:'sendMessage',text:'Work second'});const two=f.runtimes.find(r=>r!==one&&r.sent.length);await f.act({type:'saveDraft',projectId:s.task.projectId,taskId:s.task.id,text:'Unsent draft',mode:'plan',files:[]});
  s=f.c.getState();assert.equal(s.workActivity.length,2);const row=s.workActivity.find(r=>r.taskId===first);assert.equal(row.label,'Working');assert.equal(row.canStop,true);assert.equal(validateAction(stop(row)).type,'stopWork');
+ assert.ok(f.c.getUpdateBlockers().some(item=>item.label==='Code · First'&&/queued/.test(item.detail)));
  s=await f.act(stop(row));assert.equal(s.task.title,'Second');assert.equal(s.drafts[`${s.task.projectId}:${s.task.id}`].text,'Unsent draft');assert.equal(one.stops,1);assert.equal(two.stops,0);assert.equal(s.workActivity.length,1);
  s=await f.act({type:'selectTask',id:first});assert.equal(s.task.queuePaused,true);assert.equal(s.task.promptQueue[0].text,'Later');
+ assert.ok(!f.c.getUpdateBlockers().some(item=>item.label==='Code · First'&&/queued/.test(item.detail)));
 });
 test('stale stop controls cannot stop a later run or a different owner',async t=>{
  const f=await fixture(t);await f.add('First');await f.act({type:'sendMessage',text:'First request'});const old=f.c.getState().workActivity[0],r=f.runtimes.find(r=>r.sent.length);r.finish();assert.equal(f.c.getState().workActivity.length,0);await f.act({type:'sendMessage',text:'Second request'});

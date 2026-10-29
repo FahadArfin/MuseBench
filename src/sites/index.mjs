@@ -54,6 +54,7 @@ export async function createSitesService({dataDir,encrypt,decrypt,providerFactor
   const value=records.get(activeId);return clone({items:[...records.values()].map(r=>r.item).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)),activeId,site:value?.item??null,files:(currentBundle?.files??[]).map(({path,bytes,sha1,mime})=>({path,bytes,sha1,mime})),versions:value?[...value.versions].reverse():[],previewUrl:value&&currentBundle?sitePreviewUrl(value.item.id,currentBundle.hash):null,
    hosting:{connected:!!credentials,accountName:credentials?.name??null,teams:credentials?.teams??[],teamId,oauthAvailable:!!clientId,authPending:!!authTicket},busy,operation,error,notice,recovery:value?.pending?.notFound?{canReset:true,message:'No matching hosting operation was found. Check Netlify before resetting this pending action.'}:null,generation:generator?.getState()??null});
  }
+ function getUpdateState(){return{busy,site:{title:records.get(activeId)?.item?.title??null},generation:generator?generator.getUpdateState():null};}
  const emit=()=>{if(closed||closing)return;for(const listener of listeners)try{listener(getState());}catch{}};
  const setOperation=(phase,message)=>{operation={phase,message};emit();};
  async function execute(action,{allowGeneration=false}={}){
@@ -170,7 +171,7 @@ export async function createSitesService({dataDir,encrypt,decrypt,providerFactor
   }
  }
  return{
-  getState,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},
+  getState,getUpdateState,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},
   dispatch(value){if(value?.type==='stop'){error=null;return Promise.resolve(generator?.stop()).then(()=>{emit();return getState();},caught=>{error=redact(caught);emit();return getState();});}return execute(()=>perform(value),{allowGeneration:value?.type==='clearError'});},
   connect(value){return execute(async()=>{if(value?.oauth){if(!clientId)throw Error('A registered MuseBench OAuth application is needed for browser sign-in.');await credentialPreflight('connection-storage-preflight');authTicket=await provider.beginAuth();authTicket.createdAt=Date.now();await openExternal?.(authTicket.url);notice='Finish signing in on the official Netlify page, then check the connection.';}else await connectToken(value?.token);});},
   pollAuth(){return execute(async()=>{if(!authTicket)throw Error('Start the hosting sign-in first.');if(Date.now()-authTicket.createdAt>10*60*1000){authTicket=null;throw Error('Sign-in timed out. Start again.');}const result=await provider.checkAuth(authTicket.id);if(!result.authorized){notice='Waiting for confirmation on the official Netlify page.';return;}const {token}=await provider.finishAuth(authTicket.id);authTicket=null;await connectToken(token);});},

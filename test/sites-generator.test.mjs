@@ -32,6 +32,13 @@ test('selecting a site does not run Muse or create a task',async t=>{
   assert.equal(state.error,null);assert.equal(state.task,null);assert.equal(state.busy,false);assert.equal(h.runtime.calls.some(call=>call.type==='send'||call.type==='connect'),false);assert.deepEqual(await readdir(h.options.projectsDir),[]);
 });
 
+test('compact generation observations follow activity without returning transcript content',async t=>{
+ const h=await fixture(t);await h.generator.select(h.siteId);assert.equal(h.generator.getUpdateState().busy,false);
+ await h.generate();const active=h.generator.getUpdateState();assert.equal(active.busy,true);
+ assert.equal(active.task?.messages,undefined);assert.equal(active.runtime.messages,undefined);
+ await h.generator.stop();assert.equal(h.generator.getUpdateState().busy,false);
+});
+
 test('explicit generation uses its own guarded workspace and preserves original messages',async t=>{
   const h=await fixture(t),state=await h.generate();
   assert.equal(state.error,null);assert.equal(state.busy,true);assert.equal(state.task.mode,'muse');assert.equal(state.task.runs.at(-1).status,'working');

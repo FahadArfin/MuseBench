@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
-import {createAppUpdates,createUpdateShutdown,updateBlocked} from '../electron/app-updates.mjs';
+import {createAppUpdates,createUpdateShutdown,updateBlocked,updateSurfaceBlockers} from '../electron/app-updates.mjs';
 
 function setup(options={}){
  const updater=new EventEmitter(),calls=[],timers=[];
@@ -27,6 +27,12 @@ test('blocked predicate includes background work, checks, goals, children and un
  for(const state of [{busy:true},{tasks:[{runtimeBusy:true}]},{task:{check:{status:'running'}}},{task:{goal:{driver:{armed:true}}}},{runtime:{childrenBusy:true}},{runtime:{cleanup:'unconfirmed'}},{runtime:{pending:{}}}])assert.equal(updateBlocked(state),true,JSON.stringify(state));assert.equal(updateBlocked({runtime:{status:'idle',cleanup:'confirmed'}}),false);
 });
 test('dictation listening and stopping both prevent update shutdown',()=>{assert.equal(updateBlocked({status:'listening'}),true);assert.equal(updateBlocked({status:'stopping'}),true);});
+test('surface blockers name only active work and exclude raw payloads',()=>{
+ assert.deepEqual(updateSurfaceBlockers('work','Work',{item:{title:'Project report'},busy:false,runtime:{status:'idle'}}),[]);
+ const rows=updateSurfaceBlockers('work','Work',{item:{title:'Project report'},runtime:{cleanup:'unconfirmed'},error:'private',artifact:{content:'private'}});
+ assert.equal(rows[0].label,'Work · Project report');assert.match(rows[0].detail,/cleanup/);assert.doesNotMatch(JSON.stringify(rows),/private/);
+ assert.equal(updateSurfaceBlockers('voice','Dictation',{status:'listening',text:'private'})[0].label,'Dictation');
+});
 test('failed shutdown requires reopen and never repeats installation',async()=>{const {service,calls}=setup({prepareInstall:async()=>{throw Object.assign(Error('cleanup unknown'),{restartRequired:true});}});await service.dispatch('check');await service.dispatch('download');await service.dispatch('install');assert.equal(service.snapshot().status,'restart-required');await service.dispatch('check');await service.dispatch('install');assert.deepEqual(calls,['check','download']);});
 test('window and quit must wait for update shutdown; lock survives closed services',async()=>{
  let finish,locked=false;const shutdown=createUpdateShutdown({isBusy:()=>false,voice:async()=>({status:'idle'}),lock:value=>{locked=value;},closeServices:()=>new Promise(r=>finish=r),verifyClosed:()=>true});
@@ -43,4 +49,59 @@ test('an emitted check error is not overwritten with current when the promise re
  await service.dispatch('check');assert.equal(service.snapshot().status,'error');assert.doesNotMatch(service.snapshot().error,/private/);
  updater.checkForUpdates=async()=>updater.emit('update-available',{version:'0.2.9'});
  await service.dispatch('check');assert.equal(service.snapshot().status,'available');assert.equal(service.snapshot().error,null);
+});
+
+test('release details and the confirmed download retain the exact offered version',async()=>{
+ const {service,updater,calls}=setup();
+ updater.checkForUpdates=async()=>updater.emit('update-available',{version:'0.2.9',releaseNotes:[{version:'0.2.8',note:'Older release'},{version:'0.2.9',note:'<h2>New</h2><p>Faster chats.</p><script>private()</script>'}],releaseDate:'2026-10-29T12:00:00Z'});
+ await service.dispatch('check');
+ assert.match(service.snapshot().releaseNotes,/Faster chats/);
+ assert.doesNotMatch(service.snapshot().releaseNotes,/Older release|<|private/);
+ assert.equal(service.snapshot().releaseDate,'2026-10-29T12:00:00.000Z');
+ assert.equal(service.snapshot().downloadedVersion,null);
+ updater.downloadUpdate=async()=>updater.emit('update-downloaded',{version:'0.2.8'});
+ await service.dispatch('download');assert.equal(service.snapshot().status,'available');
+ assert.equal(service.snapshot().downloadedVersion,null);
+ await assert.rejects(service.dispatch('install'));assert.deepEqual(calls,[]);
+ updater.downloadUpdate=async()=>updater.emit('update-downloaded',{version:'0.2.9'});
+ await service.dispatch('download');await service.dispatch('check');
+ assert.equal(service.snapshot().downloadedVersion,'0.2.9');assert.match(service.snapshot().releaseNotes,/Faster chats/);
+});
+
+test('release metadata stays bounded and is cleared when no update is available',async()=>{
+ const {service,updater}=setup();updater.checkForUpdates=async()=>updater.emit('update-available',{version:'0.2.9',releaseNotes:'x'.repeat(50000),releaseDate:'not a date'});
+ await service.dispatch('check');assert.ok(service.snapshot().releaseNotes.length<=8000);assert.equal(service.snapshot().releaseDate,null);
+ updater.checkForUpdates=async()=>updater.emit('update-not-available');await service.dispatch('check');
+ assert.equal(service.snapshot().releaseNotes,'');assert.equal(service.snapshot().downloadedVersion,null);
+});
+
+test('ready-download snapshots refresh restart blockers without changing download ownership',async()=>{
+ let blocked=true;
+ const {service,calls}=setup({isBusy:()=>blocked,getBlockers:()=>blocked?[{id:'code:one',label:'Code · Prepare the launch',detail:'Waiting for your answer',private:'secret'}]:[]});
+ await service.dispatch('check');await service.dispatch('download');
+ assert.deepEqual(service.snapshot().blockers,[{id:'code:one',label:'Code · Prepare the launch',detail:'Waiting for your answer'}]);
+ await assert.rejects(service.dispatch('install'),/work/i);blocked=false;
+ assert.deepEqual((await service.dispatch('status')).blockers,[]);
+ assert.equal(service.snapshot().downloadedVersion,'0.2.9');await service.dispatch('install');
+ assert.ok(calls.some(c=>Array.isArray(c)));
+});
+
+test('unknown restart readiness remains blocked and late events cannot change a confirmed download',async()=>{
+ const {service,updater}=setup({getBlockers:()=>{throw Error('private');}});
+ await service.dispatch('check');await service.dispatch('download');
+ assert.match(service.snapshot().blockers[0].detail,/confirmed/i);
+ updater.emit('update-available',{version:'0.2.10',releaseNotes:'wrong release'});
+ updater.emit('update-downloaded',{version:'0.2.10'});
+ assert.equal(service.snapshot().downloadedVersion,'0.2.9');
+ await assert.rejects(service.dispatch('install'),/work/i);
+});
+
+test('status polling uses compact observations but installation rechecks authoritative readiness',async()=>{
+ let reads=0;
+ const {service,calls}=setup({getBlockers:()=>[],isBusy:()=>{reads++;return true;}});
+ await service.dispatch('check');await service.dispatch('download');
+ for(let i=0;i<4;i++)assert.deepEqual((await service.dispatch('status')).blockers,[]);
+ assert.equal(reads,0,'Passive status must not invoke the full restart guard');
+ await assert.rejects(service.dispatch('install'),/work/i);assert.equal(reads,1);
+ assert.ok(!calls.some(c=>Array.isArray(c)));
 });

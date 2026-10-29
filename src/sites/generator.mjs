@@ -3,6 +3,7 @@ import {promises as fs,constants as FS} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {createController} from '../controller/index.mjs';
 import {collectSite,validateBundle,writeSiteDirectory} from './files.mjs';
+import {updateStateFlags} from '../shared/update-status.mjs';
 
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LIVE=new Set(['running','starting','submitting','connecting','checking-permissions']);
@@ -117,6 +118,7 @@ export async function createSitesGenerator({dataDir,projectsDir,runtime,onGenera
     }
     return clone({busy:!closed&&(operationBusy||pendingCompletions>0||native.busy||executing()),task,runtime:native.runtime,error:ownError??(task?native.error:null)??null});
   }
+  function getUpdateState(){return{...updateStateFlags(native),busy:!closed&&(operationBusy||pendingCompletions>0||native.busy||executing())};}
   const emit=()=>{if(closed||closing)return;const state=getState();for(const listener of listeners)try{listener(state);}catch{/* Listeners cannot interrupt persistence. */}};
   async function persist(){requireReadable();const text=JSON.stringify({version:1,activeId,records:[...records.values()]});if(Buffer.byteLength(text)>MAX_MANIFEST)throw Error('The saved Sites task mapping exceeds its storage limit.');await atomicWrite(manifestFile,text);}
   async function act(action){native=await controller.dispatch(action);if(native.error)throw Error(native.error);return native;}
@@ -152,7 +154,7 @@ export async function createSitesGenerator({dataDir,projectsDir,runtime,onGenera
 
   async function run(operation){return schedule(async()=>{if(closed||closing)throw Error('Sites generator is closed.');ownError=null;operationBusy=true;emit();try{await operation();}catch(error){ownError=message(error);}finally{operationBusy=false;emit();}return getState();});}
   return{
-    getState,
+    getState,getUpdateState,
     subscribe(listener){if(typeof listener!=='function')throw Error('A Sites generation listener is required.');listeners.add(listener);return()=>listeners.delete(listener);},
     select(id){return run(async()=>{siteId(id);requireIdle();requireReadable();const record=records.get(id);if(record){await workspace(record);await act({type:'selectTask',id:record.taskId});}activeId=id;await persist();});},
     generate(value){
