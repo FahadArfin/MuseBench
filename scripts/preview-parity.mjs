@@ -169,6 +169,7 @@ try{
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),false,'A new sandboxed chat must not inherit the prior connection Full access');
  for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});await window.musebench.dispatch({type:'sendMessage',text:'/preview-question'});});
  await click('button','Muse has a question. Answer to continue.');await compare('native-question');
+ await click('button','Write my own answer: Approach');await compare('native-question-custom-answer');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const input=document.querySelector('textarea[aria-label="Write an answer: Approach"]');input.focus();Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'Keep the existing keyboard behavior.');input.dispatchEvent(new Event('input',{bubbles:true}));});await click('button','Send answers');await compare('native-question-answered');
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.inputResponse.outcome),'answered');
  await click('button','Close dialog');
