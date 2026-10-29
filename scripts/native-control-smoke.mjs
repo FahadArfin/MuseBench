@@ -49,7 +49,15 @@ try{
  await page.evaluate(()=>console.error('Native diagnostics validation marker'));const diagnostics=await value('diagnostics');assert.ok(diagnostics.responsive);assert.ok(diagnostics.events.some(event=>event.kind==='renderer-console-error'));assert.ok(!JSON.stringify(diagnostics).includes('validation marker'));checks.push('MCP returns an app screenshot and records real renderer errors without console contents');
  assert.equal((await client.callTool({name:'navigate',arguments:{target:'code',script:'alert(1)'}})).isError,true);
  await value('navigate',{target:'settings',section:'control'});await page.getByRole('button',{name:'Turn off',exact:true}).click();await page.getByText('Native connection is off',{exact:true}).waitFor();assert.equal((await client.callTool({name:'app_status',arguments:{}})).isError,true);checks.push('Turning off App control immediately revokes native access');
- await client.close();client=null;await app.close();app=null;
+ await client.close();client=null;
+ // app.close() quits Electron before destroying its windows and can conceal
+ // cleanup that incorrectly accesses BrowserWindow.webContents after closure.
+ await app.evaluate(({app})=>{process.on('uncaughtException',error=>{console.error('Shutdown regression:',error.stack);app.exit(1);});});
+ const processExit=new Promise(resolve=>app.process().once('exit',code=>resolve(code)));
+ await app.evaluate(({BrowserWindow})=>{setTimeout(()=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html')).close(),50);});
+ let exitTimer;const exitCode=await Promise.race([processExit,new Promise(resolve=>{exitTimer=setTimeout(()=>resolve('timed out'),7000);})]);clearTimeout(exitTimer);
+ if(exitCode!=='timed out')app=null;
+ assert.equal(exitCode,0,'Closing the app window must finish native cleanup and exit normally');checks.push('Closing the actual desktop window finishes cleanup and exits without a shutdown exception');
  preview=await createServer({configFile:'vite.preview.config.mjs',server:{host:'127.0.0.1',port:43208,strictPort:true}});await preview.listen();browser=await chromium.launch();const web=await browser.newPage({viewport:{width:1400,height:1000}});await web.goto('http://127.0.0.1:43208/preview.html');
  await web.getByRole('button',{name:'Profile menu',exact:true}).click();await web.getByRole('menuitem',{name:/^Settings/}).click();await web.getByRole('button',{name:'App control',exact:true}).click();await web.getByText('Preview only. Connect from the installed desktop app.').waitFor();await web.getByRole('button',{name:'Turn on',exact:true}).click();await web.getByText('Native connection is on',{exact:true}).waitFor();await web.screenshot({path:'artifacts/native-control/preview.png'});checks.push('Preview uses the shared App control panel with explicit simulation');
  await writeFile('artifacts/native-control/report.json',JSON.stringify({status:'passed',checks},null,2));console.log(JSON.stringify({status:'passed',checks}));

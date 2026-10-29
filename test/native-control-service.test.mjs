@@ -91,6 +91,31 @@ test('screenshots reject a late native result even before an overdue timer runs'
  }finally{service.close();}
 });
 
+test('native control cleanup works after the BrowserWindow contents getter is destroyed',()=>{
+ const {window,service}=screenshotService();const contents=window.webContents;
+ Object.defineProperty(window,'webContents',{get(){throw Error('Object has been destroyed');}});
+ window.isDestroyed=()=>true;contents.isDestroyed=()=>true;
+ assert.doesNotThrow(()=>service.close());
+ assert.equal(contents.listenerCount('console-message'),0);
+ assert.equal(contents.listenerCount('render-process-gone'),0);
+});
+
+test('renderer cleanup cancels pending requests after the BrowserWindow is destroyed',async()=>{
+ const ipc=new EventEmitter(),contents=new EventEmitter(),handlers=new Map();
+ ipc.handle=(name,fn)=>handlers.set(name,fn);ipc.removeHandler=name=>handlers.delete(name);
+ contents.isDestroyed=()=>false;contents.send=()=>{};
+ const window={webContents:contents,isDestroyed:()=>false};
+ const renderer=createNativeRenderer({window,ipcMain:ipc,trusted:()=>true});
+ const pending=renderer.call('inspect_ui');const rejected=assert.rejects(pending,/UI changed/);
+ Object.defineProperty(window,'webContents',{get(){throw Error('Object has been destroyed');}});
+ window.isDestroyed=()=>true;contents.isDestroyed=()=>true;
+ assert.doesNotThrow(()=>renderer.close());await rejected;
+ assert.equal(contents.listenerCount('did-start-loading'),0);
+ assert.equal(contents.listenerCount('render-process-gone'),0);
+ assert.equal(ipc.listenerCount('musebench:native-reply'),0);
+ assert.equal(handlers.size,0);
+});
+
 test('service reports bounded real state without credentials, and reads only the requested chat',async()=>{
  const contents=new EventEmitter();contents.isDestroyed=()=>false;contents.isCrashed=()=>false;
  const window=Object.assign(new EventEmitter(),{webContents:contents,isVisible:()=>true,isMinimized:()=>false});let historyInput;
