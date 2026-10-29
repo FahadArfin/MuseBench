@@ -103,27 +103,28 @@ try{
   const file=path.join(output,`skills-${width}.png`);await page.screenshot({path:file});report.screenshots.push(file);
  }
  pass('Native desktop layout fits 820 and 1440 pixels without content overflow');
- const postgresIcon=dialog.locator('.extensions-sidebar').getByRole('button',{name:'Manage postgresql',exact:true}).locator('.extension-brand-icon');
+ await dialog.getByRole('tab',{name:'MCP servers',exact:true}).click();await dialog.getByRole('button',{name:'Installed',exact:true}).click();
+ const postgresIcon=dialog.getByRole('button',{name:'Manage postgresql',exact:true}).locator('.extension-brand-icon');
  const postgresSymbol=postgresIcon.locator('.extension-brand-symbol');await postgresSymbol.waitFor();
  const mask=await postgresSymbol.evaluate(element=>getComputedStyle(element).maskImage);assert.match(mask,/data:image\/svg\+xml/,'Large brand SVGs must remain inline in a file:// desktop');
  const visibleIcon=await postgresIcon.screenshot({path:path.join(output,'postgresql-icon.png')});
  await postgresSymbol.evaluate(element=>{element.style.visibility='hidden';});
  const hiddenIcon=await postgresIcon.screenshot();assert.notDeepEqual(visibleIcon,hiddenIcon,'PostgreSQL must paint visible pixels, not an empty mask');
  await postgresSymbol.evaluate(element=>{element.style.visibility='';});
- await dialog.locator('.extensions-sidebar').getByRole('button',{name:'Manage cloudflare',exact:true}).click();
+ await dialog.getByRole('button',{name:'Manage cloudflare',exact:true}).click();
  assert.deepEqual(await dialog.locator('.server-card h4').allTextContents(),['cloudflare'],'Installed shortcuts must match identity rather than a substring');
  await dialog.getByRole('textbox',{name:'Search extensions',exact:true}).fill('cloud');
- assert.deepEqual(await dialog.locator('.server-card h4').allTextContents(),['cloudflare','cloudflare-docs'],'Typing should return to ordinary broad search');
- pass('PostgreSQL paints real pixels from its inline SVG; installed shortcuts choose one identity while typed search can find related names');
- await dialog.getByRole('tab',{name:'Skills',exact:true}).click();await dialog.getByRole('button',{name:'Discover',exact:true}).click();await ready();
+ assert.deepEqual(await dialog.locator('.catalog-item-title').allTextContents(),['cloudflare','cloudflare-docs'],'Typing should return to ordinary broad search');
+ pass('PostgreSQL paints real pixels from its inline SVG; Installed rows choose one identity while typed search can find related names');
+ await dialog.getByRole('tab',{name:'Skills',exact:true}).click();await dialog.getByRole('button',{name:'Curated',exact:true}).click();await ready();
  const skill=CURATED_EXTENSIONS.find(entry=>entry.kind==='skills'&&entry.package&&entry.compatibility!=='setup-required');assert(skill);
  await open(skill);await dialog.getByRole('button',{name:'Download and review',exact:true}).click();
  const install=dialog.getByRole('button',{name:'Install skill',exact:true});await install.waitFor();assert.equal(await install.isDisabled(),true);
  await dialog.getByLabel('I trust these skill instructions.').check();await install.click();
- await dialog.locator('.extensions-sidebar').getByRole('button',{name:`Manage ${skill.title}`,exact:true}).click();
+ await dialog.getByRole('button',{name:'Installed',exact:true}).click();await dialog.getByRole('button',{name:`Manage ${skill.title}`,exact:true}).click();
  assert.equal(await dialog.locator('.extension-card h4').textContent(),skill.title);
  pass('Desktop package review requires explicit consent before the IPC fixture records installation');
- await dialog.getByRole('tab',{name:'MCP servers',exact:true}).click();await dialog.getByRole('button',{name:'Discover',exact:true}).click();await ready();
+ await dialog.getByRole('tab',{name:'MCP servers',exact:true}).click();await dialog.getByRole('button',{name:'Curated',exact:true}).click();await ready();
  const server=CURATED_EXTENSIONS.find(entry=>entry.kind==='mcp'&&entry.recipe?.name==='stripe'&&entry.recipe.transport==='http'&&entry.compatibility==='recipe');assert(server);await open(server);
  const add=dialog.locator('.catalog-detail').getByRole('button',{name:'Add server',exact:true});assert.equal(await add.isDisabled(),true);
  await dialog.getByLabel('I approve this endpoint and its access. Tools may receive data outside the project sandbox.').check();await add.click();
@@ -135,7 +136,7 @@ try{
  await app.evaluate((_electron,{name,url})=>{globalThis.__catalogFixture.state.servers.find(server=>server.name===name).address=new URL(url).href;},{name:server.recipe.name,url:server.recipe.url});
  await dialog.getByRole('button',{name:'Refresh extensions',exact:true}).click();
  await dialog.getByRole('button',{name:'Manage server',exact:true}).click();
- assert.equal(await dialog.getByRole('textbox',{name:'Search extensions',exact:true}).inputValue(),server.recipe.name);
+
  assert.equal(await dialog.locator('.server-card h4').textContent(),server.recipe.name);
  pass('Desktop server setup requires review; normalized Stripe URLs match, different endpoints do not, and Manage opens the exact server');
  const fixture=await app.evaluate(()=>globalThis.__catalogFixture);report.commands=fixture.commands;

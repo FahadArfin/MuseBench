@@ -3,8 +3,8 @@
 /* Native details retain their summary semantics and animate without measuring
    every tool row in JavaScript. Positioned menus have no in-flow height. */
 @supports (interpolate-size:allow-keywords) and selector(::details-content){
- .app details:not(.diff-editor-menu)::details-content{interpolate-size:allow-keywords;height:0;overflow:clip;opacity:0;transition:height var(--motion-disclosure) var(--motion-ease),opacity 160ms ease,content-visibility var(--motion-disclosure) allow-discrete}
- .app details:not(.diff-editor-menu)[open]::details-content{height:auto;opacity:1}
+ .app details:not(.diff-editor-menu,.extensions-tools,.extensions-add)::details-content{interpolate-size:allow-keywords;height:0;overflow:clip;opacity:0;transition:height var(--motion-disclosure) var(--motion-ease),opacity 160ms ease,content-visibility var(--motion-disclosure) allow-discrete}
+ .app details:not(.diff-editor-menu,.extensions-tools,.extensions-add)[open]::details-content{height:auto;opacity:1}
 }
 .diff-disclosure,.work-disclosure,.changed-files-more>svg,.app details>summary>.lucide-chevron-down{transition:transform var(--motion-disclosure) var(--motion-ease)}
 .diff-file-toggle[aria-expanded="true"]>.diff-disclosure{transform:rotate(90deg)}

@@ -28,6 +28,7 @@ export async function checkSkillContext({page,dialog,pass,screenshot,desktopApp}
  try{
   await dialog.getByRole('button',{name:'Refresh extensions',exact:true}).click();
   await dialog.getByRole('button',{name:'Installed',exact:true}).click();
+  const tools=dialog.locator('.extensions-tools > summary');await tools.click();
   const summary=dialog.locator('.skill-context-summary'),toggle=summary.locator(':scope > button');
   await summary.getByText('~100 tokens at startup · partial',{exact:true}).waitFor();
   assert.equal(await toggle.getAttribute('aria-expanded'),'false');
@@ -39,17 +40,20 @@ export async function checkSkillContext({page,dialog,pass,screenshot,desktopApp}
   await page.keyboard.press('Space');assert.equal(await toggle.getAttribute('aria-expanded'),'false');
   await page.keyboard.press('Space');
   const filter=dialog.getByRole('textbox',{name:'Search extensions',exact:true});
-  await filter.fill('Missing cost');assert.equal(await dialog.locator('.extension-card').count(),1);
+  await tools.click();await filter.fill('Missing cost');assert.equal(await dialog.locator('.catalog-card').count(),1);await tools.click();
   assert.equal(await summary.getByText('~100 tokens at startup · partial',{exact:true}).count(),1);
-  await filter.fill('');
+  await tools.click();await filter.fill('');
+  await dialog.getByRole('button',{name:'Manage Manual review',exact:true}).click();
   await dialog.getByRole('button',{name:'Context details for Manual review',exact:true}).click();
   const manual=dialog.locator('.extension-card').filter({hasText:'Manual review'});
   await manual.getByText('~300 tokens',{exact:true}).waitFor();
   await manual.getByText('Loader note <script>window.__skillScriptRan=true</script>',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>window.__skillScriptRan),undefined);
+  await dialog.getByRole('button',{name:'Back to installed',exact:true}).click();await dialog.getByRole('button',{name:'Manage Plan clearly',exact:true}).click();
   await dialog.getByRole('button',{name:'Context details for Plan clearly',exact:true}).click();
   assert.equal(await dialog.locator('.extension-card').filter({hasText:'Plan clearly'}).getByText('Not reported',{exact:true}).count(),2);
   await dialog.getByRole('combobox',{name:'Activation for Plan clearly',exact:true}).selectOption('off');
+  await tools.click();
   await summary.getByText('~0 tokens at startup · partial',{exact:true}).waitFor();
   assert.equal(await summary.getByText('1 disabled',{exact:true}).count(),1);
   await page.waitForFunction(()=>!document.querySelector('.extensions-modal').getAnimations({subtree:true}).some(a=>a.playState==='running'&&Number.isFinite(a.effect?.getComputedTiming().endTime)));
@@ -66,7 +70,7 @@ export async function checkSkillContext({page,dialog,pass,screenshot,desktopApp}
   await summary.getByText('Last refresh',{exact:true}).waitFor();
   await summary.getByText('Showing the last successful refresh. Estimates and skill settings may have changed.',{exact:true}).waitFor();
   assert.equal(await summary.getByText('~0 tokens at startup · partial',{exact:true}).count(),1);
-  assert.equal(await dialog.locator('.extension-card').count(),3);
+  assert.equal(await dialog.locator('.extension-card').count(),1);
   if(desktopApp)await desktopApp.evaluate(()=>{const state=globalThis.__catalogFixture.state;delete state.skillCatalog.stale;state.errors=[];});
   else await page.evaluate(()=>{delete window.__skillContextFixture.skillCatalog.stale;});
   await dialog.getByRole('button',{name:'Refresh extensions',exact:true}).click();
@@ -83,6 +87,7 @@ export async function checkSkillContext({page,dialog,pass,screenshot,desktopApp}
   if(desktopApp)await desktopApp.evaluate(()=>{const f=globalThis.__catalogFixture;Object.assign(f.state,f.skillContextOriginal);delete f.skillContextOriginal;delete f.skillContextActive;});
   else await page.evaluate(()=>{window.musebench.customize=window.__skillContextOriginal;delete window.__skillContextOriginal;delete window.__skillContextFixture;delete window.__skillContextUnavailable;});
   await dialog.getByRole('button',{name:'Refresh extensions',exact:true}).click();
-  await dialog.getByRole('button',{name:'Discover',exact:true}).click();
+  const openTools=dialog.locator('.extensions-tools[open] > summary');if(await openTools.count())await openTools.click();
+  await dialog.getByRole('button',{name:'Curated',exact:true}).click();
  }
 }

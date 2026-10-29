@@ -1,6 +1,11 @@
 import {sampleAnalytics} from './analytics';
 import {CURATED_EXTENSIONS} from '../shared/extension-catalog.mjs';
 import type {CatalogEntry} from '../shared/extension-catalog-types';
+const communityCatalog=async(kind:string)=>{
+ const snapshot=await import('./community-catalog.json');
+ return snapshot.entries.filter(item=>item.kind===(kind==='connectors'?'mcp':kind)).map(item=>({...item,kind})) as CatalogEntry[];
+};
+const resolveCatalog=async(id:string)=>CURATED_EXTENSIONS.find(item=>item.id===id)||(await import('./community-catalog.json')).entries.find(item=>item.id===id) as CatalogEntry|undefined;
 import {createPreviewHookPresets} from './hook-presets.mjs';
 import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
 import {newGoalDriver,pauseGoalDriver} from '../shared/goal-driver.mjs';
@@ -230,14 +235,14 @@ export function createPreviewBridge():MuseBenchBridge {
     return{projectInstructions:{simulation:true,root,checkedAt:new Date().toISOString(),boundary:{kind:'git',root},selectedCount:1,selectedBytes:bytes,measuredBytes:bytes,complete:true,trust:{status:reviewedInstructionRoots.has(root)?'reviewed':'required'},levels:[{root,files:[{path:'AGENTS.md',selected:true,bytes,text:previewInstructionText}]}]}};
    }
    if(command.type==='catalogSearch'){
-    const fixtures:CatalogEntry[]=command.source==='community'?[...CURATED_EXTENSIONS.filter(item=>item.kind===command.kind).map(item=>({...item,id:'preview-community:'+item.id,source:'community' as const})),{id:'preview-validation-failure',title:'Unsupported package sample',description:'A deterministic validation failure for preview review.',kind:command.kind,source:'community',publisher:'Preview fixture',homepage:'https://github.com/FahadArfin/MuseBench',compatibility:'unverified',setup:'Preparation demonstrates a rejected unsupported capability.',tags:[],package:{repo:'https://github.com/FahadArfin/MuseBench',path:'.',kind:command.kind==='skills'?'skill':'plugin'},provenance:{source:'Simulated fixture',url:'https://github.com/FahadArfin/MuseBench'}}]:CURATED_EXTENSIONS.filter(item=>item.kind===command.kind);
-    const entries=fixtures.filter(item=>[item.title,item.description,item.publisher,item.summary,item.category,...item.tags].join(' ').toLowerCase().includes(command.query.toLowerCase())),offset=Number(command.cursor??0),limit=6;
+    const fixtures:CatalogEntry[]=command.source==='community'?[...await communityCatalog(command.kind),{id:'preview-validation-failure',title:'Unsupported package sample',description:'A deterministic validation failure for preview review.',kind:command.kind,source:'community',publisher:'Preview fixture',homepage:'https://github.com/FahadArfin/MuseBench',compatibility:'unverified',setup:'Preparation demonstrates a rejected unsupported capability.',tags:[],package:{repo:'https://github.com/FahadArfin/MuseBench',path:'.',kind:command.kind==='skills'?'skill':'plugin'},provenance:{source:'Simulated fixture',url:'https://github.com/FahadArfin/MuseBench'}}]:CURATED_EXTENSIONS.filter(item=>item.kind===command.kind);
+    const entries=fixtures.filter(item=>[item.title,item.description,item.publisher,item.summary,item.category,...item.tags].join(' ').toLowerCase().includes(command.query.toLowerCase())),offset=Number(command.cursor??0),limit=command.source==='community'?30:6;
     if(!Number.isSafeInteger(offset)||offset<0)throw Error('Invalid preview cursor.');
-    return{catalog:{entries:copy(entries.slice(offset,offset+limit)),nextCursor:offset+limit<entries.length?String(offset+limit):null,stale:false,offline:false,fetchedAt:stamp,errors:[],disclosure:'Simulated catalog data. No network search, downloads or installation occur in preview.'}};
+    return{catalog:{entries:copy(entries.slice(offset,offset+limit)),nextCursor:offset+limit<entries.length?String(offset+limit):null,stale:false,offline:false,fetchedAt:stamp,errors:[],disclosure:'Public directory snapshot, captured October 28, 2026. Search covers the complete snapshot. Installation and connections are simulated in this preview.'}};
    }
    if(command.type==='prepareCatalog'){
     if(command.id==='preview-validation-failure')throw Error('Preview validation rejected: unsupported executable capability. Nothing installed.');
-    const item=CURATED_EXTENSIONS.find(item=>item.id===command.id.replace(/^preview-community:/,''));if(!item?.package)throw Error('This entry requires manual setup.');
+    const item=await resolveCatalog(command.id.replace(/^preview-community:/,''));if(!item?.package)throw Error('This entry requires manual setup.');
     return{prepared:{token:'catalog:'+item.id,kind:item.package.kind==='skill'?'skills':'plugins',title:item.title,folder:'Preview staging / '+item.id,fingerprint:'Simulated content hash',instructions:'Simulated package review. Inspect the source, dependencies and permissions before installing a real package.',files:['SKILL.md','LICENSE'],capabilities:[]}};
    }
    if(command.type==='catalogServer'){
@@ -246,7 +251,7 @@ export function createPreviewBridge():MuseBenchBridge {
     customize.servers.push({name:item.recipe.name,revision:'preview-'+item.id,transport:item.recipe.transport==='npm'?'stdio':'streamable_http',address:item.recipe.transport==='npm'?`Pinned npm launcher: ${item.recipe.package}@${item.recipe.version}`:item.recipe.url,enabled:true,reviewed:true,oauth:item.recipe.transport==='http'&&!!item.recipe.oauth});return{state:copy(customize),message:'Simulated server configuration saved. Sign-in and readiness are not verified.'};
    }
    if(command.type==='install'&&command.token.startsWith('catalog:')){
-    const item=CURATED_EXTENSIONS.find(item=>'catalog:'+item.id===command.token);if(!item?.package||!command.reviewed)throw Error('Review the package first.');
+    const item=await resolveCatalog(command.token.slice('catalog:'.length));if(!item?.package||!command.reviewed)throw Error('Review the package first.');
     if(item.package.kind==='skill'){if(!customize.skills.some(skill=>skill.id===item.id))customize.skills.push({id:item.id,title:item.title,description:item.description,scope:'user',activation:'user-only'});}
     else if(!customize.plugins.some(plugin=>plugin.id===item.id))customize.plugins.push({id:item.id,title:item.title,description:item.description,version:'Preview',enabled:false,valid:true,capabilities:[],reviewRequired:true});
     return{state:copy(customize),message:'Preview only: package installation simulated.'};

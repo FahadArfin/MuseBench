@@ -1,12 +1,12 @@
 .catalog-view-tabs{display:flex;gap:6px;margin:14px 0}
-.catalog-controls{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:0 0 24px}
+.catalog-controls{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 16px;min-width:0}
 .catalog-search{display:flex;gap:2px;align-items:center;min-width:0;max-width:340px;flex:1}
 .catalog-search .extensions-filter{flex:1;min-width:0;margin:0;border-radius:20px;height:32px;padding:0 11px;gap:8px}
 .catalog-search .extensions-filter input{font-size:12px}
 .catalog-search .icon-button{height:30px;width:28px;flex-shrink:0;color:var(--muted)}
 .catalog-search .icon-button:hover{color:var(--text)}
 .catalog-sources{display:flex;gap:3px;flex-shrink:0}
-.catalog-sources button{border:0;background:none;color:var(--muted);padding:8px 13px;cursor:pointer;font:inherit;font-size:12px;border-radius:20px}
+.catalog-sources button{border:0;background:none;color:var(--muted);padding:7px 10px;cursor:pointer;font:inherit;font-size:12px;border-radius:20px;white-space:nowrap}
 .catalog-sources button.active{background:var(--surface-hover);color:var(--text);font-weight:600}
 .catalog-source-note{font-size:11px;color:var(--muted);line-height:1.6;margin:-10px 0 20px}
 .catalog-section{margin:0 0 25px}
@@ -19,6 +19,28 @@
 .catalog-section-count,.catalog-curated-label{font-size:10px;color:var(--muted)}
 .catalog-clear-search{margin-left:auto;font-size:11px}
 .catalog-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:27px;row-gap:5px}
+.catalog-grid.catalog-list{grid-template-columns:minmax(0,1fr);gap:1px}
+.catalog-list .catalog-card{content-visibility:auto;contain-intrinsic-size:auto 67px}
+.catalog-category{border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:6px 8px;font-size:11px;min-width:0;max-width:155px}
+.catalog-source-info{font-size:10px;color:var(--muted);margin:-5px 0 12px}
+.catalog-source-info summary{cursor:pointer;width:fit-content}
+.catalog-source-info p{padding:8px 0;margin:0;line-height:1.6}
+.catalog-sentinel{height:1px}
+.extensions-content{scrollbar-gutter:stable}
+.extensions-toolbar{gap:12px;position:relative}
+.extensions-toolbar h3{font-size:20px}
+.extensions-toolbar p{margin-bottom:0}
+.extensions-tools,.extensions-add{font-size:12px}
+.extensions-add{position:relative}
+.extensions-tools>summary,.extensions-add>summary{cursor:pointer;list-style:none;border-radius:16px;white-space:nowrap}
+.extensions-tools>summary{padding:7px 10px;color:var(--muted);border:1px solid var(--border)}
+.extensions-tools[open]>summary{color:var(--text);background:var(--surface-hover)}
+.extensions-tools-panel{position:absolute;right:0;top:calc(100% + 8px);width:min(530px,100%);max-height:60vh;overflow:auto;z-index:5;border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--surface);box-shadow:0 12px 36px #0004}
+.extensions-add>div{position:absolute;right:0;top:calc(100% + 6px);z-index:5;min-width:160px;padding:6px;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:0 12px 36px #0004}
+.extensions-add>div>.button{width:100%;justify-content:flex-start}
+.extensions-tools-panel .project-instructions{margin-bottom:12px}
+@media(max-width:1050px){.catalog-controls{flex-wrap:wrap}.catalog-search{max-width:none;flex-basis:200px}.catalog-category{max-width:140px}.extensions-toolbar{align-items:flex-start}.extensions-actions{flex-wrap:wrap;justify-content:flex-end}}
+@media(max-width:700px){.catalog-controls{gap:8px}.catalog-search{flex-basis:100%}.catalog-sources{gap:0}.catalog-sources button{padding:7px 8px;font-size:11px}.catalog-category{flex:1;max-width:150px}.extensions-toolbar{flex-wrap:wrap}.extensions-toolbar>div:first-child{min-width:100px}.extensions-toolbar>div:first-child>p{display:none}.catalog-grid{grid-template-columns:minmax(0,1fr)}}
 .catalog-card{display:flex;align-items:center;gap:11px;width:100%;min-width:0;min-height:67px;border:0;border-radius:9px;background:transparent;padding:9px 7px;color:var(--text);font:inherit;text-align:left;cursor:pointer;transition:background-color 140ms ease}
 .catalog-card:hover{background:var(--surface-hover)}
 .catalog-card:focus-visible,.catalog-section-link:focus-visible,.catalog-sources button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

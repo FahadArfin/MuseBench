@@ -1,4 +1,5 @@
 // Portable metadata only: browsing these entries never activates tools or commands.
+import {EXPANDED_EXTENSIONS} from './extension-catalog-expansion.mjs';
 const base = (id, title, description, kind, publisher, homepage, extras = {}) => ({
   id, title, description, summary: description, kind, source: 'recommended', publisher, homepage, tags: [kind],
   category: ['skills','plugins','hooks'].includes(kind) ? 'workflows' : 'developer-tools', icon: kind, popular: false,
@@ -210,3 +211,4 @@ export function searchCuratedExtensions({ kind, query = '', cursor } = {}) {
   const entries = CURATED_EXTENSIONS.filter(x => (!kind || x.kind === kind) && [x.title,x.description,x.summary,x.publisher,x.category,...x.tags].join(' ').toLowerCase().includes(needle));
   return { entries: structuredClone(entries.slice(offset, offset + 30)), nextCursor: entries.length > offset + 30 ? String(offset + 30) : null, stale: false, offline: false, fetchedAt: null, errors: [], disclosure: 'Popular is an editorial selection. Each integration’s setup and compatibility are shown in its details.' };
 }
+CURATED_EXTENSIONS.push(...EXPANDED_EXTENSIONS);

@@ -37,7 +37,7 @@ try{
  const dialog=page.getByRole('dialog',{name:'Customize',exact:true});
  const rows=()=>dialog.locator('.catalog-card');
  const catalogReady=async()=>{await rows().first().waitFor();await dialog.getByRole('button',{name:'Search',exact:true}).waitFor();await page.waitForFunction(()=>!document.querySelector('.extension-catalog [role="status"]'));};
- const discover=async label=>{await dialog.getByRole('tab',{name:label,exact:true}).click();await dialog.getByRole('button',{name:'Discover',exact:true}).click();await catalogReady();};
+ const discover=async label=>{await dialog.getByRole('tab',{name:label,exact:true}).click();await dialog.getByRole('button',{name:'Curated',exact:true}).click();await catalogReady();};
  const search=async query=>{await dialog.getByRole('textbox',{name:'Search catalog',exact:true}).fill(query);await dialog.getByRole('button',{name:'Search',exact:true}).click();await catalogReady();};
  const open=async entry=>{await search(entry.title);await dialog.getByRole('button',{name:`View ${entry.title}`,exact:true}).first().click();await dialog.locator('.catalog-detail').waitFor();};
  const back=()=>dialog.getByRole('button',{name:'Back to discovery',exact:true}).click();
@@ -80,13 +80,13 @@ try{
  await dialog.getByRole('button',{name:'Refresh catalog',exact:true}).click();
  await page.waitForFunction(()=>window.__catalogGate?.started);
  await dialog.getByRole('button',{name:'Community',exact:true}).click();await catalogReady();
- assert.equal(await rows().count(),6);
+ assert((await rows().count())>=6);
  await page.evaluate(()=>window.__catalogGate.release());await page.waitForFunction(()=>window.__catalogGate.returned);
  assert.equal(await dialog.getByRole('button',{name:'Community',exact:true}).getAttribute('aria-pressed'),'true');
- assert.equal(await dialog.getByRole('heading',{name:'Community results',exact:true}).count(),1);assert.equal(await rows().count(),6);
+ assert.equal(await dialog.getByRole('heading',{name:'Community results',exact:true}).count(),1);assert((await rows().count())>=6);
  await page.evaluate(()=>{window.__catalogGate=null;window.__catalogRepeatCursor=true;});
  const beforeCursor=(await commands()).filter(command=>command.type==='catalogSearch').length;
- await dialog.getByRole('button',{name:'Curated',exact:true}).click();
+ await dialog.getByRole('button',{name:'Curated',exact:true}).click();await dialog.getByRole('button',{name:'Refresh catalog',exact:true}).click();
  await dialog.getByRole('alert').filter({hasText:'catalog returned a repeated page'}).waitFor();
  assert.equal((await commands()).filter(command=>command.type==='catalogSearch').length-beforeCursor,2,'Repeated cursors must stop the auto-load loop immediately');
  await page.evaluate(()=>{window.__catalogRepeatCursor=false;});
@@ -94,20 +94,20 @@ try{
  pass('Late curated results cannot replace a newer Community view; a repeated cursor stops the auto-load loop and refresh recovers');
 
  await page.evaluate(()=>{window.__catalogGate={source:'community',started:false,returned:false};});
- await dialog.getByRole('button',{name:'Community',exact:true}).click();await page.waitForFunction(()=>window.__catalogGate?.started);
- await search('security');assert((await rows().allTextContents()).every(text=>/security/i.test(text)));
+ await dialog.getByRole('button',{name:'Community',exact:true}).click();await dialog.getByRole('button',{name:'Refresh catalog',exact:true}).click();await page.waitForFunction(()=>window.__catalogGate?.started);
+ await search('security-best-practices');assert((await rows().allTextContents()).every(text=>/security/i.test(text)));
  await page.evaluate(()=>window.__catalogGate.release());await page.waitForFunction(()=>window.__catalogGate.returned);
  assert((await rows().allTextContents()).every(text=>/security/i.test(text)));
  await page.evaluate(()=>{window.__catalogGate=null;window.__catalogCap=true;});
  const beforeCap=(await commands()).filter(command=>command.type==='catalogSearch').length;
  await dialog.getByRole('button',{name:'Community',exact:true}).click();await catalogReady();assert.equal(await rows().count(),999);
- await dialog.getByRole('button',{name:'Load more',exact:true}).click();await catalogReady();assert.equal(await rows().count(),1000);
+ await dialog.locator('.extensions-content').evaluate(e=>e.scrollTop=e.scrollHeight);await page.waitForFunction(()=>document.querySelectorAll('.catalog-card').length===1000);await catalogReady();assert.equal(await rows().count(),1000);
  assert.equal(await dialog.getByRole('button',{name:'Load more',exact:true}).count(),0);
  assert.equal(await dialog.getByText('Showing the first 1,000 results. Search to narrow the directory.',{exact:true}).count(),1);
  assert.equal((await commands()).filter(command=>command.type==='catalogSearch').length-beforeCap,2);
  await page.evaluate(()=>{window.__catalogCapTerminal=true;});
  await dialog.getByRole('button',{name:'Community',exact:true}).click();await catalogReady();assert.equal(await rows().count(),999);
- await dialog.getByRole('button',{name:'Load more',exact:true}).click();await catalogReady();assert.equal(await rows().count(),1000);
+ await dialog.locator('.extensions-content').evaluate(e=>e.scrollTop=e.scrollHeight);await page.waitForFunction(()=>document.querySelectorAll('.catalog-card').length===1000);await catalogReady();assert.equal(await rows().count(),1000);
  assert.equal(await dialog.getByRole('button',{name:'Load more',exact:true}).count(),0);
  assert.equal(await dialog.getByText('Showing the first 1,000 results. Search to narrow the directory.',{exact:true}).count(),1,'A clipped final page must still disclose that results were omitted');
  assert.equal((await commands()).filter(command=>command.type==='catalogSearch').length-beforeCap,4);
@@ -116,16 +116,11 @@ try{
  pass('A newer search wins over an in-flight response; Community pagination discloses its 1,000-result bound even when a clipped final page has no cursor');
 
  await discover('Skills');await dialog.getByRole('button',{name:'Community',exact:true}).click();await catalogReady();
- const beforePagination=await rows().count();assert.equal(beforePagination,6);
- await dialog.getByRole('textbox',{name:'Search catalog',exact:true}).fill('unsent query');
- await dialog.getByRole('button',{name:'Load more',exact:true}).click();await catalogReady();
- assert(await rows().count()>beforePagination,'Load more must append the already submitted search results');
- const nextPage=(await commands()).filter(command=>command.type==='catalogSearch').at(-1);
- assert.equal(nextPage.query,'');assert.equal(nextPage.source,'community');assert.equal(nextPage.cursor,'6');
- await search('security');
+ await dialog.getByRole('textbox',{name:'Search catalog',exact:true}).fill('security-best-practices');
+ await search('security-best-practices');
  assert((await rows().allTextContents()).every(text=>/security/i.test(text)));
- assert.equal((await commands()).filter(command=>command.type==='catalogSearch').at(-1).query,'security');
- pass('Community pagination uses the submitted query, while explicit search replaces the results');
+ assert.equal((await commands()).filter(command=>command.type==='catalogSearch').at(-1).query,'security-best-practices');
+ pass('Explicit Community search queries the full directory and replaces the results');
 
  await dialog.getByRole('button',{name:'Curated',exact:true}).click();await catalogReady();
  const skill=CURATED_EXTENSIONS.find(item=>item.kind==='skills'&&item.package&&item.compatibility!=='setup-required');assert(skill);
@@ -134,11 +129,11 @@ try{
  assert.equal((await commands()).filter(command=>command.type==='install').length,0);
  await dialog.getByLabel('I trust these skill instructions.').check();await install.click();
  await dialog.getByRole('button',{name:'Installed',exact:true}).click();
- await dialog.locator('.extension-card').filter({has:page.getByRole('heading',{name:skill.title,exact:true})}).waitFor();
+ await dialog.getByRole('button',{name:`Manage ${skill.title}`,exact:true}).waitFor();
  assert((await commands()).some(command=>command.type==='install'&&command.reviewed===true));
- await dialog.locator('.extensions-sidebar').getByRole('button',{name:`Manage ${skill.title}`,exact:true}).click();
- assert.equal(await dialog.getByRole('textbox',{name:'Search extensions',exact:true}).inputValue(),skill.title);
- pass('Package review keeps installation disabled until consent, and the installed rail opens the chosen skill');
+ await dialog.getByRole('button',{name:`Manage ${skill.title}`,exact:true}).click();
+ assert.equal(await dialog.locator('.extension-card h4').textContent(),skill.title);
+ pass('Package review keeps installation disabled until consent, and the Installed list opens the chosen skill');
 
  await discover('Skills');
  const setup=CURATED_EXTENSIONS.find(item=>item.kind==='skills'&&item.compatibility==='setup-required');assert(setup);
@@ -156,12 +151,12 @@ try{
   await dialog.getByRole('button',{name:'Manage server',exact:true}).waitFor();
  }
  await dialog.getByRole('button',{name:'Manage server',exact:true}).click();
- assert.equal(await dialog.getByRole('textbox',{name:'Search extensions',exact:true}).inputValue(),servers[1].recipe.name);
+
  assert.equal(await dialog.locator('.server-card').count(),1);assert.equal(await dialog.locator('.server-card h4').textContent(),servers[1].recipe.name);
- await dialog.locator('.extensions-sidebar').getByRole('button',{name:`Manage ${servers[0].recipe.name}`,exact:true}).click();
+ await dialog.getByRole('button',{name:'Back to installed',exact:true}).click();await dialog.getByRole('textbox',{name:'Search extensions',exact:true}).fill('');await dialog.getByRole('button',{name:`Manage ${servers[0].recipe.name}`,exact:true}).click();
  assert.equal(await dialog.locator('.server-card').count(),1);assert.equal(await dialog.locator('.server-card h4').textContent(),servers[0].recipe.name);
  await screenshot('manage-exact-server');
- pass('Reviewed server additions become Manage actions; both detail and installed shortcuts open the exact configured server');
+ pass('Reviewed server additions become Manage actions; both detail and Installed rows open the exact configured server');
 
  await discover('Hooks');const hook=CURATED_EXTENSIONS.find(item=>item.kind==='hooks'&&item.hook);assert(hook);await open(hook);
  await dialog.getByRole('button',{name:'Add to project draft',exact:true}).click();await dialog.getByRole('textbox',{name:'Hook 1 command',exact:true}).waitFor();

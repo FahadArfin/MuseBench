@@ -10,6 +10,7 @@ export async function checkProjectInstructions({page,dialog,pass,screenshot,desk
  else await page.evaluate(fixture=>{window.__instructionOriginal=window.musebench.customize;window.__instructionFixture=fixture;window.__instructionCalls=0;window.musebench.customize=async command=>{if(command.type!=='inspectProject')return window.__instructionOriginal(command);window.__instructionCalls++;if(window.__instructionFail)throw Error('Inspection temporarily unavailable');return{projectInstructions:structuredClone(window.__instructionFixture)};};},fixture);
  try{
   await dialog.getByRole('button',{name:'Installed',exact:true}).click();
+  await dialog.locator('.extensions-tools > summary').click();
   const panel=dialog.locator('.project-instructions'),toggle=panel.getByRole('button',{name:'Project instructions',exact:true});
   await toggle.waitFor();assert.equal(await toggle.getAttribute('aria-expanded'),'false');
   const calls=()=>desktopApp?desktopApp.evaluate(()=>globalThis.__catalogFixture.instructionCalls):page.evaluate(()=>window.__instructionCalls);
@@ -48,6 +49,7 @@ export async function checkProjectInstructions({page,dialog,pass,screenshot,desk
   else if(viewport)await page.setViewportSize(viewport);
   if(desktopApp)await desktopApp.evaluate(()=>{delete globalThis.__catalogFixture.instructions;delete globalThis.__catalogFixture.instructionFail;});
   else await page.evaluate(()=>{window.musebench.customize=window.__instructionOriginal;delete window.__instructionOriginal;delete window.__instructionFixture;delete window.__instructionFail;});
-  await dialog.getByRole('button',{name:'Discover',exact:true}).click();
+  await dialog.locator('.extensions-tools > summary').click();
+  await dialog.getByRole('button',{name:'Curated',exact:true}).click();
  }
 }

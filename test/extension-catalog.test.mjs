@@ -11,6 +11,20 @@ const service = async (t, fetch) => {
   const { createExtensionCatalog } = await import('../electron/extension-catalog.mjs');
   return { catalog: createExtensionCatalog({ dataDir, fetch }), dataDir, createExtensionCatalog };
 };
+
+test('expanded community sources search every entry before pagination', async t => {
+ const {catalog}=await service(t,async url=>Response.json(url.includes('/git/trees/')?{tree:url.includes('/github/awesome-copilot/')?Array.from({length:240},(_,i)=>({type:'blob',path:`skills/workflow-${i}/SKILL.md`})) : url.includes('/wshobson/agents/')?[{type:'blob',path:'plugins/testing/skills/rare-workflow/SKILL.md'}]:[]}: {plugins:[]}));
+ const first=await catalog.search({kind:'skills',source:'community'});assert.equal(first.entries.length,30);assert(first.nextCursor);
+ const found=await catalog.search({kind:'skills',source:'community',query:'workflow-239'});assert.equal(found.entries.length,1);assert.equal(found.entries[0].package.repo,'github/awesome-copilot');
+ const nested=await catalog.search({kind:'skills',source:'community',query:'rare-workflow'});assert.equal(nested.entries[0].package.path,'plugins/testing/skills/rare-workflow');
+});
+
+test('GitHub Copilot marketplace relative sources are reviewed packages, not arbitrary paths',async t=>{
+ const {catalog}=await service(t,async()=>Response.json({plugins:[{name:'sample',description:'Safe metadata',source:'plugins/sample'},{name:'escape',source:'plugins/../../escape'}]}));
+ const result=await catalog.search({kind:'plugins',source:'community',query:'sample'});
+ const entry=result.entries.find(e=>e.id==='plugin:github-copilot:sample');assert.equal(entry.package.path,'plugins/sample');assert.equal(entry.compatibility,'unverified');
+ const unsafe=await catalog.search({kind:'plugins',source:'community',query:'escape'});assert(unsafe.entries.every(e=>!e.package));
+});
 test('recommended catalog works without network and resolves only known IDs', async t => {
   const { catalog } = await service(t, () => { throw Error('Unexpected network'); });
   const page = await catalog.search({ kind: 'skills' });
@@ -138,7 +152,7 @@ test('invalid plugin refresh preserves the last schema-valid snapshot', async t 
   await catalog.search({ kind: 'plugins', source: 'community' });
   malformed = true;
   const page = await catalog.search({ kind: 'plugins', source: 'community', refresh: true });
-  assert.equal(page.entries.length, 2);
+  assert.equal(page.entries.length, 5);
   assert.equal(page.stale, true);
   assert.equal(page.offline, true);
   assert.match(page.errors[0], /plugins/i);
@@ -148,7 +162,7 @@ test('nested null skill records are source errors rather than uncaught exception
   const page = await catalog.search({ kind: 'skills', source: 'community' });
   assert.equal(page.entries.length, 0);
   assert.equal(page.offline, true);
-  assert.equal(page.errors.length, 3);
+  assert.equal(page.errors.length, 6);
 });
 test('truncated skill trees disclose incomplete discovery and retain prior snapshot', async t => {
   let truncated = false;
@@ -167,7 +181,7 @@ test('registry version is not mislabeled as a source commit or ref', async t => 
 });
 
 test('curated rows have unique identities and compact local presentation metadata', () => {
-  const categories = new Set(['developer-tools', 'productivity', 'design', 'business', 'data', 'documents', 'workflows', 'research']);
+  const categories = new Set(['developer-tools', 'productivity', 'design', 'business', 'data', 'documents', 'workflows', 'research', 'quality', 'cloud', 'ai']);
   assert.equal(new Set(CURATED_EXTENSIONS.map(item => item.id)).size, CURATED_EXTENSIONS.length);
   for (const entry of CURATED_EXTENSIONS) {
     assert.ok(categories.has(entry.category), `${entry.id}: category`);

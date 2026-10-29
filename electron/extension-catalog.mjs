@@ -20,8 +20,11 @@ function packagePath(value) {
 const manifests = [
   { id: 'anthropic-plugins', repo: 'anthropics/claude-plugins-official', file: '.claude-plugin/marketplace.json' },
   { id: 'openai-community', repo: 'openai/community-plugins', file: '.agents/plugins/marketplace.json' },
+  { id: 'github-copilot', repo: 'github/awesome-copilot', file: '.github/plugin/marketplace.json' },
+  { id: 'wshobson-agents', repo: 'wshobson/agents', file: '.claude-plugin/marketplace.json' },
+  { id: 'anthropic-knowledge', repo: 'anthropics/knowledge-work-plugins', file: '.claude-plugin/marketplace.json' },
 ];
-const skillRepos = ['anthropics/skills', 'vercel-labs/agent-skills', 'openai/skills'];
+const skillRepos = ['anthropics/skills', 'vercel-labs/agent-skills', 'openai/skills', 'github/awesome-copilot', 'wshobson/agents', 'anthropics/knowledge-work-plugins'];
 function validateSnapshot(data, url) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) throw Error('Invalid catalog response object');
   if (url.includes('/git/trees/')) {
@@ -45,14 +48,14 @@ function pluginEntries(data, source) {
   const sourceUrl = `https://github.com/${source.repo}/blob/main/${source.file}`;
   return (Array.isArray(data.plugins) ? data.plugins : []).slice(0, MAX_ENTRIES).filter(p => text(p?.name, 160)).map(p => {
     let repo = '', subpath = '', ref = 'main';
-    if (typeof p.source === 'string' && p.source.startsWith('./')) { repo = source.repo; subpath = packagePath(p.source); }
+    if (typeof p.source === 'string') { repo = source.repo; subpath = packagePath(p.source); }
     else if (p.source?.source === 'local') { repo = source.repo; subpath = packagePath(p.source.path); }
     else if (p.source && typeof p.source === 'object') {
       repo = repoUrl(p.source.url || (p.source.repo ? `https://github.com/${p.source.repo}` : ''));
       subpath = packagePath(p.source.path || '.'); ref = text(p.source.sha || p.source.ref, 160) || 'main';
     }
     const pkg = repo && subpath ? { repo: repo.replace('https://github.com/', ''), ref, path: subpath === '.' ? '' : subpath, kind: 'plugin' } : null;
-    return record(`plugin:${source.id}:${text(p.name, 160)}`, p.name, p.description, 'plugins', p.author?.name || source.repo.split('/')[0], p.homepage || repo, sourceUrl, pkg ? { package: pkg, compatibility: 'unverified' } : {});
+    return record(`plugin:${source.id}:${text(p.name, 160)}`, p.displayName || p.name, p.description, 'plugins', p.author?.name || source.repo.split('/')[0], p.homepage || (pkg ? `https://github.com/${pkg.repo}/tree/${encodeURIComponent(pkg.ref)}/${pkg.path}` : ''), sourceUrl, {tags:[text(p.category,80),text(p.name,160)],...(pkg ? { package: pkg, compatibility: 'unverified' } : {})});
   });
 }
 async function boundedJson(response) {
@@ -127,30 +130,31 @@ export function createExtensionCatalog({ dataDir, fetch: fetcher = globalThis.fe
     let entries = [], nextCursor = null, results = [];
     if (kind === 'mcp' || kind === 'connectors') {
       const url = new URL('https://registry.modelcontextprotocol.io/v0.1/servers');
-      url.searchParams.set('limit', '30'); url.searchParams.set('version', 'latest');
+      url.searchParams.set('limit', '100'); url.searchParams.set('version', 'latest');
       if (query) url.searchParams.set('search', query);
       if (remoteCursor) url.searchParams.set('cursor', remoteCursor);
       const result = await snapshot(url.href, refresh); results = [result];
       entries = (Array.isArray(result.data.servers) ? result.data.servers : []).slice(0, 100).filter(item => item && !['deprecated', 'deleted'].includes(item._meta?.['io.modelcontextprotocol.registry/official']?.status)).map(item => item.server || item).filter(s => text(s?.name, 200)).map(s => record(`registry:${text(s.name, 200)}`, s.title || s.name, s.description, kind, s.name.split('/')[0], s.websiteUrl || s.repository?.url, 'https://registry.modelcontextprotocol.io', { provenance: { source: 'Official MCP Registry (community listings)', url: 'https://registry.modelcontextprotocol.io', version: text(s.version, 100) } }));
       const next = text(result.data.metadata?.nextCursor, 2000);
       if (next && next !== remoteCursor) nextCursor = encode(0, next);
-    } else if (kind === 'plugins') {
+    } else if (kind === 'plugins' || kind === 'hooks') {
       results = await Promise.all(manifests.map(s => snapshot(`https://raw.githubusercontent.com/${s.repo}/main/${s.file}`, refresh)));
       entries = results.flatMap((r, i) => pluginEntries(r.data, manifests[i]));
+      if(kind==='hooks')entries=entries.filter(e=>/\bhooks?\b/i.test(`${e.title} ${e.description} ${e.tags.join(' ')}`)).map(e=>({...e,id:`hook-guide:${e.id}`,kind:'hooks',compatibility:'setup-required',package:undefined,setup:'This upstream bundle describes hooks for its own host. Review its events and commands and adapt them in Project hooks; MuseBench does not automatically execute or translate third-party hooks.'}));
     } else if (kind === 'skills') {
       results = await Promise.all(skillRepos.map(repo => snapshot(`https://api.github.com/repos/${repo}/git/trees/main?recursive=1`, refresh)));
-      entries = results.flatMap((r, i) => (Array.isArray(r.data.tree) ? r.data.tree : []).slice(0, 10000).filter(f => f.type === 'blob' && (skillRepos[i] === 'openai/skills' ? /^skills\/\.curated\/[^/]+\/SKILL\.md$/ : /^skills\/.+\/SKILL\.md$/).test(f.path)).slice(0, MAX_ENTRIES).map(f => {
+      entries = results.flatMap((r, i) => (Array.isArray(r.data.tree) ? r.data.tree : []).slice(0, 10000).filter(f => f.type === 'blob' && (skillRepos[i] === 'openai/skills' ? /^skills\/\.curated\/[^/]+\/SKILL\.md$/ : /^(?:[^./][^/]*\/)*skills\/.+\/SKILL\.md$/).test(f.path)).slice(0, MAX_ENTRIES).map(f => {
         const subpath = packagePath(f.path.slice(0, -9)); if (!subpath) return null;
         const repo = skillRepos[i], title = subpath.split('/').at(-1), homepage = `https://github.com/${repo}/tree/main/${subpath}`;
         if (repo === 'openai/skills' && ['hatch-pet', 'define-goal', 'migrate-to-codex', 'playwright', 'jupyter-notebook'].includes(title)) {
           return record(`skill:${repo}:${subpath}`, title, 'Public skill with Codex-specific host or wrapper dependencies.', kind, 'OpenAI', homepage, `https://github.com/${repo}`, { setup: 'Requires Codex-specific tools, paths or Bash wrappers. Read upstream instructions and adapt prerequisites before use.' });
         }
-        return record(`skill:${repo}:${subpath}`, title, `Public skill from ${repo}. Review SKILL.md, licensing and helper dependencies before installing.`, kind, repo.split('/')[0], homepage, `https://github.com/${repo}`, { compatibility: 'unverified', package: { repo, ref: 'main', path: subpath, kind: 'skill' } });
+        return record(`skill:${repo}:${subpath}`, title, `${title.replace(/[-_]/g,' ')} — instructions and resources from ${repo.split('/')[0]}.`, kind, repo.split('/')[0], homepage, `https://github.com/${repo}`, { tags:[subpath.replace(/[-_/]/g,' ')],compatibility: 'unverified', package: { repo, ref: 'main', path: subpath, kind: 'skill' } });
       }).filter(Boolean));
     }
-    if (kind === 'plugins' || kind === 'skills') {
+    if (kind === 'plugins' || kind === 'skills' || kind === 'hooks') {
       const needle = query.toLowerCase();
-      entries = entries.filter(e => `${e.title} ${e.description} ${e.publisher}`.toLowerCase().includes(needle));
+      entries = entries.filter(e => `${e.title} ${e.description} ${e.publisher} ${e.tags.join(' ')}`.toLowerCase().includes(needle));
       if (entries.length > offset + 30) nextCursor = encode(offset + 30);
       entries = entries.slice(offset, offset + 30);
     }
