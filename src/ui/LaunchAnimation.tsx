@@ -69,26 +69,25 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
       const origin = `translate(${x}px, ${y}px) scale(${scale})`;
       mark.style.transform = origin;
       layer.dataset.phase = 'typing';
+      let cursorRetreat:Animation;
       try {
         animate(mark, [{opacity:0}, {opacity:1}], {duration:160, easing:'ease-out'});
         animate(mark.querySelector('.launch-terminal path')!, [{strokeDashoffset:1}, {strokeDashoffset:0}], {duration:220, easing:'cubic-bezier(.4,0,.2,1)'});
         // A restrained cadence, with a little breathing room before "AI".
         const beats = [180, 238, 292, 352, 410, 490, 556];
-        letters.forEach((letter, index) => later(() => {
-          if (disposed || finished) return;
-          try {
-            cursor.style.transform = `translateX(${advances[index]}px)`;
-            animate(letter, [{opacity:0}, {opacity:1}], {duration:90, easing:'ease-out'});
-          } catch { finish(); }
-        }, beats[index]));
-        later(() => {
-          if (!disposed && !finished) {
-            try { animate(cursor, [{opacity:1}, {opacity:0}], {duration:100}); }
-            catch { finish(); }
-          }
-        }, 720);
+        // Share one compositor timeline. Independent timer callbacks can move
+        // the cursor several glyphs ahead while their first paint is delayed.
+        // Creating these in the same task lets their pending start times resolve
+        // together on the next frame, even after a slow initial compositor call.
+        letters.forEach((letter,index)=>animate(letter,[{opacity:0},{opacity:1}],{delay:beats[index],duration:90,easing:'ease-out'}));
+        animate(cursor,[
+          {transform:'translateX(18px)',offset:0,easing:'steps(1,end)'},
+          ...advances.map((advance,index)=>({transform:`translateX(${advance}px)`,offset:beats[index]/720,easing:'steps(1,end)'})),
+          {transform:`translateX(${advances.at(-1)}px)`,offset:1},
+        ],{duration:720});
+        cursorRetreat=animate(cursor,[{opacity:1},{opacity:0}],{delay:720,duration:100});
       } catch { finish(); return; }
-      later(() => {
+      const fly = () => {
         if (disposed || finished) return;
         try {
           // Both product sidebars stay mounted; the first match can be the hidden one.
@@ -125,7 +124,13 @@ function LaunchAnimation({onComplete}: {onComplete:()=>void}) {
           animate(layer.querySelector('.launch-chat-icon')!, [{opacity:0}, {opacity:1}], {duration:160*pace, delay:530*pace});
           finishAfterPaint(flight);
         } catch { finish(); }
-      }, 850);
+      };
+      // Flight depends on the painted cursor withdrawal, not a separate timer.
+      // Keep one cursor-free frame before changing phases on fast displays too.
+      void cursorRetreat.finished.then(()=>{
+        if(disposed||finished)return;
+        frame=requestAnimationFrame(()=>{frame=requestAnimationFrame(fly);});
+      },()=>{if(!disposed)finish();});
     };
     // Measure the actual brand font, never a fallback that can swap underneath
     // cached centering/cursor coordinates. Leave room for the normal flight;
