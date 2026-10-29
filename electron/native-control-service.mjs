@@ -53,7 +53,7 @@ export function createNativeControlService({app,window,controller,personal,rende
    const size=screenshot.getSize(),ratio=Math.min(1,1400/size.width,1200/size.height),data=screenshot.resize({width:Math.round(size.width*ratio),height:Math.round(size.height*ratio)}).toJPEG(80);
    return{content:[{type:'image',mimeType:'image/jpeg',data:data.toString('base64')}]};
   }
-  if(name==='diagnostics')return textResult({responsive:!unresponsive&&!window.webContents.isDestroyed(),visible:window.isVisible(),minimized:window.isMinimized(),events:[...events],controllerHasError:!!controller.getState().error});
+  if(name==='diagnostics')return textResult({responsive:!unresponsive&&!window.webContents.isDestroyed()&&!window.webContents.isCrashed(),visible:window.isVisible(),minimized:window.isMinimized(),events:[...events],controllerHasError:!!controller.getState().error});
   if(name==='read_chat'){
    const page=await controller.readChatHistory({...args,limit:args.limit??20});
    return textResult({taskId:args.taskId,before:page.before,total:page.total,messages:page.messages.map(m=>({id:m.id,role:m.role,text:clean(m.text,3000),truncated:(m.textLength??m.text?.length??0)>3000,at:m.at}))});

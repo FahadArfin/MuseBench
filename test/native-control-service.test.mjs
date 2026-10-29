@@ -20,7 +20,7 @@ test('renderer requests reject wrong senders, expire on navigation and clean up 
 });
 
 test('service reports bounded real state without credentials, and reads only the requested chat',async()=>{
- const contents=new EventEmitter();contents.isDestroyed=()=>false;
+ const contents=new EventEmitter();contents.isDestroyed=()=>false;contents.isCrashed=()=>false;
  const window=Object.assign(new EventEmitter(),{webContents:contents,isVisible:()=>true,isMinimized:()=>false});let historyInput;
  const controller={getState:()=>({runtime:{status:'ready',binary:'PRIVATE_PATH',token:'PRIVATE_TOKEN'},tasks:[{id:'a',title:'Test',messages:['PRIVATE_TEXT']}]}),readChatHistory:input=>{historyInput=input;return{messages:[{id:'m',role:'assistant',text:'x'.repeat(6000)}],total:1};}};
  const service=createNativeControlService({app:{getVersion:()=> '1.2.3',isPackaged:true},window,controller,personal:{snapshot:()=>({destination:'bot',profile:{secret:'PRIVATE_TOKEN'},loading:true})},renderer:{close(){}}});
@@ -29,5 +29,6 @@ test('service reports bounded real state without credentials, and reads only the
  await assert.rejects(service.call('read_chat',{taskId:'a',path:'secret'}));
  contents.emit('console-message',{level:'error'},3,'PRIVATE_CONSOLE');
  window.emit('unresponsive');let diagnostics=JSON.parse((await service.call('diagnostics',{})).content[0].text);assert.equal(diagnostics.responsive,false);assert.ok(diagnostics.events.some(item=>item.kind==='renderer-console-error'));assert.ok(!JSON.stringify(diagnostics).includes('PRIVATE_CONSOLE'));
- window.emit('responsive');diagnostics=JSON.parse((await service.call('diagnostics',{})).content[0].text);assert.equal(diagnostics.responsive,true);service.close();
+ window.emit('responsive');diagnostics=JSON.parse((await service.call('diagnostics',{})).content[0].text);assert.equal(diagnostics.responsive,true);
+ contents.isCrashed=()=>true;contents.emit('render-process-gone');diagnostics=JSON.parse((await service.call('diagnostics',{})).content[0].text);assert.equal(diagnostics.responsive,false);service.close();
 });
