@@ -1,5 +1,6 @@
 import {validateHooks,nativeHooks} from '../shared/native-hooks.mjs';
 import {projectTrustSnapshot} from './project-trust.mjs';
+import {projectMcpSnapshot} from './project-mcp.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {readFile,writeFile,mkdir,rename,stat,lstat,readdir,realpath,unlink} from 'node:fs/promises';
@@ -39,7 +40,7 @@ export async function treeDigest(root){
 
 /** Explicit extension consent, independent of Muse's native project shell sandbox.
  * Project skills and app-owned hooks use separate project-bound grants; never grants native saved trust, hooks in settings, managed config or unrelated settings. */
-export function createExtensionReview({dataDir,profile,platform=process.platform}){
+export function createExtensionReview({dataDir,profile,platform=process.platform,environment={...process.env,HOME:profile,USERPROFILE:profile}}){
  const file=path.join(dataDir,'extension-reviews.json'),data=path.join(profile,'.local','share','muse');
  const inventory=path.join(data,'plugins','installed.json');
  async function load(){const raw=await optionalText(file);if(raw===null)return{version:1,mcp:{},plugins:null};const value=JSON.parse(raw);if(value.version!==1||!value.mcp||typeof value.mcp!=='object')throw Error('Invalid extension review state.');return value;}
@@ -58,6 +59,9 @@ export function createExtensionReview({dataDir,profile,platform=process.platform
  return {
   async approveMcp(name,config){const value=await load();value.mcp[name]=configurationDigest(config);await atomicJson(file,value);},
   async allowMcp(name,config){try{return(await load()).mcp[name]===configurationDigest(config);}catch{return false;}},
+  async projectMcpState(root,options={}){const snapshot=await projectMcpSnapshot(root,{environment,platform,...options});return{...snapshot,reviewed:snapshot.present&&(await load()).projectMcp?.[snapshot.root]===snapshot.revision};},
+  async approveProjectMcp(root,revision,options={}){const snapshot=await this.projectMcpState(root,options);if(snapshot.revision!==revision)throw Error('Project MCP configuration changed after review. Refresh and review again.');if(!snapshot.present)throw Error('No project MCP configuration found.');const value=await load();value.projectMcp={...value.projectMcp,[snapshot.root]:revision};await atomicJson(file,value,options.beforeCommit);},
+  async revokeProjectMcp(root){const actual=await realpath(root),value=await load();if(value.projectMcp)delete value.projectMcp[actual];await atomicJson(file,value);},
   pluginState,
   async approvePlugins(expected){const value=await load(),actual=(await pluginState()).revision;if(expected!==undefined&&actual!==expected)throw Error('Plugins changed after review. Refresh and review them again.');value.plugins=actual;await atomicJson(file,value);},
   async allowFile(candidate){if(path.resolve(candidate)!==path.resolve(inventory))return false;try{const actual=(await pluginState()).revision;return actual!=='absent'&&actual===(await load()).plugins;}catch{return false;}},
@@ -67,8 +71,8 @@ export function createExtensionReview({dataDir,profile,platform=process.platform
   async nativeHooks(root){return nativeHooks((await this.hookState(root)).items,platform);},
   async projectState(root){const snapshot=await projectTrustSnapshot(root);return{...snapshot,reviewed:(await load()).projects?.[snapshot.root]===snapshot.fingerprint};},
   async approveProject(root,fingerprint){const snapshot=await projectTrustSnapshot(root);if(snapshot.fingerprint!==fingerprint)throw Error('Project instructions changed after review.');if(!snapshot.files.length)throw Error('No project instructions to trust.');const value=await load();value.projects={...value.projects,[snapshot.root]:fingerprint};await atomicJson(file,value);},
-  async revokeProject(root){const actual=await realpath(root),value=await load();if(value.projects)delete value.projects[actual];await atomicJson(file,value);},
-  async allowProject(root){try{return(await this.projectState(root)).reviewed;}catch{return false;}},
+  async revokeProject(root){const actual=await realpath(root),value=await load();if(value.projects)delete value.projects[actual];if(value.projectMcp)delete value.projectMcp[actual];await atomicJson(file,value);},
+  async allowProject(root,options={}){try{const mcp=await this.projectMcpState(root,options);if(mcp.present)return mcp.reviewed;return(await this.projectState(root)).reviewed;}catch{return false;}},
   inventory,
  };
 }

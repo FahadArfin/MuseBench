@@ -36,7 +36,7 @@ Meta inference and native non-Windows execution remain distinct. See
 - **MSP budgets:** no supported per-turn model-step/token member was found in the pinned schema. Ignored configuration keys are not a valid workaround. Exec budget controls remain separate.
 - **Full child lifecycle acceptance:** eligibility corrections are delivered, but the host must expose a supported direct/recoverable/closed child before follow-up/resume/reopen can be proven. Attempt-specific workflow rejections are retained in the report.
 - **Muse-native read aloud:** the documented voice API transcribes speech. No supported synthesis endpoint or voice/auth contract was found. Local system read aloud remains available; no unrelated provider was substituted.
-- **Arbitrary project/managed extensions:** reviewed app-owned tools and project hooks do not authorize every native MCP/plugin/hook source. Existing configuration review and provenance checks remain in force.
+- **Arbitrary managed extensions:** reviewed project MCP configuration is now supported through a source-bound approval in Customize, including repository layers and worktrees; native 1.4.14 loading was verified with local echo, without model calls. See [project MCP evidence](VALIDATION-project-mcp.md). This does not authorize arbitrary managed MCP/plugin/hook sources, and model-issued tool execution remains a separate acceptance gate.
 - **Pi/Linux alternative runtime:** this remains a conditional integration requiring a chosen provider, credentials, permission/session conformance and a verified host. Existing Muse login is not assumed transferable. Windows Full access is not a sandbox repair.
 
 ## Detailed research and receipts

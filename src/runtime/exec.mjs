@@ -249,7 +249,8 @@ export function createExecRuntime({credentials,loadModels=readNativeModels,durab
   const selectedBudget=options.budget?runBudget(options.budget):null;
   const limits={steps:selectedBudget?.steps??maxModelSteps,wallTimeMs:selectedBudget?selectedBudget.minutes*60000:runTimeoutMs,tokenBudget:null};
   const token=epoch;update({status:'checking-permissions',reason:null});
-  try{await verifyConfiguration({environment:env,platform,workspaceRoot:workspace,extensionReview});current(token);await verifyManagedConfiguration(token);current(token);await verifySandbox(token);current(token);}
+  const modelEnvironment=credentialContext?.environment??env;
+  try{await verifyConfiguration({environment:modelEnvironment,platform,workspaceRoot:workspace,extensionReview});current(token);await verifyManagedConfiguration(token);current(token);await verifySandbox(token);current(token);}
   catch(error){if(token===epoch)update({status:'blocked',reason:safeReason(error.message),permissionVerified:false});throw error;}
   if(sessionId&&resumeSession){
    const dir=await mkdtemp(join(tmpdir(),'musebench-session-check-'));
@@ -260,7 +261,7 @@ export function createExecRuntime({credentials,loadModels=readNativeModels,durab
   let prompt=mode==='plan'?`Plan the requested work and explain your proposed changes. Planning instructions are not an enforced read-only boundary.\n\n${text.trim()}`:text.trim();
   if(state.shellEnabled)prompt=shellPrompt(workspace,prompt,!!sessionId);
   let trustProject,hooks;
-  try{trustProject=await extensionReview?.allowProject(workspace)===true;current(token);hooks=await extensionReview?.nativeHooks?.(workspace)??{};current(token);}
+  try{trustProject=await extensionReview?.allowProject(workspace,{environment:modelEnvironment,platform})===true;current(token);hooks=await extensionReview?.nativeHooks?.(workspace)??{};current(token);}
   catch(error){if(token===epoch)update({status:'blocked',reason:safeReason(error.message),permissionVerified:false});throw error;}
   let prepared;try{prepared=await preparePrompt(prompt);current(token);}catch(error){await prepared?.dispose();if(token===epoch)update({status:'blocked',reason:'The request context could not be prepared. Try sending again.',permissionVerified:false});throw error;}
   const label=options.approval==='ask'?'Ask me':options.approval==='auto'?'Auto-review':state.fullAccess?'No prompts':'No prompts (sandboxed)';

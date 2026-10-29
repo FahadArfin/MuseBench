@@ -142,6 +142,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const childEnvironment=curateEnvironment(environment);let credentialContext=null;
  let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
+ let projectMcpRevision=null;
  const deferredInputs=new Map(),settledInputs=new Set(),settledApprovals=new Set();
  const requests=new Map(),inputResponses=new Map(),approvalAttempts=new Set();
  const restoreAwaiting=new Set();let openingEvents=[],nativeCatalog=null,modelReading=false;
@@ -289,8 +290,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    if(version!==TARGET.hostVersion)throw Error(`Muse version mismatch: this app requires ${TARGET.hostVersion}.`);
    update({binary,hostVersion:version});assertCurrent(token);
    credentialContext=await credentials?.({binary,environment:childEnvironment});assertCurrent(token);update({billingSource:credentialContext?.source??'cli'});
-   await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);
-   const trustProject=await extensionReview?.allowProject(workspace)===true;assertCurrent(token);
+   const configuration=await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);projectMcpRevision=configuration?.projectMcpRevision??null;
+   const trustProject=await extensionReview?.allowProject(workspace,{environment:credentialContext?.environment??childEnvironment,platform})===true;assertCurrent(token);
    const hooks=await extensionReview?.nativeHooks(workspace)??{};assertCurrent(token);
    const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),...(trustProject?['--trust-workspace']:[]),'-c','hooks='+JSON.stringify(hooks),'-c','managed_hooks_path=null'],cwd:workspace,env:{...(credentialContext?.environment??childEnvironment)},shutdownTimeoutMs:timeoutMs});
    owner=handshake;
@@ -384,11 +385,18 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    }finally{await handle.close();}
   }return images;
  }
+ async function verifyWorkConfiguration(token){
+  try{
+   if(credentialContext)await credentialContext.verify();assertCurrent(token);
+   const configuration=await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);
+   if((configuration?.projectMcpRevision??null)!==projectMcpRevision)throw Error('Project MCP configuration changed. Reconnect Muse to load the reviewed version before continuing.');
+  }catch(error){assertCurrent(token);block(error.message);throw error;}
+ }
  async function send({text,mode='chat',runOptions,imagePaths=[]}={}) {
   const options=validateRunOptions(runOptions);
   if(options.approval!=='ask'||options.budget)throw Error('Interactive mode requires Ask for approval and no exec budget preset.');
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a prepared request up to 64,000 characters and a supported chat or plan mode.');
-  if(!owner||!adapter||connecting||sending||state.childrenBusy||compaction.pending()||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
+  if(!owner||!adapter||connecting||sending||childCommands.size||state.childrenBusy||compaction.pending()||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
   const credentialEpoch=epoch;if(credentialContext)await credentialContext.verify();assertCurrent(credentialEpoch);
   if(modelReading)throw Error('Wait for the native model catalog.');
   const token=epoch;const images=await readImages(imagePaths);assertCurrent(token);
@@ -398,8 +406,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   update({status:'checking-permissions',reason:null,runOptions:options,steering:null});
   try{
    assertCurrent(token);
-   try{await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);}
-   catch(error){assertCurrent(token);block(error.message);throw error;}
+   await verifyWorkConfiguration(token);
    let session;
    try{session=(await bounded(owner.connection.request('session/read',{sessionId:state.sessionId}),timeoutMs))?.session;}
    catch{assertCurrent(token);block(permissionReason);throw Error(permissionReason);}
@@ -424,7 +431,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const entry=decision==='deny'?requests.values().next().value:requests.get('approval:'+selected?.approvalId);
   const pending=entry?.value,pendingRevision=entry?.revision;
   if(deciding)throw Error('An approval decision is already in progress.');
-  if(!state.permissionVerified||!['running','submitting'].includes(adapter?.snapshot().status))throw Error('The approval is no longer active or its permission state is uncertain. Disconnect before continuing.');
+  if(!['running','submitting'].includes(adapter?.snapshot().status))throw Error('The approval is no longer active. Disconnect before continuing.');
   if(!owner||pending?.kind!=='approval'||pending.sessionId!==state.sessionId)throw Error('There is no current approval request to deny.');
   const requirement=pending.currentRequirementId;
   let choice;
@@ -434,53 +441,68 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    choice=pending.availableChoices?.find(c=>c.choiceId===selected.choiceId&&c.scope==='once'&&['approved','denied','abort'].includes(c.decision));
   }
   if(!choice||typeof choice.choiceId!=='string'||requirement?.approvalId!==pending.approvalId||!Number.isInteger(requirement.sourceIndex)||requirement.sourceIndex<0)throw Error('Muse did not offer a supported one-time choice. Disconnect to stop this session.');
-  const attempt=`${pending.approvalId}:${requirement.sourceIndex}`;if(approvalAttempts.has(attempt))throw Error('The previous approval is pending or already submitted.');approvalAttempts.add(attempt);
-  const token=epoch;deciding=true;
+  if(choice.decision==='approved'&&!state.permissionVerified)throw Error('The permission state is uncertain. Disconnect before continuing.');
+  const attempt=`${pending.approvalId}:${requirement.sourceIndex}`;if(approvalAttempts.has(attempt))throw Error('The previous approval is pending or already submitted.');
+  const token=epoch;let submitted=false;deciding=true;
   try{
+   if(choice.decision==='approved')await verifyWorkConfiguration(token);
+   assertCurrent(token);
+   if(requests.get('approval:'+pending.approvalId)?.revision!==pendingRevision)throw Error('This approval changed while its configuration was checked. Review the current request.');
+   approvalAttempts.add(attempt);submitted=true;
    await bounded(owner.connection.command('approval/decide',{sessionId:state.sessionId,approvalId:pending.approvalId,choiceId:choice.choiceId,requirementId:structuredClone(requirement)},{maxAttempts:1}),timeoutMs);
    assertCurrent(token);
    if(decision!=='deny')return snapshot(); // Each explicit choice waits for its own approval/resolved.
    return await disconnect('Denial sent and the session closed. Inspect partial changes before reconnecting.');
   }catch(error){
-   if(token===epoch)await disconnect('The approval outcome is unknown. The session was closed; inspect partial changes before reconnecting.');
+   if(submitted&&token===epoch)await disconnect('The approval outcome is unknown. The session was closed; inspect partial changes before reconnecting.');
    throw error;
   }finally{if(token===epoch)deciding=false;}
  }
 
  async function answerInput(input={}){
   const entry=requests.get('input:'+input.userInputId),pending=entry?.value,pendingRevision=entry?.revision;
-  if(!owner||!state.permissionVerified||!['running','submitting'].includes(adapter?.snapshot().status)||pending?.kind!=='input')throw Error('There is no active native question.');
+  if(!owner||!state.permissionVerified&&input.operation!=='cancel'||!['running','submitting'].includes(adapter?.snapshot().status)||pending?.kind!=='input')throw Error('There is no active native question.');
   if(input.sessionId!==state.sessionId||input.userInputId!==pending.userInputId||input.turnId!==pending.turnId||input.revision!==pendingRevision)throw Error('The question changed. Review the current request.');
   if(input.operation==='engage'){validateInputAnswers(pending,input);owner.connection.notify('userInput/engaged',{sessionId:pending.sessionId,userInputId:pending.userInputId});return snapshot();}
   if(deciding||['submitting','accepted','unknown'].includes(inputResponses.get(pending.userInputId)?.status))throw Error('The previous answer is pending or already submitted.');
   validateInputAnswers(pending,input);
-  const token=epoch,commandId=owner.connection.mintCommandId(),request=structuredClone(pending),receipt={commandId,sessionId:request.sessionId,turnId:request.turnId,userInputId:request.userInputId,prompt:request,operation:input.operation,submittedAnswers:structuredClone(input.answers??[]),status:'submitting'};deciding=true;publishInput(receipt);
+  const token=epoch,commandId=owner.connection.mintCommandId(),request=structuredClone(pending),receipt={commandId,sessionId:request.sessionId,turnId:request.turnId,userInputId:request.userInputId,prompt:request,operation:input.operation,submittedAnswers:structuredClone(input.answers??[]),status:'submitting'};let submitted=false;deciding=true;
   try{
+   if(input.operation!=='cancel')await verifyWorkConfiguration(token);
+   assertCurrent(token);
+   if(requests.get('input:'+request.userInputId)?.revision!==pendingRevision)throw Error('The question changed while its configuration was checked. Review the current request.');
+   publishInput(receipt);submitted=true;
    const ack=await bounded(owner.connection.command(input.operation==='cancel'?'userInput/cancel':'userInput/answer',{sessionId:request.sessionId,userInputId:request.userInputId,...(input.operation==='answer'?{answers:structuredClone(input.answers)}:{})},{commandId,maxAttempts:1}),timeoutMs);
    assertCurrent(token);if(ack?.commandId!==commandId||ack?.userInputId!==request.userInputId||ack.status!=='accepted')throw Error('Question acknowledgement could not be verified.');
    if(requests.has('input:'+request.userInputId))publishInput({...receipt,status:'accepted'});return snapshot();
-  }catch(error){if(token===epoch&&requests.has('input:'+request.userInputId))publishInput({...receipt,status:error.code===-32057?'rejected':'unknown'});throw error;}finally{if(token===epoch)deciding=false;}
+  }catch(error){if(submitted&&token===epoch&&requests.has('input:'+request.userInputId))publishInput({...receipt,status:error.code===-32057?'rejected':'unknown'});throw error;}finally{if(token===epoch)deciding=false;}
  }
 
  async function steer({text,expectedTurnId}={}){
   if(typeof text!=='string'||!text.trim()||text.length>16000)throw Error('Use a correction up to 16,000 characters.');
   if(steering||state.steering?.status==='unknown')throw Error('Inspect the previous steering outcome before sending another correction.');
   if(!owner||!state.permissionVerified||state.status!=='running'||pending||!expectedTurnId||adapter.snapshot().turnId!==expectedTurnId)throw Error('The target turn is no longer running or needs your attention.');
-  const token=epoch,sessionId=state.sessionId,commandId=owner.connection.mintCommandId();steering=true;update({steering:{commandId,turnId:expectedTurnId,status:'submitting'}});
-  try{const ack=await bounded(owner.connection.command('turn/steer',{sessionId,expectedTurnId,input:[{type:'text',text}]},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack?.turnId!==expectedTurnId||ack.status!=='accepted')throw Error('Steering acknowledgement could not be verified.');update({steering:{commandId,turnId:expectedTurnId,status:'accepted'}});return snapshot();}
-  catch(error){if(token===epoch)update({steering:{commandId,turnId:expectedTurnId,status:error.code===-32030?'rejected':'unknown'}});throw error;}finally{steering=false;}
+  const token=epoch,sessionId=state.sessionId,commandId=owner.connection.mintCommandId();let submitted=false;steering=true;
+  try{await verifyWorkConfiguration(token);if(state.status!=='running'||pending||adapter.snapshot().turnId!==expectedTurnId)throw Error('The target turn changed while its configuration was checked.');update({steering:{commandId,turnId:expectedTurnId,status:'submitting'}});submitted=true;const ack=await bounded(owner.connection.command('turn/steer',{sessionId,expectedTurnId,input:[{type:'text',text}]},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack?.turnId!==expectedTurnId||ack.status!=='accepted')throw Error('Steering acknowledgement could not be verified.');update({steering:{commandId,turnId:expectedTurnId,status:'accepted'}});return snapshot();}
+  catch(error){if(submitted&&token===epoch)update({steering:{commandId,turnId:expectedTurnId,status:error.code===-32030?'rejected':'unknown'}});throw error;}finally{if(token===epoch)steering=false;}
  }
  async function childControl(input={}){
-  if(!owner||!adapter||!state.permissionVerified||input.sessionId!==state.sessionId||pending||compaction.pending()||connecting||!['idle','running','completed','failed','cancelled'].includes(state.status))throw Error('This child connection is unavailable or needs attention.');
+  const stopping=['interrupt','stop','close'].includes(input.action);
+  if(!owner||!adapter||input.sessionId!==state.sessionId||connecting||closing||!['idle','running','completed','failed','cancelled',...(stopping?['blocked']:[])].includes(state.status)||!stopping&&(!state.permissionVerified||pending||compaction.pending()||sending))throw Error('This child connection is unavailable or needs attention.');
   const startsWork=['followupTask','resume','reopen','retry'].includes(input.action);
   const child=children.snapshot().items.find(i=>i.itemId===input.itemId);
   if(startsWork&&!state.ownedTurnIds?.includes(child?.turnId))throw Error('This child belongs to an earlier request. Start a new task from the current conversation instead.');
-  const target=children.prepare(input),key=input.itemId+':'+(input.childId??'');
+  children.prepare(input);const key=input.itemId+':'+(input.childId??'');
   if(childCommands.has(key)||uncertainChildren.has(key))throw Error('The previous child command is pending or uncertain. Inspect its state before reconnecting.');
   const token=epoch,sessionId=state.sessionId,commandId=owner.connection.mintCommandId(),receipt={key,commandId,sessionId,itemId:input.itemId,revision:input.revision,action:input.action,...(input.body?{body:input.body}:{}),...(input.childId?{childId:input.childId,attempt:input.attempt}:{}),status:'submitting',at:new Date().toISOString()};
-  const publish=r=>update({childReceipts:[...(state.childReceipts??[]).filter(x=>x.commandId!==commandId),r].slice(-40)});childCommands.add(key);if(startsWork){childWork.set(key,{itemId:input.itemId,revision:input.revision});syncChildren();}publish(receipt);
-  try{const ack=await bounded(owner.connection.command(target.method,{sessionId,...target.params},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack.status!=='accepted')throw Error('Child command acknowledgement could not be verified.');publish({...receipt,status:'accepted'});return snapshot();}
-  catch(error){if(token===epoch){if(error.code===-32030)childWork.delete(key);else uncertainChildren.add(key);publish({...receipt,status:error.code===-32030?'rejected':'unknown',reason:String(error.message).slice(0,1000)});syncChildren();}throw error;}finally{if(token===epoch)childCommands.delete(key);}
+  const publish=r=>update({childReceipts:[...(state.childReceipts??[]).filter(x=>x.commandId!==commandId),r].slice(-40)});let submitted=false;childCommands.add(key);
+  try{
+   if(!stopping&&input.action!=='readResult')await verifyWorkConfiguration(token);
+   assertCurrent(token);const target=children.prepare(input);
+   if(!stopping&&(pending||compaction.pending()||sending||!state.permissionVerified))throw Error('The child connection changed while its configuration was checked.');
+   if(startsWork){childWork.set(key,{itemId:input.itemId,revision:input.revision});syncChildren();}publish(receipt);submitted=true;
+   const ack=await bounded(owner.connection.command(target.method,{sessionId,...target.params},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack.status!=='accepted')throw Error('Child command acknowledgement could not be verified.');publish({...receipt,status:'accepted'});return snapshot();
+  }catch(error){if(submitted&&token===epoch){if(error.code===-32030)childWork.delete(key);else uncertainChildren.add(key);publish({...receipt,status:error.code===-32030?'rejected':'unknown',reason:String(error.message).slice(0,1000)});syncChildren();}throw error;}finally{if(token===epoch)childCommands.delete(key);}
  }
  async function inspectChild(input={}){
   if(!owner||!adapter||connecting||!state.permissionVerified||input.sessionId!==state.sessionId)throw Error('Use the current interactive connection to read child activity.');
@@ -526,9 +548,13 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  async function compact({sessionId,turnId}={}){
   if(!owner||!adapter||!state.permissionVerified||connecting||sending||steering||pending||childCommands.size||state.childrenBusy||!usable.has(state.status)||sessionId!==state.sessionId||!turnId||turnId!==state.turnId)throw Error('Finish the current turn and use this connection’s latest session before compacting.');
   const token=epoch,commandId=owner.connection.mintCommandId();compaction.start({sessionId,turnId,commandId});syncCompaction();
-  compactionTimer=setTimeout(()=>{if(token===epoch){compaction.interrupt('Compaction completion was not observed. Inspect this session before reconnecting; the request is never retried automatically.');syncCompaction();}},120000);compactionTimer.unref?.();
-  try{const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();}
-  catch(error){if(token===epoch){if(error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
+  let submitted=false;
+  try{
+   await verifyWorkConfiguration(token);
+   if(!usable.has(state.status)||turnId!==state.turnId||pending||state.childrenBusy)throw Error('The session changed while its configuration was checked.');
+   compactionTimer=setTimeout(()=>{if(token===epoch){compaction.interrupt('Compaction completion was not observed. Inspect this session before reconnecting; the request is never retried automatically.');syncCompaction();}},120000);compactionTimer.unref?.();submitted=true;
+   const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();
+  }catch(error){if(token===epoch){if(!submitted||error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
  }
  return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,inspectChild,readMcpServers,answerInput,decide,close:()=>disconnect()};
 }

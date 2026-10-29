@@ -13,6 +13,7 @@ import {userProfile,isNativeExecutable} from '../src/shared/platform.mjs';
 import {curateEnvironment,discoverMuseBinaries} from '../src/runtime/index.mjs';
 import {customizeBlocked} from '../src/shared/customize-policy.mjs';
 import {atomicJson,optionalText,treeDigest,createExtensionReview,configurationDigest} from '../src/runtime/extension-review.mjs';
+import {settingsMcp,mcpSettingsPath,mcpTransport,canonicalMcpEntry} from '../src/runtime/project-mcp.mjs';
 
 const clean=(value,max=500)=>typeof value==='string'?value.replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,max):'';
 const idOK=value=>typeof value==='string'&&/^[a-zA-Z0-9][\w:./-]{0,199}$/.test(value)&&!value.includes('..');
@@ -23,7 +24,7 @@ const unchangedOthers=(before,after,id)=>configurationDigest(Object.fromEntries(
 // Match the complete URL so an unrelated server cannot inherit another service's policy.
 const publicEndpoints=new Set(CURATED_EXTENSIONS.filter(item=>item.recipe?.transport==='http'&&item.recipe.oauth===false).map(item=>new URL(item.recipe.url).href));
 function supportsOAuth(entry){
- if(entry.transport!=='streamable_http')return false;
+ if(mcpTransport(entry)!=='streamable-http')return false;
  try{return !publicEndpoints.has(new URL(entry.url).href);}catch{return true;}
 }
 export function validateServer(value){
@@ -44,9 +45,9 @@ export function validateServer(value){
 }
 export function createCustomize({getState,environment=process.env,dataDir,review,catalog,stagePackage,run=promisify(execFile),chooseFolder=async()=>null,isActive=()=>false,platform=process.platform}){
  const env=curateEnvironment(environment),profile=userProfile(env,platform);
- review??=createExtensionReview({dataDir,profile});
+ review??=createExtensionReview({dataDir,profile,platform,environment:env});
  const hookPresets=createHookPresetStore(dataDir);
- const settingsPath=path.join(profile,'.config','muse','settings.json');
+ const settingsPath=mcpSettingsPath(env,platform);
  const importsFile=path.join(dataDir,'skill-imports.json');
  const imports=async()=>{try{const value=JSON.parse(await optionalText(importsFile)??'[]');return Array.isArray(value)?value.slice(-100):[];}catch{return[];}};
  const pending=new Map(),processes=new Map();let busy=false,closed=false,lastSkillCatalog;
@@ -62,7 +63,8 @@ export function createCustomize({getState,environment=process.env,dataDir,review
    throw Error(oauth?'Sign-in did not finish. Retry in Customize or use muse mcp login in the official CLI.':'Muse could not complete this operation. Check the folder or configuration and try again.');}
   finally{processes.delete(abort);}
  }
- async function settings(){const source=await optionalText(settingsPath);let config;try{config=source===null?{}:JSON.parse(source);}catch{throw Error('Muse settings are invalid. Correct settings.json before changing extensions.');}if(!object(config)||config.mcpServers||config.mcp_servers&&!object(config.mcp_servers))throw Error('Muse settings use an unsupported MCP configuration. Review settings.json in the official CLI.');return{source,config};}
+ async function settings(){const source=await optionalText(settingsPath);let config;try{config=source===null?{}:JSON.parse(source);}catch{throw Error('Muse settings are invalid. Correct settings.json before changing extensions.');}const {key,servers}=settingsMcp(config);return{source,config,key,servers};}
+ function addServer(config,name,entry){const {key,servers}=settingsMcp(config);config[key]={...servers,[name]:key==='mcpServers'?canonicalMcpEntry(entry):entry};return config[key][name];}
  async function writeSettings(original,config){
   if(await optionalText(settingsPath)!==original)throw Error('Muse settings changed elsewhere. Refresh and try again.');
   // Follow an existing symlink, like Muse itself, without replacing the link.
@@ -78,7 +80,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  function capabilities(value){return Object.entries(value??{}).filter(([,items])=>Array.isArray(items)&&items.length).map(([kind,items])=>({kind:clean(kind,60),count:items.length}));}
  async function skillList({retainOnFailure=false}={}){
   const args=['skills','list','--json'],executable=binary(),workspace=getState().activeProject?.root??null;
-  const trusted=workspace?await review.allowProject(workspace):false,key=JSON.stringify([executable,workspace,trusted]);
+  const trusted=workspace?await review.allowProject(workspace,{environment:env,platform}):false,key=JSON.stringify([executable,workspace,trusted]);
   if(lastSkillCatalog?.key!==key)lastSkillCatalog=undefined;
   if(workspace){args.push('--workspace',workspace);if(trusted)args.push('--trust-workspace');}
   try{
@@ -104,7 +106,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
     if(!inventoryDisplayed)errors.push('Some plugins could not be validated. Resolve them in the official CLI before reviewing.');
    }else errors.push('Plugins could not be refreshed.');
   }
-  try{const {config}=await settings();servers=await Promise.all(Object.entries(config.mcp_servers??{}).slice(0,250).map(async([name,entry])=>({name:clean(name,100),revision:configurationDigest(entry),transport:entry.transport==='stdio'?'stdio':'streamable_http',address:entry.transport==='stdio'?clean(entry.command,200):safeAddress(entry.url),enabled:entry.enabled!==false,reviewed:await review.allowMcp(name,entry),oauth:supportsOAuth(entry)})));pluginsReviewed=await review.pluginsReviewed();const afterPlugins=await review.pluginState();if(beforePlugins?.revision===afterPlugins.revision){if(inventoryDisplayed)pluginRevision=afterPlugins.revision;}else errors.push('Plugins changed while loading. Refresh before reviewing them.');}catch{errors.push('Muse configuration could not be read. Correct settings.json in the official CLI before editing.');}
+  try{const configured=await settings();servers=await Promise.all(Object.entries(configured.servers).slice(0,250).map(async([name,entry])=>({name:clean(name,100),revision:configurationDigest(entry),transport:mcpTransport(entry)==='stdio'?'stdio':'streamable_http',address:mcpTransport(entry)==='stdio'?clean(entry.command,200):safeAddress(entry.url),enabled:entry.enabled!==false,reviewed:await review.allowMcp(name,entry),oauth:supportsOAuth(entry)})));pluginsReviewed=await review.pluginsReviewed();const afterPlugins=await review.pluginState();if(beforePlugins?.revision===afterPlugins.revision){if(inventoryDisplayed)pluginRevision=afterPlugins.revision;}else errors.push('Plugins changed while loading. Refresh before reviewing them.');}catch{errors.push('Muse configuration could not be read. Correct settings.json in the official CLI before editing.');}
   let hooks=null;try{const root=getState().activeProject?.root;if(root)hooks=await review.hookState(root);}catch{errors.push('Project hooks could not be read.');}
   let presetState=null;try{presetState=await hookPresets.snapshot();}catch(error){errors.push(error.message);}
   return{hooks,hookPresets:presetState,skillImports:await imports(),available,skills:skillRows,skillCatalog,plugins:pluginRows,servers,pluginsReviewed,pluginRevision,errors};
@@ -123,15 +125,22 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  }
  async function dispatch(command){
   if(closed)throw Error('Customize is closed.');
-  const supported=['catalogSearch','prepareCatalog','catalogServer','saveHookPreset','deleteHookPreset','saveHooks','refresh','inspectProject','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
+  const supported=['inspectProjectMcp','approveProjectMcp','revokeProjectMcp','catalogSearch','prepareCatalog','catalogServer','saveHookPreset','deleteHookPreset','saveHooks','refresh','inspectProject','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
   if(!object(command)||!supported.includes(command.type)||JSON.stringify(command).length>40000)throw Error('Unsupported Customize action.');
   if(command.type==='refresh')return{state:await snapshot()};
+  if(command.type==='inspectProjectMcp'){
+   const root=getState().activeProject?.root;if(!root)throw Error('Choose a project first.');
+   const projectMcp=await review.projectMcpState(root,{environment:env,platform});
+   if(closed||getState().activeProject?.root!==root)throw Error('The selected project changed. Inspect it again.');
+   return{projectMcp};
+  }
   if(command.type==='inspectProject'){
    const root=getState().activeProject?.root;if(!root)throw Error('Choose a project first.');
    const projectInstructions=await inspectProjectInstructions(root);
    try{
-    const state=await review.projectState(root);
-    projectInstructions.trust=matchesProjectInstructionReview(projectInstructions,state)?{status:state.reviewed?'reviewed':'required'}:{status:'unavailable',reason:'Project rules changed during inspection or could not be fully compared. Refresh before reviewing.'};
+    const mcp=await review.projectMcpState(root,{environment:env,platform});
+    const state=mcp.present?{root:mcp.root,boundary:mcp.boundary,files:mcp.instructions,reviewed:mcp.reviewed}:await review.projectState(root);
+    projectInstructions.trust=matchesProjectInstructionReview(projectInstructions,state)?{status:state.reviewed?'reviewed':'required',...(mcp.present?{source:'projectMcp'}:{})}:{status:'unavailable',reason:'Project rules changed during inspection or could not be fully compared. Refresh before reviewing.'};
    }
    catch(error){projectInstructions.trust={status:'unavailable',reason:clean(error.message,350)};}
    if(closed||getState().activeProject?.root!==root)throw Error('The selected project changed. Inspect it again.');
@@ -142,6 +151,13 @@ export function createCustomize({getState,environment=process.env,dataDir,review
   if(customizeBlocked(getState())||isActive())throw Error('Let the running task finish and confirm it has stopped before changing extensions.');
   busy=true;
   try{
+   if(command.type==='approveProjectMcp'||command.type==='revokeProjectMcp'){
+    const root=getState().activeProject?.root;if(!root||command.root!==root)throw Error('The selected project changed. Inspect it again.');
+    const beforeCommit=()=>{if(closed||getState().activeProject?.root!==root||customizeBlocked(getState())||isActive())throw Error('The selected project or task changed. Review again when it is idle.');};
+    if(command.type==='approveProjectMcp'){requireReview(command);await review.approveProjectMcp(root,command.revision,{environment:env,platform,beforeCommit});}
+    else{beforeCommit();await review.revokeProjectMcp(root);}
+    return{projectMcp:await review.projectMcpState(root,{environment:env,platform}),message:command.type==='approveProjectMcp'?'Project servers reviewed. Reconnect Muse to use this configuration.':'Project server access revoked. Reconnect Muse before continuing.'};
+   }
    if(command.type==='prepareCatalog'){
     const entry=await(await catalogService()).resolve(command.id);if(!entry?.package||entry.compatibility==='setup-required')throw Error('Unknown or setup-required catalog package. Search again and follow its setup instructions.');
     const stage=stagePackage??(await import('./extension-staging.mjs')).stageCatalogPackage;
@@ -157,9 +173,9 @@ export function createCustomize({getState,environment=process.env,dataDir,review
     if(!entry?.recipe||entry.compatibility==='setup-required')throw Error('This catalog entry needs manual setup; no supported connection recipe is available.');
     const setup=entry.recipe.transport==='npm'?await(await import('./catalog-local-server.mjs')).resolveLocalCatalogServer(entry.recipe,{environment}):{name:entry.recipe.name,transport:'streamable_http',url:entry.recipe.url};
     const {name,config:server}=validateServer(setup);
-    const {source,config}=await settings();if(Object.hasOwn(config.mcp_servers??{},name))throw Error('This server is already configured. Manage it in Installed.');
-    if(Object.keys(config.mcp_servers??{}).length>=250)throw Error('Remove an unused server first.');
-    config.mcp_servers={...config.mcp_servers,[name]:server};await writeSettings(source,config);await review.approveMcp(name,server);
+    const {source,config,servers}=await settings();if(Object.hasOwn(servers,name))throw Error('This server is already configured. Manage it in Installed.');
+    if(Object.keys(servers).length>=250)throw Error('Remove an unused server first.');
+    const saved=addServer(config,name,server);await writeSettings(source,config);await review.approveMcp(name,saved);
     return{state:await snapshot(),message:entry.recipe.oauth?'Server added. Open Installed → MCP servers and choose Sign in to connect your account.':'Server added. Available to the next Muse run.'};
    }
    if(command.type==='saveHookPreset'||command.type==='deleteHookPreset'){if(command.type==='saveHookPreset')await hookPresets.save(command);else await hookPresets.remove(command);return{state:await snapshot(),message:command.type==='saveHookPreset'?'Hook preset saved. Load it into a project draft, then review and save that project.':'Hook preset deleted. Existing project hooks are unchanged.'};}
@@ -201,23 +217,23 @@ export function createCustomize({getState,environment=process.env,dataDir,review
    }else if(command.type==='reviewPlugins'){
     requireReview(command);if(typeof command.revision!=='string')throw Error('Refresh the plugin review first.');const list=await cli(['plugins','list','--json']);if(!Array.isArray(list.plugins)||list.plugins.some(item=>!item.valid))throw Error('Fix invalid plugin bundles in the official CLI before reviewing them.');await review.approvePlugins(command.revision);
    }else if(command.type==='saveServer'){
-    requireReview(command);const {name,config:entry}=validateServer(command.server);const {source,config}=await settings();
-    if(Object.hasOwn(config.mcp_servers??{},name))throw Error('A server with this name already exists. Choose another name.');
-    if(Object.keys(config.mcp_servers??{}).length>=250)throw Error('Remove an unused server first.');
-    config.mcp_servers={...config.mcp_servers,[name]:entry};await writeSettings(source,config);await review.approveMcp(name,entry);
+    requireReview(command);const {name,config:entry}=validateServer(command.server);const {source,config,servers}=await settings();
+    if(Object.hasOwn(servers,name))throw Error('A server with this name already exists. Choose another name.');
+    if(Object.keys(servers).length>=250)throw Error('Remove an unused server first.');
+    const saved=addServer(config,name,entry);await writeSettings(source,config);await review.approveMcp(name,saved);
    }else if(command.type==='serverAction'){
     if(!idOK(command.name)||!['enable','disable','remove','login','logout','review'].includes(command.action))throw Error('Invalid server action.');
-    const {source,config}=await settings(),entry=config.mcp_servers?.[command.name];if(!object(entry))throw Error('Server no longer configured.');
+    const {source,config,servers}=await settings(),entry=servers[command.name];if(!object(entry))throw Error('Server no longer configured.');
     if(command.revision!==configurationDigest(entry))throw Error('Server configuration changed after review. Refresh and review it again.');
     if(command.action==='login'||command.action==='logout'){
-     if(entry.transport!=='streamable_http')throw Error('OAuth requires an HTTPS server.');
+     if(mcpTransport(entry)!=='streamable-http')throw Error('OAuth requires an HTTPS server.');
      if(command.action==='login'&&!supportsOAuth(entry))throw Error('This public MCP endpoint does not require sign-in.');
      if(!await review.allowMcp(command.name,entry))throw Error('Review this server before signing in.');
      await cli(['mcp',command.action,command.name],{oauth:true});
     }else{
      requireReview(command);
      if(command.action==='review')await review.approveMcp(command.name,entry);
-     else{if(command.action==='remove')delete config.mcp_servers[command.name];else entry.enabled=command.action==='enable';await writeSettings(source,config);if(command.action!=='remove')await review.approveMcp(command.name,entry);}
+     else{if(command.action==='remove')delete servers[command.name];else entry.enabled=command.action==='enable';await writeSettings(source,config);if(command.action!=='remove')await review.approveMcp(command.name,entry);}
     }
    }
    return{state:await snapshot(),message:command.type==='serverAction'&&command.action==='login'?'Muse completed the OAuth sign-in.':'Saved. Changes apply to the next Muse run.'};

@@ -163,6 +163,42 @@ test('interactive request checks reviewed configuration again before sending a t
  await second.runtime.send({text:'Reviewed request'});assert.equal(second.calls.filter(c=>c.method==='turn/start').length,1);
 });
 
+test('interactive project MCP changes need a new host even after reapproval',async t=>{
+ const first=await harness(t),environment={PATH:'',HOME:first.profile,USERPROFILE:first.profile};
+ const review=createExtensionReview({dataDir:join(first.root,'reviews'),profile:first.profile,environment});
+ const h=await harness(t,{environment,extensionReview:review});await mkdir(join(h.root,'.git'));
+ const file=join(h.root,'.mcp.json');await writeFile(file,JSON.stringify({mcpServers:{docs:{type:'stdio',command:'node',args:['before.mjs']}}}));
+ const shown=await review.projectMcpState(h.root,{environment});await review.approveProjectMcp(h.root,shown.revision,{environment});
+ await h.connect();assert.equal(h.runtime.snapshot().permissionVerified,true);assert(h.calls.find(c=>c.method==='spawn').spec.args.includes('--trust-workspace'));
+ await writeFile(file,JSON.stringify({mcpServers:{docs:{type:'stdio',command:'node',args:['after.mjs']}}}));
+ const changed=await review.projectMcpState(h.root,{environment});await review.approveProjectMcp(h.root,changed.revision,{environment});
+ await assert.rejects(h.runtime.send({text:'Must reconnect first'}),/reconnect|configuration changed/i);assert.equal(h.calls.filter(c=>c.method==='turn/start').length,0);
+});
+
+for(const change of ['revoke','edit-and-review'])for(const action of ['steer','followupTask','reopen','retry','sendMessage','compact','answer','approve'])test(`project MCP ${change} blocks ${action} before native admission`,async t=>{
+ const first=await harness(t),environment={PATH:'',HOME:first.profile,USERPROFILE:first.profile};
+ const review=createExtensionReview({dataDir:join(first.root,'reviews'),profile:first.profile,environment});
+ const h=await harness(t,{environment,extensionReview:review});await mkdir(join(h.root,'.git'));
+ const file=join(h.root,'.mcp.json'),put=args=>writeFile(file,JSON.stringify({mcpServers:{docs:{type:'stdio',command:'node',args}}}));
+ const approve=async()=>{const shown=await review.projectMcpState(h.root,{environment});await review.approveProjectMcp(h.root,shown.revision,{environment});};
+ await put(['before.mjs']);await approve();await h.connect();await h.runtime.send({text:'Start'});
+ const child={itemId:'child',kind:'subagent',subagentId:'native-child',turnId:'turn-one',revision:1,status:'inProgress',controlStatus:action==='reopen'?'closed':action==='sendMessage'?'running':'resultReady'};
+ if(action==='retry')Object.assign(child,{kind:'workflow',workflowRunId:'workflow-one',children:[{childId:'task',attempt:1,status:'failed',terminal:'failed'}],status:'failed'});
+ if(['followupTask','reopen','retry','sendMessage'].includes(action))h.emit({method:'item/updated',params:{sessionId:'session-one',item:child}});
+ if(action==='compact'||['followupTask','reopen','retry'].includes(action))h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});
+ if(action==='answer')await h.request({method:'userInput/request',params:inputRequest()});
+ if(action==='approve')await h.request({method:'approval/request',params:{sessionId:'session-one',approvalId:'approval-one',currentRequirementId:{approvalId:'approval-one',sourceIndex:0},availableChoices:[{choiceId:'allow',decision:'approved',scope:'once'},{choiceId:'deny',decision:'denied',scope:'once'}]}});
+ if(change==='revoke')await review.revokeProjectMcp(h.root);else{await put(['after.mjs']);await approve();}
+ const calls=[];h.host.connection.command=async(method,params,opts)=>{calls.push(method);return{commandId:opts.commandId,status:'accepted',turnId:params.expectedTurnId,userInputId:params.userInputId};};
+ const input={sessionId:'session-one',itemId:'child',revision:1,action,body:'Continue',...(action==='retry'?{childId:'task',attempt:1}:{})};
+ const perform=()=>action==='steer'?h.runtime.steer({text:'Continue',expectedTurnId:'turn-one'}):action==='compact'?h.runtime.compact({sessionId:'session-one',turnId:'turn-one'}):action==='answer'?h.runtime.answerInput({...h.runtime.snapshot().pending,operation:'answer',answers:[{questionId:'color',selectedLabel:'Blue'}]}):action==='approve'?h.runtime.decide(h.runtime.snapshot().pending.availableChoices[0].decisionToken):h.runtime.childControl(input);
+ await assert.rejects(perform(),/review|reconnect|configuration changed/i);assert.deepEqual(calls,[]);
+ // Losing permission to continue must not remove controls that stop suspended work.
+ if(action==='sendMessage'){await h.runtime.childControl({...input,action:'stop'});assert.deepEqual(calls,['subagent/stop']);}
+ if(action==='answer'){await h.runtime.answerInput({...h.runtime.snapshot().pending,operation:'cancel'});assert.deepEqual(calls,['userInput/cancel']);}
+ if(action==='approve'){await h.runtime.decide('deny');assert.deepEqual(calls,['approval/decide']);}
+});
+
 test('delayed interactive configuration review cannot cross disconnect and reconnect',{timeout:2000},async t=>{
  let rejectReview,entered;const begun=new Promise(resolve=>entered=resolve);let delay=false;
  const h=await harness(t,{verifyConfiguration:async()=>{if(delay){entered();await new Promise((_,reject)=>rejectReview=reject);}}});
@@ -472,7 +508,7 @@ test('native compaction waits for terminal evidence and blocks sends until it ar
  await assert.rejects(h.runtime.compact({sessionId:'wrong',turnId:'turn-one'}));await h.runtime.compact({sessionId:'session-one',turnId:'turn-one'});assert.equal(h.runtime.snapshot().compaction.status,'accepted');await assert.rejects(h.runtime.send({text:'Too early'}));h.emit({method:'item/completed',params:{sessionId:'session-one',viewCursor:'compact-done',item:{itemId:'compaction-1',kind:'compaction',turnId:'turn-one',trigger:'manual',revision:2,status:'completed',outcome:'compacted'}}});assert.equal(h.runtime.snapshot().compaction.status,'compacted');assert.equal(h.runtime.snapshot().operationBusy,false);await h.runtime.send({text:'Continue'});
 });
 test('disconnect during compaction ack never updates a new owner',async t=>{
- const h=await harness(t);await h.connect();await h.runtime.send({text:'A turn'});h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});let resolve;h.host.connection.command=async()=>new Promise(r=>resolve=r);const operation=h.runtime.compact({sessionId:'session-one',turnId:'turn-one'});await h.runtime.disconnect();resolve({commandId:'0198f0ab-9999-7000-8000-000000000001',status:'accepted'});await assert.rejects(operation,/interrupted/);assert.equal(h.runtime.snapshot().compaction.status,'unknown');assert.equal(h.runtime.snapshot().permissionVerified,false);
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'A turn'});h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});let resolve,entered;const admitted=new Promise(r=>entered=r);h.host.connection.command=async()=>new Promise(r=>{resolve=r;entered();});const operation=h.runtime.compact({sessionId:'session-one',turnId:'turn-one'});await admitted;await h.runtime.disconnect();resolve({commandId:'0198f0ab-9999-7000-8000-000000000001',status:'accepted'});await assert.rejects(operation,/interrupted/);assert.equal(h.runtime.snapshot().compaction.status,'unknown');assert.equal(h.runtime.snapshot().permissionVerified,false);
 });
 
 test('native child controls bind current session and revision and send at most once on uncertain ack',async t=>{

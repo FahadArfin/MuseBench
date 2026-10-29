@@ -44,9 +44,11 @@ export function ProjectInstructions({review,disabled,busy,reviewed,setReviewed,e
     </>}
     <button type="button" className="instruction-toggle instruction-review-toggle" aria-expanded={showReview} aria-controls={reviewId} onClick={()=>setShowReview(!showReview)}><ChevronRight size={13} className={showReview?'open':''}/><span>Project trust review</span></button>
     <MotionDisclosure open={showReview} id={reviewId}>
-     <p>The review includes project skills and configuration as well as instruction files. Changes require review again. Native project hook files and project MCP stay disabled; app-owned hooks are configured in Hooks.</p>
+     {data?.trust.source==='projectMcp'?<><p>These instructions are reviewed together with this project’s servers. Manage their access in the same review.</p><button className="button" disabled={disabled||loading} onClick={()=>void execute({type:'inspectProjectMcp'})}>Review project servers and instructions</button></>:<>
+     <p>The review includes project skills and configuration as well as instruction files. Changes require review again. Native project hook files stay disabled; app-owned hooks are configured in Hooks. Review project MCP separately under MCP servers → Project servers.</p>
      <button className="button" disabled={disabled||loading||data?.trust.status==='unavailable'} onClick={()=>void execute({type:'reviewProject'})}>Review project instructions</button>
      {review&&<div className="instruction-review"><p className="instruction-path">{review.root}<br/>SHA-256: {review.fingerprint}</p>{review.files.map(file=><SourcePreview key={`${review.fingerprint}:${file.path}`} name={file.path} label={`Review source ${file.path}`}>{file.text}</SourcePreview>)}{review.reviewed?<><p>Files matched the saved review when opened.</p><button className="button" disabled={disabled} onClick={()=>void execute({type:'revokeProject',root:review.root})}>Revoke project trust</button></>:<><label className="extensions-consent"><input type="checkbox" checked={reviewed} disabled={disabled} onChange={event=>setReviewed(event.target.checked)}/>I trust these project instructions.</label><button className="button" disabled={disabled||!reviewed||!review.files.length||!!data&&!matchingReview} onClick={()=>void execute({type:'approveProject',root:review.root,fingerprint:review.fingerprint,reviewed:true})}>Trust reviewed instructions</button></>}</div>}
+     </>}
     </MotionDisclosure>
    </div>
   </MotionDisclosure>

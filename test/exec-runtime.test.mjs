@@ -5,6 +5,7 @@ import {mkdtemp, writeFile, mkdir, rm, readFile, stat} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createExecRuntime} from '../src/runtime/exec.mjs';
+import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 
 const ready='backend=windows_elevated\nstatus=ready\nrunner_trusted=true\nrunner_version_matches=true\nsandbox_users_ready=true\ncapabilities_ready=true\nrestricted_network_required=true\nwfp_ready=true\n';
 const unmanaged='Enterprise configuration status\nGeneration: sha256:123\nSources:\n  plane=defaults source_class=system_file state=absent\n  plane=policy source_class=system_file state=absent\n  plane=defaults source_class=windows_machine_policy state=absent\n  plane=policy source_class=windows_machine_policy state=absent\n';
@@ -112,6 +113,16 @@ test('explicit API credentials reach model processes and discovery, never readin
  assert.ok(!JSON.stringify(h.runtime.snapshot()).includes(key));
  reject=false;await h.runtime.send({text:'Go',runOptions:{model:'fixture-model',reasoning:'high',approval:'ask'}});
  assert.equal(h.calls.at(-1).options.env.META_API_KEY,key);assert.equal(h.calls.at(-1).args.includes('meta'),true);assert.ok(!JSON.stringify(h.runtime.snapshot()).includes(key));
+});
+
+test('exec project approval checks the actual model environment before spawning',async t=>{
+ const first=await harness(t),environment={PATH:'',USERPROFILE:first.profile,SystemRoot:'C:\\Windows'};
+ const review=createExtensionReview({profile:first.profile,dataDir:join(first.root,'reviews'),environment,platform:'win32'});
+ const h=await harness(t,{environment,extensionReview:review,credentials:async({environment})=>({source:'api',environment:{...environment,PATH:'unreviewed-path',META_API_KEY:'fixture-private'},verify:async()=>{}})});
+ await mkdir(join(h.root,'.git'));await writeFile(join(h.root,'.mcp.json'),JSON.stringify({mcpServers:{docs:{type:'stdio',command:'node',args:['server.mjs']}}}));
+ const shown=await review.projectMcpState(h.root);await review.approveProjectMcp(h.root,shown.revision);
+ await h.connect();await assert.rejects(h.runtime.send({text:'Do not start with a different environment'}),/review/i);
+ assert.equal(h.calls.filter(c=>c.args.includes('meta')).length,0);assert.equal(h.runtime.snapshot().permissionVerified,false);
 });
 
 test('exec connect checks native version, sandbox readiness and inert format without calling a model',async t=>{

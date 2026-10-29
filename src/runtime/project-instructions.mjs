@@ -43,6 +43,15 @@ function problem(error){return ['EACCES','EPERM'].includes(error.code)?'Permissi
 /** A trust label must refer to the same candidate inventory the person can read. */
 export function matchesProjectInstructionReview(observation,review){
  if(!observation.complete||observation.root!==review.root||!Array.isArray(review.files))return false;
+ if(review.boundary){
+  if(observation.boundary.kind==='git'&&observation.boundary.root!==review.boundary)return false;
+  if(observation.boundary.kind!=='git'&&review.boundary!==review.root)return false;
+  return observation.levels.every(level=>candidates.every(name=>{
+   const relative=path.relative(review.root,path.join(level.root,name)).split(path.sep).join('/');
+   const displayed=level.files.find(file=>file.path===name),reviewed=review.files.find(file=>file.path===relative);
+   return !displayed&&!reviewed||!!displayed&&!!reviewed&&typeof displayed.text==='string'&&displayed.text===reviewed.text;
+  }));
+ }
  const own=observation.levels.find(level=>level.root===observation.root);
  if(!own||observation.levels.some(level=>level!==own&&level.files.length))return false;
  return candidates.every(name=>{

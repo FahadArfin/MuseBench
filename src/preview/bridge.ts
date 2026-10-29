@@ -146,6 +146,8 @@ export function createPreviewBridge():MuseBenchBridge {
  const hookPresets=createPreviewHookPresets();
  const hookProjects=new Map<string,NonNullable<CustomizeState['hooks']>>();
  const reviewedInstructionRoots=new Set<string>();
+ const reviewedProjectMcpRoots=new Set<string>();
+ const inspectedProjectMcpRoots=new Set<string>();
  const previewInstructionText='Preview sample: keep shared desktop and browser controls in sync.';
  const customize:CustomizeState={simulation:true,available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only',contextCost:{startupBytes:0,startupTokens:0,invokeBytes:2080,invokeTokens:520},diagnostics:[]}],skillCatalog:{diagnostics:[],omitted:0},plugins:[],servers:[]};
  const updateListeners=new Set<(state:import('../shared/types').AppUpdateState)=>void>();
@@ -231,9 +233,17 @@ export function createPreviewBridge():MuseBenchBridge {
    return siteChannel.emit();
   },
   customize:async command=>{
+   if(command.type==='inspectProjectMcp'||command.type==='approveProjectMcp'||command.type==='revokeProjectMcp'){
+    const root=state.activeProject?.root??project.root;
+    inspectedProjectMcpRoots.add(root);
+    if(command.type!=='inspectProjectMcp'&&command.root!==root)throw Error('The selected project changed.');
+    if(command.type==='approveProjectMcp'){if(!command.reviewed||command.revision!=='preview-project-mcp')throw Error('Project MCP configuration changed after review.');reviewedProjectMcpRoots.add(root);}
+    if(command.type==='revokeProjectMcp')reviewedProjectMcpRoots.delete(root);
+    return{projectMcp:{simulation:true,root,boundary:root,present:true,revision:'preview-project-mcp',reviewed:reviewedProjectMcpRoots.has(root),sources:[{path:root+'/.mcp.json',revision:'Preview source hash',bytes:188}],instructions:[{path:'AGENTS.md',text:'Read files before making changes.'}],servers:[{name:'project-docs',transport:'stdio',address:'node',args:['local-docs.mjs'],cwd:null,environmentKeys:['ACCESS_TOKEN'],headerKeys:[],enabled:true,required:false,framing:'auto',startupTimeout:30,toolTimeout:300,toolFiltersPresent:false}]},...(command.type==='inspectProjectMcp'?{}:{message:'Preview only: project server access simulated. No configuration or native trust changed.'})};
+   }
    if(command.type==='inspectProject'){
-    const root=state.activeProject?.root??project.root,bytes=new TextEncoder().encode(previewInstructionText).length;
-    return{projectInstructions:{simulation:true,root,checkedAt:new Date().toISOString(),boundary:{kind:'git',root},selectedCount:1,selectedBytes:bytes,measuredBytes:bytes,complete:true,trust:{status:reviewedInstructionRoots.has(root)?'reviewed':'required'},levels:[{root,files:[{path:'AGENTS.md',selected:true,bytes,text:previewInstructionText}]}]}};
+    const root=state.activeProject?.root??project.root,hasMcp=inspectedProjectMcpRoots.has(root),text=hasMcp?'Read files before making changes.':previewInstructionText,bytes=new TextEncoder().encode(text).length;
+    return{projectInstructions:{simulation:true,root,checkedAt:new Date().toISOString(),boundary:{kind:'git',root},selectedCount:1,selectedBytes:bytes,measuredBytes:bytes,complete:true,trust:{status:(hasMcp?reviewedProjectMcpRoots:reviewedInstructionRoots).has(root)?'reviewed':'required',...(hasMcp?{source:'projectMcp' as const}:{})},levels:[{root,files:[{path:'AGENTS.md',selected:true,bytes,text}]}]}};
    }
    if(command.type==='catalogSearch'){
     const fixtures:CatalogEntry[]=command.source==='community'?[...await communityCatalog(command.kind),{id:'preview-validation-failure',title:'Unsupported package sample',description:'A deterministic validation failure for preview review.',kind:command.kind,source:'community',publisher:'Preview fixture',homepage:'https://github.com/FahadArfin/MuseBench',compatibility:'unverified',setup:'Preparation demonstrates a rejected unsupported capability.',tags:[],package:{repo:'https://github.com/FahadArfin/MuseBench',path:'.',kind:command.kind==='skills'?'skill':'plugin'},provenance:{source:'Simulated fixture',url:'https://github.com/FahadArfin/MuseBench'}}]:CURATED_EXTENSIONS.filter(item=>item.kind===command.kind);
