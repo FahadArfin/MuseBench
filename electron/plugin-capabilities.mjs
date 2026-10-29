@@ -4,7 +4,7 @@ import {configurationDigest} from '../src/runtime/extension-review.mjs';
 import {pluginPart,nativeHash,pluginDecisions,nativePluginDecision} from '../src/runtime/plugin-capabilities.mjs';
 import {diagnosticText} from '../reference/patchlight/adapter/diagnostics.mjs';
 import {settingsMcp} from '../src/runtime/project-mcp.mjs';
-import {displayPluginCommand} from './plugin-command-review.mjs';
+import {displayPluginCommand,displayPluginShellCommand} from './plugin-command-review.mjs';
 import {inspectPluginHook} from './plugin-hook-definition.mjs';
 
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
@@ -27,7 +27,9 @@ export function createPluginCapabilities({cli,review,settings,settingsPath,inven
   // Muse 1.4.14 prints an absolute cache path and the public family name; its
   // persisted inventory also contains internal agent-parser metadata. Keep all
   // persisted fields in the grant fingerprint, but compare this documented view.
-  const projected={...record,cache_path:cacheRoot};if(projected.manifest_family==='muse')projected.manifest_family='native';delete projected.agent_definition_inventory;
+  const projected={...record,cache_path:cacheRoot};projected.manifest_family=({muse:'native',claude:'claude-compatible',codex:'codex-compatible'})[projected.manifest_family]??projected.manifest_family;if(record.manifest_family===undefined)delete projected.manifest_family;delete projected.agent_definition_inventory;
+  const imported=['claude-compatible','codex-compatible'].includes(projected.manifest_family)&&native.plugin.manifest_family===projected.manifest_family;
+  if(imported)delete projected.compatibility; // Internal inventory metadata; still bound in inventory.revision.
   if(typeof native.record.cache_path!=='string'||configurationDigest({...native.record,cache_path:await realpath(native.record.cache_path)})!==configurationDigest(projected))fail();
   if(!Array.isArray(native.runtime_capabilities)||native.runtime_capabilities.length>100)fail();
   const definitionsById=new Map();
@@ -38,7 +40,10 @@ export function createPluginCapabilities({cli,review,settings,settingsPath,inven
   const decisions=pluginDecisions(before.config),reviewed=await review.reviewedPluginCapabilities(decisions,{settingsPath}),seen=new Set(),servers=[],identities={};
   for(const row of native.runtime_capabilities){
    const c=row?.candidate;
-   if(!object(c)||c.plugin_id!==id||!pluginPart(c.capability_id)||typeof c.kind!=='string'||!/^[a-z_]{1,40}$/.test(c.kind)||c.stable_id!==`plugin:${id}:${c.kind}:${c.capability_id}`||seen.has(c.stable_id)||!nativeHash(c.definition_hash)||c.source_digest!==record.package_sha256)fail();
+   if(!object(c)||c.plugin_id!==id||!pluginPart(c.capability_id)||typeof c.kind!=='string'||!/^[a-z_]{1,40}$/.test(c.kind)||c.stable_id!==`plugin:${id}:${c.kind}:${c.capability_id}`||seen.has(c.stable_id)||!nativeHash(c.definition_hash)||!nativeHash(c.source_digest)||(!(imported&&c.kind==='hook')&&c.source_digest!==record.package_sha256))fail();
+   // Foreign 1.4.14 hook digests differ from the stored package digest. Treat
+   // them as opaque native identity; the app independently hashes every package
+   // file before/after inspection, approval and each positive runtime operation.
    seen.add(c.stable_id);
    if(!['mcp_server','hook'].includes(c.kind)){servers.push({stableId:c.stable_id,title:c.capability_id,kind:c.kind,supported:false,enabled:false,reviewed:false,reason:'This capability needs setup in the official Muse CLI.'});continue;}
    const definition=definitionsById.get(c.kind+':'+c.capability_id);if(!definition)fail();definitionsById.delete(c.kind+':'+c.capability_id);
@@ -52,8 +57,11 @@ export function createPluginCapabilities({cli,review,settings,settingsPath,inven
     if(Object.keys(definition).some(key=>!['id','transport','command','url','source_path','source_relative_path'].includes(key)))fail();
     if(definition.transport!=='stdio'){servers.push({stableId:c.stable_id,title:c.capability_id,kind:c.kind,supported:false,enabled:false,reviewed:false,reason:'This plugin transport needs setup in the official Muse CLI.'});continue;}
    }
-   if(definition.url!==null&&definition.url!==undefined||!Array.isArray(definition.command)||!definition.command.length||definition.command.length>64||definition.command.some(arg=>typeof arg!=='string'||arg.length>1000||/[\u0000-\u001f\u007f]/.test(arg))||!definition.command[0].trim()||definition.command.join('').length>16000)fail();
-   if(definition.source_relative_path!=null||definition.source_path!=null){
+   const shell=hook?.execution==='shell';
+   if(definition.url!==null&&definition.url!==undefined||!Array.isArray(definition.command)||!definition.command.length||definition.command.length>64||definition.command.some(arg=>typeof arg!=='string'||arg.length>(shell?16000:1000)||(shell?/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/:/[\u0000-\u001f\u007f]/).test(arg))||!definition.command[0].trim()||definition.command.join('').length>16000)fail();
+   // Imported shell hooks point to the already-verified JSON source, not an
+   // executable path. The native projection intentionally has no source_path.
+   if(!shell&&(definition.source_relative_path!=null||definition.source_path!=null)){
     const relative=definition.source_relative_path;
     if(typeof relative!=='string'||!relative||path.isAbsolute(relative)||/^[a-zA-Z]:|[\u0000-\u001f]/.test(relative)||relative.split(/[\\/]/).some(part=>part==='..')||typeof definition.source_path!=='string')fail();
     const root=cacheRoot,source=await realpath(path.resolve(root,relative)),distance=path.relative(root,source);
@@ -61,7 +69,7 @@ export function createPluginCapabilities({cli,review,settings,settingsPath,inven
    }
    const decision=decisions[c.stable_id],enabled=decision?.enabled===true;
    const matching=nativePluginDecision(c.stable_id,decision)&&decision.trusted_definition_hash===c.definition_hash;
-   servers.push({stableId:c.stable_id,title:c.capability_id,kind:c.kind,supported:true,...(hook?{hook}:{}),command:displayPluginCommand(definition.command),definitionHash:c.definition_hash,enabled,reviewed:enabled&&matching&&reviewed[c.stable_id]===true,status:diagnosticText(row.status),...(decision&&!matching?{reason:'The native approval does not match this definition. Review it again.'}:{})});
+   servers.push({stableId:c.stable_id,title:c.capability_id,kind:c.kind,supported:true,...(hook?{hook}:{}),command:shell?[displayPluginShellCommand(definition.command[0])]:displayPluginCommand(definition.command),definitionHash:c.definition_hash,enabled,reviewed:enabled&&matching&&reviewed[c.stable_id]===true,status:diagnosticText(row.status),...(decision&&!matching?{reason:'The native approval does not match this definition. Review it again.'}:{})});
   }
   if(definitionsById.size)fail();
   // No app grant or UI result may describe a mix of different observations.

@@ -54,3 +54,11 @@ export function displayPluginCommand(command){
   return display;
  });
 }
+
+/** A shell string is executable syntax, not an argv token. Never redact part
+ * of it: preserve the whole command or refuse recognized embedded secrets. */
+export function displayPluginShellCommand(command){
+ for(const match of command.matchAll(/(?:^|[\s;|&()<>"'])(--?[a-z][a-z0-9_-]*)(?=[\s="'`]|$)/gi))if(credentialFlag(match[1]))refuse();
+ if(argument(command)!==command)refuse();
+ return command;
+}

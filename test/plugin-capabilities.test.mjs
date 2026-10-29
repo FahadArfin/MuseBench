@@ -59,23 +59,25 @@ test('reviewed MCP, plugin and hook changes change the host execution revision',
  next=(await f.check()).executionRevision;assert.notEqual(next,last);
 });
 
-async function serviceFixture(t,{mutate,inspection,nativeProjection=false,hook}={}){
+async function serviceFixture(t,{mutate,inspection,nativeProjection=false,hook,imported}={}){
  const f=await fixture(t);await f.save({});const calls=[];
  if(hook){
-  f.record.manifest_family='native';await mkdir(path.join(f.cache,'.muse-plugin'));
-  await writeFile(path.join(f.cache,'.muse-plugin','plugin.json'),JSON.stringify({schemaVersion:1,name:'fixture',capabilities:{hooks:[hook]}}));
+  f.record.manifest_family=imported??'native';const marker=imported?`.${imported}-plugin`:'.muse-plugin';await mkdir(path.join(f.cache,marker));
+  if(imported==='claude')f.record.compatibility={summary:'full',declarations:[{id:'hook:probe',kind:'hook',classification:'supported'}]};
+  await writeFile(path.join(f.cache,marker,'plugin.json'),JSON.stringify(imported?{name:'fixture',version:'1.0.0',hooks:{[hook.event]:[{matcher:'Bash|Read',hooks:[{type:'command',command:hook.command[0],timeout:3}]}]}}:{schemaVersion:1,name:'fixture',capabilities:{hooks:[hook]}}));
   await writeFile(f.review.inventory,JSON.stringify({plugins:{fixture:f.record}}));f.inventory=await f.review.pluginState();await f.review.approvePlugins(f.inventory.revision);
  }
- if(nativeProjection){f.record.manifest_family='muse';f.record.cache_path=path.relative(path.dirname(path.dirname(f.review.inventory)),f.cache);f.record.agent_definition_inventory={schema_version:1,status:'empty'};await writeFile(f.review.inventory,JSON.stringify({plugins:{fixture:f.record}}));f.inventory=await f.review.pluginState();await f.review.approvePlugins(f.inventory.revision);}
+ if(nativeProjection){f.record.manifest_family=imported??'muse';f.record.cache_path=path.relative(path.dirname(path.dirname(f.review.inventory)),f.cache);f.record.agent_definition_inventory={schema_version:1,status:'empty'};await writeFile(f.review.inventory,JSON.stringify({plugins:{fixture:f.record}}));f.inventory=await f.review.pluginState();await f.review.approvePlugins(f.inventory.revision);}
  const state={runtime:{binary:process.platform==='win32'?'C:/muse.exe':'/usr/bin/muse'},activeProject:{root:f.workspaceRoot}};
  const native=async()=>{
   const config=JSON.parse(await readFile(f.settings,'utf8')),d=config.runtime_capabilities?.[stableId];
   const value={record:f.record,plugin:{id:'fixture',capabilities:{mcp_servers:[{id:'probe',transport:'stdio',command:['node','server.mjs'],url:null,source_path:path.join(f.cache,'server.mjs'),source_relative_path:'server.mjs'}]}},valid:true,active:true,active_scope:'installed-plugin',runtime_capabilities:[{candidate:{kind:'mcp_server',plugin_id:'fixture',capability_id:'probe',stable_id:stableId,definition_hash:hash,source_digest:hash},status:d?.enabled?'trusted_enabled':d?'trusted_disabled':'needs_approval'}]};
-  if(nativeProjection){value.record={...f.record,manifest_family:'native',cache_path:f.cache};delete value.record.agent_definition_inventory;}
+  if(nativeProjection||imported){value.record={...f.record,manifest_family:imported?imported+'-compatible':'native',cache_path:f.cache};delete value.record.agent_definition_inventory;if(imported)delete value.record.compatibility;}
   if(hook){
    const h=config.runtime_capabilities?.['plugin:fixture:hook:probe'];
    value.plugin.manifest_family='native';value.plugin.capabilities.hooks=[{id:'probe',event:hook.event,matcher:null,command:hook.command,shell_command:null,source_path:path.join(f.cache,'server.mjs'),source_relative_path:'server.mjs',timeout_ms:hook.timeoutMs??600000,async:hook.async??false,compatibility_name:hook.compatibilityName??null}];
-   value.runtime_capabilities.push({candidate:{kind:'hook',plugin_id:'fixture',capability_id:'probe',stable_id:'plugin:fixture:hook:probe',definition_hash:hash,source_digest:hash},status:h?.enabled?'trusted_enabled':h?'trusted_disabled':'review_needed'});
+   if(imported){value.plugin.manifest_family=imported+'-compatible';Object.assign(value.plugin.capabilities.hooks[0],{matcher:'Bash|Read',shell_command:hook.command[0],source_path:null,source_relative_path:`.${imported}-plugin/plugin.json`});}
+   value.runtime_capabilities.push({candidate:{kind:'hook',plugin_id:'fixture',capability_id:'probe',stable_id:'plugin:fixture:hook:probe',definition_hash:hash,source_digest:imported?'sha256:'+'b'.repeat(64):hash},status:h?.enabled?'trusted_enabled':h?'trusted_disabled':'review_needed'});
   }
   inspection?.(value);return value;
  };
@@ -235,6 +237,19 @@ test('disabled native hook records confer no execution while malformed or unknow
 
 const rawHook=()=>({id:'probe',event:'UserPromptSubmit',command:['node','server.mjs'],timeoutMs:3000,async:false,statusMessage:'Running fixture'});
 const hookCommand=view=>({type:'pluginMcpAction',id:'fixture',stableId:hookId,revision:view.revision,action:'approve',reviewed:true});
+for(const imported of ['claude','codex'])test(`${imported} source-bound shell hooks approve and revoke independently through Customize`,async t=>{
+ const f=await serviceFixture(t,{hook:{...rawHook(),event:'PreToolUse',command:['node hooks/check.mjs && echo done']},imported,nativeProjection:true});
+ const first=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp,row=first.servers.find(r=>r.stableId===hookId);
+ assert.equal(row.supported,true);assert.equal(row.hook.execution,'shell');assert.equal(row.hook.matcher,'Bash|Read');assert.deepEqual(row.command,['node hooks/check.mjs && echo done']);
+ const approved=(await f.service.dispatch(hookCommand(first))).pluginMcp;assert.equal(approved.servers.find(r=>r.stableId===hookId).reviewed,true);assert.equal(approved.servers[0].reviewed,false);await f.check();
+ const revoked=(await f.service.dispatch({...hookCommand(approved),action:'reject'})).pluginMcp;assert.equal(revoked.servers.find(r=>r.stableId===hookId).enabled,false);await f.check();
+});
+test('adding a hidden imported condition invalidates consent before native approval',async t=>{
+ const f=await serviceFixture(t,{hook:{...rawHook(),event:'PreToolUse',command:['node hooks/check.mjs']},imported:'claude',nativeProjection:true});
+ const first=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;
+ const file=path.join(f.cache,'.claude-plugin/plugin.json'),manifest=JSON.parse(await readFile(file,'utf8'));manifest.hooks.PreToolUse[0].hooks[0].if='Bash(git *)';await writeFile(file,JSON.stringify(manifest));
+ await assert.rejects(f.service.dispatch(hookCommand(first)),/changed|review/i);assert.equal(f.calls.filter(a=>a[1]==='approve').length,0);await assert.rejects(f.check(),/plugin inventory/);
+});
 test('native hook inspection shows complete automatic behavior and exact separate decisions',async t=>{
  const f=await serviceFixture(t,{hook:rawHook()}),first=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;
  const hook=first.servers.find(r=>r.stableId===hookId);assert.equal(hook.supported,true);

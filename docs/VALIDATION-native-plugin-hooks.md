@@ -10,7 +10,7 @@ Approval uses the official exact capability ID and verifies its native response,
 
 The native inspection projection omits some manifest fields. MuseBench therefore reads the bounded installed `.muse-plugin/plugin.json` as well, compares command/event/timeout/async/matching fields, and includes the complete source definition in the review identity. Commands use the existing argument-preserving credential formatter and contained source-path checks.
 
-The app accepts known native events, argv commands and timeouts up to ten minutes. Imported hook formats, shell/matcher projections, additional skill-selection output, unknown fields and custom XDG plugin data stores remain explicitly unavailable for app approval. Those need a separate reviewed integration; they are not silently converted or enabled. Project hook presets retain their existing narrower event/timeout rules. Managed configuration is unchanged.
+The app accepts known native events, argv commands and timeouts up to ten minutes. A subsequent [source-bound imported hook integration](validation/2026-10-29-imported-plugin-hooks.md) adds supported Claude/Codex shell and matcher projections. Additional skill-selection output, unknown fields and custom XDG plugin data stores remain explicitly unavailable for app approval. Those need a separate reviewed integration; they are not silently converted or enabled. Project hook presets retain their existing narrower event/timeout rules. Managed configuration is unchanged.
 
 ## Native acceptance
 

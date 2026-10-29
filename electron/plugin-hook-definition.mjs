@@ -1,6 +1,7 @@
 import path from 'node:path';
 import {realpath} from 'node:fs/promises';
 import {readBounded,configurationDigest} from '../src/runtime/extension-review.mjs';
+import {inspectImportedPluginHook} from './imported-plugin-hook.mjs';
 
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const events=new Set(['SessionStart','UserPromptSubmit','PreToolUse','PermissionRequest','PostToolUse','PostToolUseFailure','PreLLMCall','PostLLMCall','PreCompact','PostCompact','SubagentStart','SubagentStop','Stop','StopFailure','SessionEnd','Notification','PostToolBatch','SessionFork','ToolUseStart']);
@@ -12,8 +13,8 @@ const unsupported=reason=>({supported:false,reason});
 /** Native inspect omits outputCapabilities. Bind and compare the installed source
  * as well; never approve a smaller projection of the executable definition. */
 export async function inspectPluginHook(definition,{cacheRoot,pluginId,manifestFamily}){
- if(manifestFamily!=='native')return unsupported('Imported hooks need review in the official Muse CLI.');
  if(!object(definition)||Object.keys(definition).some(key=>!normalizedKeys.has(key)))return unsupported('This hook contains behavior MuseBench cannot fully review yet.');
+ if(manifestFamily!=='native')return inspectImportedPluginHook(definition,{cacheRoot,pluginId,manifestFamily});
  if(!events.has(definition.event)||definition.shell_command!=null||definition.matcher!=null)return unsupported('This hook event, shell command or matcher needs review in the official Muse CLI.');
  let manifest;
  try{
