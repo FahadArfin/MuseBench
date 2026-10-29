@@ -55,10 +55,15 @@ provider option or user settings. Existing exec-mode timeout evidence is separat
 The independent review found a diagnostic-only failure: a missing terminal
 notification could leave polling alive after the deadline. A child-process
 regression reproduced that hang. The receipt wait now owns its deadline and
-stops polling on timeout or cancellation; the regression and all 1,201 tests
+stops polling on timeout or cancellation; the regression and all 1,203 tests
 passed. The final native echo probe again passed with confirmed cleanup.
 TypeScript/production build, browser navigation, catalog interactions and
 preview/desktop geometry checks also passed.
+
+The first release attempt exposed a Windows-only home-directory fixture in
+the preset tests newly added to the native matrix. The fixture now supplies
+an isolated home on every platform and exercises all three platform branches
+locally. Linux/macOS checks remain required; no failing check was removed.
 
 Review scope decisions: the existing authorized main/release workflow is
 retained; the echo result covers only the actual Windows diagnostic path.
