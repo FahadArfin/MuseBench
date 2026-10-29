@@ -5,7 +5,7 @@ export type CustomizeTab='skills'|'connectors'|'plugins'|'mcp'|'hooks';
 export interface ExtensionCapability {kind:string;count:number}
 export interface PluginMcpReview {
  simulation?:boolean;id:string;revision:string;enabled:boolean;inventoryReviewed:boolean;
- servers:{stableId:string;title:string;kind:string;supported:boolean;enabled:boolean;reviewed:boolean;command?:string[];definitionHash?:string;status?:string;reason?:string}[];
+ servers:{stableId:string;title:string;kind:string;supported:boolean;enabled:boolean;reviewed:boolean;command?:string[];definitionHash?:string;status?:string;reason?:string;hook?:{event:string;timeoutMs:number;async:boolean;matcher:null;compatibilityName:string|null}}[];
 }
 export interface HookPreset {id:string;name:string;revision:string;hooks:NativeHook[]}
 export interface HookPresetState {revision:string;items:HookPreset[]}

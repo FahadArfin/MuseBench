@@ -237,14 +237,17 @@ export function createPreviewBridge():MuseBenchBridge {
   customize:async command=>{
    if(command.type==='inspectPluginMcp'||command.type==='pluginMcpAction'){
     const plugin=customize.plugins.find(item=>item.id===command.id);if(!plugin)throw Error('Sample plugin not found.');
-    const stableId='plugin:'+plugin.id+':mcp_server:local-notes';
+    const stableId='plugin:'+plugin.id+':mcp_server:local-notes',hookId='plugin:'+plugin.id+':hook:on-stop';
     if(command.type==='pluginMcpAction'){
-     if(!command.reviewed||command.revision!=='preview-tools-'+pluginToolRevision||command.stableId!==stableId)throw Error('Plugin capabilities changed after review.');
+     if(!command.reviewed||command.revision!=='preview-tools-'+pluginToolRevision||plugin.id!=='preview-tools'||![stableId,hookId].includes(command.stableId))throw Error('Plugin capabilities changed after review.');
      if(command.action==='approve'&&!plugin.enabled)throw Error('Enable this plugin first.');
-     pluginToolReviews.set(plugin.id,command.action==='approve');pluginToolRevision++;
+     pluginToolReviews.set(command.stableId,command.action==='approve');pluginToolRevision++;
     }
-    const enabled=pluginToolReviews.get(plugin.id)===true;
-    return{pluginMcp:{simulation:true,id:plugin.id,revision:'preview-tools-'+pluginToolRevision,enabled:plugin.enabled,inventoryReviewed:true,servers:plugin.id==='preview-tools'?[{stableId,title:'local-notes',kind:'mcp_server',supported:true,command:['node','sample-notes.mjs'],definitionHash:'Preview definition',enabled,reviewed:enabled,status:enabled?'trusted_enabled':pluginToolReviews.has(plugin.id)?'trusted_disabled':'needs_approval'}]:[]},...(command.type==='pluginMcpAction'?{state:copy(customize),message:'Preview only: plugin tool decision simulated. No program ran.'}:{})};
+    const access=(id:string)=>{const enabled=pluginToolReviews.get(id)===true;return{enabled,reviewed:enabled,status:enabled?'trusted_enabled':pluginToolReviews.has(id)?'trusted_disabled':'needs_approval'};};
+    return{pluginMcp:{simulation:true,id:plugin.id,revision:'preview-tools-'+pluginToolRevision,enabled:plugin.enabled,inventoryReviewed:true,servers:plugin.id==='preview-tools'?[
+     {stableId,title:'local-notes',kind:'mcp_server',supported:true,command:['node','sample-notes.mjs'],definitionHash:'Preview definition',...access(stableId)},
+     {stableId:hookId,title:'on-stop',kind:'hook',supported:true,command:['node','sample-stop.mjs'],definitionHash:'Preview hook definition',hook:{event:'Stop',timeoutMs:3000,async:false,matcher:null,compatibilityName:null},...access(hookId)},
+    ]:[]},...(command.type==='pluginMcpAction'?{state:copy(customize),message:'Preview only: plugin access decision simulated. No program ran.'}:{})};
    }
    if(command.type==='inspectProjectMcp'||command.type==='approveProjectMcp'||command.type==='revokeProjectMcp'){
     const root=state.activeProject?.root??project.root;

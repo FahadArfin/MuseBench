@@ -2,6 +2,8 @@
 
 Audited 26 October 2026 (local time). This inventory supersedes the earlier delivery notes' blocker summaries; their dated test evidence remains historical. Scope: the Muse CLI and Pi/OpenCode/Hermes/DeepSeek recommendations, plus the earlier native voice request.
 
+**29 October extension update:** installed native plugin MCP tools and hooks now have independent inspection, approval and revocation in the shared Customize UI. Hook source manifests are checked alongside native projections; broader imported/global/managed semantics remain excluded. See [plugin MCP validation](VALIDATION-native-plugin-mcp.md) and [native hook acceptance](VALIDATION-native-plugin-hooks.md) for exact execution evidence and remaining limits. The table below is the historical 26 October baseline, not a claim that subsequently delivered features are still entirely missing.
+
 ## Retried and delivered
 
 | Feature | Result |

@@ -37,7 +37,7 @@ for(const change of ['package','inventory','native hash','native extra','unrelat
  if(change==='native hash')await f.save({runtime_capabilities:{[stableId]:{...decision,trusted_definition_hash:'sha256:'+'b'.repeat(64)}}});
  if(change==='native extra')await f.save({runtime_capabilities:{[stableId]:{...decision,command:'unexpected'}}});
  if(change==='unrelated enabled')await f.save({runtime_capabilities:{[stableId]:decision,'plugin:other:mcp_server:probe':decision}});
- if(change==='unknown kind')await f.save({runtime_capabilities:{[stableId]:decision,'plugin:fixture:hook:run':{...decision,enabled:false}}});
+ if(change==='unknown kind')await f.save({runtime_capabilities:{[stableId]:decision,'plugin:fixture:reminder:run':{...decision,enabled:false}}});
  if(change==='project override'){await mkdir(path.join(f.workspaceRoot,'.muse'));await writeFile(path.join(f.workspaceRoot,'.muse','settings.json'),JSON.stringify({runtime_capabilities:{[stableId]:decision}}));}
  if(change==='settings location'){f.environment.XDG_CONFIG_HOME=path.join(f.root,'xdg');await mkdir(path.join(f.environment.XDG_CONFIG_HOME,'muse'),{recursive:true});await writeFile(path.join(f.environment.XDG_CONFIG_HOME,'muse','settings.json'),await readFile(f.settings));}
  if(['package','inventory'].includes(change))await f.review.approvePlugins((await f.review.pluginState()).revision);
@@ -59,14 +59,24 @@ test('reviewed MCP, plugin and hook changes change the host execution revision',
  next=(await f.check()).executionRevision;assert.notEqual(next,last);
 });
 
-async function serviceFixture(t,{mutate,inspection,nativeProjection=false}={}){
+async function serviceFixture(t,{mutate,inspection,nativeProjection=false,hook}={}){
  const f=await fixture(t);await f.save({});const calls=[];
+ if(hook){
+  f.record.manifest_family='native';await mkdir(path.join(f.cache,'.muse-plugin'));
+  await writeFile(path.join(f.cache,'.muse-plugin','plugin.json'),JSON.stringify({schemaVersion:1,name:'fixture',capabilities:{hooks:[hook]}}));
+  await writeFile(f.review.inventory,JSON.stringify({plugins:{fixture:f.record}}));f.inventory=await f.review.pluginState();await f.review.approvePlugins(f.inventory.revision);
+ }
  if(nativeProjection){f.record.manifest_family='muse';f.record.cache_path=path.relative(path.dirname(path.dirname(f.review.inventory)),f.cache);f.record.agent_definition_inventory={schema_version:1,status:'empty'};await writeFile(f.review.inventory,JSON.stringify({plugins:{fixture:f.record}}));f.inventory=await f.review.pluginState();await f.review.approvePlugins(f.inventory.revision);}
  const state={runtime:{binary:process.platform==='win32'?'C:/muse.exe':'/usr/bin/muse'},activeProject:{root:f.workspaceRoot}};
  const native=async()=>{
   const config=JSON.parse(await readFile(f.settings,'utf8')),d=config.runtime_capabilities?.[stableId];
   const value={record:f.record,plugin:{id:'fixture',capabilities:{mcp_servers:[{id:'probe',transport:'stdio',command:['node','server.mjs'],url:null,source_path:path.join(f.cache,'server.mjs'),source_relative_path:'server.mjs'}]}},valid:true,active:true,active_scope:'installed-plugin',runtime_capabilities:[{candidate:{kind:'mcp_server',plugin_id:'fixture',capability_id:'probe',stable_id:stableId,definition_hash:hash,source_digest:hash},status:d?.enabled?'trusted_enabled':d?'trusted_disabled':'needs_approval'}]};
   if(nativeProjection){value.record={...f.record,manifest_family:'native',cache_path:f.cache};delete value.record.agent_definition_inventory;}
+  if(hook){
+   const h=config.runtime_capabilities?.['plugin:fixture:hook:probe'];
+   value.plugin.manifest_family='native';value.plugin.capabilities.hooks=[{id:'probe',event:hook.event,matcher:null,command:hook.command,shell_command:null,source_path:path.join(f.cache,'server.mjs'),source_relative_path:'server.mjs',timeout_ms:hook.timeoutMs??600000,async:hook.async??false,compatibility_name:hook.compatibilityName??null}];
+   value.runtime_capabilities.push({candidate:{kind:'hook',plugin_id:'fixture',capability_id:'probe',stable_id:'plugin:fixture:hook:probe',definition_hash:hash,source_digest:hash},status:h?.enabled?'trusted_enabled':h?'trusted_disabled':'review_needed'});
+  }
   inspection?.(value);return value;
  };
  const run=async(_binary,args)=>{
@@ -74,10 +84,10 @@ async function serviceFixture(t,{mutate,inspection,nativeProjection=false}={}){
   if(args[0]==='skills')return{stdout:'{"skills":[]}'};
   if(args[1]==='list')return{stdout:JSON.stringify({plugins:[await native()]})};
   if(args[1]==='inspect')return{stdout:JSON.stringify(await native())};
-  assert.ok(['approve','reject'].includes(args[1]));assert.deepEqual(args,['plugins',args[1],stableId,'--json']);
+  assert.ok(['approve','reject'].includes(args[1]));assert.ok([stableId,...(hook?['plugin:fixture:hook:probe']:[])].includes(args[2]));assert.deepEqual(args,['plugins',args[1],args[2],'--json']);
   const config=JSON.parse(await readFile(f.settings,'utf8')),record={...decision,enabled:args[1]==='approve'};
-  config.runtime_capabilities={...config.runtime_capabilities,[stableId]:record};await f.save(config);
-  const result={decision:args[1],runtime_capabilities:[{stable_id:stableId,...record}]};await mutate?.({f,config,result});return{stdout:JSON.stringify(result)};
+  config.runtime_capabilities={...config.runtime_capabilities,[args[2]]:record};await f.save(config);
+  const result={decision:args[1],runtime_capabilities:[{stable_id:args[2],...record}]};await mutate?.({f,config,result});return{stdout:JSON.stringify(result)};
  };
  const service=createCustomize({getState:()=>state,environment:f.environment,dataDir:f.dataDir,review:f.review,run});t.after(()=>service.close());
  return{...f,service,calls,state};
@@ -142,7 +152,7 @@ for(const defect of ['foreign plugin','forged stable id','wrong source digest','
  await assert.rejects(f.service.dispatch({type:'inspectPluginMcp',id:'fixture'}),/plugin|capabilit|definition|source|command/i);
 });
 test('unsupported native capability kinds stay visible without an approval action',async t=>{
- const f=await serviceFixture(t,{inspection:value=>value.runtime_capabilities.push({candidate:{kind:'hook',plugin_id:'fixture',capability_id:'on-stop',stable_id:'plugin:fixture:hook:on-stop',definition_hash:hash,source_digest:hash},status:'needs_approval'})});
+ const f=await serviceFixture(t,{inspection:value=>value.runtime_capabilities.push({candidate:{kind:'reminder',plugin_id:'fixture',capability_id:'on-stop',stable_id:'plugin:fixture:reminder:on-stop',definition_hash:hash,source_digest:hash},status:'needs_approval'})});
  const first=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;
  assert.equal(first.servers[1].supported,false);
  await assert.rejects(f.service.dispatch({type:'pluginMcpAction',id:'fixture',stableId:first.servers[1].stableId,revision:first.revision,action:'approve',reviewed:true}));
@@ -190,4 +200,74 @@ test('a custom native plugin store is explained before attempting an unbound app
  const f=await fixture(t);let calls=0;
  const service=createCustomize({getState:()=>({}),dataDir:f.dataDir,review:f.review,environment:{...f.environment,XDG_DATA_HOME:path.join(f.root,'custom-store')},run:async()=>{calls++;throw Error('Unexpected CLI call');}});t.after(()=>service.close());
  await assert.rejects(service.dispatch({type:'inspectPluginMcp',id:'fixture'}),/default.*plugin store/);assert.equal(calls,0);
+});
+
+const hookId='plugin:fixture:hook:probe';
+test('same-name plugin hooks and MCP servers require independent exact grants',async t=>{
+ const f=await fixture(t);await f.save({runtime_capabilities:{[stableId]:decision,[hookId]:decision}});await f.grant();
+ await assert.rejects(f.check(),/capabilit/);assert.equal(typeof f.review.approvePluginHook,'function');
+ await assert.rejects(f.review.approvePluginMcp(hookId,decision,f.inventory.revision,{settingsPath:f.settings}),/Invalid/);
+ await assert.rejects(f.review.approvePluginHook(stableId,decision,f.inventory.revision,{settingsPath:f.settings}),/Invalid/);
+ await f.review.approvePluginHook(hookId,decision,f.inventory.revision,{settingsPath:f.settings});const before=await f.check();
+ await f.review.revokePluginHook(hookId);await assert.rejects(f.check(),/capabilit/);
+ assert.equal((await f.review.reviewedPluginMcp({[stableId]:decision},{settingsPath:f.settings}))[stableId],true);
+ await f.review.approvePluginHook(hookId,decision,f.inventory.revision,{settingsPath:f.settings});await f.save({runtime_capabilities:{[stableId]:decision,[hookId]:{...decision,enabled:false}}});
+ assert.notEqual((await f.check()).executionRevision,before.executionRevision);
+});
+for(const change of ['package','record','settings location','persist race'])test('native plugin hook grant does not survive '+change,async t=>{
+ const f=await fixture(t);await f.save({runtime_capabilities:{[hookId]:decision}});assert.equal(typeof f.review.approvePluginHook,'function');
+ const grant=()=>f.review.approvePluginHook(hookId,decision,f.inventory.revision,{settingsPath:f.settings});
+ if(change==='persist race'){
+  await assert.rejects(f.review.approvePluginHook(hookId,decision,f.inventory.revision,{settingsPath:f.settings,beforeCommit:()=>f.save({runtime_capabilities:{[hookId]:{...decision,enabled:false}}})}),/changed/);
+  await f.save({runtime_capabilities:{[hookId]:decision}});await assert.rejects(f.check(),/capabilit/);return;
+ }
+ await grant();await f.check();
+ if(change==='package'){await writeFile(path.join(f.cache,'server.mjs'),'// changed hook dependency');await f.review.approvePlugins((await f.review.pluginState()).revision);}
+ if(change==='record')await f.save({runtime_capabilities:{[hookId]:{...decision,trusted_definition_hash:'sha256:'+'b'.repeat(64)}}});
+ if(change==='settings location'){f.environment.XDG_CONFIG_HOME=path.join(f.root,'xdg');await mkdir(path.join(f.environment.XDG_CONFIG_HOME,'muse'),{recursive:true});await writeFile(path.join(f.environment.XDG_CONFIG_HOME,'muse','settings.json'),await readFile(f.settings));}
+ await assert.rejects(f.check(),/capabilit/);
+});
+test('disabled native hook records confer no execution while malformed or unknown kinds stay blocked',async t=>{
+ const f=await fixture(t);await f.save({runtime_capabilities:{[hookId]:{...decision,enabled:false}}});await f.check();
+ for(const record of [{enabled:false},{...decision,enabled:false,command:'unexpected'}]){await f.save({runtime_capabilities:{[hookId]:record}});await assert.rejects(f.check(),/capabilit/);}
+ await f.save({runtime_capabilities:{'plugin:fixture:reminder:probe':{...decision,enabled:false}}});await assert.rejects(f.check(),/capabilit/);
+});
+
+const rawHook=()=>({id:'probe',event:'UserPromptSubmit',command:['node','server.mjs'],timeoutMs:3000,async:false,statusMessage:'Running fixture'});
+const hookCommand=view=>({type:'pluginMcpAction',id:'fixture',stableId:hookId,revision:view.revision,action:'approve',reviewed:true});
+test('native hook inspection shows complete automatic behavior and exact separate decisions',async t=>{
+ const f=await serviceFixture(t,{hook:rawHook()}),first=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;
+ const hook=first.servers.find(r=>r.stableId===hookId);assert.equal(hook.supported,true);
+ assert.deepEqual(hook.hook,{event:'UserPromptSubmit',timeoutMs:3000,async:false,matcher:null,compatibilityName:null});assert.deepEqual(hook.command,['node','server.mjs']);
+ let next=(await f.service.dispatch(hookCommand(first))).pluginMcp;assert.equal(next.servers.find(r=>r.stableId===hookId).reviewed,true);assert.equal(next.servers[0].reviewed,false);await f.check();
+ next=(await f.service.dispatch({...hookCommand(next),stableId})).pluginMcp;assert.ok(next.servers.every(r=>r.reviewed));
+ next=(await f.service.dispatch({...hookCommand(next),action:'reject'})).pluginMcp;assert.equal(next.servers.find(r=>r.stableId===hookId).enabled,false);assert.equal(next.servers[0].reviewed,true);await f.check();
+ assert.equal(f.calls.filter(a=>a[1]==='approve'&&a[2]===hookId).length,1);
+});
+for(const change of ['shell','matcher','unknown field','unknown event','unknown manifest field','output capabilities','manifest mismatch','foreign manifest'])test('native hook review refuses unrepresented '+change,async t=>{
+ const hook=rawHook();if(change==='unknown manifest field')hook.hidden='extra';if(change==='output capabilities')hook.outputCapabilities=['skills.v1'];
+ const f=await serviceFixture(t,{hook,inspection:value=>{const h=value.plugin.capabilities.hooks[0];
+  if(change==='shell')h.shell_command='node server.mjs';if(change==='matcher')h.matcher='.*';if(change==='unknown field')h.hidden='extra';if(change==='unknown event')h.event='UnknownEvent';if(change==='manifest mismatch')h.async=true;if(change==='foreign manifest')value.plugin.manifest_family='claude';
+ }});
+ const view=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp,row=view.servers.find(r=>r.stableId===hookId);assert.equal(row.supported,false);assert.ok(row.reason);
+ await assert.rejects(f.service.dispatch(hookCommand(view)),/changed|review/i);assert.equal(f.calls.filter(a=>a[1]==='approve').length,0);
+});
+for(const change of ['event','timeout','async','package','settings','acknowledgment'])test('native hook decision cannot retain stale '+change,async t=>{
+ let changed=false;const f=await serviceFixture(t,{hook:rawHook(),inspection:value=>{if(!changed)return;const h=value.plugin.capabilities.hooks[0];if(change==='event')h.event='Stop';if(change==='timeout')h.timeout_ms=4000;if(change==='async')h.async=true;},mutate:async({f,config,result})=>{
+  if(change==='package')await writeFile(path.join(f.cache,'server.mjs'),'changed after CLI write');
+  if(change==='settings'){config.extra='changed';await f.save(config);}
+  if(change==='acknowledgment')result.runtime_capabilities[0].stable_id=stableId;
+ }});
+ const view=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;changed=true;
+ await assert.rejects(f.service.dispatch(hookCommand(view)),/changed|verified|review/i);
+ const decisions=JSON.parse(await readFile(f.settings,'utf8')).runtime_capabilities??{};
+ if(decisions[hookId]?.enabled)await assert.rejects(f.check(),/plugin|capabilit/i);
+ assert.notEqual((await f.review.reviewedPluginCapabilities({[hookId]:decision},{settingsPath:f.settings}))[hookId],true);
+});
+
+for(const mode of ['default timeout','background','tool alias'])test('native hook review retains '+mode,async t=>{
+ const hook=rawHook();if(mode==='default timeout')delete hook.timeoutMs;if(mode==='background')hook.async=true;if(mode==='tool alias'){hook.event='PermissionRequest';hook.compatibilityName='fixture_tools';}
+ const f=await serviceFixture(t,{hook}),view=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;
+ const row=view.servers.find(r=>r.stableId===hookId);assert.equal(row.supported,true);assert.deepEqual(row.hook,{event:hook.event,timeoutMs:hook.timeoutMs??600000,async:hook.async,matcher:null,compatibilityName:hook.compatibilityName??null});
+ const approved=(await f.service.dispatch(hookCommand(view))).pluginMcp;assert.equal(approved.servers.find(r=>r.stableId===hookId).reviewed,true);await f.check();
 });

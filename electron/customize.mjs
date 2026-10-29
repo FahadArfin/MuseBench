@@ -154,7 +154,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
   if(customizeBlocked(getState())||isActive())throw Error('Let the running task finish and confirm it has stopped before changing extensions.');
   busy=true;
   try{
-   if(command.type==='pluginMcpAction')return{pluginMcp:await pluginCapabilities.decide(command),state:await snapshot(),message:command.action==='approve'?'Plugin tool approved. Reconnect Muse to load it.':'Plugin tool approval revoked. Reconnect Muse before continuing.'};
+   if(command.type==='pluginMcpAction')return{pluginMcp:await pluginCapabilities.decide(command),state:await snapshot(),message:command.action==='approve'?'Plugin access approved. Reconnect Muse to load it.':'Plugin access revoked. Reconnect Muse before continuing.'};
    if(command.type==='approveProjectMcp'||command.type==='revokeProjectMcp'){
     const root=getState().activeProject?.root;if(!root||command.root!==root)throw Error('The selected project changed. Inspect it again.');
     const beforeCommit=()=>{if(closed||getState().activeProject?.root!==root||customizeBlocked(getState())||isActive())throw Error('The selected project or task changed. Review again when it is idle.');};

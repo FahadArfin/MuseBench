@@ -4,7 +4,7 @@ Open **Customize** in the Muse Code or Meta AI sidebar. General Settings is stil
 
 - **Skills:** search the official CLI inventory, change activation, create a personal workflow or validate and install a local folder containing SKILL.md. Manual-only skills remain available in the slash picker.
 - **Connectors:** open Muse's connected-apps or WhatsApp flow with the existing personal browser session. Availability and consent are managed by the official service. Custom Code tools use MCP.
-- **Plugins:** choose a local Muse-compatible bundle, inspect its capability counts, review access and install. Installed bundles can be enabled, disabled or removed. This first version does not browse remote marketplaces or automatically approve every runtime capability. A bundle requiring additional tool approval must be reviewed in the official CLI; returning to Customize requires reviewing the changed inventory again.
+- **Plugins:** browse the curated/community directory or choose a local Muse-compatible bundle, inspect its capabilities, review and install. Installed bundles use the same compact rows and can be enabled, disabled or removed. **Tools & hooks** offers separate review and revocation for supported native MCP servers and hooks; installing a bundle does not approve them all. Unsupported formats remain visible with setup instructions. See [native plugin hook validation](VALIDATION-native-plugin-hooks.md) for coverage and limits.
 - **MCP servers:** configure an HTTPS endpoint or a local stdio program and arguments. Entries are optional, enabled for future runs and explicitly reviewed. Toggle or remove them, or use the official Muse CLI OAuth login/logout flow. Sign-in success does not claim a server has been tested online.
 
 ## Permissions and persistence

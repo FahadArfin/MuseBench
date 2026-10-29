@@ -59,7 +59,7 @@ export async function checkConfiguration({environment=process.env,platform=proce
    delete config[key];
   }
   if(path===userSettings&&Object.hasOwn(config,'runtime_capabilities')&&extensionReview){
-   const decisions=pluginDecisions(config),reviewed=await extensionReview.reviewedPluginMcp?.(decisions,{settingsPath:userSettings,inventoryPath:join(dataRoot,'plugins','installed.json')});
+   const decisions=pluginDecisions(config),reviewed=await extensionReview.reviewedPluginCapabilities?.(decisions,{settingsPath:userSettings,inventoryPath:join(dataRoot,'plugins','installed.json')});
    if(Object.keys(decisions).some(id=>reviewed?.[id]!==true))throw Error('Native plugin capabilities need review in Customize → Plugins before running Muse.');
    delete config.runtime_capabilities;
   }
