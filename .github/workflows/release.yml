@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   build:
+    name: Windows 64-bit (x64)
     if: github.ref == 'refs/heads/main'
     runs-on: windows-latest
     timeout-minutes: 30
@@ -81,10 +82,11 @@ jobs:
             artifacts/session-mcp-ui/**/report.json
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-win32-x64
+          name: desktop-windows-x64
           if-no-files-found: error
           path: release-assets/*
   native:
+    name: ${{ matrix.label }}
     if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
@@ -93,18 +95,28 @@ jobs:
           - runner: windows-11-arm
             platform: win32
             arch: arm64
+            label: Windows ARM64
+            artifact: windows-arm64
           - runner: ubuntu-24.04
             platform: linux
             arch: x64
+            label: Linux 64-bit (x64)
+            artifact: linux-x64
           - runner: ubuntu-24.04-arm
             platform: linux
             arch: arm64
+            label: Linux ARM64
+            artifact: linux-arm64
           - runner: macos-15-intel
             platform: darwin
             arch: x64
+            label: macOS Intel
+            artifact: macos-intel
           - runner: macos-15
             platform: darwin
             arch: arm64
+            label: macOS Apple silicon
+            artifact: macos-apple-silicon
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 35
     steps:
@@ -143,16 +155,17 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: checks-${{ matrix.platform }}-${{ matrix.arch }}
+          name: checks-${{ matrix.artifact }}
           path: |
             artifacts/portable-desktop/*
             artifacts/personal-package-verification.json
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.platform }}-${{ matrix.arch }}
+          name: desktop-${{ matrix.artifact }}
           if-no-files-found: error
           path: release-assets/*
   android:
+    name: Android phones and tablets
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 35
@@ -227,6 +240,7 @@ jobs:
           if-no-files-found: error
           path: release-assets/*
   publish:
+    name: Publish verified downloads
     needs: [build, native, android]
     runs-on: ubuntu-latest
     permissions:
