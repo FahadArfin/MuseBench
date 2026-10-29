@@ -23,7 +23,7 @@ app.commandLine.appendSwitch('disable-component-update');
 app.on('window-all-closed', () => {});
 void app.whenReady().then(async () => {
 const fixture = ${JSON.stringify(fixture)};
-const state = { requests: 0, requestsByView: {}, blockedRequests: 0, externalOpens: 0, publications: 0, maxVisible: 0, auth: 'ready' };
+const state = { requests: 0, requestsByView: {}, blockedRequests: 0, externalOpens: 0, publications: 0, maxVisible: 0, visibilityViolations: [], auth: 'ready' };
 const allowedHosts = new Set(['muse.ai', 'www.meta.ai', 'meta.ai', 'auth.muse.ai', 'auth.meta.ai', 'auth.meta.com', 'www.facebook.com', 'www.instagram.com']);
 const install = async owner => {
   for (const scheme of ['http', 'https']) await owner.protocol.handle(scheme, request => {
@@ -45,8 +45,20 @@ isolatedSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*']
 });
 const window = new BrowserWindow({ width: 1000, height: 800, show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
 await window.loadURL('data:text/html,<title>Offline navigation cache smoke</title>');
+function observeVisibility(stage) {
+  const visible = window.contentView.children.filter(view => view.webContents && !view.webContents.isDestroyed() && view.getVisible());
+  state.maxVisible = Math.max(state.maxVisible, visible.length);
+  if (visible.length > 1 && state.visibilityViolations.length < 10) state.visibilityViolations.push({ stage, views: visible.map(view => ({ id: view.webContents.id, url: view.webContents.getURL() })) });
+}
+class ObservedView {
+  constructor(options) {
+    const view = new WebContentsView(options), setVisible = view.setVisible.bind(view);
+    view.setVisible = value => { setVisible(value); observeVisibility('setVisible'); };
+    return view;
+  }
+}
 const controller = createPersonalBrowser({
-  window, BrowserWindow, WebContentsView,
+  window, BrowserWindow, WebContentsView: ObservedView,
   session: { fromPartition: () => isolatedSession },
   shell: { openExternal: async () => { state.externalOpens++; throw Error('External navigation is disabled in this fixture.'); } },
   authReader: async () => state.auth,
@@ -55,7 +67,7 @@ const controller = createPersonalBrowser({
   libraryAdapter: { prepare: async () => true, read: async () => ({ status: 'unavailable', items: [] }), activate: async () => false },
   onState: () => {
     state.publications++;
-    state.maxVisible = Math.max(state.maxVisible, window.contentView.children.filter(view => view.webContents && view.getVisible()).length);
+    observeVisibility('publication');
   },
 });
 globalThis.__navigationCacheSmoke = { controller, window, state, webContents, runPersonalAction, readPersonalToolState };
@@ -356,21 +368,21 @@ try {
   assert.equal(afterClose.requests, atClose.requests, 'Shutdown must cancel queued warmups');
   assert.equal(afterClose.publications, atClose.publications, 'Shutdown must stop state publications');
   assert.equal((await views()).length, 0, 'Shutdown must dispose retained and speculative views');
-  assert.equal(afterClose.maxVisible, 1);
+  assert.equal(afterClose.maxVisible, 1, `At most one view may be visible: ${JSON.stringify(afterClose.visibilityViolations)}`);
   assert.equal(afterClose.externalOpens, 0);
   assert.equal(afterClose.blockedRequests, 0, 'Fixture must not attempt external or model requests');
   pass('Close cancels queued warming and destroys every remote view; at most one view was ever visible');
   report.status = 'passed';
 } catch (error) {
   report.status = 'failed';
-  report.errors.push(error?.message ?? String(error));
+  report.errors.push(error?.stack ?? String(error));
   console.error(`FAIL ${error?.message ?? error}`);
   process.exitCode = 1;
 } finally {
   if (app) {
     try {
       const counts = await counters();
-      report.counts = { fixtureRequests: counts.requests, blockedRequests: counts.blockedRequests, externalOpens: counts.externalOpens, maxVisibleViews: counts.maxVisible };
+      report.counts = { fixtureRequests: counts.requests, blockedRequests: counts.blockedRequests, externalOpens: counts.externalOpens, maxVisibleViews: counts.maxVisible, visibilityViolations: counts.visibilityViolations };
       await app.evaluate(() => globalThis.__navigationCacheSmoke?.controller.close());
     } catch {}
     await app.close().catch(() => {});

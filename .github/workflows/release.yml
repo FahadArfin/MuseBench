@@ -68,6 +68,7 @@ jobs:
             artifacts/activity-ui/**/report.json
             artifacts/child-inspection-ui/**/report.json
             artifacts/native-control/report.json
+            artifacts/navigation-cache/report.json
             artifacts/session-mcp-ui/**/report.json
       - uses: actions/upload-artifact@v4
         with:

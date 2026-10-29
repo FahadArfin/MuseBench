@@ -109,14 +109,19 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   function applyLayout() {
     if (closed || window.isDestroyed()) return;
     const bounds = cssBounds && !localContents.isDestroyed() ? clampPersonalBounds(cssBounds, localContents.getZoomFactor(), window.getContentSize()) : null;
+    const selected = current();
+    const showSelected = Boolean(alive(selected) && requestedVisible && !launchHeld && !selected.error && bounds?.width && bounds?.height);
     let hiddenFocusedSurface = false;
+    // A retained destination can precede the outgoing view in insertion order.
+    // Hide every other page first so native visibility never overlaps on return.
     for (const entry of entries.values()) {
       if (!alive(entry)) continue;
-      const visible = Boolean(requestedVisible && !launchHeld && entry === current() && !entry.error && bounds?.width && bounds?.height);
-      if (bounds && entry === current()) entry.view.setBounds(bounds);
-      if (entry.visible && !visible) hiddenFocusedSurface = true;
-      entry.view.setVisible(visible); entry.visible = visible;
+      if (entry === selected && showSelected) continue;
+      if (entry.visible) hiddenFocusedSurface = true;
+      entry.view.setVisible(false); entry.visible = false;
     }
+    if (alive(selected) && bounds) selected.view.setBounds(bounds);
+    if (showSelected) { selected.view.setVisible(true); selected.visible = true; }
     if (hiddenFocusedSurface && !localContents.isDestroyed()) localContents.focus();
   }
   function publish() { if (!closed) { applyLayout(); onState(snapshot()); scheduleLibrary(); scheduleRefresh(); scheduleWarmup(); } }

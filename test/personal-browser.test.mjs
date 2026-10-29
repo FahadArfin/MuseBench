@@ -81,6 +81,28 @@ test('finishing launch respects the most recent hidden layout instead of reopeni
   assert.equal(h.views[0].visible,true);
 });
 
+test('switching back to an earlier retained view hides the outgoing page before revealing its replacement', async t => {
+  const h = harness({warmLimit:0});
+  t.after(() => h.browser.close());
+  await h.browser.dispatch(layout);
+  const chat = h.views[0];
+  await h.browser.dispatch({type:'navigate',destination:'bot'});
+  const bot = h.views.find(view => view.visible);
+  assert.notEqual(bot,chat);
+  const visibleCounts = [];
+  for (const view of h.views) {
+    const setVisible = view.setVisible.bind(view);
+    view.setVisible = value => {
+      setVisible(value);
+      visibleCounts.push(h.views.filter(candidate => candidate.visible && !candidate.webContents.isDestroyed()).length);
+    };
+  }
+  await h.browser.dispatch({type:'navigate',destination:'chat'});
+  assert.equal(chat.visible,true);
+  assert.equal(bot.visible,false);
+  assert.ok(visibleCounts.every(count => count <= 1), `Native visibility transitions must not overlap: ${visibleCounts}`);
+});
+
 async function until(check, message, timeout = 1000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
