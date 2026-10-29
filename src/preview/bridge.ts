@@ -1,3 +1,5 @@
+import {projectRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
+import {workIdentity,workLabel} from '../shared/work-activity.mjs';
 import {sampleAnalytics} from './analytics';
 import {CURATED_EXTENSIONS} from '../shared/extension-catalog.mjs';
 import type {CatalogEntry} from '../shared/extension-catalog-types';
@@ -58,13 +60,22 @@ export function createPreviewBridge():MuseBenchBridge {
  other.messages.push({id:id(),role:'assistant',at:stamp,text:'A compact composer keeps attachments, reasoning, and approval controls close to your message. Open the menus to review their spacing.'});
  const tasks=new Map([initial,other].map(t=>[t.id,t]));
  const state:AppState={workflows:copy(DEFAULT_WORKFLOWS),backgroundChats:true,projectCreationRoot:'Documents/MuseBench',projects:[project],tasks:[initial,other],activeProject:project,task:initial,checkpoints:[{id:'sample-checkpoint',taskId:initial.id,title:'Sample accepted revision',revision:'sample-before',createdAt:stamp}],preview:{status:'stopped',url:null,log:'',script:null},runtime:copy(runtime),busy:false,error:null,drafts:{}};
+ const runtimeOwners=new Map<string,RuntimeState>(),activityTokens=new Map<string,{key:string;id:string}>();
  const code=channel(()=>state);
- function sync(){state.tasks=[...tasks.values()];return code.emit();}
+ function sync(){
+  if(state.task)runtimeOwners.set(state.task.id,copy(state.runtime));
+  state.tasks=[...tasks.values()].map(task=>({...task,runtimeBusy:runtimeStatusBusy(projectRuntimeStatus(runtimeOwners.get(task.id)??{})),runtimeStatus:runtimeOwners.get(task.id)?.status??null}));
+  state.workActivity=[...runtimeOwners].flatMap(([taskId,value])=>{
+   const task=tasks.get(taskId),status=projectRuntimeStatus(value);if(!task||!runtimeStatusBusy(status))return[];
+   const identity=workIdentity(value),key=JSON.stringify([identity,status,task.messages.at(-1)?.id]);let token=activityTokens.get(taskId);if(token?.key!==key){token={key,id:(id()+id()).replaceAll('-','')};activityTokens.set(taskId,token);}
+   return[{id:'run:'+taskId,taskId,projectId:task.projectId,title:task.title,projectName:state.projects.find(p=>p.id===task.projectId)?.name??'Sample project',label:workLabel(status,identity),kind:'run' as const,canStop:true,controlId:token.id}];
+  });return code.emit();
+ }
  const sampleWorktrees:import('../shared/types').ManagedWorktree[]=[];
  const imageData=new Map<string,string>();
  function reply(current:Task,text:string,images:import('../shared/types').CodeImage[]=[]){current.nativeSession??={id:id(),root:state.activeProject?.root??project.root,seeded:true,status:'ready'};current.messages.push({id:id(),role:'user',text,images,at:new Date().toISOString()},{id:id(),role:'assistant',text:'Preview reply — your message is shown here so you can review the conversation layout. No request was sent to Muse and no project files were changed.',at:new Date().toISOString()});current.updatedAt=new Date().toISOString();}
  async function dispatch(action:Action):Promise<AppState>{
-  const current=state.task;
+  const current=state.task,previousRuntime=copy(state.runtime);
   switch(action.type){
    case 'createReviewer':if(current){const child=task('Review · '+action.question);child.reviewContract={parentTaskId:current.id,parentProjectId:current.projectId,sourceRevision:'sample-after',inputRevision:'sample-after',role:action.role,question:action.question,budget:'standard',createdAt:stamp};child.messages.push({id:id(),role:'assistant',text:JSON.stringify({findings:[],unresolved:['Preview only. No independent native review was executed.']}),at:stamp});child.runtimeComplete=true;current.reviewChildren=[...(current.reviewChildren??[]),child.id];tasks.set(child.id,child);state.task=child;}break;
    case 'integrateReview':if(current?.reviewContract){const parent=tasks.get(current.reviewContract.parentTaskId);if(parent){const draft=state.drafts?.[`${parent.projectId}:${parent.id}`];if(draft?.text||draft?.files?.length||draft?.images?.length)throw Error('The parent already has a draft. Save or send it before integrating this review.');(state.drafts??={})[`${parent.projectId}:${parent.id}`]={text:'Simulated review: no native execution. Review the example findings before sending.',files:[],images:[],mode:'chat',updatedAt:stamp};state.task=parent;}}break;
@@ -74,6 +85,7 @@ export function createPreviewBridge():MuseBenchBridge {
    case 'pauseGoalContinuation':pauseGoalDriver(current?.goal?.driver,'Paused by you');break;
    case 'setExecutionAccess':state.runtime={...state.runtime,fullAccess:action.fullAccess,transport:action.fullAccess?state.runtime.transport:'exec',status:'ready',permissionVerified:true,sessionId:'preview-connection'};break;
    case 'connectMuse':state.runtime.childInspections=[];state.runtime={...state.runtime,durableSessions:true,imagesSupported:true,modelsSupported:true,hooksSupported:true,workspaceTools:action.transport==='msp'&&action.workspaceTools===true,restoration:action.transport==='msp'&&current?.nativeSession?.transport==='msp'?{status:'restored',sessionId:current.nativeSession.id,historyMode:'snapshot',turnCount:Math.floor(current.messages.length/2),pendingRequests:[]}:null,interactiveAvailable:true,foregroundActive:false,childrenBusy:false,childWorkPending:0,transport:action.transport??state.runtime.transport,questionsSupported:action.transport==='msp',pending:null,pendingRequests:[],inputResponses:[],inputResponse:null,steeringSupported:action.transport==='msp',compactionSupported:action.transport==='msp',childControlsSupported:action.transport==='msp',children:action.transport==='msp'?{items:[{itemId:'sample-child',childSessionId:'preview-child-session',kind:'subagent',revision:2,status:'completed',controlStatus:'resultReady',objective:'Review keyboard navigation',result:{summary:'Sample result: keyboard focus follows the visible controls.'}},{itemId:'sample-workflow',kind:'workflow',revision:2,status:'completed',label:'Review workflow',children:[{childId:'sample-attempt',attempt:1,status:'terminal',terminal:'failed',label:'Accessibility check',failureReason:'Sample failed attempt'}]}],truncated:false}:{items:[],truncated:false},childReceipts:[],operationBusy:false,compaction:null,turnId:action.transport==='msp'?'preview-turn':null,fullAccess:action.fullAccess===true,status:'ready',sessionId:'preview-connection',permissionVerified:true,shellEnabled:true,reason:'Browser preview - Simulated connection; no commands run'};if(current&&action.transport==='msp')current.nativeSession={id:current.nativeSession?.transport==='msp'?current.nativeSession.id:'preview-native-session',root:state.activeProject?.root??project.root,seeded:true,status:'ready',transport:'msp',fullAccess:action.fullAccess===true,workspaceTools:action.workspaceTools===true};break;
+   case 'stopWork':{const row=state.workActivity?.find(row=>row.taskId===action.taskId&&row.id===action.id&&row.controlId===action.controlId);if(!row)throw Error('This work changed. Open the current activity and try again.');const owner=tasks.get(row.taskId);if(owner){owner.queuePaused=true;owner.queueHold=!!owner.promptQueue?.length;}if(row.taskId===current?.id)return dispatch({type:'disconnectMuse'});runtimeOwners.set(row.taskId,{...runtime,status:'unavailable'});break;}
    case 'disconnectMuse':state.runtime.childInspections=[];state.runtime={...state.runtime,restoration:null,workspaceTools:false,pending:null,pendingRequests:[],fullAccess:false,foregroundActive:false,childrenBusy:false,childWorkPending:0,shellEnabled:false,status:'unavailable',sessionId:null,permissionVerified:false,reason:'Browser preview - Disconnected'};break;
    case 'proposeLesson':{if(state.activeProject)proposeLesson(state.activeProject,{id:id(),title:action.title,text:action.text,applicability:action.applicability,sourceTaskId:action.taskId,sourceMessageId:action.messageId,revision:'sample-after',validation:null});break;}
    case 'decideLesson':{if(state.activeProject)decideLesson(state.activeProject,action.id,action.decision);break;}
@@ -120,6 +132,7 @@ export function createPreviewBridge():MuseBenchBridge {
    case 'refresh':break;
    default:return desktop();
   }
+  if(state.task?.id!==current?.id){if(current)runtimeOwners.set(current.id,previousRuntime);state.runtime=copy(runtimeOwners.get(state.task?.id??'')??runtime);}
   return sync();
  }
  const personal:PersonalState={profile:{displayName:'Alex Morgan',avatarSeed:'musebench-sample-account',sample:true},destination:'chat',loading:false,origin:'',error:null,canGoBack:false,canGoForward:false,visible:false,available:{bot:true,chat:true,ideas:true,goals:true},compact:true,notice:null,authenticating:false,authWindowOpen:false,library:{selectedId:'sample-chat',chats:{status:'ready',items:[{id:'sample-main',kind:'chat',title:'Main conversation',main:true},{id:'sample-chat',kind:'chat',title:'Plan a thoughtful week'},{id:'sample-notes',kind:'chat',title:'Turn notes into next steps'}]},ideas:{status:'ready',items:[{id:'sample-idea',kind:'idea',title:'A calmer morning routine'}]},goals:{status:'ready',items:[{id:'sample-goal',kind:'goal',title:'Build a habit of learning'}]}}};

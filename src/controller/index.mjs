@@ -12,7 +12,8 @@ import {createOutputStore} from './output-artifacts.mjs';
 import {validateCheckScripts,missingChecks,checkDiagnostics} from '../shared/validation.mjs';
 import {createHistoryStore} from './chat-history.mjs';
 import {createDraftStore} from './code-drafts.mjs';
-import {readRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
+import {readRuntimeStatus,projectRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
+import {workIdentity,workLabel} from '../shared/work-activity.mjs';
 import {restoreSkillReceipts} from '../shared/skill-receipts.mjs';
 import {restoreUsage,combineUsage} from '../shared/native-usage.mjs';
 import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
@@ -193,7 +194,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   for(const task of taskRecords.values())analytics.sync(task);
   const listeners=new Set();let queue=Promise.resolve(),closed=false,closing=false,closePromise=null,checkProcess=null,previewProcess=null,previewToken=null,checkInvalidated=false;
   const contexts=new Map();let preferredBinary=runtime?.snapshot?.().binary??null;
-  const newContext=(owner,task=null)=>({runtime:owner,task,root:null,pending:false,turn:null,messageBaseline:runtimeMessageIds(owner?.snapshot?.()),navigation:false,queueScheduled:false,unsubscribe:null});
+  const newContext=(owner,task=null)=>{const observed=owner?.snapshot?.();return{id:randomUUID(),runtime:owner,task,root:null,pending:false,turn:null,workIdentity:workIdentity(observed),messageBaseline:runtimeMessageIds(observed),navigation:false,queueScheduled:false,unsubscribe:null};};
   let context=newContext(runtime,state.task);if(state.task)contexts.set(state.task.id,context);
   const contextBusy=c=>!!c&&(c.pending||runtimeStatusBusy(readRuntimeStatus(c.runtime)));
   const saveRecord=t=>{if(!t)return;analytics.sync(t);history.sync(t);t.messages=t.messages.slice(-150);t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));};
@@ -209,11 +210,17 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(other.length>=4)throw Error('Four chats are already running. Wait or stop one before starting another.');
     if(other.some(c=>{const root=state.projects.find(p=>p.id===c.task?.projectId)?.root;return root&&(inside(root,project.root)||inside(project.root,root));}))throw Error('Another chat is using this checkout. Wait for it to stop, or create an isolated worktree.');
   };
-  const summaries=()=>[...taskRecords.values()].reverse().filter(t=>state.projects.some(p=>p.id===t.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(t=>{
-    const owner=contexts.get(t.id),status=readRuntimeStatus(owner?.runtime);
+  const summaries=observations=>[...taskRecords.values()].reverse().filter(t=>state.projects.some(p=>p.id===t.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(t=>{
+    const owner=contexts.get(t.id),status=observations?.get(owner)??readRuntimeStatus(owner?.runtime);
     return{id:t.id,projectId:t.projectId,title:t.title,mode:t.mode,createdAt:t.createdAt,updatedAt:t.updatedAt,acceptedRevision:t.acceptedRevision,runtimeBusy:!!owner&&(owner.pending||runtimeStatusBusy(status)),runtimeStatus:status.status,pinned:t.pinned===true,archived:t.archived===true,archivedAt:t.archivedAt??null};
   });
-  const getState=()=>structuredClone({...state,task:state.task?{...state.task,reviewUsage:combineUsage((state.task.reviewChildren??[]).map(id=>taskRecords.get(id)?.nativeUsage??null)),executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries()});
+  const activityRow=(owner,status,identity=owner.workIdentity)=>{
+    const task=owner.task;if(!task||!owner.pending&&!runtimeStatusBusy(status))return null;
+    return{id:`run:${task.id}`,taskId:task.id,projectId:task.projectId,title:task.title,projectName:state.projects.find(p=>p.id===task.projectId)?.name??'Project',label:workLabel(status,identity),kind:'run',canStop:typeof owner.runtime?.disconnect==='function',controlId:hash(JSON.stringify([owner.id,task.id,owner.turn?.promptId??null,identity,status]))};
+  };
+  const checkActivity=()=>checkProcess&&state.task?.check?.status==='running'?{id:`check:${state.task.check.id}`,taskId:state.task.id,projectId:state.task.projectId,title:state.task.title,projectName:state.activeProject?.name??'Project',label:`Checking ${state.task.check.script}`,kind:'check',canStop:true,controlId:hash(JSON.stringify([context.id,state.task.id,state.task.check.id]))}:null;
+  const workActivity=observations=>{const rows=[...contexts.values()].map(owner=>activityRow(owner,observations.get(owner))).filter(Boolean),check=checkActivity();if(check)rows.push(check);return rows;};
+  const getState=()=>{const observations=new Map([...contexts.values()].map(owner=>[owner,readRuntimeStatus(owner.runtime)]));return structuredClone({...state,task:state.task?{...state.task,reviewUsage:combineUsage((state.task.reviewChildren??[]).map(id=>taskRecords.get(id)?.nativeUsage??null)),executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries(observations),workActivity:workActivity(observations)});};
   const saveTask=()=>{
     if(!state.task)return;analytics.sync(state.task);history.sync(state.task);state.task.messages=state.task.messages.slice(-150);context.task=state.task;
     const previous=taskRecords.get(state.task.id);
@@ -272,6 +279,18 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const stopPreview=async()=>{previewToken=null;const child=previewProcess;previewProcess=null;await killTree(child);state.preview=stopped();};
   const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';outputs.finish(state.task.id,state.task.check.id,'cancelled');state.task.check.endedAt=now();persist();}await killTree(child);};
+  const disconnectContext=async owner=>{
+    const task=owner.task,turn=owner.turn;
+    pauseGoalDriver(task?.goal?.driver,'Disconnected by you');if(task?.nativeSession?.status==='running')task.nativeSession.status='needs-recovery';if(task){task.queuePaused=true;task.queueHold=Boolean(task.promptQueue?.length);}
+    try{await owner.runtime?.disconnect?.();}finally{
+      // Keep the owner until its terminal callback has recorded cleanup.
+      if(turn&&task&&executions.list(task.id).find(r=>r.id===turn.promptId)?.phase!=='settled')executions.patch(turn.promptId,{phase:'settled',result:'unknown',cleanup:'unknown',reason:'Disconnect did not report a confirmed terminal outcome.'});
+      if(task?.runs)task.runs=task.runs.map(run=>['queued','working','waiting'].includes(run.status)||run.id===turn?.promptId&&run.status!=='completed'?{...run,status:'cancelled',endedAt:now(),activities:run.activities.map(item=>['queued','working','waiting'].includes(item.status)?{...item,status:'cancelled'}:item)}:run);
+      for(const item of task?.messages??[]){const run=task.runs?.find(r=>r.promptId===(item.turnId??item.id));if(run)item.outcome=run.status;}
+      owner.pending=false;owner.turn=null;if(task?.mode==='muse')task.runtimeComplete=false;
+      const observed=owner.runtime?.snapshot?.()??missingRuntime();owner.workIdentity=workIdentity(observed);if(owner===context)state.runtime=observed;else saveRecord(task);
+    }
+  };
   const cleanup=async(disconnect=true)=>{await cancelCheck();await stopPreview();if(disconnect)await runtime?.disconnect?.();};
   const requireNavigationIdle=()=>{if(contextBusy(context)){const current=context.runtime?.snapshot?.();throw Error(current?.pending&&(current.reason||(current.pending.kind==='approval'?'Approval required':'Muse needs your attention'))||'Finish or disconnect the running Muse turn before switching projects or tasks.');}};
   const navigationCleanup=async()=>{
@@ -530,7 +549,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const onRuntime=(event,owner)=>{
     const selected=owner===selectedContext(),context=owner,runtime=owner.runtime,task=owner.task;
-    if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;if(selected)state.runtime=structuredClone(next);
+    if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;owner.workIdentity=workIdentity(next);if(selected)state.runtime=structuredClone(next);
     if(task&&next.childReceipts?.length){for(const receipt of next.childReceipts)task.childControlReceipts=[...(task.childControlReceipts??[]).filter(r=>r.commandId!==receipt.commandId),structuredClone(receipt)].slice(-40);saveRecord(task);}
     if(task&&next.compaction?.commandId){task.compactionReceipts=[...(task.compactionReceipts??[]).filter(r=>r.commandId!==next.compaction.commandId),structuredClone(next.compaction)].slice(-20);saveRecord(task);}
     if(task&&next.inputResponse?.userInputId){
@@ -845,16 +864,17 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         await runtime.disconnect();await connectNative(context,t,state.activeProject,{binary,transport,fullAccess:action.fullAccess});if(t.nativeSession)t.nativeSession.fullAccess=action.fullAccess;break;
       }
       case 'connectMuse':if(!state.activeProject)throw Error('Open a project first.');if(!runtime)throw Error('Muse runtime unavailable in this installation.');await connectNative(context,state.task,state.activeProject,action);break;
-      case 'disconnectMuse':{
-        pauseGoalDriver(state.task?.goal?.driver,'Disconnected by you');if(state.task?.nativeSession?.status==='running')state.task.nativeSession.status='needs-recovery';if(state.task){state.task.queuePaused=true;state.task.queueHold=Boolean(state.task.promptQueue?.length);}
-        const turn=context.turn;
-        try{await runtime?.disconnect?.();}finally{
-          // Keep turn ownership until the terminal callback has recorded cleanup.
-          // Adapters that throw or return without a terminal event remain unknown.
-          if(turn&&executions.list(state.task.id).find(r=>r.id===turn.promptId)?.phase!=='settled')executions.patch(turn.promptId,{phase:'settled',result:'unknown',cleanup:'unknown',reason:'Disconnect did not report a confirmed terminal outcome.'});
-          if(state.task?.runs)state.task.runs=state.task.runs.map(run=>['queued','working','waiting'].includes(run.status)||run.id===turn?.promptId&&run.status!=='completed'?{...run,status:'cancelled',endedAt:now(),activities:run.activities.map(item=>['queued','working','waiting'].includes(item.status)?{...item,status:'cancelled'}:item)}:run);for(const item of state.task?.messages??[]){const run=state.task.runs?.find(r=>r.promptId===(item.turnId??item.id));if(run)item.outcome=run.status;}
-          context.pending=false;context.turn=null;if(state.task?.mode==='muse')state.task.runtimeComplete=false;state.runtime=runtime?.snapshot?.()??missingRuntime();
-        }break;
+      case 'disconnectMuse':await disconnectContext(context);break;
+      case 'stopWork':{
+        if(typeof action.taskId!=='string'||typeof action.id!=='string'||!/^\w{64}$/.test(action.controlId??''))throw Error('Invalid activity control.');
+        const owner=contexts.get(action.taskId),check=checkActivity();
+        if(check?.id===action.id&&check.taskId===action.taskId&&check.controlId===action.controlId){await cancelCheck();break;}
+        // Re-read exact native identity at mutation time, including changes that
+        // arrived without an event. The display path never reads full transcripts.
+        const observed=owner?.runtime?.snapshot?.(),row=observed&&activityRow(owner,projectRuntimeStatus(observed),workIdentity(observed));
+        if(owner&&observed)owner.workIdentity=workIdentity(observed);
+        if(!row?.canStop||row.id!==action.id||row.controlId!==action.controlId)throw Error('This work changed. Open the current activity and try again.');
+        await disconnectContext(owner);break;
       }
       case 'answerInput':{const t=requireTask();if(action.taskId!==t.id||!runtime?.answerInput)throw Error('This question belongs to another chat or connection.');await runtime.answerInput(action);state.runtime=runtime.snapshot();break;}
       case 'runtimeDecision':if(!runtime)throw Error('Muse is not connected.');await runtime.decide(action.decision);state.runtime=runtime.snapshot();break;

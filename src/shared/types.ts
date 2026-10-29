@@ -28,7 +28,7 @@ export interface ChildInspection {
  worktree?:{worktreeRoot?:string;baseCommit?:string;headCommit?:string;ownership?:string;cleanupPolicy?:string;cleanupState?:string;parentDirtyExcluded?:boolean}};
 }
 export interface RuntimeState {connectionEpoch?:number;childInspections?:ChildInspection[];}
-export type Action = {type:'inspectChild';taskId:string;sessionId:string;itemId:string;revision:number} | {type:'saveValidationProfile';projectId:string;scripts:string[]} | {type:'runValidation'} | {type:'refreshModels'}
+export type Action = {type:'stopWork';taskId:string;id:string;controlId:string} | {type:'inspectChild';taskId:string;sessionId:string;itemId:string;revision:number} | {type:'saveValidationProfile';projectId:string;scripts:string[]} | {type:'runValidation'} | {type:'refreshModels'}
   | {type:'createReviewer';parentTaskId:string;projectId:string;role:string;question:string} | {type:'integrateReview';taskId:string} | {type:'cancelReviewers'}
   | {type:'continueGoal';maxRounds:number;minutes:number} | {type:'pauseGoalContinuation'}
   | {type:'proposeLesson';projectId:string;taskId:string;messageId:string;title:string;text:string;applicability:string}
@@ -108,6 +108,8 @@ export interface MuseBenchBridge {
   setWindowTheme?(theme:'light'|'dark'):Promise<void>;
 }
 
+export interface WorkActivity {id:string;taskId:string;projectId:string;title:string;projectName:string;label:string;kind:'run'|'check';canStop:boolean;controlId:string;}
+export interface AppState {workActivity?:WorkActivity[];}
 export interface ContextFile {path:string;hash:string;}
 export interface CodeImage {id:string;name:string;mime:string;bytes:number;}
 export interface CodeDraft {images?:CodeImage[];text:string;files:ContextFile[];mode:'chat'|'plan';updatedAt?:string;}
