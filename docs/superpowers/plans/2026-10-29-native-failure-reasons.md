@@ -26,7 +26,7 @@
 - [x] Implement the smallest adapter/diagnostic change. Keep existing exec billing/auth classification and no-retry behavior.
 - [x] Add matching preview and isolated desktop failure scenes; verify the reason appears in the conversation/activity and remains after chat reload.
 - [x] Verify native missing-command, initialization-error, timeout, optional failure and conflicting-name receipts using the local echo provider. Distinguish native protocol behavior from model tool use and configuration inventory from tool health.
-- [ ] Run focused tests, build and appropriate shared UI checks, then the full suite. Conduct one independent final review; fix actionable findings with regression proof.
+- [x] Run focused tests, build and appropriate shared UI checks, then the full suite. Conduct one independent final review; fix actionable findings with regression proof.
 - [ ] Commit/push the verified change, await validation/release, hash-check and install the exact desktop artifact, reopen and inspect it through native control.
 
 ## Initial evidence

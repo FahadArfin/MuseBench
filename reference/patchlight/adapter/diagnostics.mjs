@@ -5,7 +5,7 @@ export function diagnosticText(value) {
   .replace(/\b(?:Bearer|Basic)\s+[^\s,;]+/gi,'credential [redacted]')
   .replace(/\b(?:[A-Z0-9]+_)*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|secret)["']?\s*[:=]\s*(?:"(?:\\[\s\S]|[^"\\])*(?:"|\\?$)|'(?:\\[\s\S]|[^'\\])*(?:'|\\?$)|[^\s,;}]+)/gi,'credential=[redacted]')
   .replace(/\bsk-[A-Za-z0-9_-]{8,}/g,'[redacted]')
-  .replace(/https?:\/\/[^\s<>"']+/gi,address=>{
+  .replace(/https?:\/\/[^\s<>]+/gi,address=>{
    try{const url=new URL(address);url.username='';url.password='';url.search='';url.hash='';return url.toString();}
    catch{return '[redacted URL]';}
   })
