@@ -7,6 +7,11 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   onBillingChanged: callback => {const listener=()=>callback();ipcRenderer.on('musebench:billing-update',listener);return()=>ipcRenderer.removeListener('musebench:billing-update',listener);},
   appUpdate: command => ipcRenderer.invoke('musebench:app-update',command),
   mobileDevice: command => ipcRenderer.invoke('musebench:mobile-device',command),
+  nativeControl: command => ipcRenderer.invoke('musebench:native-control',command),
+  onNativeRequest: callback => {
+    const listener=async(_event,request)=>{if(!request||Date.now()>request.deadline)return;try{if(!await ipcRenderer.invoke('musebench:native-claim',request.id))return;const result=await callback(request);ipcRenderer.send('musebench:native-reply',{id:request.id,result});}catch{ipcRenderer.send('musebench:native-reply',{id:request.id,error:true});}};
+    ipcRenderer.on('musebench:native-request',listener);return()=>ipcRenderer.removeListener('musebench:native-request',listener);
+  },
   onAppUpdate: callback => {const listener=(_event,state)=>callback(state);ipcRenderer.on('musebench:app-update-state',listener);return()=>ipcRenderer.removeListener('musebench:app-update-state',listener);},
   inspectWorktrees: input => ipcRenderer.invoke('musebench:worktrees',input),
   importCodeImage: input => ipcRenderer.invoke('musebench:code-image-import',input),

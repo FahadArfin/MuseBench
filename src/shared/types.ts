@@ -94,6 +94,10 @@ export interface MuseBenchBridge {
  onWorkState(callback:(state:import('./work-types').WorkState)=>void):()=>void;
 }
 export interface MuseBenchBridge {mobileDevice(command:import('./mobile-types').MobileDeviceCommand):Promise<import('./mobile-types').MobileDeviceState>;}
+export interface MuseBenchBridge {
+ nativeControl(command:{type:'status'|'enable'|'disable'}):Promise<import('./native-control-types').NativeControlState>;
+ onNativeRequest?(callback:(request:import('./native-control-types').NativeRequest)=>Promise<unknown>):()=>void;
+}
 declare global { interface Window { musebench?: MuseBenchBridge } }
 export interface MuseBenchBridge {
   readonly windowControlsOverlay?: boolean;

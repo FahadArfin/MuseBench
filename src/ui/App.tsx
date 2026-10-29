@@ -1,4 +1,6 @@
 import {TypedText} from './TypedText';
+import {useNativeControl} from './native-control-ui';
+import type {SettingsCategory} from './settings-catalog.mjs';
 import {AppUpdatesContext,AppUpdatePanel,UpdateToolbar,useAppUpdates} from './AppUpdates';
 import {WorkflowLibrary} from './WorkflowLibrary';
 import {ContextHandoff} from './ContextHandoff';
@@ -126,6 +128,7 @@ export default function App() {
   useLayoutEffect(()=>{workModeTransition.current=undefined;},[personalMode]);
   const workModeSwitch=<WorkModeSwitch mode={personalMode} origin={workModeTransition.current} onChange={(mode,fraction)=>{workModeTransition.current={mode,fraction};if(mode==='chat')navigatePersonal('chat');else setPersonalMode('work');}}/>;
   const [modal, setModal] = useState<'workflows' | 'handoff' | 'session' | 'worktrees' | 'updates' | 'create-project' | 'runtime' | 'settings' | 'search' | 'history' | 'command' | 'extensions' | 'context' | null>(null);
+  const [nativeDestination,setNativeDestination]=useState({category:'general' as SettingsCategory,revision:0});
   const [commandView,setCommandView]=useState<CommandView>({id:'help'});
   const [skills,setSkills]=useState<MuseSkill[]>([]),[skillsStatus,setSkillsStatus]=useState('idle');
   const skillsKey=useRef(''),skillsGeneration=useRef(0);
@@ -411,6 +414,20 @@ export default function App() {
       setProfileMenuOpen(false);setMobileNav(false);setReviewOpen(false);setThreadsOpen(false);
     },onError:setLocalError});
   useEffect(()=>bridge?.onPersonalShortcut?.(shortcut=>{if(shortcut==='back')navigationHistory.go(-1);else if(shortcut==='forward')navigationHistory.go(1);}),[bridge,navigationHistory.go]);
+  useNativeControl(async input=>{
+    if(navigationBusy||busy)throw Error('Wait for the current operation.');
+    setProfileMenuOpen(false);setMobileNav(false);
+    if(input.target==='settings'){setNativeDestination(current=>({category:(input.section??'general') as SettingsCategory,revision:current.revision+1}));setModal('settings');return;}
+    if(input.target==='customize'){setNativeDestination(current=>({...current,revision:current.revision+1}));openCustomize((input.section??'skills') as CustomizeTab);return;}
+    closeModal();
+    if(input.target==='closeDialog')return;
+    if(input.target==='code'){selectProduct('code');setView('chat');return;}
+    setProduct('personal');
+    if(input.target==='work'){setPersonalMode('work');setSitesVisible(false);setSpacesVisible(false);return;}
+    setPersonalMode('chat');
+    if(['search','feed','library'].includes(input.target))await personalCommand({type:'serviceAction',action:input.target as 'search'|'feed'|'library'});
+    else await personalCommand({type:'navigate',destination:input.target as PersonalDestination});
+  },Boolean(state));
   if (!bridge) return <main className="browser-fallback"><Terminal size={32} /><h1>MuseBench desktop</h1><p>Open the Windows application to work with your local projects and Muse.</p></main>;
   if (!state) return <main className="loading"><LoaderCircle className="spin" size={24} /><p>Opening MuseBench…</p>{localError && <p role="alert">{localError}</p>}</main>;
   const systemMessages = task?.messages.filter(item => item.role === 'system') ?? [];
@@ -478,13 +495,13 @@ export default function App() {
     <WorkWorkspace active={product==='personal'&&personalMode==='work'&&!spacesVisible&&!sitesVisible} obscured={Boolean(modal||mobileNav||profileMenuOpen)} state={workState} command={workCommand} importSources={importSources} exportArtifact={exportArtifact} onNavigationOpen={revealSidebar} onToggleSidebar={toggleSidebar} collapsed={preferences.sidebarCollapsed} onSettings={()=>setModal('settings')} modeSwitch={workModeSwitch} preferences={preferences} home={workHome} onHomeChange={setWorkHome}/>
     <SpacesWorkspace active={codeSpaces||(product==='personal'&&personalMode==='work'&&spacesVisible&&!sitesVisible)} state={spacesState} command={spacesCommand} workItems={workState?.items??[]} workBusy={Boolean(workState?.busy)} onOpenWork={()=>{setProduct('personal');setPersonalMode('work');setSitesVisible(false);setSpacesVisible(false);setWorkHome(false);}} modeSwitch={codeSpaces?null:workModeSwitch} onNavigationOpen={revealSidebar} preferences={preferences} home={spacesHome} onHomeChange={setSpacesHome}/>
     <SitesWorkspace active={codeSites||(product==='personal'&&personalMode==='work'&&sitesVisible)} state={sitesState} command={sitesCommand} importFolder={importFolder} connect={connectHosting} pollAuth={pollAuth} workItems={workState?.items??[]} workBusy={Boolean(workState?.busy)} modeSwitch={codeSites?null:workModeSwitch} onNavigationOpen={revealSidebar} preferences={preferences} home={sitesHome} onHomeChange={setSitesHome}/>
-    {modal==='extensions'&&<CustomizeDialog initialTab={customizeTab} initialQuery={customizeQuery} close={closeModal} running={customizeBlocked(state,workState,sitesState,sitesState?.generation)} onConnection={()=>setModal('runtime')} onChanged={()=>{setShortcutRevision(value=>value+1);skillsKey.current='';loadSkills();}} onPersonal={action=>{closeModal();setProduct('personal');setPersonalMode('chat');void personalCommand({type:'serviceAction',action});}}/>}
+    {modal==='extensions'&&<CustomizeDialog key={nativeDestination.revision} initialTab={customizeTab} initialQuery={customizeQuery} close={closeModal} running={customizeBlocked(state,workState,sitesState,sitesState?.generation)} onConnection={()=>setModal('runtime')} onChanged={()=>{setShortcutRevision(value=>value+1);skillsKey.current='';loadSkills();}} onPersonal={action=>{closeModal();setProduct('personal');setPersonalMode('chat');void personalCommand({type:'serviceAction',action});}}/>}
     {modal==='workflows'&&<WorkflowLibrary state={state} busy={busy} act={act} close={closeModal}/>}
     {modal==='handoff'&&task&&<ContextHandoff source={task} tasks={state.tasks} initialText={message} files={contextFiles} busy={busy} act={act} close={closeModal}/>}
     {modal==='session'&&task&&<SessionDialog runtime={state.runtime} task={task} projects={state.projects} busy={busy} act={act} onClose={closeModal}/> }
     {modal==='worktrees'&&project&&<WorktreeDialog appState={state} project={project} busy={busy||runtimeActive} act={act} onClose={closeModal} onOpened={()=>{closeModal();setCreating(true);setView('project');}}/>}
     {modal==='context'&&project&&<CodeContext task={showTask?task:null} project={project} taskId={showTask?task!.id:null} text={message} files={contextFiles} onFiles={setContextFiles} act={act} busy={busy||runtimeActive} close={closeModal}/>}
-    {modal==='updates'&&<Modal title="MuseBench update" close={closeModal}><AppUpdatePanel/></Modal>}{modal === 'runtime' && <RuntimeDialog state={state} busy={busy} act={async action=>{const next=await act(action);if(!showTask&&next&&!next.error&&['connectMuse','disconnectMuse'].includes(action.type))setDraftFullAccess(next.runtime.fullAccess===true);return next;}} close={closeModal} onError={setLocalError} />}{modal === 'settings' && <SettingsDialog openCustomize={()=>openCustomize()} state={state} busy={busy||runtimeActive||Boolean(state.runtime.pending)} act={act} openPersonal={destination=>{closeModal();navigatePersonal(destination);}} preferences={preferences} onChange={setPreferences} close={closeModal} openConnection={() => setModal('runtime')} />}{modal === 'history' && <CheckpointDialog state={state} act={act} close={closeModal} />}
+    {modal==='updates'&&<Modal title="MuseBench update" close={closeModal}><AppUpdatePanel/></Modal>}{modal === 'runtime' && <RuntimeDialog state={state} busy={busy} act={async action=>{const next=await act(action);if(!showTask&&next&&!next.error&&['connectMuse','disconnectMuse'].includes(action.type))setDraftFullAccess(next.runtime.fullAccess===true);return next;}} close={closeModal} onError={setLocalError} />}{modal === 'settings' && <SettingsDialog key={nativeDestination.revision} initialCategory={nativeDestination.category} openCustomize={()=>openCustomize()} state={state} busy={busy||runtimeActive||Boolean(state.runtime.pending)} act={act} openPersonal={destination=>{closeModal();navigatePersonal(destination);}} preferences={preferences} onChange={setPreferences} close={closeModal} openConnection={() => setModal('runtime')} />}{modal === 'history' && <CheckpointDialog state={state} act={act} close={closeModal} />}
     {modal === 'create-project' && <CreateProject root={state.projectCreationRoot??'Documents/MuseBench'} close={closeModal} onExisting={async()=>{await openFolder();setModal(null);}} onCreate={async details=>{const next=await act({type:'createProject',...details});if(!next||next.error)throw Error(next?.error??'Could not create the project.');setProduct('code');setView('project');setCreating(false);setReviewOpen(false);setMobileNav(false);setModal(null);}}/>}
     {modal === 'search' && <ChatLibrary projects={state.projects} onProject={id=>void navigateProject(id)} onOpen={id=>void navigateTask(id)} act={act} busy={navigationBusy} close={closeModal}/> }
   </div></NavigationHistoryContext.Provider></AppUpdatesContext.Provider>;

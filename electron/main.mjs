@@ -5,6 +5,8 @@ import {createOnboarding} from './onboarding.mjs';
 import {userProfile} from '../src/shared/platform.mjs';
 import {createMobileHost} from './mobile-host.mjs';
 import {createMobileService} from './mobile-service.mjs';
+import {createNativeControlHost} from './native-control-host.mjs';
+import {createNativeControlService,createNativeRenderer} from './native-control-service.mjs';
 import {createFileEditor} from './file-editor.mjs';
 import {createWorkspaceMcpConfig} from './workspace-mcp-config.mjs';
 import {createAppUpdates,createUpdateShutdown,updateBlocked} from './app-updates.mjs';
@@ -47,7 +49,7 @@ const sessionDurability = createSessionDurability({ app });
 const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
-let window, controller, customize, personal, billingReader, billingPayments, codeBilling, onboarding, dictation, work, workExporter, spaces, sites, updates, mobileHost, closing = false, updateInstalling=false, updateShutdown, pendingIpc=0;
+let window, controller, customize, personal, billingReader, billingPayments, codeBilling, onboarding, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, nativeService, closing = false, updateInstalling=false, updateShutdown, pendingIpc=0;
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -151,12 +153,17 @@ else {
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
     mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||!!onboarding?.isBusy()})});
     handler('musebench:mobile-device',command=>mobileHost.command(command));
-    const updateBusy=()=>pendingIpc>0||mobileHost.isBusy()||codeBilling.isBusy()||onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation);
+    const nativeRenderer=createNativeRenderer({window,ipcMain,trusted:event=>trustedSender(event,window.webContents,uiURL)});
+    nativeService=createNativeControlService({app,window,controller,personal,renderer:nativeRenderer,isBlocked:()=>closing||updateInstalling||window.webContents.isLoading()||customize.isBusy()||codeBilling.isBusy()||!!onboarding?.isBusy()});
+    nativeControl=await createNativeControlHost({dataDir,service:nativeService,connectionConfig:{command:process.execPath,args:[path.join(root,'electron','native-mcp-server.mjs'),'--data-dir',dataDir],env:{ELECTRON_RUN_AS_NODE:'1',NODE_OPTIONS:'',NODE_PATH:''}}});
+    handler('musebench:native-control',command=>nativeControl.command(command));
+    const updateBusy=()=>pendingIpc>0||nativeControl.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation);
     const {autoUpdater}=updaterPackage;
     autoUpdater.setFeedURL({provider:'github',owner:'FahadArfin',repo:'MuseBench',private:false});
     updateShutdown=createUpdateShutdown({isBusy:updateBusy,voice:()=>dictation.dispatch('status'),lock:value=>{updateInstalling=value;},closeServices:async()=>{
       closing=true;personal.close();billingReader?.close();
-      const results=await Promise.allSettled([mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close()]);
+      nativeService.close();
+      const results=await Promise.allSettled([nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close()]);
       await sessionDurability.close();
       if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
     },verifyClosed:()=>!updateBlocked(controller.getState(),work.getState(),sites.getState())});
@@ -272,4 +279,4 @@ else {
   }).catch(startupFailed);
 }
 app.on('window-all-closed',()=>app.quit());
-app.on('before-quit',event=>{if(updateShutdown?.preparing()){event.preventDefault();return;}updates?.close();personal?.close();billingReader?.close();if(!closing){event.preventDefault();closing=true;Promise.allSettled([mobileHost?.close(),customize?.close(),sites?.close(),spaces?.close(),controller?.close(),work?.close(),workExporter?.close(),dictation?.close()]).then(()=>sessionDurability.close()).catch(()=>{}).finally(()=>app.quit());}});
+app.on('before-quit',event=>{if(updateShutdown?.preparing()){event.preventDefault();return;}updates?.close();personal?.close();billingReader?.close();if(!closing){event.preventDefault();closing=true;nativeService?.close();Promise.allSettled([nativeControl?.close(),mobileHost?.close(),customize?.close(),sites?.close(),spaces?.close(),controller?.close(),work?.close(),workExporter?.close(),dictation?.close()]).then(()=>sessionDurability.close()).catch(()=>{}).finally(()=>app.quit());}});

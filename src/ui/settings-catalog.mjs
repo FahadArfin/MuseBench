@@ -8,6 +8,7 @@ export const SETTINGS_CATEGORIES = Object.freeze([
  {id:'skills',label:'Skills',group:'Coding',keywords:'installed commands extensions customize'},
  {id:'connection',label:'Muse connection',group:'Coding',keywords:'cli binary executable runtime version status sandbox shell'},
  {id:'mobile',label:'Mobile devices',group:'Coding',keywords:'android tablet phone companion desktop pair devices connection'},
+ {id:'control',label:'App control',group:'Coding',keywords:'native mcp codex inspect automation screenshots tools connection'},
  {id:'account',label:'Account',group:'Account & data',keywords:'login sign in meta ai muse bot connections whatsapp facebook'},
  {id:'billing',label:'Usage & billing',group:'Account & data',keywords:'allowance credits tokens payment subscription'},
  {id:'data',label:'Data & privacy',group:'Account & data',keywords:'storage local export download transcript current code chat project folder history'},
