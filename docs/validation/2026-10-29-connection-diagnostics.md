@@ -17,3 +17,5 @@ Session MCP inventory retains the same rows through a pending or failed refresh 
 Ignored evidence: `.superpowers/sdd/2026-10-29-connection-diagnostics/`, `artifacts/connection-diagnostics/`, `artifacts/session-mcp-ui/` and `artifacts/preview-parity/report.json`.
 
 Exact published and installed acceptance remains pending. Fixture evidence does not verify provider availability, authentication or billing.
+
+CI follow-up: the installed-list compactness check caught the initial summary adding 33.5px beyond the allowed header budget. Reproduced locally, then moved Setup status into the existing toolbar as a disclosure. The unchanged compactness threshold now passes; a new assertion verifies opening the details does not move installed rows. Setup status, Skill tools and Add now close one another so their panels cannot overlap; the overlap was reproduced with a failing test before the fix. Catalog refresh, scrolling and filtering regressions remain covered by the same passing smoke. The final build passed, and independent review verified disclosure switching and keyboard focus in Chromium with no remaining findings.

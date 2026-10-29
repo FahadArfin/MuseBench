@@ -6,3 +6,4 @@
 .connection-diagnostics dt span{font-weight:400;color:var(--muted)}
 .connection-diagnostics dd{margin:4px 0 0;color:var(--muted);line-height:1.5}
 .extension-diagnostics{margin:4px 0 10px;padding:7px 10px}
+.extension-diagnostics.compact{margin:0;padding:0;border:0;font-weight:400}.extension-diagnostics.compact>summary{font-weight:400}.extension-diagnostics.compact .extensions-tools-panel{text-align:left;white-space:normal}
