@@ -12,6 +12,8 @@ const motion = () => artifact({ kind: 'motion', scenes: [{ title: 'One', body: '
 async function folder(t) { const root = await mkdtemp(path.join(os.tmpdir(), 'muse-export-test-')); t.after(() => rm(root, { recursive: true, force: true })); return root; }
 function renderer({ pdfError, hanging = false } = {}) {
   const windows = [];
+  let started;
+  const loadStarted = new Promise(resolve => { started = resolve; });
   class Window extends EventEmitter {
     constructor(options) {
       super(); this.options = options; this.destroyed = false; this.seeks = []; windows.push(this);
@@ -28,23 +30,30 @@ function renderer({ pdfError, hanging = false } = {}) {
         capturePage: async () => ({ getSize: () => ({ width: 1280, height: 720 }), toPNG: () => Buffer.from('PNG-fixture') }),
       });
     }
-    async loadURL(url) { this.url = url; if (hanging) await new Promise(() => {}); }
+    async loadURL(url) { this.url = url; started(); if (hanging) await new Promise(() => {}); }
     isDestroyed() { return this.destroyed; }
     destroy() { this.destroyed = true; this.emit('closed'); }
   }
-  return { Window, windows };
+  return { Window, windows, loadStarted };
 }
 function encoder({ fail = false, hang = false } = {}) {
   const calls = [];
   const spawnProcess = (executable, args, options) => {
     const child = new EventEmitter(); child.stderr = new EventEmitter(); child.killed = false;
     const call = { executable, args, options, child, frames: [] }; calls.push(call);
-    child.kill = () => { child.killed = true; setImmediate(() => child.emit('close', null, 'SIGTERM')); return true; };
+    let writing = Promise.resolve(), closed = false;
+    const close = (code, signal) => { if (!closed) { closed = true; child.emit('close', code, signal); } };
+    // A real process cannot write output after its close event. Join an
+    // in-flight fixture write before publishing the equivalent exit receipt.
+    child.kill = () => { child.killed = true; child.stdin.destroy(); writing.finally(() => setImmediate(() => close(null, 'SIGTERM'))); return true; };
     child.stdin = new Writable({ write(chunk, _encoding, done) { call.frames.push(Buffer.from(chunk)); done(); } });
     child.stdin.once('finish', async () => {
-      await writeFile(args.at(-1), fail ? 'partial video' : 'MP4-fixture');
+      if (child.killed) return;
+      writing = writeFile(args.at(-1), fail ? 'partial video' : 'MP4-fixture');
+      await writing;
+      if (child.killed) return;
       if (fail) child.stderr.emit('data', Buffer.from('encoder unavailable'));
-      if (!hang) child.emit('close', fail ? 1 : 0, null);
+      if (!hang) close(fail ? 1 : 0, null);
     });
     return child;
   };
@@ -127,10 +136,12 @@ test('failed FFmpeg preserves the selected destination and cleans partial files'
 });
 
 test('timeout closes a hung renderer, preserves destination and cleans temporary files', async t => {
-  const root = await folder(t); const { Window, windows } = renderer({ hanging: true });
+  const root = await folder(t); const { Window, windows, loadStarted } = renderer({ hanging: true });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
   const exporter = api.createWorkExporter({ BrowserWindow: Window, ffmpegPath: null, timeoutMs: 40 }); t.after(() => exporter.close());
   const filePath = path.join(root, 'report.pdf'); await writeFile(filePath, 'original');
-  await assert.rejects(exporter.export({ artifact: artifact(), format: 'pdf', filePath }), /timed out/i);
+  const rejected = assert.rejects(exporter.export({ artifact: artifact(), format: 'pdf', filePath }), /timed out/i);
+  await loadStarted; t.mock.timers.tick(40); await rejected;
   assert(windows[0].destroyed); assert.equal(await readFile(filePath, 'utf8'), 'original'); assert.deepEqual(await readdir(root), ['report.pdf']);
 });
 
