@@ -24,7 +24,12 @@ try{
  const stalled=page.evaluate(()=>{const until=performance.now()+1800;while(performance.now()<until){/* Deliberately stalled renderer for cancellation regression. */}});
  await new Promise(r=>setTimeout(r,200));const cancellation=new AbortController();const queued=callNativeApp(profile,'navigate',{target:'settings',section:'updates'},{signal:cancellation.signal});const cancelled=assert.rejects(queued);await new Promise(r=>setTimeout(r,200));cancellation.abort();await cancelled;await stalled;
  ui=await value('inspect_ui');assert.ok(ui.headings.includes('What would you like to build?'));assert.ok(!ui.headings.includes('App updates'));checks.push('A cancelled request queued behind a stalled renderer cannot navigate later');
- ui=await value('navigate',{target:'settings',section:'updates'});assert.ok(ui.headings.includes('App updates'));
+ // Native navigation must return rendered destination controls even when a
+ // shell transition takes longer than the former fixed 400 ms delay.
+ const slowTransition=await page.addStyleTag({content:'.settings-modal{animation-delay:800ms!important}'});
+ ui=await value('navigate',{target:'settings',section:'updates'});assert.ok(ui.headings.includes('App updates'),'Navigation returned before the settings transition became visible');
+ await slowTransition.evaluate(element=>element.remove());
+ checks.push('Native navigation waits for the rendered destination through a delayed shell transition');
  ui=await value('navigate',{target:'settings',section:'control'});assert.ok(ui.headings.includes('App control'));checks.push('MCP changes Settings categories and returns actual rendered controls');
  // No form value, password, arbitrary text node or iframe content may appear in inspection.
  await page.evaluate(()=>{const input=document.createElement('input');input.value='DO_NOT_EXPOSE_NATIVE_SECRET';input.type='password';document.body.append(input);});
