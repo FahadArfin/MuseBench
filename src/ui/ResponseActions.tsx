@@ -1,6 +1,7 @@
 import {memo,useEffect,useRef,useState,type KeyboardEvent} from 'react';
 import {Check,Copy,GitBranch,Square,ThumbsDown,ThumbsUp,Volume2} from 'lucide-react';
 import './response-actions.css';
+import {copyReply} from './copy-reply';
 
 export const ResponseActions=memo(function ResponseActions({messageId,text,at,chatId,branchDisabled,onBranch}:{messageId:string;text:string;at:string;chatId:string;branchDisabled:boolean;onBranch:(messageId:string)=>void}){
  const [status,setStatus]=useState(''),[menu,setMenu]=useState<'feedback'|null>(null),[speaking,setSpeaking]=useState(false);
@@ -22,7 +23,7 @@ export const ResponseActions=memo(function ResponseActions({messageId,text,at,ch
  const rate=(value:string)=>{const next=feedback===value?null:value;try{if(next)localStorage.setItem(key,next);else localStorage.removeItem(key);setFeedback(next);setStatus(next?'Feedback saved on this device.':'Feedback removed.');}catch{setStatus('Feedback could not be saved.');}close();};
  const date=new Date(at),valid=Number.isFinite(date.getTime());
  return <div ref={root} className="response-actions" role="group" aria-label="Response actions">
-  <button className="icon-button" aria-label={status==='Copied'?'Copied':'Copy message'} title="Copy message" onClick={async()=>{try{await (window.musebench?.copyText?window.musebench.copyText(text):navigator.clipboard.writeText(text));setStatus('Copied');}catch{setStatus('Copy unavailable. Select the response to copy it.');}}}>{status==='Copied'?<Check size={15}/>:<Copy size={15}/>}</button>
+  <button className="icon-button" aria-label={status==='Copied'?'Copied':'Copy message'} title="Copy message" onClick={async()=>{try{await copyReply(text);setStatus('Copied');}catch{setStatus('Copy unavailable. Select the response to copy it.');}}}>{status==='Copied'?<Check size={15}/>:<Copy size={15}/>}</button>
   <button className={`icon-button ${speaking?'selected':''}`} aria-label={speaking?'Stop reading':'Read aloud'} title={speaking?'Stop reading':'Read aloud'} aria-pressed={speaking} onClick={read}>{speaking?<Square size={14}/>:<Volume2 size={16}/>}</button>
   <button className={`icon-button ${feedback?'selected':''}`} aria-label="Response feedback" title={feedback?`${feedback==='helpful'?'Helpful':'Not helpful'} · Saved on this device`:'Response feedback'} aria-haspopup="menu" aria-expanded={menu==='feedback'} onClick={event=>{trigger.current=event.currentTarget;setMenu(menu==='feedback'?null:'feedback');}}>{feedback==='unhelpful'?<ThumbsDown size={15}/>:<ThumbsUp size={15}/>}</button>
   <button className="icon-button" aria-label="Branch in new chat" title="Branch in new chat" disabled={branchDisabled} onClick={()=>{setMenu(null);stop();onBranch(messageId);}}><GitBranch size={15}/></button>

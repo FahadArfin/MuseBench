@@ -15,6 +15,7 @@ import {ChatFind} from './ChatFind';
 import {CustomizeIcon} from './CustomizeIcon';
 import {NavigationButtons,NavigationHistoryContext,useNavigationHistory} from './NavigationHistory';
 import {ResponseActions} from './ResponseActions';
+import {copyReply} from './copy-reply';
 import {ChatSidebar} from './ChatSidebar';
 import {CompactNavigation,codeDestinations,type CodeDestination} from './CompactNavigation';
 import {CodeDestinations} from './CodeDestinations';
@@ -335,7 +336,7 @@ export default function App() {
     if(id==='checkpoints'){setModal('history');return;}
     if(['review','preview','checks'].includes(id)){if(!showTask){showCommand('status');return;}setReviewOpen(true);setStage(id==='review'?'changes':id as 'preview'|'checks');return;}
     if(['copy','export'].includes(id)&&!showTask){showCommand(id,'','Open a saved chat first to use this command.');return;}
-    if(id==='copy'){const text=task?.messages.slice().reverse().find(m=>m.role==='assistant')?.text;if(text)await navigator.clipboard.writeText(text).catch(()=>setLocalError('Could not copy this response.'));else showCommand('copy','','This chat does not have a Muse response to copy yet.');return;}
+    if(id==='copy'){const text=task?.messages.slice().reverse().find(m=>m.role==='assistant')?.text;if(text)await copyReply(text).catch(()=>setLocalError('Could not copy this response.'));else showCommand('copy','','This chat does not have a Muse response to copy yet.');return;}
     if(id==='export'||id==='mention'||id==='exit'){
       try{const result=await bridge!.commandInfo(id==='exit'?'close':id);if(id==='mention'&&result.path)setMessage([prefix,`Please look at this file: ${result.path}`].filter(Boolean).join('\n'));}catch(error){setLocalError(String(error));}return;
     }

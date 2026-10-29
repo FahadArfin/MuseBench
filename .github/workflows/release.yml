@@ -43,6 +43,7 @@ jobs:
       - run: npm run test:child-inspection
       - run: npm run test:native-failure
       - run: npm run test:native-question
+      - run: npm run test:reply-copy
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness
       - run: npm run test:navigation-cache
@@ -71,6 +72,8 @@ jobs:
             artifacts/child-inspection-ui/**/report.json
             artifacts/native-failure-ui/**/report.json
             artifacts/native-question-ui/**/report.json
+            artifacts/reply-copy/**/report.json
+            artifacts/response-actions/**/report.json
             artifacts/native-control/report.json
             artifacts/navigation-cache/report.json
             artifacts/session-mcp-ui/**/report.json

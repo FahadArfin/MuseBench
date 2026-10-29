@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   importCodeImage: input => ipcRenderer.invoke('musebench:code-image-import',input),
   readCodeImage: input => ipcRenderer.invoke('musebench:code-image-read',input),
   copyText: text => ipcRenderer.invoke('musebench:copy-text', text),
+  copyReply: text => ipcRenderer.invoke('musebench:copy-reply', text),
   windowControlsOverlay: process.platform === 'win32',
   setWindowTheme: theme => ipcRenderer.invoke('musebench:window-theme', theme),
   customize: command => ipcRenderer.invoke('musebench:customize', command),

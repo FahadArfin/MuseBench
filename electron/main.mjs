@@ -27,7 +27,7 @@ import {createWorkExporter} from './work-export.mjs';
 import {writeFile} from 'node:fs/promises';
 import {workDataDirectory} from './work-root.mjs';
 import {createDictation} from './dictation.mjs';
-import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, shell, session, nativeTheme, Notification, protocol, safeStorage, clipboard } from 'electron';
+import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, shell, session, nativeTheme, Notification, protocol, safeStorage, clipboard, ClipboardItem } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -190,7 +190,7 @@ else {
     sites.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:sites-update',value);});
     handler('musebench:spaces-state',()=>spaces.getState());
     handler('musebench:spaces',command=>spaces.dispatch(command));
-    handler('musebench:spaces-copy-invitation',()=>{const invitation=spaces.getState().invitation;if(!invitation)throw Error('Create an invitation first.');clipboard.writeText(invitation.text);});
+    handler('musebench:spaces-copy-invitation',()=>{const invitation=spaces.getState().invitation;if(!invitation)throw Error('Create an invitation first.');return clipboard.writeText(invitation.text);});
     spaces.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:spaces-update',value);});
     handler('musebench:work-state',()=>workSnapshot(work.getState()));
     handler('musebench:work',async command=>{if(customize.isBusy())throw Error('Wait for Customize to finish before starting another operation.');return workSnapshot(await work.dispatch(command));});
@@ -252,7 +252,8 @@ else {
     handler('musebench:personal-state',()=>personal.snapshot());
     handler('musebench:personal',async command=>{if(command?.type==='layout'&&command.visible)await dictation.stop(true);const result=await personal.dispatch(command);if(command?.type==='appearance')nativeTheme.themeSource=result.appearance.theme;return result;});
     handler('musebench:dictation',command=>{if(command==='start'&&!window.isFocused())throw Error('Focus MuseBench to start dictation.');return dictation.dispatch(command);});
-    handler('musebench:copy-text',text=>{if(typeof text!=='string'||text.length>100000)throw Error('Invalid clipboard text.');clipboard.writeText(text);});
+    handler('musebench:copy-text',text=>{if(typeof text!=='string'||text.length>100000)throw Error('Invalid clipboard text.');return clipboard.writeText(text);});
+    handler('musebench:copy-reply',async text=>{const {replyClipboard}=await import('../src/shared/reply-copy.mjs');const value=replyClipboard(text);await clipboard.write([new ClipboardItem({'text/plain':value.text,'text/html':value.html})]);});
     handler('musebench:action',async action=>{const valid=validateAction(action);if(customize.isBusy()&&!['disconnectMuse','clearError'].includes(valid.type))throw Error('Wait for Customize to finish before starting another operation.');if(['createProject','openProject','selectProject','selectTask','newTask','createDemo','createCommandCopy'].includes(valid.type))await dictation.stop(true);return controller.dispatch(valid);});
     handler('musebench:choose-project', async()=>{const result=await dialog.showOpenDialog(window,{title:'Open a local project',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];});
     handler('musebench:choose-binary',async()=>{const result=await dialog.showOpenDialog(window,{title:'Select your official Muse CLI executable',properties:['openFile'],filters:[{name:'Muse CLI',extensions:process.platform==='win32'?['exe']:['*']}]});return result.canceled?null:result.filePaths[0];});

@@ -18,5 +18,5 @@ export async function createDesktopSites({dataDir,projectsDir,runtime,safeStorag
   if(!/^[a-z0-9-]{1,63}$/.test(site.remoteName))throw Error('Invalid hosted site name.');
   return`https://app.netlify.com/projects/${site.remoteName}/${target==='domains'?'domain-management':target==='analytics'?'analytics':'overview'}`;
  }
- return{...service,async open(target){await shell.openExternal(destination(target));},copyUrl(){clipboard.writeText(destination('live'));}};
+ return{...service,async open(target){await shell.openExternal(destination(target));},copyUrl(){return clipboard.writeText(destination('live'));}};
 }
