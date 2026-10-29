@@ -2,6 +2,7 @@ import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
 import {childWorking} from '../shared/child-actions.mjs';
 import {createChildTracker} from './children.mjs';
 import {projectChildRead} from './child-inspection.mjs';
+import {projectMcpInventory} from './mcp-inventory.mjs';
 import {createCompactionTracker} from './compaction.mjs';
 import {validateRunOptions} from '../shared/run-options.mjs';
 import {normalizeModels,modelForOptions} from '../shared/models.mjs';
@@ -154,6 +155,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  let awaitingChildReport=false,lastTerminal=null;
  const children=createChildTracker(),childCommands=new Set(),uncertainChildren=new Set(),childWork=new Map();
  const childReads=new Set();
+ let mcpReadEpoch=null;
  const compaction=createCompactionTracker();let compactionTimer;
  const listeners=new Set();
  const snapshot=()=>structuredClone({...state,connectionEpoch:epoch});
@@ -498,6 +500,25 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   }catch(error){if(token===epoch&&state.permissionVerified)publish({...target,status:'error',error:'Could not read this child activity. Refresh to try again.'});throw error;}
   finally{if(token===epoch)childReads.delete(key);}
  }
+ async function readMcpServers({sessionId}={}){
+  if(!owner||!adapter||connecting||closing||!state.permissionVerified||sessionId!==state.sessionId)throw Error('Connect this chat to an interactive Muse session first.');
+  const token=epoch,readOwner=owner;
+  if(mcpReadEpoch===token)throw Error('MCP inventory is already being read.');
+  mcpReadEpoch=token;
+  try{
+   // Timing out the caller does not cancel the SDK request. Keep its guard
+   // until the native promise settles, without locking a replacement epoch.
+   const request=(async()=>readOwner.connection.request('mcpServer/list',{sessionId}))().finally(()=>{if(mcpReadEpoch===token)mcpReadEpoch=null;});
+   const value=await bounded(request,timeoutMs);
+   assertCurrent(token);
+   if(owner!==readOwner||!state.permissionVerified||sessionId!==state.sessionId)throw Error('Connection changed');
+   return projectMcpInventory(value,sessionId);
+  }catch(error){
+   assertCurrent(token);
+   if(!state.permissionVerified||owner!==readOwner)throw Error('Muse connection was interrupted.');
+   throw Error(error?.code===-32601?'MCP inventory is not supported by this Muse host.':'Could not read MCP configuration. Try refreshing this session.');
+  }
+ }
  async function compact({sessionId,turnId}={}){
   if(!owner||!adapter||!state.permissionVerified||connecting||sending||steering||pending||childCommands.size||state.childrenBusy||!usable.has(state.status)||sessionId!==state.sessionId||!turnId||turnId!==state.turnId)throw Error('Finish the current turn and use this connection’s latest session before compacting.');
   const token=epoch,commandId=owner.connection.mintCommandId();compaction.start({sessionId,turnId,commandId});syncCompaction();
@@ -505,5 +526,5 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   try{const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();}
   catch(error){if(token===epoch){if(error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
  }
- return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,inspectChild,answerInput,decide,close:()=>disconnect()};
+ return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,inspectChild,readMcpServers,answerInput,decide,close:()=>disconnect()};
 }

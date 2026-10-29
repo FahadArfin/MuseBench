@@ -32,6 +32,8 @@ jobs:
       - run: npm run build
       - run: node scripts/mobile-settings-smoke.mjs
       - run: node scripts/native-control-smoke.mjs
+      - run: node scripts/session-mcp-smoke.mjs
+      - run: node scripts/session-mcp-smoke.mjs --desktop
       - run: npm run test:startup-animation
       - run: npm run test:session-recovery
       - run: npm run test:profile-identity
@@ -66,6 +68,7 @@ jobs:
             artifacts/activity-ui/**/report.json
             artifacts/child-inspection-ui/**/report.json
             artifacts/native-control/report.json
+            artifacts/session-mcp-ui/**/report.json
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-win32-x64

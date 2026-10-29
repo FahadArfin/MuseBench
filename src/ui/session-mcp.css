@@ -1,0 +1,8 @@
+.session-mcp-inventory { margin: 12px 0; }
+.session-mcp-list { list-style: none; margin: 6px 0; padding: 0; max-height: 280px; overflow: auto; }
+.session-mcp-list li { display: flex; align-items: flex-start; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--border); }
+.session-mcp-list li:last-child { border-bottom: 0; }
+.session-mcp-list svg { flex-shrink: 0; margin-top: 2px; color: var(--muted); }
+.session-mcp-list div { min-width: 0; display: grid; gap: 3px; overflow-wrap: anywhere; }
+.session-mcp-list strong { font-size: 13px; font-weight: 500; }
+.session-mcp-list span { font-size: 12px; color: var(--muted); }

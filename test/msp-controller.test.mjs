@@ -7,6 +7,26 @@ import {createController} from '../src/controller/index.mjs';
 import {DatabaseSync} from 'node:sqlite';
 
 const nativeId='11111111-1111-4111-8111-111111111111';
+test('MCP inventory stays read-only and rejects stale chat or connection scope',async t=>{
+ const {c,rt}=await fixture(t);await c.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});await c.dispatch({type:'sendMessage',text:'Work'});
+ const input={taskId:c.getState().task.id,sessionId:nativeId},before=c.getState();let finish,calls=0;
+ rt.readMcpServers=()=>{calls++;return new Promise(resolve=>finish=resolve);};
+ await assert.rejects(c.readMcpServers({...input,taskId:'other'}));await assert.rejects(c.readMcpServers({...input,sessionId:'other'}));await assert.rejects(c.readMcpServers({...input,command:'forged'}));assert.equal(calls,0);
+ const pending=c.readMcpServers(input);assert.equal(c.getState().busy,false);
+ const stopped=await Promise.race([c.dispatch({type:'disconnectMuse'}),new Promise(resolve=>setTimeout(()=>resolve(null),1000))]);assert.ok(stopped);
+ finish({sessionId:nativeId,servers:[]});await assert.rejects(pending,/changed/);
+ assert.equal(rt.sent.length,1);assert.equal(c.getState().error,null);assert.equal(c.getState().task.executionReceipts.length,before.task.executionReceipts.length);
+});
+test('MCP inventory cannot follow a pending read into another chat',async t=>{
+ const {c,rt}=await fixture(t);await c.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});
+ const input={taskId:c.getState().task.id,sessionId:nativeId};let finish;
+ rt.readMcpServers=()=>new Promise(resolve=>finish=resolve);
+ const pending=c.readMcpServers(input);
+ const next=await c.dispatch({type:'newTask',request:'Another chat',mode:'muse'});assert.equal(next.error,null);assert.notEqual(next.task.id,input.taskId);
+ await c.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});
+ const before=c.getState();finish({sessionId:nativeId,servers:[{name:'Old chat only'}]});
+ await assert.rejects(pending,/changed/);assert.deepEqual(c.getState(),before);assert.equal(rt.sent.length,0);
+});
 test('read-only child inspection leaves Stop responsive during a slow native read',async t=>{
  const {c,rt}=await fixture(t);await c.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});await c.dispatch({type:'sendMessage',text:'Delegate'});
  rt.emit({childControlsSupported:true});let finish;rt.inspectChild=()=>new Promise(resolve=>finish=()=>{rt.inspectionFinished=true;resolve();});

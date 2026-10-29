@@ -114,7 +114,10 @@ export interface ContextSummary {receipt?:ContextReceipt;historyMode?:'replay'|'
 export interface CodeContextResult extends ContextSummary {prompt:string;attachments:(ContextFile&{text:string})[];files:(ContextFile&{characters:number})[];}
 export interface ChatSearchResult extends TaskSummary {projectName:string;snippet:string;messageId?:string;offset?:number;at?:string;}
 export interface HistoryPage {messages:(Message&{textLength:number;offset:number;captureTruncated?:boolean})[];total:number;before:string|null;coverage:string;}
+export interface McpInventory {sessionId:string;readAt:string;servers:{name:string;source:'settings'|'plugin'|'session'|'unknown';transport:'stdio'|'streamableHttp'|'unknown';oauth:'loggedIn'|'loggedOut'|'notSupported'|'unknown'}[];omitted:number;simulation?:boolean;}
+export interface RuntimeState {connectionEpoch?:number;}
 export interface MuseBenchBridge {
+ readMcpServers(input:{taskId:string;sessionId:string}):Promise<McpInventory>;
  inspectCodeContext(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[]}):Promise<CodeContextResult>;
  readChatHistory(input:{taskId:string;before?:string;messageId?:string;offset?:number;limit?:number}):Promise<HistoryPage>;
  searchChats(input:{query:string;includeArchived:boolean}):Promise<ChatSearchResult[]>;

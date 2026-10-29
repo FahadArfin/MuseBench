@@ -39,6 +39,10 @@ try{
   runtime=createRuntime({environment,workspaceMcp:factory,timeoutMs:10000});
   const state=await bounded(runtime.connect({binary,workspaceRoot:workspace,workspaceTools:true,fullAccess:true}),30000);
   report.native={status:state.status,sessionStarted:typeof state.sessionId==='string',workspaceTools:state.workspaceTools===true,permissionVerified:state.permissionVerified===true,modelTurnSent:false,toolInventoryVerified:false,profileIsolated:true};
+  stage='native-inventory';const inventory=await bounded(runtime.readMcpServers({sessionId:state.sessionId}));
+  const server=inventory.servers.find(row=>row.name==='musebench_workspace'&&row.source==='session');
+  if(server?.transport!=='stdio'||server?.oauth!=='notSupported')throw Error('Native session MCP inventory did not match its configured gateway.');
+  report.native.serverInventoryVerified=true;report.native.server=server;
   stage='native-close';await bounded(runtime.disconnect(),15000);report.native.cleanup=runtime.snapshot().cleanup;
   if(!report.native.sessionStarted||!report.native.workspaceTools||!report.native.permissionVerified||report.native.cleanup!=='confirmed')throw Error('Native registration or cleanup not confirmed.');
   runtime=null;

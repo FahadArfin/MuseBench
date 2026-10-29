@@ -8,6 +8,56 @@ import {promisify} from 'node:util';
 import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/runtime/index.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
+test('session MCP inspection reads the owned running session without publishing lifecycle changes',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Work'});
+ const before=h.runtime.snapshot(),calls=[],events=[];h.runtime.subscribe(s=>events.push(s));
+ h.host.connection.request=async(method,params)=>{calls.push({method,params});return {servers:[{name:'workspace',source:'session',transport:'stdio',oauth:'notSupported',command:'private-command',token:'private-token'}]};};
+ await assert.rejects(h.runtime.readMcpServers({sessionId:'other'}));assert.equal(calls.length,0);
+ const result=await h.runtime.readMcpServers({sessionId:'session-one'});
+ assert.deepEqual(calls,[{method:'mcpServer/list',params:{sessionId:'session-one'}}]);
+ assert.deepEqual(result.servers,[{name:'workspace',source:'session',transport:'stdio',oauth:'notSupported'}]);
+ assert.equal(result.sessionId,'session-one');assert.equal(result.omitted,0);assert.ok(Number.isFinite(Date.parse(result.readAt)));
+ assert.ok(!JSON.stringify(result).includes('private-'));assert.deepEqual(h.runtime.snapshot(),before);assert.equal(events.length,0);
+});
+test('session MCP inspection bounds rows and treats unknown metadata as unknown',async t=>{
+ const h=await harness(t);await h.connect();
+ h.host.connection.request=async()=>({servers:Array.from({length:250},(_,i)=>({name:i===0?'<script>unsafe()</script>':String(i),source:'future',transport:'future',oauth:'future'}))});
+ const result=await h.runtime.readMcpServers({sessionId:'session-one'});
+ assert.equal(result.servers.length,200);assert.equal(result.omitted,50);assert.deepEqual(result.servers[0],{name:'<script>unsafe()</script>',source:'unknown',transport:'unknown',oauth:'unknown'});
+});
+test('session MCP inspection refuses duplicate and late reads after disconnect',async t=>{
+ const h=await harness(t);await h.connect();let resolve;
+ h.host.connection.request=()=>new Promise(r=>resolve=r);
+ const pending=h.runtime.readMcpServers({sessionId:'session-one'});
+ await assert.rejects(h.runtime.readMcpServers({sessionId:'session-one'}),/already/);
+ await h.runtime.disconnect();resolve({servers:[]});await assert.rejects(pending,/interrupted|connection/i);
+ assert.equal(h.runtime.snapshot().permissionVerified,false);
+});
+test('session MCP inspection keeps a timed-out native read guarded until it settles',async t=>{
+ const h=await harness(t);await h.connect();let resolve,calls=0;
+ h.host.connection.request=()=>{calls++;return new Promise(r=>resolve=r);};
+ await assert.rejects(h.runtime.readMcpServers({sessionId:'session-one'}),/Could not read/);
+ await assert.rejects(h.runtime.readMcpServers({sessionId:'session-one'}),/already/);assert.equal(calls,1);
+ resolve({servers:[]});await new Promise(r=>setImmediate(r));
+ const retry=h.runtime.readMcpServers({sessionId:'session-one'});assert.equal(calls,2);resolve({servers:[]});assert.deepEqual((await retry).servers,[]);
+});
+test('a late MCP read cannot clear a replacement connection read guard',async t=>{
+ const h=await harness(t);await h.connect();const nativeRequest=h.host.connection.request;let finishOld,finishNew;
+ h.host.connection.request=()=>new Promise(r=>finishOld=r);
+ const old=h.runtime.readMcpServers({sessionId:'session-one'}),oldRejected=assert.rejects(old,/interrupted|connection/i);
+ await h.runtime.disconnect();h.host.connection.request=nativeRequest;await h.connect();
+ h.host.connection.request=()=>new Promise(r=>finishNew=r);
+ const current=h.runtime.readMcpServers({sessionId:'session-one'});finishOld({servers:[]});await oldRejected;
+ await assert.rejects(h.runtime.readMcpServers({sessionId:'session-one'}),/already/);
+ finishNew({servers:[]});assert.deepEqual((await current).servers,[]);assert.equal(h.runtime.snapshot().permissionVerified,true);
+});
+test('session MCP inspection distinguishes unsupported and malformed replies without exposing native errors',async t=>{
+ const h=await harness(t);await h.connect();const before=h.runtime.snapshot();
+ h.host.connection.request=async()=>{throw Object.assign(Error('private native diagnostic'),{code:-32601});};
+ await assert.rejects(h.runtime.readMcpServers({sessionId:'session-one'}),/not supported/);
+ for(const value of [{}, {servers:[{name:'incomplete'}]}]){h.host.connection.request=async()=>value;await assert.rejects(h.runtime.readMcpServers({sessionId:'session-one'}),/Could not read/);}
+ assert.deepEqual(h.runtime.snapshot(),before);
+});
 const inspectionItem={itemId:'inspect-item',kind:'subagent',childSessionId:'child-session',revision:2,status:'inProgress',controlStatus:'running'};
 const childRead=()=>({session:{sessionId:'child-session',parentSessionId:'session-one',kind:'subagent',status:'notLoaded'},history:{mode:'inline',items:[{itemId:'answer',kind:'agentMessage',revision:1,status:'completed',text:'Child answer'}],snapshot:null},viewCursor:'child-head',pendingRequests:[]});
 test('child inspection uses only session/read during running work and leaves parent ownership untouched',async t=>{

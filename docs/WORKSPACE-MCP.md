@@ -73,7 +73,11 @@ At **2026-10-27 04:29:03 UTC**, the external probe ran under `release/win-unpack
 
 This followed the clean package byte-comparison receipt at `artifacts/personal-package-verification.json` dated **04:28:06 UTC**. An earlier package returned incorrect source bytes from its archive and was not accepted. The rebuilt artifact passed the ASAR probe without an unpacking workaround.
 
-The installed MSP bundle has no supported MCP inventory/status query. The probe therefore reports `toolInventoryVerified: false`; native session creation alone does not establish a model-visible schema or successful model invocation. Actual model search/call receipts and negative native startup cases remain separate acceptance checks.
+The original probe did not query the experimental MCP inventory. On 29 October the installed Muse 1.4.14 binary exported and served `mcpServer/list`: an isolated profile returned no global servers, then the configured session returned `musebench_workspace`, source `session`, transport `stdio`, OAuth `notSupported`. The runtime probe now verifies this row with zero model calls and confirmed shutdown. The experimental schema fingerprint was `sha256:159e01dd32c37f5ad711225aa1840dbca653e346fd83bed7f3b2b9ea49b40aa7`.
+
+In the shared **Session → Session MCP servers** disclosure, users can read or refresh these configuration and authorization facts on demand. Closing and reopening the disclosure reuses its snapshot. The controller and runtime bind each read to the current chat, session and connection; late results cannot appear on another chat. Reads do not submit turns, change settings, publish lifecycle events, or block Stop. Names are plain text, extra fields are discarded, and the view is capped at 200 rows with omissions disclosed. Unsupported or failed reads are explicit. Preview is labeled simulated.
+
+The API reports configuration/auth facts only. It does not enumerate model-visible tool schemas or test server/tool health. `serverInventoryVerified: true` is therefore distinct from `toolInventoryVerified: false`. Actual model search/call receipts, negative native startup cases and dynamic schema reload remain separate acceptance checks. The official [experimental inventory contract](https://meta-models.github.io/muse-code-sdk/next/generated/msp/methods/mcpserver-list/) documents the session-scoped set.
 
 ## Probe commands
 
