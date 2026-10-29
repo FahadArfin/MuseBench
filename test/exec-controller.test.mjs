@@ -69,9 +69,12 @@ async function harness(t,{durableSessions=false,missingSession=false,background=
   assert.equal(state.runtime.status,'idle');
   assert.equal(calls.some(call=>call.args.includes('meta')),false,'connection probes must never call a model');
   const send=async()=>{
-    const sent=await within(controller.dispatch({type:'sendMessage',text:'Perform only the approved project change.'}));
+    // Dispatch includes real workspace/context I/O. Its contract here is to
+    // return before the injected run ends, not a one-second startup benchmark.
+    const sent=await within(controller.dispatch({type:'sendMessage',text:'Perform only the approved project change.'}),5000);
     assert.equal(sent.error,null);assert.equal(sent.runtime.status,'running');assert.equal(sent.task.runtimeComplete,false);
-    return calls.findLast(call=>call.args.includes('meta')).child;
+    const child=calls.findLast(call=>call.args.includes('meta')).child;assert.equal(child.closed,false);
+    return child;
   };
   return{controller,runtime,calls,stopped,send,dataDir};
 }
