@@ -4,11 +4,10 @@ import {configurationDigest} from '../src/runtime/extension-review.mjs';
 import {pluginPart,nativeHash,pluginDecisions,nativeMcpDecision} from '../src/runtime/plugin-capabilities.mjs';
 import {diagnosticText} from '../reference/patchlight/adapter/diagnostics.mjs';
 import {settingsMcp} from '../src/runtime/project-mcp.mjs';
+import {displayPluginCommand} from './plugin-command-review.mjs';
 
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const fail=()=>{throw Error('Native plugin capabilities could not be fully verified. Inspect the package in the official Muse CLI.');};
-const credentialFlag=/^--?(?:(?:api|access|refresh)[_-]?)?(?:key|token|password|secret|authorization)$/i;
-const displayCommand=command=>command.map((arg,i)=>i>0&&credentialFlag.test(command[i-1])?'[redacted]':diagnosticText(arg));
 // The CLI writes the canonical top-level key even for a legacy settings file.
 // Server values and every unrelated setting must remain exactly the same.
 const settingsIdentity=config=>{const {key,servers}=settingsMcp(config),copy={...config};delete copy[key];return configurationDigest({...copy,mcpServers:servers});};
@@ -53,7 +52,7 @@ export function createPluginCapabilities({cli,review,settings,settingsPath,inven
    }
    const decision=decisions[c.stable_id],enabled=decision?.enabled===true;
    const matching=nativeMcpDecision(c.stable_id,decision)&&decision.trusted_definition_hash===c.definition_hash;
-   servers.push({stableId:c.stable_id,title:c.capability_id,kind:c.kind,supported:true,command:displayCommand(definition.command),definitionHash:c.definition_hash,enabled,reviewed:enabled&&matching&&reviewed[c.stable_id]===true,status:diagnosticText(row.status),...(decision&&!matching?{reason:'The native approval does not match this definition. Review it again.'}:{})});
+   servers.push({stableId:c.stable_id,title:c.capability_id,kind:c.kind,supported:true,command:displayPluginCommand(definition.command),definitionHash:c.definition_hash,enabled,reviewed:enabled&&matching&&reviewed[c.stable_id]===true,status:diagnosticText(row.status),...(decision&&!matching?{reason:'The native approval does not match this definition. Review it again.'}:{})});
   }
   if(definitionsById.size)fail();
   // No app grant or UI result may describe a mix of different observations.

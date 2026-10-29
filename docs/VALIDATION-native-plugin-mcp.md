@@ -28,7 +28,11 @@ The shared preview and Electron renderer fixture covers keyboard activation, exp
 
 The existing five-category catalog checks still cover compact controls, retained rows and scroll position during refresh, full-directory search, 240-row continuous scrolling, source/category switching and Installed/Discover parity. Native source receipts and UI screenshots remain in ignored `artifacts/native-plugin/` and `artifacts/plugin-tools-ui/`.
 
-The full local suite passed 1,298 tests. The production build, catalog preview, catalog desktop, plugin-tool UI checks and shared preview parity checks passed. An independent final review and exact-release installation follow these local checks.
+The full local suite passed 1,304 tests. The production build, catalog preview, catalog desktop, plugin-tool UI checks and shared preview parity checks passed. The native fixture was repeated after the review fixes and passed with zero model requests.
+
+The independent final review found two command-display problems: a generic diagnostic sanitizer could remove code following a URL, and inline credential flags were not consistently hidden. A command-specific formatter now preserves argument boundaries and non-secret syntax, handles separated and inline credential fields consistently, and refuses ambiguous embedded credentials instead of hiding part of an executable program. Both findings have failing-then-passing regression coverage. Exact-release installation is the remaining delivery check.
+
+Implementation decisions: the user's standing authorization keeps work in the live preview checkout and publishes to main; unrelated work is preserved. Local audit folders remain because an earlier cleanup attempt was rejected. Real model-issued tool use still needs a separately authorized usage run; echo evidence is deliberately limited to native loading and discovery. Custom XDG plugin stores remain explicitly unsupported. Release and installed-package verification are required after the local checks.
 
 ## Primary references
 

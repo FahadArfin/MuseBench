@@ -151,7 +151,29 @@ test('unsupported native capability kinds stay visible without an approval actio
 test('command review hides common credentials and keeps argument boundaries',async t=>{
  const f=await serviceFixture(t,{inspection:value=>value.plugin.capabilities.mcp_servers[0].command=['node','server.mjs','--token','fixture-credential','https://user:password@example.com/mcp?key=private#secret']});
  const first=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;
- assert.deepEqual(first.servers[0].command,['node','server.mjs','--token','[redacted]','https://example.com/mcp']);assert.doesNotMatch(JSON.stringify(first),/fixture-credential|user:password|key=private/);
+ assert.deepEqual(first.servers[0].command,['node','server.mjs','--token','[redacted]','https://[redacted]@example.com/mcp?key=[redacted]#secret']);assert.doesNotMatch(JSON.stringify(first),/fixture-credential|user:password|key=private/);
+});
+test('command review preserves executable syntax after an embedded URL',async t=>{
+ const command=['node','-e',"fetch('https://example.com/?q=x');console.log('hidden-action')"];
+ const f=await serviceFixture(t,{inspection:value=>value.plugin.capabilities.mcp_servers[0].command=command});
+ const first=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;assert.deepEqual(first.servers[0].command,command);
+});
+test('command review applies one credential policy to separated and inline flags',async t=>{
+ const command=['node','server.mjs','--key=fixture-secret','--authorization=fixture-secret','--api-key','separated-secret','--authorization','Bearer bearer-secret','--mode=ordinary'];
+ const f=await serviceFixture(t,{inspection:value=>value.plugin.capabilities.mcp_servers[0].command=command});
+ const first=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;
+ assert.deepEqual(first.servers[0].command,['node','server.mjs','--key=[redacted]','--authorization=[redacted]','--api-key','[redacted]','--authorization','Bearer [redacted]','--mode=ordinary']);assert.doesNotMatch(JSON.stringify(first),/fixture-secret|separated-secret|bearer-secret/);
+});
+for(const script of ["fetch('https://user:password@example.com/?key=secret');console.log('visible-action')","--key=secret;console.log('visible-action')","TOKEN='secret';doSomething()"])
+test('ambiguous embedded credentials refuse review instead of hiding executable syntax: '+script.slice(0,18),async t=>{
+ const f=await serviceFixture(t,{inspection:value=>value.plugin.capabilities.mcp_servers[0].command=['node','-e',script]});
+ await assert.rejects(f.service.dispatch({type:'inspectPluginMcp',id:'fixture'}),error=>/credential|review/i.test(error.message)&&!error.message.includes('password'));
+ assert.equal(f.calls.some(args=>args[1]==='approve'),false);
+});
+test('URL argument review preserves non-secret parameters, path and fragment syntax',async t=>{
+ const f=await serviceFixture(t,{inspection:value=>value.plugin.capabilities.mcp_servers[0].command=['node','server.mjs','https://example.com/mcp?q=one%20two&api_key=secret&mode=read#section','https://example.com/#access_token=fragment-secret&scope=read']});
+ const first=(await f.service.dispatch({type:'inspectPluginMcp',id:'fixture'})).pluginMcp;
+ assert.deepEqual(first.servers[0].command.slice(2),['https://example.com/mcp?q=one%20two&api_key=[redacted]&mode=read#section','https://example.com/#access_token=[redacted]&scope=read']);
 });
 test('approval grant rechecks changes immediately before persistence',async t=>{
  const f=await fixture(t);
