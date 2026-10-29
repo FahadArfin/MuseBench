@@ -192,6 +192,27 @@ test('MCP edits retain unrelated settings and secrets, but snapshots do not expo
  assert.equal(await f.review.allowMcp('existing',saved.mcp_servers.existing),false);
  assert.ok((await readFile(f.settings+'.musebench-backup','utf8')).includes('keep'));
 });
+for(const install of ['catalog','manual'])test(`first ${install} MCP install writes the required native settings schema`,async()=>{
+ const f=await fixture();
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,catalog:{resolve:async()=>({recipe:{name:'docs',transport:'http',url:'https://example.org/mcp'}})},run:async()=>({stdout:'{"skills":[],"plugins":[]}'})});
+ try{
+  await service.snapshot();assert.equal(await policy.optionalText(f.settings),null);
+  await service.dispatch(install==='catalog'?{type:'catalogServer',id:'docs',reviewed:true}:{type:'saveServer',server:{name:'docs',transport:'streamable_http',url:'https://example.org/mcp'},reviewed:true});
+  const saved=JSON.parse(await readFile(f.settings,'utf8'));assert.equal(saved.schema_version,1);assert.equal(await f.review.allowMcp('docs',saved.mcp_servers.docs),true);
+ }finally{await service.close();}
+});
+for(const marker of [undefined,1,17])test(`reviewed MCP edit ${marker===undefined?'repairs an absent':'preserves existing '+marker} schema marker without changing other fields`,async()=>{
+ const f=await fixture(),entry={transport:'stdio',command:'node',args:['reviewed.mjs'],enabled:true,mode:'optional'};
+ const original=JSON.stringify({...(marker===undefined?{}:{schema_version:marker}),theme:'keep',provider:{api_key:'fixture-secret'},mcp_servers:{tool:entry}});await writeFile(f.settings,original);
+ const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review,run:async()=>({stdout:'{"skills":[],"plugins":[]}'})});
+ try{
+  const state=await service.snapshot();assert.equal(await readFile(f.settings,'utf8'),original);
+  const result=await service.dispatch({type:'serverAction',name:'tool',action:'disable',revision:state.servers[0].revision,reviewed:true});
+  const saved=JSON.parse(await readFile(f.settings,'utf8'));
+  assert.equal(saved.schema_version,marker??1);assert.equal(saved.theme,'keep');assert.equal(saved.provider.api_key,'fixture-secret');assert.deepEqual(saved.mcp_servers.tool,{...entry,enabled:false});
+  assert.equal(await readFile(f.settings+'.musebench-backup','utf8'),original);assert.doesNotMatch(JSON.stringify(result),/fixture-secret/);
+ }finally{await service.close();}
+});
 test('invalid settings and unreviewed changes never overwrite user configuration',async()=>{
  const f=await fixture();await writeFile(f.settings,'{broken');
  const service=api.createCustomize({getState:()=>({runtime:{binary:'C:/muse.exe'}}),environment:{USERPROFILE:f.profile},dataDir:f.dataDir,review:f.review});

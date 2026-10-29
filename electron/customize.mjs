@@ -69,7 +69,10 @@ export function createCustomize({getState,environment=process.env,dataDir,review
   let target=settingsPath;try{if((await lstat(target)).isSymbolicLink())target=await realpath(target);}catch(error){if(error.code!=='ENOENT')throw error;}
   if(original!==null)await writeFile(settingsPath+'.musebench-backup',original,{mode:0o600});
   if(await optionalText(settingsPath)!==original)throw Error('Muse settings changed elsewhere. Refresh and try again.');
-  await atomicJson(target,config,async()=>{if(await optionalText(settingsPath)!==original)throw Error('Muse settings changed elsewhere. Refresh and try again.');if(original!==null&&await realpath(settingsPath)!==await realpath(target))throw Error('Muse settings path changed elsewhere. Refresh and try again.');});
+  // Muse requires this marker even in a file containing only MCP servers.
+  // Repair older app-created files only on a reviewed edit; preserve any
+  // explicit version and all unrelated settings exactly as supplied.
+  await atomicJson(target,{schema_version:1,...config},async()=>{if(await optionalText(settingsPath)!==original)throw Error('Muse settings changed elsewhere. Refresh and try again.');if(original!==null&&await realpath(settingsPath)!==await realpath(target))throw Error('Muse settings path changed elsewhere. Refresh and try again.');});
  }
  function plugins(value){return(value.plugins??[]).filter(item=>idOK(item.record?.id)).slice(0,250).map(item=>({id:item.record.id,title:clean(item.record.display_name||item.record.id,200),description:clean(item.record.description,800),version:clean(item.record.version,60),enabled:item.record.enabled===true,valid:item.valid===true,capabilities:capabilities(item.plugin?.capabilities),reviewRequired:!item.active}));}
  function capabilities(value){return Object.entries(value??{}).filter(([,items])=>Array.isArray(items)&&items.length).map(([kind,items])=>({kind:clean(kind,60),count:items.length}));}
