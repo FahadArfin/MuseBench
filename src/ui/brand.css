@@ -53,6 +53,26 @@
 .segmented button.selected { background: var(--accent-soft); color: var(--accent); }
 .personal-navigation .navigation-row.active > svg { color: var(--accent); }
 
+/* Small wayfinding accents carry the identity between the major blue actions. */
+.sidebar .navigation-row.new-chat > svg,
+.sidebar .navigation-row.active > svg,
+.personal-collection-heading.active .personal-collection-title > svg,
+.toolbar-button.active > svg,
+.toolbar-button[aria-expanded="true"] > svg { color: var(--accent); }
+
+.extensions-tabs button[aria-selected="true"],
+.extensions-modal .catalog-view-tabs .button.primary,
+.extensions-modal .catalog-sources button.active,
+.project-chat-tabs button[aria-pressed="true"],
+.usage-tabs button[aria-selected="true"],
+.analytics-segments button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.extensions-tabs button[aria-selected="true"] > svg { color: var(--accent); }
+.work-thread-tabs > button[aria-selected="true"] { color: var(--accent); }
+.work-thread-tabs > button[aria-selected="true"]::after { background: var(--accent); }
+
 .chat-row.selected,
 .personal-item-row.selected,
 .work-library-item.selected,
