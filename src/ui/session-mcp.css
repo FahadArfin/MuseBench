@@ -6,3 +6,4 @@
 .session-mcp-list div { min-width: 0; display: grid; gap: 3px; overflow-wrap: anywhere; }
 .session-mcp-list strong { font-size: 13px; font-weight: 500; }
 .session-mcp-list span { font-size: 12px; color: var(--muted); }
+.mcp-snapshot-note { font-size: 12px; color: var(--muted); border-left: 2px solid var(--accent); padding-left: 8px; }

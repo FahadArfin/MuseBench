@@ -34,6 +34,7 @@ jobs:
       - run: npm run test:reply-copy
       - run: npm run test:model-settings
       - run: npm run test:work-activity
+      - run: npm run test:connection-diagnostics
       - run: npm run test:plugin-tools
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness
