@@ -12,6 +12,7 @@ import {createOutputStore} from './output-artifacts.mjs';
 import {validateCheckScripts,missingChecks,checkDiagnostics} from '../shared/validation.mjs';
 import {createHistoryStore} from './chat-history.mjs';
 import {createDraftStore} from './code-drafts.mjs';
+import {readRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
 import {restoreSkillReceipts} from '../shared/skill-receipts.mjs';
 import {restoreUsage,combineUsage} from '../shared/native-usage.mjs';
 import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
@@ -190,7 +191,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const contexts=new Map();let preferredBinary=runtime?.snapshot?.().binary??null;
   const newContext=(owner,task=null)=>({runtime:owner,task,root:null,pending:false,turn:null,messageBaseline:runtimeMessageIds(owner?.snapshot?.()),navigation:false,queueScheduled:false,unsubscribe:null});
   let context=newContext(runtime,state.task);if(state.task)contexts.set(state.task.id,context);
-  const contextBusy=c=>!!c&&(c.pending||['running','starting','submitting','connecting','checking-permissions'].includes(c.runtime?.snapshot?.().status)||c.runtime?.snapshot?.().operationBusy||c.runtime?.snapshot?.().childrenBusy||c.runtime?.snapshot?.().cleanup==='unconfirmed'||!!c.runtime?.snapshot?.().pending);
+  const contextBusy=c=>!!c&&(c.pending||runtimeStatusBusy(readRuntimeStatus(c.runtime)));
   const saveRecord=t=>{if(!t)return;analytics.sync(t);history.sync(t);t.messages=t.messages.slice(-150);t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));};
   const bindContext=task=>{
     if(!runtimeFactory){contexts.clear();context.task=task;if(task)contexts.set(task.id,context);return;}
@@ -204,7 +205,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(other.length>=4)throw Error('Four chats are already running. Wait or stop one before starting another.');
     if(other.some(c=>{const root=state.projects.find(p=>p.id===c.task?.projectId)?.root;return root&&(inside(root,project.root)||inside(project.root,root));}))throw Error('Another chat is using this checkout. Wait for it to stop, or create an isolated worktree.');
   };
-  const summaries=()=>[...taskRecords.values()].reverse().filter(t=>state.projects.some(p=>p.id===t.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(t=>({id:t.id,projectId:t.projectId,title:t.title,mode:t.mode,createdAt:t.createdAt,updatedAt:t.updatedAt,acceptedRevision:t.acceptedRevision,runtimeBusy:contextBusy(contexts.get(t.id)),runtimeStatus:contexts.get(t.id)?.runtime?.snapshot?.().status??null,pinned:t.pinned===true,archived:t.archived===true,archivedAt:t.archivedAt??null}));
+  const summaries=()=>[...taskRecords.values()].reverse().filter(t=>state.projects.some(p=>p.id===t.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(t=>{
+    const owner=contexts.get(t.id),status=readRuntimeStatus(owner?.runtime);
+    return{id:t.id,projectId:t.projectId,title:t.title,mode:t.mode,createdAt:t.createdAt,updatedAt:t.updatedAt,acceptedRevision:t.acceptedRevision,runtimeBusy:!!owner&&(owner.pending||runtimeStatusBusy(status)),runtimeStatus:status.status,pinned:t.pinned===true,archived:t.archived===true,archivedAt:t.archivedAt??null};
+  });
   const getState=()=>structuredClone({...state,task:state.task?{...state.task,reviewUsage:combineUsage((state.task.reviewChildren??[]).map(id=>taskRecords.get(id)?.nativeUsage??null)),executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries()});
   const saveTask=()=>{
     if(!state.task)return;analytics.sync(state.task);history.sync(state.task);state.task.messages=state.task.messages.slice(-150);context.task=state.task;
@@ -265,7 +269,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const stopPreview=async()=>{previewToken=null;const child=previewProcess;previewProcess=null;await killTree(child);state.preview=stopped();};
   const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';outputs.finish(state.task.id,state.task.check.id,'cancelled');state.task.check.endedAt=now();persist();}await killTree(child);};
   const cleanup=async(disconnect=true)=>{await cancelCheck();await stopPreview();if(disconnect)await runtime?.disconnect?.();};
-  const requireNavigationIdle=()=>{if(contextBusy(context))throw Error(context.runtime?.snapshot?.().pending&&(context.runtime?.snapshot?.().reason||(context.runtime.snapshot().pending.kind==='approval'?'Approval required':'Muse needs your attention'))||'Finish or disconnect the running Muse turn before switching projects or tasks.');};
+  const requireNavigationIdle=()=>{if(contextBusy(context)){const current=context.runtime?.snapshot?.();throw Error(current?.pending&&(current.reason||(current.pending.kind==='approval'?'Approval required':'Muse needs your attention'))||'Finish or disconnect the running Muse turn before switching projects or tasks.');}};
   const navigationCleanup=async()=>{
     pauseGoalDriver(state.task?.goal?.driver,'Changed active chat; explicitly resume continuation');
     if(runtimeFactory){await cleanup(false);saveTask();return;}
@@ -847,7 +851,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       const all=[...new Set([context,...contexts.values()])];
       if(closing||closed||state.busy||checkProcess||all.some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused))throw Error('Finish running or queued work before changing billing.');
       await Promise.all(all.map(c=>c.runtime?.disconnect?.()));
-      if(all.some(c=>['pending','unconfirmed'].includes(c.runtime?.snapshot?.().cleanup)))throw Error('Native shutdown is unconfirmed. Billing was not changed.');
+      if(all.some(c=>['pending','unconfirmed'].includes(readRuntimeStatus(c.runtime).cleanup)))throw Error('Native shutdown is unconfirmed. Billing was not changed.');
       for(const c of all)c.root=null;
       state.runtime=runtime?.snapshot?.()??missingRuntime();emit();
     });queue=op.catch(()=>{});return op;

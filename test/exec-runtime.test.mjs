@@ -18,6 +18,13 @@ function records({terminal='completed',text='Done',reason=null,model=true,shellR
 const jsonl=values=>values.map(value=>JSON.stringify(value)).join('\n')+'\n';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('exec compact status follows running and unconfirmed cleanup without transcript clones',async t=>{
+ const h=await harness(t,{stopFails:true,timeoutMs:15});assert.equal(typeof h.runtime.statusSnapshot,'function');
+ const check=()=>{const s=h.runtime.snapshot();let copies=0;const clone=globalThis.structuredClone;const mocked=t.mock.method(globalThis,'structuredClone',value=>{copies++;return clone(value);});let actual;try{actual=h.runtime.statusSnapshot();}finally{mocked.mock.restore();}assert.equal(copies,0);assert.deepEqual(actual,{status:s.status??null,cleanup:s.cleanup??null,pending:!!s.pending,operationBusy:!!s.operationBusy,childrenBusy:!!s.childrenBusy});return actual;};
+ assert.equal(check().status,'unavailable');await h.connect();assert.equal(check().status,'idle');await h.runtime.send({text:'Synthetic status fixture'});assert.equal(check().status,'running');
+ await h.runtime.disconnect();assert.equal(check().cleanup,'unconfirmed');assert.equal(check().status,'unavailable');
+});
+
 test('Full access is explicit, skips sandbox readiness, and preserves human approval',async t=>{
  const h=await harness(t,{ready:'status=not-ready\n'});
  await h.runtime.connect({binary:h.binary,workspaceRoot:h.profile,fullAccess:true});

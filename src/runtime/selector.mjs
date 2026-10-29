@@ -1,12 +1,13 @@
 import {createExecRuntime} from './exec.mjs';
 import {createRuntime} from './index.mjs';
+import {readRuntimeStatus} from './status.mjs';
 /** One adapter per chat; transport/access choices are never inherited by another chat. */
 export function createCodeRuntime({execFactory,mspFactory,...options}={}){
  const factories={exec:execFactory??(()=>createExecRuntime(options)),msp:mspFactory??(()=>createRuntime(options))};
  let kind='exec',runtime=factories.exec(),unsubscribe;const listeners=new Set();
  const snapshot=()=>({...runtime.snapshot(),interactiveAvailable:true});
  const emit=()=>{for(const fn of listeners)fn(snapshot());};const subscribe=()=>{unsubscribe=runtime.subscribe(emit);};subscribe();
- const api={snapshot,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},async connect(input={}){
+ const api={snapshot,statusSnapshot:()=>readRuntimeStatus(runtime),subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},async connect(input={}){
   const selected=input.transport??kind;if(!factories[selected])throw Error('Unsupported connection mode.');
   const s=runtime.snapshot();if(s.permissionVerified||!['unavailable','closed'].includes(s.status)||s.cleanup==='pending'||s.cleanup==='unconfirmed')throw Error('Disconnect the current connection before changing modes.');
   if(selected==='msp'&&input.fullAccess!==true)throw Error('Interactive Windows mode requires explicit Full access.');

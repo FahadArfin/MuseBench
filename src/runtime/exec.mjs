@@ -1,4 +1,5 @@
 import {checkConfiguration} from './configuration-review.mjs';
+import {projectRuntimeStatus} from './status.mjs';
 import {diagnosticText} from '../../reference/patchlight/adapter/diagnostics.mjs';
 export {checkConfiguration} from './configuration-review.mjs';
 import {readNativeModels} from './models.mjs';
@@ -282,5 +283,5 @@ export function createExecRuntime({credentials,loadModels=readNativeModels,durab
   update({cleanup,...(cleanup==='unconfirmed'?{reason:'Native shutdown could not be confirmed. Check the process before restarting MuseBench.'}:{})});return snapshot();
  }
 
- return {snapshot,subscribe(fn){if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,refreshModels,send,disconnect,close:disconnect,async decide(){throw Error('Interactive approval is unavailable in native mode. No approval was sent; disconnect and inspect any partial changes.');}};
+ return {snapshot,statusSnapshot:()=>projectRuntimeStatus(state),subscribe(fn){if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,refreshModels,send,disconnect,close:disconnect,async decide(){throw Error('Interactive approval is unavailable in native mode. No approval was sent; disconnect and inspect any partial changes.');}};
 }

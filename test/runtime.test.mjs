@@ -9,6 +9,15 @@ import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/run
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
+test('interactive compact status follows native lifecycle without transcript clones',async t=>{
+ const h=await harness(t);assert.equal(typeof h.runtime.statusSnapshot,'function');
+ const check=()=>{const s=h.runtime.snapshot();let copies=0;const clone=globalThis.structuredClone;const mocked=t.mock.method(globalThis,'structuredClone',value=>{copies++;return clone(value);});let actual;try{actual=h.runtime.statusSnapshot();}finally{mocked.mock.restore();}assert.equal(copies,0);assert.deepEqual(actual,{status:s.status??null,cleanup:s.cleanup??null,pending:!!s.pending,operationBusy:!!s.operationBusy,childrenBusy:!!s.childrenBusy});return actual;};
+ assert.equal(check().status,'unavailable');await h.connect();assert.equal(check().status,'idle');await h.runtime.send({text:'Synthetic status fixture'});assert.equal(check().status,'running');
+ h.emit({method:'item/updated',params:{sessionId:'session-one',item:inspectionItem}});assert.equal(check().childrenBusy,true);
+ await h.request({method:'approval/request',params:{sessionId:'session-one',approvalId:'status-approval',currentRequirementId:{approvalId:'status-approval',sourceIndex:0},availableChoices:[]}});assert.equal(check().pending,true);
+ await h.runtime.disconnect();assert.equal(check().cleanup,'confirmed');assert.equal(check().pending,false);
+});
+
 test('an approved execution configuration change needs a fresh host before another turn',async t=>{
  let revision='original';const h=await harness(t,{verifyConfiguration:async()=>({executionRevision:revision})});await h.connect();
  revision='reviewed-change';await assert.rejects(h.runtime.send({text:'Do not send to stale tools'}),/Reconnect/);

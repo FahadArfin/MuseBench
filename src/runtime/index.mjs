@@ -1,4 +1,5 @@
 import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
+import {projectRuntimeStatus} from './status.mjs';
 import {childWorking} from '../shared/child-actions.mjs';
 import {createChildTracker} from './children.mjs';
 import {projectChildRead} from './child-inspection.mjs';
@@ -557,5 +558,5 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();
   }catch(error){if(token===epoch){if(!submitted||error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
  }
- return {snapshot,subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,inspectChild,readMcpServers,answerInput,decide,close:()=>disconnect()};
+ return {snapshot,statusSnapshot:()=>projectRuntimeStatus(state),subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,inspectChild,readMcpServers,answerInput,decide,close:()=>disconnect()};
 }
