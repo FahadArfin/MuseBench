@@ -4,6 +4,38 @@ import {FixturePort,descriptor,events,sessionResult,turnAck} from './fixture-por
 const root=sessionResult.session.workspaceRoot;
 async function setup(options={}){const port=new FixturePort();const adapter=new MuseSessionAdapter({connection:port,...descriptor(),timeoutMs:50,...options});await adapter.open(root);return {adapter,port};}
 const event=(method)=>structuredClone(events.find(e=>e.method===method));
+const mcpFailure='invalid run configuration: Required MCP server `musebench_workspace` failed during startup: the configured command is unavailable.';
+test('native terminal failure keeps its useful reason without replaying the request',async()=>{
+ const {adapter,port}=await setup();await adapter.send({text:'Inspect the workspace'});
+ const failed=event('turn/completed');Object.assign(failed.params,{terminal:'failed',reason:mcpFailure,error:{kind:'configError',message:'Lower priority detail',retryable:true}});port.emit(failed);
+ assert.equal(adapter.snapshot().status,'failed');assert.equal(adapter.snapshot().reason,mcpFailure);assert.equal(adapter.snapshot().outcome,'failed');assert.equal(Object.hasOwn(adapter.snapshot(),'error'),false);
+ port.emit(failed);assert.equal(adapter.snapshot().reason,mcpFailure);assert.equal(port.calls.filter(call=>call.method==='turn/start').length,1);
+ await adapter.send({text:'Try again after I fix it'});assert.equal(adapter.snapshot().reason,null);assert.equal(port.calls.filter(call=>call.method==='turn/start').length,2);
+});
+test('native terminal failure falls back to its structured error message',async()=>{
+ for(const reason of [undefined,null,'   ',{secret:'not text'}]){
+  const {adapter,port}=await setup();await adapter.send({text:'Inspect'});const failed=event('turn/completed');Object.assign(failed.params,{terminal:'failed',reason,error:{message:'The server did not respond during startup.'}});port.emit(failed);
+  assert.equal(adapter.snapshot().reason,'The server did not respond during startup.');
+ }
+});
+test('failure reasons redact common credentials and bound the published text',async()=>{
+ const {adapter,port}=await setup();await adapter.send({text:'Inspect'});const failed=event('turn/completed');Object.assign(failed.params,{terminal:'failed',reason:'Server failed: Bearer fixtureBearer123, META_API_KEY="fixtureKey123" password=fixturePassword123 sk-fixtureSecret123 https://fixtureUser:fixturePass@example.test/path?access_token=fixtureQuery#fragment\n'+ 'detail '.repeat(1000)});port.emit(failed);
+ const shown=adapter.snapshot().reason;assert.equal(typeof shown,'string');assert.ok(shown.startsWith('Server failed:'));assert.ok(shown.length<=1200);assert.match(shown,/redacted/);assert.match(shown,/example\.test\/path/);
+ for(const secret of ['fixtureBearer123','fixtureKey123','fixturePassword123','sk-fixtureSecret123','fixtureUser','fixturePass','fixtureQuery','#fragment'])assert.ok(!shown.includes(secret),secret);
+ assert.doesNotMatch(shown,/[\u0000-\u001f\u007f]/);
+});
+test('cancelled native turns retain an explanation while successful turns ignore stale errors',async()=>{
+ for(const terminal of ['cancelled','completed']){const {adapter,port}=await setup();await adapter.send({text:'Inspect'});const finished=event('turn/completed');Object.assign(finished.params,{terminal,reason:'Stopped by the user.',error:{message:'Old error'}});port.emit(finished);assert.equal(adapter.snapshot().reason,terminal==='cancelled'?'Stopped by the user.':null);assert.equal(adapter.snapshot().status,terminal);}
+});
+test('quoted diagnostic credentials stay redacted through escapes and truncated input',async()=>{
+ for(const reason of [String.raw`Server failed: token="prefix\"fixtureEscapedSecret" detail`,String.raw`Server failed: password='prefix\'fixtureEscapedSecret' detail`,'Server failed: token="'+ 'fixtureEscapedSecret'.repeat(2000)]){
+  const {adapter,port}=await setup();await adapter.send({text:'Inspect'});const failed=event('turn/completed');Object.assign(failed.params,{terminal:'failed',reason});port.emit(failed);
+  assert.doesNotMatch(adapter.snapshot().reason,/fixtureEscapedSecret/);assert.match(adapter.snapshot().reason,/redacted/);
+ }
+});
+test('malformed native diagnostic fields are not published as objects or trusted failures',async()=>{
+ const {adapter,port}=await setup();await adapter.send({text:'Inspect'});const failed=event('turn/completed');Object.assign(failed.params,{terminal:'failed',reason:{message:'not a reason'},error:{message:['not','text'],stack:'private'}});port.emit(failed);assert.equal(adapter.snapshot().reason,null);assert.equal(Object.hasOwn(adapter.snapshot(),'error'),false);
+});
 test('incompatible connection never starts a session',async()=>{const port=new FixturePort();const a=new MuseSessionAdapter({connection:port,...descriptor(),sdkVersion:'wrong'});assert.equal(a.snapshot().status,'unavailable');await assert.rejects(a.open(root));assert.equal(port.calls.length,0);});
 test('session and turn use verified command shapes without auto retry',async()=>{const {adapter:a,port:p}=await setup();assert.equal(a.snapshot().status,'idle');await a.send({text:'Plan the tea filter',mode:'plan'});assert.equal(p.calls[0].method,'session/start');assert.deepEqual(p.calls[0].params,{workspaceRoot:root});assert.equal(p.calls[1].method,'turn/start');assert.equal(p.calls[1].options.maxAttempts,1);assert.equal(p.calls[1].params.sessionId,sessionResult.session.sessionId);assert.match(p.calls[1].params.input[0].text,/Plan the tea filter/);assert.equal(a.snapshot().planReadOnlyEnforced,false);assert.equal(a.snapshot().status,'running');});
 test('official event sequence reaches completion with exact final text',async()=>{const {adapter:a,port:p}=await setup();await a.send({text:'test'});for(const f of events)p.emit(f);const s=a.snapshot();assert.equal(s.status,'completed');assert.equal(s.messages.at(-1).text,'All 214 tests pass except two in tbh-agent...');assert.equal(s.messages.at(-1).phase,'finalAnswer');assert.equal(s.tests,'not-run');});

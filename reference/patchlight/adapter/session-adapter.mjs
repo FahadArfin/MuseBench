@@ -1,5 +1,6 @@
 import {isAbsolute} from 'node:path';
 import {compatibility} from './compatibility.mjs';
+import {terminalReason} from './diagnostics.mjs';
 
 const usable = new Set(['idle','completed','failed','cancelled']);
 const halted = new Set(['unavailable','uncertain','closed','blocked']);
@@ -150,7 +151,7 @@ export class MuseSessionAdapter {
    if(method==='turn/completed'){
     if(!terminals.has(p.terminal)){this.disconnect('unsupported-terminal');return;}
     if(terminals.has(this.#state.outcome)&&this.#state.outcome!==p.terminal){this.disconnect('conflicting-terminal');return;}
-    this.#state.status=p.terminal;this.#state.outcome=p.terminal;this.#state.reason=null;
+    this.#state.status=p.terminal;this.#state.outcome=p.terminal;this.#state.reason=terminalReason(p);
    }
   }else if(method==='item/delta'){
    if(p.field!==undefined&&p.field!=='text')return;

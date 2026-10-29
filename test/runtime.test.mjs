@@ -637,6 +637,14 @@ test('Provider default resolves the native catalog again after reconnect clears 
 test('workspace MCP is supplied by trusted factory only after the sessionMcp grant',async t=>{
  for(const granted of [false,true]){const h=await harness(t,{workspaceMcp:root=>({transport:'stdio',command:'node',args:['gateway',root]})});h.host.initializeResult.grantedCapabilities=granted?['sessionMcp']:[];const operation=h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true});if(!granted){await assert.rejects(operation,/sessionMcp|capability/i);assert.equal(h.calls.some(c=>c.method==='session/start'),false);}else{await operation;assert.equal(h.calls.find(c=>c.method==='session/start').params.config.mcpServers.musebench_workspace.args.at(-1),h.root);}assert.deepEqual(h.calls.find(c=>c.method==='initialize').params.capabilities.requestedCapabilities,['sessionMcp']);}
 });
+
+test('interactive required-server failure remains readable and does not hold the chat busy or resend',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Inspect this project'});
+ const reason='invalid run configuration: Required MCP server `musebench_workspace` failed during startup: initialization failed.';
+ h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'failed',viewCursor:'mcp-failed',reason,error:{kind:'configError',message:reason,retryable:false}}});
+ const failed=h.runtime.snapshot();assert.equal(failed.status,'failed');assert.equal(failed.reason,reason);assert.equal(failed.foregroundActive,false);assert.equal(failed.childrenBusy,false);assert.equal(failed.cleanup,'confirmed');assert.equal(h.calls.filter(call=>call.method==='turn/start').length,1);
+ await h.runtime.send({text:'Try again explicitly'});assert.equal(h.runtime.snapshot().reason,null);assert.equal(h.calls.filter(call=>call.method==='turn/start').length,2);
+});
 test('startup permission projection is reconciled by read-back without treating it as a later policy change',async t=>{
  const h=await harness(t),command=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>{if(method==='session/start')h.emit({method:'session/approvalModeChanged',params:{sessionId:'session-one',viewCursor:'startup-mode',mode:'onRequest',commandId:opts.commandId}});return command(method,params,opts);};await h.connect();assert.equal(h.runtime.snapshot().status,'idle');assert.equal(h.runtime.snapshot().permissionVerified,true);assert.ok(h.calls.some(c=>c.method==='session/read'));
 });

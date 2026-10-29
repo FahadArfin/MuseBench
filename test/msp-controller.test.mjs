@@ -7,6 +7,12 @@ import {createController} from '../src/controller/index.mjs';
 import {DatabaseSync} from 'node:sqlite';
 
 const nativeId='11111111-1111-4111-8111-111111111111';
+test('native failure explanation survives chat reload without replaying the failed request',async t=>{
+ const {c,rt,open}=await fixture(t);await c.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});await c.dispatch({type:'sendMessage',text:'Inspect the project'});
+ const reason='Required MCP server `musebench_workspace` failed during startup: the configured command is unavailable.';
+ rt.emit({status:'failed',cleanup:'confirmed',reason});let state=c.getState();assert.equal(state.task.runs.at(-1).status,'failed');assert.equal(state.task.runs.at(-1).reason,reason);assert.equal(state.task.runtimeComplete,false);assert.equal(state.task.queuePaused,true);assert.equal(rt.sent.length,1);
+ await c.close();const next=runtime(),reopened=await open(next);state=reopened.getState();assert.equal(state.task.runs.at(-1).status,'failed');assert.equal(state.task.runs.at(-1).reason,reason);assert.equal(next.sent.length,0);assert.equal(next.connections.length,0);
+});
 test('MCP inventory stays read-only and rejects stale chat or connection scope',async t=>{
  const {c,rt}=await fixture(t);await c.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});await c.dispatch({type:'sendMessage',text:'Work'});
  const input={taskId:c.getState().task.id,sessionId:nativeId},before=c.getState();let finish,calls=0;

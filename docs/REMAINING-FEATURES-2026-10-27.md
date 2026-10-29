@@ -30,6 +30,8 @@ Meta inference and native non-Windows execution remain distinct. See
 
 **29 October follow-up:** The Session dialog now offers an on-demand native MCP inventory. Muse 1.4.14 returned the actual session-scoped gateway configuration and authorization facts in an isolated zero-model probe with confirmed shutdown. This corrects the earlier inventory-query limitation; it does not establish model tool invocation, tool health or dynamic schema reload. See [MCP contract and receipts](WORKSPACE-MCP.md).
 
+**29 October failure handling:** Seven isolated local-echo cases now establish native required/optional MCP startup behavior, initialization errors, timeout and name-collision rejection. The adapter no longer discards the native terminal explanation, so failed requests retain a bounded, filtered reason in saved activity. Model-issued tool use and dynamic schema reload remain separate acceptance work. See [failure handling evidence](VALIDATION-native-failure-reasons.md).
+
 **28 October follow-up:** Native child activity inspection now uses the observed child's `session/read` identity. Messages, tool output, and reported worktree/token facts appear in a bounded, on-demand disclosure. A read-only Muse 1.4.14 probe returned four real child items without loading the child or starting a model turn. [Implementation and validation](VALIDATION-child-inspection.md). This does not establish the remaining lifecycle operations below.
 
 - **Native peer messaging:** the official Muse contract excludes Windows/headless sessions. Existing explicit MuseBench context handoffs remain available; they are not native peer sessions.

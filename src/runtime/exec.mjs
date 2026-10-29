@@ -1,4 +1,5 @@
 import {checkConfiguration} from './configuration-review.mjs';
+import {diagnosticText} from '../../reference/patchlight/adapter/diagnostics.mjs';
 export {checkConfiguration} from './configuration-review.mjs';
 import {readNativeModels} from './models.mjs';
 import {modelForOptions} from '../shared/models.mjs';
@@ -30,7 +31,7 @@ function safeReason(value) {
  const text=String(value??'');
  if(/(?:\b402\b|billing[_ ]|billing verification)/i.test(text))return 'Meta refused this request because of a billing issue (HTTP 402). Resolve billing in your Meta developer account, then explicitly send again. MuseBench has not retried or changed billing.';
  if(/(?:\b40[13]\b|unauthenticated|not logged in|authentication failed|invalid api key)/i.test(text))return 'Muse authentication is unavailable. Sign in directly in the official Muse CLI, then reconnect. Do not enter credentials in MuseBench.';
- return text.replace(/\b(?:Bearer\s+)[^\s,;]+/gi,'Bearer [redacted]').replace(/\b(?:[A-Z0-9]+_)*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|password|secret)["']?\s*[:=]\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}]+)/gi,'credential=[redacted]').replace(/\bsk-[A-Za-z0-9_-]{8,}/g,'[redacted]').replace(/(https?:\/\/[^\s?#]+)[?#][^\s]*/g,'$1').replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,1200);
+ return diagnosticText(text);
 }
 
 function stderrReason(value) {
