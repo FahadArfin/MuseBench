@@ -18,3 +18,5 @@ The panel refreshes only while open with a downloaded update, skips hidden-windo
 Ignored evidence is retained in `.superpowers/sdd/2026-10-29-update-details/`, `artifacts/update-details/` and `artifacts/preview-parity/report.json`.
 
 Published and installed acceptance remains pending. These checks do not establish that a new release is already available or installed; release assets must finish building, pass their platform checks and be verified before installation.
+
+CI follow-up: validation run 40975545539's reply-action test timed out selecting the Muse Code control after `firstWindow()` and recorded server-rendered React errors, while the MuseBench shell is client-rendered. A preloaded Meta WebContentsView can precede the local shell. The test now explicitly selects the live local `dist/index.html` document, matching other desktop checks. Three selection regressions pass, including a remote page first, a not-yet-navigated window, and an absent shell. All six browser clipboard checks and eight real Electron reply-action checks passed locally. Independent review found no issues; CI acceptance remains separate.
