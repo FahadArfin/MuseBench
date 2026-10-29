@@ -18,6 +18,14 @@ This audit supersedes the status table in [26 October's inventory](REMAINING-FEA
 
 ## Boundaries that still require a different supported contract or further proof
 
+**29 October reviewed-hook follow-up:** Linux/macOS command projection no longer
+uses a Windows-only field. A real interactive Muse 1.4.14 host executed both
+reviewed events through its local echo provider, excluded unreviewed user/managed
+fixtures, and shut down with confirmed cleanup and zero model requests. This
+closes the earlier interactive hook-execution gap for the Windows echo path;
+Meta inference and native non-Windows execution remain distinct. See
+[scope and acceptance](VALIDATION-reviewed-hooks.md).
+
 **29 October follow-up:** The Session dialog now offers an on-demand native MCP inventory. Muse 1.4.14 returned the actual session-scoped gateway configuration and authorization facts in an isolated zero-model probe with confirmed shutdown. This corrects the earlier inventory-query limitation; it does not establish model tool invocation, tool health or dynamic schema reload. See [MCP contract and receipts](WORKSPACE-MCP.md).
 
 **28 October follow-up:** Native child activity inspection now uses the observed child's `session/read` identity. Messages, tool output, and reported worktree/token facts appear in a bounded, on-demand disclosure. A read-only Muse 1.4.14 probe returned four real child items without loading the child or starting a model turn. [Implementation and validation](VALIDATION-child-inspection.md). This does not establish the remaining lifecycle operations below.

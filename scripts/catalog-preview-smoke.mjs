@@ -163,7 +163,7 @@ try{
  assert.equal(await dialog.getByRole('button',{name:'Save reviewed hooks',exact:true}).isDisabled(),true);
  assert.equal((await page.evaluate(()=>window.musebench.customize({type:'refresh'}))).state.hooks.items.length,0);
  await dialog.getByRole('textbox',{name:'Hook 1 command',exact:true}).fill('echo edited-starter');
- await dialog.getByLabel('I reviewed these commands and approve their access as my Windows account.').check();
+ await dialog.getByLabel('I reviewed these commands and approve their access as my user account.').check();
  await dialog.getByRole('button',{name:'Save reviewed hooks',exact:true}).click();
  await dialog.getByRole('tab',{name:'Skills',exact:true}).click();await dialog.getByRole('tab',{name:'Hooks',exact:true}).click();
  assert.equal(await dialog.getByRole('textbox',{name:'Hook 1 command',exact:true}).inputValue(),'echo edited-starter');

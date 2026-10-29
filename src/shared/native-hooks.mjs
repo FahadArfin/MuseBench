@@ -6,4 +6,9 @@ export function validateHooks(items){
   ids.add(item.id);return{id:item.id,event:item.event,command:item.command.trim(),timeout:item.timeout,enabled:item.enabled};
  });
 }
-export function nativeHooks(items){const result={};for(const item of validateHooks(items))if(item.enabled){result[item.event]??=[];result[item.event].push({hooks:[{type:'command',commandWindows:item.command,timeout:item.timeout}]});}return result;}
+export function nativeHooks(items,platform){
+ if(!['win32','linux','darwin'].includes(platform))throw Error('A supported desktop platform is required for native hooks.');
+ const commandKey=platform==='win32'?'commandWindows':'command',result={};
+ for(const item of validateHooks(items))if(item.enabled){result[item.event]??=[];result[item.event].push({hooks:[{type:'command',[commandKey]:item.command,timeout:item.timeout}]});}
+ return result;
+}

@@ -110,7 +110,7 @@ jobs:
       - run: npm ci
       - run: node scripts/stamp-release.mjs
       - name: Portable runtime and release contracts
-        run: node --test test/platform-services.test.mjs test/release-assets.test.mjs test/file-editor.test.mjs test/runtime.test.mjs test/onboarding.test.mjs
+        run: node --test test/platform-services.test.mjs test/release-assets.test.mjs test/file-editor.test.mjs test/runtime.test.mjs test/onboarding.test.mjs test/native-hooks.test.mjs test/hook-presets.test.mjs
       - name: Windows ARM native process coverage
         if: runner.os == 'Windows'
         run: |

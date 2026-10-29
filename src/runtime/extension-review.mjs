@@ -39,7 +39,7 @@ export async function treeDigest(root){
 
 /** Explicit extension consent, independent of Muse's native project shell sandbox.
  * Project skills and app-owned hooks use separate project-bound grants; never grants native saved trust, hooks in settings, managed config or unrelated settings. */
-export function createExtensionReview({dataDir,profile}){
+export function createExtensionReview({dataDir,profile,platform=process.platform}){
  const file=path.join(dataDir,'extension-reviews.json'),data=path.join(profile,'.local','share','muse');
  const inventory=path.join(data,'plugins','installed.json');
  async function load(){const raw=await optionalText(file);if(raw===null)return{version:1,mcp:{},plugins:null};const value=JSON.parse(raw);if(value.version!==1||!value.mcp||typeof value.mcp!=='object')throw Error('Invalid extension review state.');return value;}
@@ -64,7 +64,7 @@ export function createExtensionReview({dataDir,profile}){
   async pluginsReviewed(){if(await optionalText(inventory)===null)return true;return this.allowFile(inventory);},
   async hookState(root){const actual=await realpath(root),items=validateHooks((await load()).hooks?.[actual]??[]);return{root:actual,items,revision:configurationDigest({root:actual,items})};},
   async saveHooks(root,revision,items){const current=await this.hookState(root);if(current.revision!==revision)throw Error('Project hooks changed. Refresh and review them again.');const checked=validateHooks(items),value=await load();value.hooks={...value.hooks,[current.root]:checked};await atomicJson(file,value);},
-  async nativeHooks(root){return nativeHooks((await this.hookState(root)).items);},
+  async nativeHooks(root){return nativeHooks((await this.hookState(root)).items,platform);},
   async projectState(root){const snapshot=await projectTrustSnapshot(root);return{...snapshot,reviewed:(await load()).projects?.[snapshot.root]===snapshot.fingerprint};},
   async approveProject(root,fingerprint){const snapshot=await projectTrustSnapshot(root);if(snapshot.fingerprint!==fingerprint)throw Error('Project instructions changed after review.');if(!snapshot.files.length)throw Error('No project instructions to trust.');const value=await load();value.projects={...value.projects,[snapshot.root]:fingerprint};await atomicJson(file,value);},
   async revokeProject(root){const actual=await realpath(root),value=await load();if(value.projects)delete value.projects[actual];await atomicJson(file,value);},
