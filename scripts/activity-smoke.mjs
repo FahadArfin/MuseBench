@@ -24,8 +24,12 @@ const env={...process.env,MUSEBENCH_DATA_DIR:dataDir,MUSEBENCH_PROJECTS_DIR:path
 const report={variant,fixture,modelRequests:0,checks:[],errors:[]};let app,page;
 const record=name=>{report.checks.push(name);console.log(`PASS ${name}`);};
 const screenshot=async name=>page.screenshot({path:path.join(fixture,`${name}.png`)});
+const settle=()=>page.evaluate(async()=>{document.body.getBoundingClientRect();await Promise.allSettled(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished));});
+const publishFixture=value=>app.evaluate((_electron,value)=>{globalThis.__activityFixture.state=value;globalThis.__activityFixture.contents.send('musebench:update',value);},value);
 try{
- app=await electron.launch({cwd:root,args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});page=await app.firstWindow();page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(error.message));await page.waitForFunction(()=>Boolean(window.musebench));await page.setViewportSize({width:1440,height:960});
+ app=await electron.launch({cwd:root,args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});
+ const deadline=Date.now()+30000;while(!page&&Date.now()<deadline){page=app.windows().find(p=>!p.isClosed()&&p.url().startsWith('file:')&&/\/dist\/index\.html(?:[?#]|$)/.test(p.url()));if(!page)await new Promise(resolve=>setTimeout(resolve,70));}assert.ok(page,'Local desktop renderer did not open');
+ page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(error.message));await page.waitForFunction(()=>Boolean(window.musebench));await page.setViewportSize({width:1440,height:960});
  await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.getByRole('button',{name:'Toggle Sub-Agents panel'}).waitFor();assert.equal(await page.getByRole('button',{name:'Toggle review panel'}).count(),0);assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);
  assert.equal(await page.getByRole('complementary',{name:'Sub-Agents panel',exact:true}).count(),0);
@@ -52,9 +56,24 @@ try{
  await assert.rejects(page.evaluate(()=>window.musebench.openProjectFile({taskId:'stale',path:'README.md'})),/active task/);
  record('Review stacks every changed file, collapses independently, and rejects stale editor requests');record('Inline edited-files card exposes exact per-file counts and opens the selected diff');await screenshot('selected-diff');
  await page.getByRole('button',{name:'Close details panel'}).click();await card.getByRole('button',{name:'View changes',exact:true}).focus();await page.keyboard.press('Enter');await review.waitFor();await page.getByRole('button',{name:'Close details panel'}).click();record('View changes opens file details using the keyboard');
+ for(const [command,title] of [['/preview','Project preview'],['/checks','Project checks']]){
+   await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill(command);await page.keyboard.press('Escape');await page.getByRole('button',{name:'Send message',exact:true}).click();
+   await page.getByRole('complementary',{name:title,exact:true}).waitFor();assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);assert.equal(await page.getByRole('button',{name:'Approve plan',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'Continue to review',exact:true}).count(),0);await page.getByRole('button',{name:'Close details panel'}).click();
+ }
+ record('Preview and checks remain standalone tools without plan or review stages');
+ // From here the fixture owns the renderer's whole state stream, including
+ // refresh replies. Real controller lifecycle assertions run in separate tests.
+ await app.evaluate(({app:electronApp,ipcMain,BrowserWindow},{dataDir,state})=>{
+   if(electronApp.getPath('userData')!==dataDir)throw Error('Fixture requires an isolated profile');
+   const contents=BrowserWindow.getAllWindows().find(w=>/\/dist\/index\.html(?:[?#]|$)/.test(w.webContents.getURL()))?.webContents;if(!contents)throw Error('Local renderer missing');
+   const fixture=globalThis.__activityFixture={state,contents},send=contents.send.bind(contents);
+   contents.send=(channel,...args)=>send(channel,...(channel==='musebench:update'?[fixture.state]:args));
+   ipcMain.removeHandler('musebench:state');ipcMain.handle('musebench:state',()=>structuredClone(fixture.state));
+   ipcMain.removeHandler('musebench:action');ipcMain.handle('musebench:action',(_event,action)=>{if(!['refresh','saveDraft'].includes(action?.type))throw Error('Unexpected action in renderer fixture');return structuredClone(fixture.state);});
+ },{dataDir,state});
  // The following extra rows are explicitly renderer fixtures, not real edits.
  const moreFiles=structuredClone(state);moreFiles.task.changes.push(...Array.from({length:3},(_,i)=>({path:`extra-${i}.txt`,status:'added',additions:1,deletions:0,before:'',after:'fixture\n'})));
- await app.evaluate(({BrowserWindow},value)=>BrowserWindow.getAllWindows().find(w=>w.getTitle().includes('MuseBench')).webContents.send('musebench:update',value),moreFiles);
+ await publishFixture(moreFiles);
  const moreCard=page.getByRole('region',{name:'Edited 5 files',exact:true});await moreCard.waitFor();assert.equal(await moreCard.locator('.changed-file-row').count(),3);
  const fileFrames=async button=>button.evaluate(button=>new Promise(resolve=>{
   const card=button.closest('.changed-files'),samples=[card.getBoundingClientRect().height],start=performance.now();button.click();
@@ -64,23 +83,18 @@ try{
  assert(expanded.some(h=>h>expanded[0]+1&&h<expanded.at(-1)-1),'Additional changed files must expand smoothly');
  const contracted=await fileFrames(moreCard.getByRole('button',{name:'Show fewer files',exact:true}));assert.equal(await moreCard.locator('.changed-file-row').count(),3);
  assert(contracted.some(h=>h<contracted[0]-1&&h>contracted.at(-1)+1),'Additional changed files must collapse smoothly');record('Long file lists interpolate, release closed rows and keep the initial three files');
- await page.setViewportSize({width:430,height:860});const cardBounds=await moreCard.boundingBox();assert.ok(cardBounds.x>=0&&cardBounds.x+cardBounds.width<=431);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await screenshot('narrow-files');await page.setViewportSize({width:1440,height:960});
+ await page.setViewportSize({width:430,height:860});await settle();const cardBounds=await moreCard.boundingBox();assert.ok(cardBounds.x>=0&&cardBounds.x+cardBounds.width<=431);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await screenshot('narrow-files');await page.setViewportSize({width:1440,height:960});
  // Simulate only renderer updates with labelled fixtures. Production controller
  // correlation/cancellation is verified in exec-controller.test.mjs.
  const live=structuredClone(state);live.busy=true;live.runtime.status='running';live.task.runs=[{...run,status:'working',endedAt:undefined,activities:[...actions,{id:'tests',kind:'tool',tool:'tool.powershell',title:'Run PowerShell',status:'working',detail:'Running project tests',output:''}]}];
- await app.evaluate(({BrowserWindow},value)=>BrowserWindow.getAllWindows().find(window=>window.getTitle().includes('MuseBench')).webContents.send('musebench:update',value),live);
- await page.getByRole('status').filter({hasText:'Running project tests'}).waitFor();assert.equal(await page.locator('.changed-files').count(),0);record('Streaming fixture updates the current action without reopening the activity group');
+ await publishFixture(live);
+ await page.getByRole('status').filter({hasText:'Running project tests'}).waitFor();await page.evaluate(()=>window.musebench.dispatch({type:'refresh'}));assert.equal(await page.locator('.changed-files').count(),0);record('Streaming fixture updates the current action without reopening the activity group');
  await page.getByRole('button',{name:'Toggle Sub-Agents panel'}).click();await screenshot('working-threads');assert.match(await page.locator('.work-thread-list').innerText(),/Working/);assert.match(await page.locator('.work-thread-list').innerText(),/Run PowerShell/);
- await page.setViewportSize({width:600,height:860});await screenshot('narrow-threads');const bounds=await page.locator('.work-threads').boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=601);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);record('Threads remains within a narrow window without page overflow');
+ await page.setViewportSize({width:600,height:860});await settle();await screenshot('narrow-threads');const bounds=await page.locator('.work-threads').boundingBox();assert.ok(bounds.x>=0&&bounds.x+bounds.width<=601);assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth),false);record('Threads remains within a narrow window without page overflow');
  await page.getByRole('button',{name:'Close Sub-Agents'}).click();await page.setViewportSize({width:1440,height:960});
- await app.evaluate(({BrowserWindow},value)=>BrowserWindow.getAllWindows().find(window=>window.getTitle().includes('MuseBench')).webContents.send('musebench:update',value),state);
+ await publishFixture(state);
  await page.evaluate(()=>{document.documentElement.dataset.theme='light';document.documentElement.style.colorScheme='light';});await page.getByRole('button',{name:'Toggle Sub-Agents panel'}).click();await screenshot('light-threads');record('Light appearance renders activity using the shared theme tokens');
  await page.getByRole('button',{name:'Close Sub-Agents'}).click();
- for(const [command,title] of [['/preview','Project preview'],['/checks','Project checks']]){
-   await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill(command);await page.keyboard.press('Escape');await page.getByRole('button',{name:'Send message',exact:true}).click();
-   await page.getByRole('complementary',{name:title,exact:true}).waitFor();assert.equal(await page.getByRole('navigation',{name:'Review stages'}).count(),0);assert.equal(await page.getByRole('button',{name:'Approve plan',exact:true}).count(),0);assert.equal(await page.getByRole('button',{name:'Continue to review',exact:true}).count(),0);await page.getByRole('button',{name:'Close details panel'}).click();
- }
- record('Preview and checks remain standalone tools without plan or review stages');
  await writeFile(path.join(fixture,'accessibility.txt'),await page.locator('body').ariaSnapshot());
  if(report.errors.length)throw Error(report.errors.join('\n'));
 }catch(error){report.errors.push(error.stack??String(error));throw error;}finally{if(app)await app.close();await writeFile(path.join(fixture,'report.json'),JSON.stringify(report,null,2));console.log(`Report: ${path.join(fixture,'report.json')}`);}
