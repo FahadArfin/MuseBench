@@ -1,6 +1,7 @@
 import {validateHooks,nativeHooks} from '../shared/native-hooks.mjs';
 import {projectTrustSnapshot} from './project-trust.mjs';
 import {projectMcpSnapshot} from './project-mcp.mjs';
+import {nativeMcpDecision,pluginMcpId,pluginDecisions} from './plugin-capabilities.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {createReadStream} from 'node:fs';
 import {readFile,writeFile,mkdir,rename,stat,lstat,readdir,realpath,unlink} from 'node:fs/promises';
@@ -63,6 +64,29 @@ export function createExtensionReview({dataDir,profile,platform=process.platform
   async approveProjectMcp(root,revision,options={}){const snapshot=await this.projectMcpState(root,options);if(snapshot.revision!==revision)throw Error('Project MCP configuration changed after review. Refresh and review again.');if(!snapshot.present)throw Error('No project MCP configuration found.');const value=await load();value.projectMcp={...value.projectMcp,[snapshot.root]:revision};await atomicJson(file,value,options.beforeCommit);},
   async revokeProjectMcp(root){const actual=await realpath(root),value=await load();if(value.projectMcp)delete value.projectMcp[actual];await atomicJson(file,value);},
   pluginState,
+  async approvePluginMcp(stableId,decision,expected,{settingsPath,beforeCommit}={}){
+   if(!nativeMcpDecision(stableId,decision)||decision.enabled!==true||typeof settingsPath!=='string'||!path.isAbsolute(settingsPath))throw Error('Invalid native plugin MCP approval.');
+   const current=await pluginState(),value=await load(),{pluginId}=pluginMcpId(stableId);
+   if(current.revision!==expected||value.plugins!==expected||!Object.hasOwn(current.entries,pluginId))throw Error('Plugins changed after review. Refresh and review them again.');
+   const recordHash=configurationDigest(decision),source=await optionalText(settingsPath);
+   if(source===null||configurationDigest(pluginDecisions(JSON.parse(source))[stableId]??null)!==recordHash)throw Error('Native plugin approval changed. Inspect it again.');
+   value.pluginMcp={...value.pluginMcp,[stableId]:{entry:current.entries[pluginId],record:recordHash,settingsPath:path.resolve(settingsPath)}};
+   await atomicJson(file,value,async()=>{
+    await beforeCommit?.();
+    if(await optionalText(settingsPath)!==source||(await pluginState()).revision!==expected)throw Error('Plugin configuration changed during approval. Inspect it again.');
+   });
+  },
+  async revokePluginMcp(stableId){const value=await load();if(value.pluginMcp)delete value.pluginMcp[stableId];await atomicJson(file,value);},
+  async reviewedPluginMcp(records,{settingsPath,inventoryPath=inventory}={}){
+   const current=await pluginState(),value=await load(),sameInventory=path.resolve(inventoryPath)===path.resolve(inventory);
+   return Object.fromEntries(Object.entries(records).map(([id,record])=>{
+    if(!nativeMcpDecision(id,record))return[id,false];
+    // An explicit native rejection grants no execution, even after uninstall.
+    if(record.enabled===false)return[id,true];
+    const grant=value.pluginMcp?.[id],pluginId=pluginMcpId(id).pluginId;
+    return[id,!!(sameInventory&&value.plugins===current.revision&&Object.hasOwn(current.entries,pluginId)&&grant?.entry===current.entries[pluginId]&&grant.record===configurationDigest(record)&&grant.settingsPath===path.resolve(settingsPath))];
+   }));
+  },
   async approvePlugins(expected){const value=await load(),actual=(await pluginState()).revision;if(expected!==undefined&&actual!==expected)throw Error('Plugins changed after review. Refresh and review them again.');value.plugins=actual;await atomicJson(file,value);},
   async allowFile(candidate){if(path.resolve(candidate)!==path.resolve(inventory))return false;try{const actual=(await pluginState()).revision;return actual!=='absent'&&actual===(await load()).plugins;}catch{return false;}},
   async pluginsReviewed(){if(await optionalText(inventory)===null)return true;return this.allowFile(inventory);},

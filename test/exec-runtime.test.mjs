@@ -70,7 +70,7 @@ test('reviewed project hooks reach only model runs, with native sandbox and glob
  await h.runtime.send({text:'Go'});assert.equal(root,h.root);assert.ok(h.runtime.snapshot().permissionArguments.includes('hooks='+JSON.stringify(hooks)));const args=h.calls.at(-1).args;assert.ok(args.includes('hooks='+JSON.stringify(hooks)));assert.ok(args.includes('managed_hooks_path=null'));assert.ok(!args.includes('--disable-sandbox'));assert.ok(!args.includes('--trust-workspace'));
 });
 test('unreadable project hooks block preflight without leaving a phantom running task',async t=>{
- const h=await harness(t,{extensionReview:{allowProject:async()=>false,nativeHooks:async()=>{throw Error('Project hook review is unreadable');}}});await h.connect();await assert.rejects(h.runtime.send({text:'Go'}),/unreadable/);assert.equal(h.runtime.snapshot().status,'blocked');assert.equal(h.runtime.snapshot().permissionVerified,false);assert.equal(h.calls.some(c=>c.args.includes('meta')),false);
+ let unreadable=false;const h=await harness(t,{extensionReview:{allowProject:async()=>false,nativeHooks:async()=>{if(unreadable)throw Error('Project hook review is unreadable');return{};}}});await h.connect();unreadable=true;await assert.rejects(h.runtime.send({text:'Go'}),/unreadable/);assert.equal(h.runtime.snapshot().status,'blocked');assert.equal(h.runtime.snapshot().permissionVerified,false);assert.equal(h.calls.some(c=>c.args.includes('meta')),false);
 });
 test('invalid run options are rejected before any native request starts',async t=>{
  const h=await harness(t);await h.connect();const count=h.calls.length;

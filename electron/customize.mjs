@@ -14,6 +14,7 @@ import {curateEnvironment,discoverMuseBinaries} from '../src/runtime/index.mjs';
 import {customizeBlocked} from '../src/shared/customize-policy.mjs';
 import {atomicJson,optionalText,treeDigest,createExtensionReview,configurationDigest} from '../src/runtime/extension-review.mjs';
 import {settingsMcp,mcpSettingsPath,mcpTransport,canonicalMcpEntry} from '../src/runtime/project-mcp.mjs';
+import {createPluginCapabilities} from './plugin-capabilities.mjs';
 
 const clean=(value,max=500)=>typeof value==='string'?value.replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,max):'';
 const idOK=value=>typeof value==='string'&&/^[a-zA-Z0-9][\w:./-]{0,199}$/.test(value)&&!value.includes('..');
@@ -48,6 +49,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  review??=createExtensionReview({dataDir,profile,platform,environment:env});
  const hookPresets=createHookPresetStore(dataDir);
  const settingsPath=mcpSettingsPath(env,platform);
+ const pluginCapabilities=createPluginCapabilities({cli,review,settings,settingsPath,inventoryPath:path.join(env.XDG_DATA_HOME||path.join(profile,'.local','share'),'muse','plugins','installed.json')});
  const importsFile=path.join(dataDir,'skill-imports.json');
  const imports=async()=>{try{const value=JSON.parse(await optionalText(importsFile)??'[]');return Array.isArray(value)?value.slice(-100):[];}catch{return[];}};
  const pending=new Map(),processes=new Map();let busy=false,closed=false,lastSkillCatalog;
@@ -125,9 +127,10 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  }
  async function dispatch(command){
   if(closed)throw Error('Customize is closed.');
-  const supported=['inspectProjectMcp','approveProjectMcp','revokeProjectMcp','catalogSearch','prepareCatalog','catalogServer','saveHookPreset','deleteHookPreset','saveHooks','refresh','inspectProject','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
+  const supported=['inspectPluginMcp','pluginMcpAction','inspectProjectMcp','approveProjectMcp','revokeProjectMcp','catalogSearch','prepareCatalog','catalogServer','saveHookPreset','deleteHookPreset','saveHooks','refresh','inspectProject','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
   if(!object(command)||!supported.includes(command.type)||JSON.stringify(command).length>40000)throw Error('Unsupported Customize action.');
   if(command.type==='refresh')return{state:await snapshot()};
+  if(command.type==='inspectPluginMcp')return{pluginMcp:await pluginCapabilities.inspect(command.id)};
   if(command.type==='inspectProjectMcp'){
    const root=getState().activeProject?.root;if(!root)throw Error('Choose a project first.');
    const projectMcp=await review.projectMcpState(root,{environment:env,platform});
@@ -151,6 +154,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
   if(customizeBlocked(getState())||isActive())throw Error('Let the running task finish and confirm it has stopped before changing extensions.');
   busy=true;
   try{
+   if(command.type==='pluginMcpAction')return{pluginMcp:await pluginCapabilities.decide(command),state:await snapshot(),message:command.action==='approve'?'Plugin tool approved. Reconnect Muse to load it.':'Plugin tool approval revoked. Reconnect Muse before continuing.'};
    if(command.type==='approveProjectMcp'||command.type==='revokeProjectMcp'){
     const root=getState().activeProject?.root;if(!root||command.root!==root)throw Error('The selected project changed. Inspect it again.');
     const beforeCommit=()=>{if(closed||getState().activeProject?.root!==root||customizeBlocked(getState())||isActive())throw Error('The selected project or task changed. Review again when it is idle.');};

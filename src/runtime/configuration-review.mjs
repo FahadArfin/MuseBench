@@ -2,6 +2,8 @@ import {open,lstat} from 'node:fs/promises';
 import {dirname,isAbsolute,join} from 'node:path';
 import {userProfile} from '../shared/platform.mjs';
 import {settingsMcp} from './project-mcp.mjs';
+import {configurationDigest} from './extension-review.mjs';
+import {pluginDecisions} from './plugin-capabilities.mjs';
 
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 function root(environment,name,fallback){
@@ -18,6 +20,7 @@ export async function checkConfiguration({environment=process.env,platform=proce
  const configRoot=join(root(environment,'XDG_CONFIG_HOME',join(profile,'.config')),'muse');
  const dataRoot=join(root(environment,'XDG_DATA_HOME',join(profile,'.local','share')),'muse');
  const userSettings=join(configRoot,'settings.json'),paths=[userSettings];
+ const executionSettings=[];
  const projectMcp=await extensionReview?.projectMcpState?.(workspaceRoot,{environment,platform});
  const forbidden=[{path:join(configRoot,'trust.json'),label:'saved workspace trust'},...['installed.json','marketplaces.json','default-installs.json'].map(file=>({path:join(dataRoot,'plugins',file),label:'plugin inventory'}))];
  for(let directory=workspaceRoot;;directory=dirname(directory)){
@@ -48,11 +51,17 @@ export async function checkConfiguration({environment=process.env,platform=proce
   try{config=JSON.parse(source);}catch{throw Error('Muse settings are invalid. Correct them in the official CLI before connecting.');}
   if(!object(config))throw Error('Muse settings use an unsupported configuration shape.');
   const {key,servers}=settingsMcp(config);
+  if(Object.keys(servers).length||config.runtime_capabilities&&Object.keys(config.runtime_capabilities).length)executionSettings.push({path,servers,capabilities:config.runtime_capabilities??null});
   // Only individually reviewed user entries may cross this boundary. Project
   // instruction review does not grant MCP/plugin authority or saved trust.
   if(path===userSettings&&Object.hasOwn(config,key)&&extensionReview){
    if(!projectMcp?.reviewed)for(const [name,entry] of Object.entries(servers))if(!await extensionReview.allowMcp(name,entry))throw Error('MCP configuration needs review in Customize before running Muse.');
    delete config[key];
+  }
+  if(path===userSettings&&Object.hasOwn(config,'runtime_capabilities')&&extensionReview){
+   const decisions=pluginDecisions(config),reviewed=await extensionReview.reviewedPluginMcp?.(decisions,{settingsPath:userSettings,inventoryPath:join(dataRoot,'plugins','installed.json')});
+   if(Object.keys(decisions).some(id=>reviewed?.[id]!==true))throw Error('Native plugin capabilities need review in Customize → Plugins before running Muse.');
+   delete config.runtime_capabilities;
   }
   const hasValue=value=>value!==null&&value!==false&&value!==''&&(typeof value!=='object'||Object.keys(value).length>0);
   function inspect(value){
@@ -61,5 +70,7 @@ export async function checkConfiguration({environment=process.env,platform=proce
   }
   if(inspect(config))throw Error('Configured MCP servers, plugins or managed capabilities may run outside the Muse sandbox. This restricted mode cannot safely exclude them; review their configuration in the official CLI before connecting. MuseBench has not changed it.');
  }
- return{projectMcpRevision:projectMcp?.present?projectMcp.revision:null};
+ const projectMcpRevision=projectMcp?.present?projectMcp.revision:null;
+ const plugins=(await extensionReview?.pluginState?.())?.revision??null,hooks=await extensionReview?.nativeHooks?.(workspaceRoot)??{};
+ return{projectMcpRevision,executionRevision:configurationDigest({projectMcpRevision,executionSettings,plugins,hooks})};
 }

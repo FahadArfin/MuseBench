@@ -142,7 +142,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const childEnvironment=curateEnvironment(environment);let credentialContext=null;
  let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
- let projectMcpRevision=null;
+ let projectMcpRevision=null,executionRevision=null;
  const deferredInputs=new Map(),settledInputs=new Set(),settledApprovals=new Set();
  const requests=new Map(),inputResponses=new Map(),approvalAttempts=new Set();
  const restoreAwaiting=new Set();let openingEvents=[],nativeCatalog=null,modelReading=false;
@@ -290,7 +290,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    if(version!==TARGET.hostVersion)throw Error(`Muse version mismatch: this app requires ${TARGET.hostVersion}.`);
    update({binary,hostVersion:version});assertCurrent(token);
    credentialContext=await credentials?.({binary,environment:childEnvironment});assertCurrent(token);update({billingSource:credentialContext?.source??'cli'});
-   const configuration=await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);projectMcpRevision=configuration?.projectMcpRevision??null;
+   const configuration=await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);projectMcpRevision=configuration?.projectMcpRevision??null;executionRevision=configuration?.executionRevision??null;
    const trustProject=await extensionReview?.allowProject(workspace,{environment:credentialContext?.environment??childEnvironment,platform})===true;assertCurrent(token);
    const hooks=await extensionReview?.nativeHooks(workspace)??{};assertCurrent(token);
    const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),...(trustProject?['--trust-workspace']:[]),'-c','hooks='+JSON.stringify(hooks),'-c','managed_hooks_path=null'],cwd:workspace,env:{...(credentialContext?.environment??childEnvironment)},shutdownTimeoutMs:timeoutMs});
@@ -390,6 +390,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    if(credentialContext)await credentialContext.verify();assertCurrent(token);
    const configuration=await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);
    if((configuration?.projectMcpRevision??null)!==projectMcpRevision)throw Error('Project MCP configuration changed. Reconnect Muse to load the reviewed version before continuing.');
+   if((configuration?.executionRevision??null)!==executionRevision)throw Error('Plugin, MCP or hook configuration changed. Reconnect Muse to load the reviewed version before continuing.');
   }catch(error){assertCurrent(token);block(error.message);throw error;}
  }
  async function send({text,mode='chat',runOptions,imagePaths=[]}={}) {

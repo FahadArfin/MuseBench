@@ -30,6 +30,7 @@ jobs:
       - run: npm run test:activity
       - run: npm run test:child-inspection
       - run: npm run test:native-failure
+      - run: npm run test:plugin-tools
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness
       - run: npm run test:browser-preview
@@ -55,3 +56,4 @@ jobs:
             artifacts/activity-ui/**/report.json
             artifacts/child-inspection-ui/**/report.json
             artifacts/native-failure-ui/**/report.json
+            artifacts/plugin-tools-ui/**/report.json

@@ -9,6 +9,13 @@ import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/run
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
+test('an approved execution configuration change needs a fresh host before another turn',async t=>{
+ let revision='original';const h=await harness(t,{verifyConfiguration:async()=>({executionRevision:revision})});await h.connect();
+ revision='reviewed-change';await assert.rejects(h.runtime.send({text:'Do not send to stale tools'}),/Reconnect/);
+ assert.equal(h.calls.filter(c=>c.method==='turn/start').length,0);
+ await h.runtime.disconnect();await h.connect();await h.runtime.send({text:'Use the newly reviewed configuration'});
+ assert.equal(h.calls.filter(c=>c.method==='turn/start').length,1);
+});
 test('session MCP inspection reads the owned running session without publishing lifecycle changes',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Work'});
  const before=h.runtime.snapshot(),calls=[],events=[];h.runtime.subscribe(s=>events.push(s));
@@ -649,6 +656,6 @@ test('startup permission projection is reconciled by read-back without treating 
  const h=await harness(t),command=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>{if(method==='session/start')h.emit({method:'session/approvalModeChanged',params:{sessionId:'session-one',viewCursor:'startup-mode',mode:'onRequest',commandId:opts.commandId}});return command(method,params,opts);};await h.connect();assert.equal(h.runtime.snapshot().status,'idle');assert.equal(h.runtime.snapshot().permissionVerified,true);assert.ok(h.calls.some(c=>c.method==='session/read'));
 });
 test('interactive host receives only the project-bound reviewed hooks and trust decision',async t=>{
- const hooks={UserPromptSubmit:[{hooks:[{type:'command',commandWindows:'Write-Output reviewed',timeout:2}]}]};let reviewedRoot;
- const h=await harness(t,{extensionReview:{allowProject:async root=>{reviewedRoot=root;return true;},nativeHooks:async root=>{assert.equal(root,reviewedRoot);return hooks;}}});await h.connect();const args=h.calls.find(c=>c.method==='spawn').spec.args;assert.ok(args.includes('--trust-workspace'));assert.ok(args.includes('hooks='+JSON.stringify(hooks)));assert.ok(args.includes('managed_hooks_path=null'));
+ const hooks={UserPromptSubmit:[{hooks:[{type:'command',commandWindows:'Write-Output reviewed',timeout:2}]}]};let reviewedRoot;const hookRoots=[];
+ const h=await harness(t,{extensionReview:{allowProject:async root=>{reviewedRoot=root;return true;},nativeHooks:async root=>{hookRoots.push(root);return hooks;}}});await h.connect();assert.ok(hookRoots.length);assert.ok(hookRoots.every(root=>root===reviewedRoot));const args=h.calls.find(c=>c.method==='spawn').spec.args;assert.ok(args.includes('--trust-workspace'));assert.ok(args.includes('hooks='+JSON.stringify(hooks)));assert.ok(args.includes('managed_hooks_path=null'));
 });

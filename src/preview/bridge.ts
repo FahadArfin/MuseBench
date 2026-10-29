@@ -144,12 +144,14 @@ export function createPreviewBridge():MuseBenchBridge {
  const siteChannel=channel(()=>sites);
  function selectSite(key:string){sites.site=sites.items.find(i=>i.id===key)??site;sites.activeId=sites.site.id;sites.files=Object.entries(siteFiles).map(([path,text])=>({path,bytes:new TextEncoder().encode(text).length,sha1:'sample',mime:'text/html'}));sites.previewUrl=`data:text/html;charset=utf-8,${encodeURIComponent(siteFiles['index.html'])}`;}
  const hookPresets=createPreviewHookPresets();
+ const pluginToolReviews=new Map<string,boolean>();
+ let pluginToolRevision=0;
  const hookProjects=new Map<string,NonNullable<CustomizeState['hooks']>>();
  const reviewedInstructionRoots=new Set<string>();
  const reviewedProjectMcpRoots=new Set<string>();
  const inspectedProjectMcpRoots=new Set<string>();
  const previewInstructionText='Preview sample: keep shared desktop and browser controls in sync.';
- const customize:CustomizeState={simulation:true,available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only',contextCost:{startupBytes:0,startupTokens:0,invokeBytes:2080,invokeTokens:520},diagnostics:[]}],skillCatalog:{diagnostics:[],omitted:0},plugins:[],servers:[]};
+ const customize:CustomizeState={simulation:true,available:true,errors:[],pluginsReviewed:true,pluginRevision:'sample',skills:[{id:'sample-skill',title:'Clear project notes',description:'Turn a rough brief into a useful implementation outline.',scope:'user',activation:'user-only',contextCost:{startupBytes:0,startupTokens:0,invokeBytes:2080,invokeTokens:520},diagnostics:[]}],skillCatalog:{diagnostics:[],omitted:0},plugins:[{id:'preview-tools',title:'Preview tools',description:'A simulated plugin for reviewing tool access.',version:'Preview',enabled:true,valid:true,capabilities:[{kind:'mcp_servers',count:1}],reviewRequired:false}],servers:[]};
  const updateListeners=new Set<(state:import('../shared/types').AppUpdateState)=>void>();
  let appUpdate:import('../shared/types').AppUpdateState={version:'0.2.0',status:'idle',availableVersion:null,percent:0,lastChecked:null,error:null,simulation:true};
  const updateEmit=(patch:Partial<typeof appUpdate>)=>{appUpdate={...appUpdate,...patch};updateListeners.forEach(fn=>fn(copy(appUpdate)));};
@@ -233,6 +235,17 @@ export function createPreviewBridge():MuseBenchBridge {
    return siteChannel.emit();
   },
   customize:async command=>{
+   if(command.type==='inspectPluginMcp'||command.type==='pluginMcpAction'){
+    const plugin=customize.plugins.find(item=>item.id===command.id);if(!plugin)throw Error('Sample plugin not found.');
+    const stableId='plugin:'+plugin.id+':mcp_server:local-notes';
+    if(command.type==='pluginMcpAction'){
+     if(!command.reviewed||command.revision!=='preview-tools-'+pluginToolRevision||command.stableId!==stableId)throw Error('Plugin capabilities changed after review.');
+     if(command.action==='approve'&&!plugin.enabled)throw Error('Enable this plugin first.');
+     pluginToolReviews.set(plugin.id,command.action==='approve');pluginToolRevision++;
+    }
+    const enabled=pluginToolReviews.get(plugin.id)===true;
+    return{pluginMcp:{simulation:true,id:plugin.id,revision:'preview-tools-'+pluginToolRevision,enabled:plugin.enabled,inventoryReviewed:true,servers:plugin.id==='preview-tools'?[{stableId,title:'local-notes',kind:'mcp_server',supported:true,command:['node','sample-notes.mjs'],definitionHash:'Preview definition',enabled,reviewed:enabled,status:enabled?'trusted_enabled':pluginToolReviews.has(plugin.id)?'trusted_disabled':'needs_approval'}]:[]},...(command.type==='pluginMcpAction'?{state:copy(customize),message:'Preview only: plugin tool decision simulated. No program ran.'}:{})};
+   }
    if(command.type==='inspectProjectMcp'||command.type==='approveProjectMcp'||command.type==='revokeProjectMcp'){
     const root=state.activeProject?.root??project.root;
     inspectedProjectMcpRoots.add(root);

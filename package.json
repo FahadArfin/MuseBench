@@ -37,6 +37,7 @@
     "test:activity": "node scripts/activity-smoke.mjs",
     "test:child-inspection": "node scripts/child-inspection-smoke.mjs && node scripts/child-inspection-smoke.mjs --desktop",
     "test:native-failure": "node scripts/native-failure-smoke.mjs && node scripts/native-failure-smoke.mjs --desktop",
+    "test:plugin-tools": "node scripts/plugin-tools-smoke.mjs && node scripts/plugin-tools-smoke.mjs --desktop",
     "test:typography": "node scripts/typography-smoke.mjs",
     "test:profile-identity": "node scripts/profile-identity-smoke.mjs && node scripts/profile-account-desktop-smoke.mjs",
     "test:startup-animation": "node scripts/startup-animation-smoke.mjs",
