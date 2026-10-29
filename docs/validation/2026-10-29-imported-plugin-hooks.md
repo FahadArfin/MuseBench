@@ -41,7 +41,8 @@ This runtime-owned connection test uses a direct SDK echo turn to avoid MuseBenc
 
 - 1,356 local tests passed, including 94 focused hook/capability tests.
 - Production TypeScript/Vite build passed.
-- Twelve plugin-control checks passed in browser and Electron, including exact shell consent, independent revoke, unsupported controls, stable idle inspection, late-result handling and narrow layout. The narrow screenshot was visually inspected.
+- Thirteen plugin-control checks passed in browser and Electron, including exact shell consent, independent revoke, unsupported controls, stable idle inspection, late-result handling and narrow layout. The narrow screenshots were visually inspected.
+- Final review identified whitespace loss in the last approval screen. A separate command block now preserves newlines, shell comment boundaries and repeated quoted spaces, while wrapping long lines. The regression failed in both renderers before the fix and passed afterward; the complete 1,356-test suite and 97-scene renderer parity check passed after the fix. No second review was used.
 - Catalog preview/desktop checks passed, including shared Installed rows, full-source search, retained filters and continuous 240-row fixture scrolling.
 - Shared renderer parity and immutable release/installed acceptance are recorded separately in the delivery receipt.
 

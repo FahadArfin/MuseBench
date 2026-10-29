@@ -56,9 +56,9 @@ The installed 1.4.14 CLI imported conventional/inline Claude hooks and explicit-
 
 **Files:** ignored native probe, new `docs/validation/2026-10-29-imported-plugin-hooks.md`, `docs/REMAINING-FEATURES-2026-10-27.md`.
 
-- [ ] Exercise all three imported layouts through production Customize and configuration review using an isolated owned profile. Verify exact approval and revoke with native echo output/receipts; conditions remain unsupported; inspect without executing. Expected: zero model requests, all owned processes closed.
-- [ ] Run `npm.cmd test`, build, catalog preview/desktop and preview parity. Expected: all pass.
-- [ ] Commit complete feature locally and obtain one fresh-context final review of the immutable base-to-head range. Fix Important/Critical findings with RED-to-GREEN regressions and full suite; no second review.
+- [x] Exercise all three imported layouts through production Customize and configuration review using an isolated owned profile. Verify exact approval and revoke with native echo output/receipts; conditions remain unsupported; inspect without executing. Expected: zero model requests, all owned processes closed.
+- [x] Run `npm.cmd test`, build, catalog preview/desktop and preview parity. Expected: all pass.
+- [x] Commit complete feature locally and obtain one fresh-context final review of the immutable base-to-head range. Fix Important/Critical findings with RED-to-GREEN regressions and full suite; no second review.
 
 ### Task 4: Publish and installed acceptance
 
