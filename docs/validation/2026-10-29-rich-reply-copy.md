@@ -17,6 +17,8 @@ The original desktop smoke needed an explicit switch to Muse Code after startup/
 
 Ignored evidence: `artifacts/reply-copy/preview-ZSPOVY`, `artifacts/response-actions/source-dUnRK2`, `artifacts/changelog-roadmap-2026-10-29/rich-copy-*.log`.
 
+CI follow-up: runs 40963934313 and 40963934307 exposed an empty native clipboard item in the smoke setup, before any product action. The preservation helper now skips empty MIME lists and restores an initially empty clipboard with `clear()`. The browser and desktop copy suite passed again (6 + 8 checks), evidence `rich-copy-empty-clipboard.log` and `artifacts/response-actions/source-qBxEPS`. This corrects the validation harness; product copying is unchanged. Release acceptance still requires the replacement CI run.
+
 ## Scope
 
 Source and actual-host clipboard verified, using isolated profiles and no model requests. Browser clipboard capability/error paths are injected. External editors may style pasted content differently; no external-editor fidelity claim is made. Published/installed release acceptance remains separate.
