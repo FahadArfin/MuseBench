@@ -31,6 +31,21 @@ try{
  assert.ok(!JSON.stringify(await value('inspect_ui')).includes('DO_NOT_EXPOSE_NATIVE_SECRET'));
  ui=await value('navigate',{target:'customize',section:'plugins'});assert.ok(ui.controls.some(c=>c.role==='tab'&&c.label==='Plugins'&&c.selected==='true'));checks.push('MCP opens Customize with the requested tab');
  const screenshot=await call('screenshot');assert.equal(screenshot.content[0].type,'image');assert.equal(screenshot.content[0].mimeType,'image/jpeg');await writeFile('artifacts/native-control/desktop.jpg',Buffer.from(screenshot.content[0].data,'base64'));
+ // Check actual encoded pixels, not only the MCP response envelope. A minimized
+ // Electron window can return a previous frame even after its DOM has changed.
+ await page.evaluate(()=>{const marker=document.createElement('div');marker.id='native-capture-test';marker.style.cssText='position:fixed;left:0;top:0;width:100px;height:100px;background:rgb(220,20,20);z-index:2147483647';document.body.append(marker);});
+ const settlePaint=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ const pixel=async()=>app.evaluate(({nativeImage},data)=>[...nativeImage.createFromBuffer(Buffer.from(data,'base64')).crop({x:10,y:10,width:1,height:1}).toBitmap()],(await call('screenshot')).content[0].data);
+ await settlePaint();let bgra=await pixel();assert.ok(bgra[2]>180&&bgra[1]<60&&bgra[0]<60,`Expected red marker, got ${bgra}`);
+ await app.evaluate(async({BrowserWindow})=>{const window=BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html'));await new Promise(resolve=>{window.once('minimize',resolve);window.minimize();});});
+ await page.evaluate(()=>{document.getElementById('native-capture-test').style.background='rgb(20,220,20)';});
+ let unavailable=await client.callTool({name:'screenshot',arguments:{}});assert.equal(unavailable.isError,true);assert.match(unavailable.content[0].text,/Open and restore MuseBench/);assert.equal((await value('diagnostics')).minimized,true);
+ await app.evaluate(({BrowserWindow})=>{const window=BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html'));window.restore();window.hide();});
+ unavailable=await client.callTool({name:'screenshot',arguments:{}});assert.equal(unavailable.isError,true);assert.match(unavailable.content[0].text,/Open and restore MuseBench/);assert.equal((await value('diagnostics')).visible,false);
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html')).show());
+ await page.waitForFunction(()=>document.visibilityState==='visible');await settlePaint();bgra=await pixel();assert.ok(bgra[1]>180&&bgra[2]<60&&bgra[0]<60,`Expected updated green marker, got ${bgra}`);
+ await page.evaluate(()=>document.getElementById('native-capture-test').remove());
+ checks.push('Native screenshots contain current visible pixels, reject hidden/minimized windows without restoring them, and recover after the user restores the window');
  await page.evaluate(()=>console.error('Native diagnostics validation marker'));const diagnostics=await value('diagnostics');assert.ok(diagnostics.responsive);assert.ok(diagnostics.events.some(event=>event.kind==='renderer-console-error'));assert.ok(!JSON.stringify(diagnostics).includes('validation marker'));checks.push('MCP returns an app screenshot and records real renderer errors without console contents');
  assert.equal((await client.callTool({name:'navigate',arguments:{target:'code',script:'alert(1)'}})).isError,true);
  await value('navigate',{target:'settings',section:'control'});await page.getByRole('button',{name:'Turn off',exact:true}).click();await page.getByText('Native connection is off',{exact:true}).waitFor();assert.equal((await client.callTool({name:'app_status',arguments:{}})).isError,true);checks.push('Turning off App control immediately revokes native access');

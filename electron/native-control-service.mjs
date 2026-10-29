@@ -2,6 +2,46 @@ import {randomUUID} from 'node:crypto';
 import {validateNativeCall} from '../src/shared/native-control.mjs';
 const textResult=value=>({content:[{type:'text',text:JSON.stringify(value)}]});
 const clean=(value,max=240)=>typeof value==='string'?value.replace(/[\x00-\x1f\x7f]/g,' ').slice(0,max):'';
+function createScreenshotCapture(window){
+ const contents=window.webContents;
+ let closed=false,inFlight=false,cancel=null;
+ const unavailable=()=>{
+  if(closed||window.isDestroyed()||contents.isDestroyed())return Error('The MuseBench window is closed.');
+  if(!window.isVisible()||window.isMinimized())return Error('Open and restore MuseBench before taking a screenshot.');
+  return null;
+ };
+ return{capture(signal){
+  const error=unavailable();if(error)return Promise.reject(error);
+  if(signal?.aborted)return Promise.reject(Error('Screenshot request was cancelled.'));
+  if(inFlight)return Promise.reject(Error('A screenshot is still finishing. Try again when it completes.'));
+  inFlight=true;
+  const deadline=performance.now()+6000;
+  const timedOut=()=>Error('The app capture timed out. Try again when MuseBench is ready.');
+  return new Promise((resolve,reject)=>{
+   let settled=false;
+   const finish=(error,image)=>{
+    if(settled)return;settled=true;clearTimeout(timer);cancel=null;
+    signal?.removeEventListener('abort',abort);
+    for(const event of ['hide','minimize','closed'])window.removeListener(event,changed);
+    for(const event of ['did-start-loading','render-process-gone','destroyed'])contents.removeListener(event,changed);
+    if(error)reject(error);else resolve(image);
+   };
+   const abort=()=>finish(Error('Screenshot request was cancelled.'));
+   const changed=()=>finish(unavailable()??Error('The app changed during capture. Inspect it before trying again.'));
+   const timer=setTimeout(()=>finish(timedOut()),6000);
+   cancel=()=>finish(Error('The MuseBench window is closed.'));
+   signal?.addEventListener('abort',abort,{once:true});
+   for(const event of ['hide','minimize','closed'])window.on(event,changed);
+   for(const event of ['did-start-loading','render-process-gone','destroyed'])contents.on(event,changed);
+   // Electron cannot cancel capturePage. Retain the single-capture lock until
+   // it settles, even if the caller has already cancelled or timed out.
+   try{Promise.resolve(window.capturePage()).then(image=>{
+    inFlight=false;if(!settled)finish(performance.now()>=deadline?timedOut():unavailable(),image);
+   },()=>{inFlight=false;finish(Error('The app could not capture a screenshot.'));});}
+   catch{inFlight=false;finish(Error('The app could not capture a screenshot.'));}
+  });
+ },close(){closed=true;cancel?.();}};
+}
 export function createNativeRenderer({window,ipcMain,trusted}){
  const pending=new Map();let closed=false;
  const receive=(event,value)=>{
@@ -33,6 +73,7 @@ export function createNativeRenderer({window,ipcMain,trusted}){
  },close(){closed=true;cancel();ipcMain.removeHandler('musebench:native-claim');ipcMain.removeListener('musebench:native-reply',receive);window.webContents.removeListener('did-start-loading',cancel);window.webContents.removeListener('render-process-gone',cancel);}};
 }
 export function createNativeControlService({app,window,controller,personal,renderer,isBlocked=()=>false}){
+ const screenshots=createScreenshotCapture(window);
  const events=[];let unresponsive=false;const record=kind=>{events.push({kind,at:new Date().toISOString()});if(events.length>50)events.shift();};
  const consoleEvent=(event,legacyLevel)=>{if(event?.level==='error'||legacyLevel===3)record('renderer-console-error');};
  const crash=()=>record('renderer-process-gone');
@@ -49,7 +90,7 @@ export function createNativeControlService({app,window,controller,personal,rende
   }
   if(name==='inspect_ui'||name==='navigate')return textResult(await renderer.call(name,args,signal));
   if(name==='screenshot'){
-   const screenshot=await window.capturePage();if(screenshot.isEmpty())throw Error('The app did not produce a screenshot.');
+   const screenshot=await screenshots.capture(signal);if(screenshot.isEmpty())throw Error('The app did not produce a screenshot.');
    const size=screenshot.getSize(),ratio=Math.min(1,1400/size.width,1200/size.height),data=screenshot.resize({width:Math.round(size.width*ratio),height:Math.round(size.height*ratio)}).toJPEG(80);
    return{content:[{type:'image',mimeType:'image/jpeg',data:data.toString('base64')}]};
   }
@@ -58,5 +99,5 @@ export function createNativeControlService({app,window,controller,personal,rende
    const page=await controller.readChatHistory({...args,limit:args.limit??20});
    return textResult({taskId:args.taskId,before:page.before,total:page.total,messages:page.messages.map(m=>({id:m.id,role:m.role,text:clean(m.text,3000),truncated:(m.textLength??m.text?.length??0)>3000,at:m.at}))});
   }
- },close(){window.removeListener('unresponsive',stalled);window.removeListener('responsive',recovered);window.webContents.removeListener('console-message',consoleEvent);window.webContents.removeListener('render-process-gone',crash);renderer.close();}};
+ },close(){screenshots.close();window.removeListener('unresponsive',stalled);window.removeListener('responsive',recovered);window.webContents.removeListener('console-message',consoleEvent);window.webContents.removeListener('render-process-gone',crash);renderer.close();}};
 }
