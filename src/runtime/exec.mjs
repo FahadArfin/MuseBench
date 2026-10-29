@@ -1,11 +1,13 @@
+import {checkConfiguration} from './configuration-review.mjs';
+export {checkConfiguration} from './configuration-review.mjs';
 import {readNativeModels} from './models.mjs';
 import {modelForOptions} from '../shared/models.mjs';
 import {preparePrompt} from './prompt-file.mjs';
 import {execFile} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {open,realpath,stat,lstat,mkdtemp,rm} from 'node:fs/promises';
+import {realpath,stat,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {dirname,isAbsolute,join,relative,sep} from 'node:path';
+import {isAbsolute,join,relative,sep} from 'node:path';
 import {StringDecoder} from 'node:string_decoder';
 import {promisify} from 'node:util';
 import {fileURLToPath} from 'node:url';
@@ -49,45 +51,6 @@ function execArgs(workspace,provider,prompt,maxSteps,shellEnabled,runOptions,ses
 
 function shellPrompt(workspace,prompt,durable=false) {
  return `This is ${durable?'a continuation of this MuseBench session':'an independent MuseBench request'}. Use only Muse's managed powershell tool for project commands. Before project commands in every PowerShell invocation, run Set-Location -LiteralPath '${workspace.replaceAll("'","''")}' to normalize the Windows working directory. Do not start background or detached processes or use any alternative host execution method. If human approval is required or the sandbox cannot run a command, stop and explain; MuseBench cannot answer interactive approvals. Native command results do not replace MuseBench Checks or review.\n\n${prompt}`;
-}
-
-export async function checkConfiguration({environment,workspaceRoot,extensionReview}) {
- // Only documented non-credential settings are inspected. Never enumerate or
- // read auth.json, and never include configuration values in diagnostics.
- const profile=environment.USERPROFILE;
- if(!profile||!isAbsolute(profile))throw Error('A valid Windows user profile is required to verify restricted Muse configuration.');
- const configRoot=join(profile,'.config','muse'),dataRoot=join(profile,'.local','share','muse');
- const paths=[join(configRoot,'settings.json')];
- const forbidden=[{path:join(configRoot,'trust.json'),label:'saved workspace trust'},...['installed.json','marketplaces.json','default-installs.json'].map(file=>({path:join(dataRoot,'plugins',file),label:'plugin inventory'}))];
- for(let directory=workspaceRoot;;directory=dirname(directory)){
-  paths.push(join(directory,'.muse','settings.json'));
-  forbidden.push({path:join(directory,'.mcp.json'),label:'project MCP configuration'},{path:join(directory,'.muse','hooks.json'),label:'project hooks'});
-  if(dirname(directory)===directory)break;
- }
- for(const {path,label} of forbidden){
-  try{await lstat(path);}catch(error){if(error.code==='ENOENT')continue;throw Error('Restricted Muse configuration could not be checked.');}
-  if(label==='plugin inventory'&&await extensionReview?.allowFile(path))continue;
-  throw Error(`This restricted mode cannot verify ${label}. Review that configuration in the official Muse CLI before using this connection; MuseBench has not changed it.`);
- }
- for(const path of paths){
-  let source,handle;
-  try{handle=await open(path,'r');const info=await handle.stat();if(!info.isFile()||info.size>1024*1024)throw Error('Unsupported Muse settings file.');const buffer=Buffer.alloc(1024*1024+1);const {bytesRead}=await handle.read(buffer,0,buffer.length,0);if(bytesRead>1024*1024)throw Error('Unsupported Muse settings file.');source=buffer.subarray(0,bytesRead).toString('utf8');}
-  catch(error){if(error.code==='ENOENT')continue;throw Error('Muse settings could not be safely checked. Resolve the settings file before connecting.');}
-  finally{await handle?.close();}
-  let config;try{config=JSON.parse(source);}catch{throw Error('Muse settings are invalid. Correct them in the official CLI before connecting.');}
-  // Only user-level, individually reviewed entries may cross this boundary.
-  // Native project shell sandbox checks below still run on every request.
-  if(path===join(configRoot,'settings.json')&&config.mcp_servers&&extensionReview){
-   for(const [name,entry] of Object.entries(config.mcp_servers))if(!await extensionReview.allowMcp(name,entry))throw Error('MCP configuration needs review in Customize before running Muse.');
-   delete config.mcp_servers;
-  }
-  const hasValue=value=>value!==null&&value!==false&&value!==''&&(typeof value!=='object'||Object.keys(value).length>0);
-  function inspect(value){
-   if(!value||typeof value!=='object')return false;
-   return Object.entries(value).some(([key,item])=>((/mcp|plugin|extension|runtime_capabilities|managed_skills_path/i.test(key)&&hasValue(item))||inspect(item)));
-  }
-  if(inspect(config))throw Error('Configured MCP servers, plugins or managed capabilities may run outside the Muse sandbox. This restricted mode cannot safely exclude them; review their configuration in the official CLI before connecting. MuseBench has not changed it.');
- }
 }
 
 async function stopNativeProcess(child,{environment,timeoutMs}) {
@@ -250,7 +213,7 @@ export function createExecRuntime({credentials,loadModels=readNativeModels,durab
   try{
    binary=await realpath(binary);workspace=await realpath(workspaceRoot);current(token);
    if(!(await stat(binary)).isFile()||!(await stat(workspace)).isDirectory())throw Error('Native binary or workspace is unavailable.');
-   await verifyConfiguration({environment:env,workspaceRoot:workspace,extensionReview});current(token);update({binary});
+   await verifyConfiguration({environment:env,platform,workspaceRoot:workspace,extensionReview});current(token);update({binary});
    const profileRoot=await realpath(env.USERPROFILE);current(token);
    const profileRelative=relative(profileRoot.toLowerCase(),workspace.toLowerCase());
    const inProfile=profileRelative===''||(!isAbsolute(profileRelative)&&profileRelative!=='..'&&!profileRelative.startsWith(`..${sep}`));
@@ -286,7 +249,7 @@ export function createExecRuntime({credentials,loadModels=readNativeModels,durab
   const selectedBudget=options.budget?runBudget(options.budget):null;
   const limits={steps:selectedBudget?.steps??maxModelSteps,wallTimeMs:selectedBudget?selectedBudget.minutes*60000:runTimeoutMs,tokenBudget:null};
   const token=epoch;update({status:'checking-permissions',reason:null});
-  try{await verifyConfiguration({environment:env,workspaceRoot:workspace,extensionReview});current(token);await verifyManagedConfiguration(token);current(token);await verifySandbox(token);current(token);}
+  try{await verifyConfiguration({environment:env,platform,workspaceRoot:workspace,extensionReview});current(token);await verifyManagedConfiguration(token);current(token);await verifySandbox(token);current(token);}
   catch(error){if(token===epoch)update({status:'blocked',reason:safeReason(error.message),permissionVerified:false});throw error;}
   if(sessionId&&resumeSession){
    const dir=await mkdtemp(join(tmpdir(),'musebench-session-check-'));

@@ -70,9 +70,9 @@ else {
     // Windows can redirect the app's known Roaming folder under its package
     // identity. Anchor Work's strict path checks to that trusted physical root.
     const workDataDir=await workDataDirectory(dataDir);
-    work = await createWorkService({dataDir:workDataDir,projectsDir:path.join(projectsDir||path.join(dataDir,'projects'),'work'),runtime:process.platform==='win32'?createExecRuntime({helperPath,extensionReview}):createRuntime()});
+    work = await createWorkService({dataDir:workDataDir,projectsDir:path.join(projectsDir||path.join(dataDir,'projects'),'work'),runtime:process.platform==='win32'?createExecRuntime({helperPath,extensionReview}):createRuntime({extensionReview})});
     spaces=await createDesktopSpaces({dataDir:path.join(path.dirname(workDataDir),'spaces'),safeStorage,work});
-    sites=await createDesktopSites({dataDir:path.join(path.dirname(workDataDir),'sites'),projectsDir:path.join(projectsDir||path.join(dataDir,'projects'),'sites'),runtime:process.platform==='win32'?createExecRuntime({helperPath,extensionReview}):createRuntime(),safeStorage,work,shell,clipboard});
+    sites=await createDesktopSites({dataDir:path.join(path.dirname(workDataDir),'sites'),projectsDir:path.join(projectsDir||path.join(dataDir,'projects'),'sites'),runtime:process.platform==='win32'?createExecRuntime({helperPath,extensionReview}):createRuntime({extensionReview}),safeStorage,work,shell,clipboard});
     workExporter=createWorkExporter({BrowserWindow});
     let workCapabilities={mp4:false};
     const workSnapshot=value=>({...value,capabilities:workCapabilities});

@@ -4,6 +4,7 @@ import {createChildTracker} from './children.mjs';
 import {projectChildRead} from './child-inspection.mjs';
 import {projectMcpInventory} from './mcp-inventory.mjs';
 import {createCompactionTracker} from './compaction.mjs';
+import {checkConfiguration} from './configuration-review.mjs';
 import {validateRunOptions} from '../shared/run-options.mjs';
 import {normalizeModels,modelForOptions} from '../shared/models.mjs';
 import {execFile} from 'node:child_process';
@@ -135,7 +136,7 @@ function displayPending(value,revision) {
 
 /** One process/session owner. Startup and model submission are separate explicit
  * actions. Injection replaces the external process boundary for contract tests. */
-export function createRuntime({credentials,environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,workspaceMcp,extensionReview,timeoutMs=10000}={}) {
+export function createRuntime({credentials,environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,workspaceMcp,extensionReview,verifyConfiguration=checkConfiguration,timeoutMs=10000}={}) {
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000)throw Error('Invalid runtime timeout.');
  const candidates=discoverMuseBinaries({environment,platform});
  const childEnvironment=curateEnvironment(environment);let credentialContext=null;
@@ -288,6 +289,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    if(version!==TARGET.hostVersion)throw Error(`Muse version mismatch: this app requires ${TARGET.hostVersion}.`);
    update({binary,hostVersion:version});assertCurrent(token);
    credentialContext=await credentials?.({binary,environment:childEnvironment});assertCurrent(token);update({billingSource:credentialContext?.source??'cli'});
+   await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);
    const trustProject=await extensionReview?.allowProject(workspace)===true;assertCurrent(token);
    const hooks=await extensionReview?.nativeHooks(workspace)??{};assertCurrent(token);
    const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),...(trustProject?['--trust-workspace']:[]),'-c','hooks='+JSON.stringify(hooks),'-c','managed_hooks_path=null'],cwd:workspace,env:{...(credentialContext?.environment??childEnvironment)},shutdownTimeoutMs:timeoutMs});
@@ -396,6 +398,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   update({status:'checking-permissions',reason:null,runOptions:options,steering:null});
   try{
    assertCurrent(token);
+   try{await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);}
+   catch(error){assertCurrent(token);block(error.message);throw error;}
    let session;
    try{session=(await bounded(owner.connection.request('session/read',{sessionId:state.sessionId}),timeoutMs))?.session;}
    catch{assertCurrent(token);block(permissionReason);throw Error(permissionReason);}

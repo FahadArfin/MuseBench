@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/runtime/index.mjs';
+import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
 test('session MCP inspection reads the owned running session without publishing lifecycle changes',async t=>{
@@ -123,6 +124,7 @@ async function harness(t,options={}) {
  const root=await mkdtemp(join(tmpdir(),'musebench-runtime-'));
  const binary=join(root,(options.platform??process.platform)==='win32'?'muse.exe':'muse');
  await writeFile(binary,'not executable: process boundary is injected');
+ const profile=join(root,'home');await mkdir(profile);
  t.after(()=>rm(root,{recursive:true,force:true}));
  const calls=[]; let notification=()=>{}, serverRequest=()=>{}, protocolError=()=>{}, resolveExit;
  const session=()=>({sessionId:'session-one',workspaceRoot:root,status:'idle',activeTurnId:null,turnCount:0,providerId:'meta',modelId:'muse-spark-1.2',approvalMode:{mode:'onRequest',source:'sessionOverride',lastCommandId:null},permissionState:permissions()});
@@ -134,10 +136,41 @@ async function harness(t,options={}) {
   command:async(method,params,opts)=>{calls.push({method,params,opts});if(method==='session/start')return {session:session(),viewCursor:'start-1'};if(method==='turn/start')return {commandId:opts.commandId,status:'accepted',disposition:'started',startedNewTurn:true,turnId:'turn-one'};if(method==='approval/decide')return {terminal:true};throw Error('Unexpected command '+method);}
  };
  const sdk={EXPECTED_SCHEMA_FINGERPRINT:pin,spawnMspConnection:spec=>{calls.push({method:'spawn',spec});return {initialize:async params=>{calls.push({method:'initialize',params});return host;},close:host.close};}};
- const runtime=createRuntime({environment:{PATH:'',SystemRoot:'C:\\Windows',META_API_KEY:'must-not-cross',MUSE_EXPERIMENTAL_SDK_ENABLED:'on'},loadSdk:async()=>({sdk,sdkVersion:'1.4.14'}),probeVersion:async()=>options.version??'1.4.14',timeoutMs:100,...options});
+ const runtime=createRuntime({environment:{PATH:'',HOME:profile,USERPROFILE:profile,SystemRoot:'C:\\Windows',META_API_KEY:'must-not-cross',MUSE_EXPERIMENTAL_SDK_ENABLED:'on'},loadSdk:async()=>({sdk,sdkVersion:'1.4.14'}),probeVersion:async()=>options.version??'1.4.14',timeoutMs:100,...options});
  t.after(()=>runtime.close());
- return {runtime,root,binary,calls,host,sdk,session,emit:frame=>notification(frame),protocolError:error=>protocolError(error),request:frame=>serverRequest(frame),exit:resolveExit,connect:()=>runtime.connect({binary,workspaceRoot:root})};
+ return {runtime,root,profile,binary,calls,host,sdk,session,emit:frame=>notification(frame),protocolError:error=>protocolError(error),request:frame=>serverRequest(frame),exit:resolveExit,connect:()=>runtime.connect({binary,workspaceRoot:root})};
 }
+
+for(const platform of ['win32','linux','darwin'])test(`${platform}: direct interactive startup rejects unreviewed project MCP even with Full access`,async t=>{
+ const h=await harness(t,{platform,extensionReview:{allowProject:async()=>true}});
+ await writeFile(join(h.root,'.mcp.json'),'{"mcpServers":{}}');
+ await assert.rejects(h.runtime.connect({binary:h.binary,workspaceRoot:h.root,fullAccess:true}),/project MCP configuration/);
+ assert.equal(h.calls.filter(c=>c.method==='spawn').length,0);assert.equal(h.runtime.snapshot().permissionVerified,false);
+});
+
+test('interactive request checks reviewed configuration again before sending a turn',async t=>{
+ const h=await harness(t),review=await createExtensionReview({dataDir:join(h.root,'reviews'),profile:h.profile});
+ // Keep the real review service while letting the harness provide its isolated home.
+ const second=await harness(t,{environment:{PATH:'',HOME:h.profile,USERPROFILE:h.profile},extensionReview:review});
+ const config=join(h.profile,'.config','muse'),entry={transport:'stdio',command:'node',args:['reviewed.mjs'],enabled:true,mode:'optional'};
+ await mkdir(config,{recursive:true});const settings=join(config,'settings.json');
+ await writeFile(settings,JSON.stringify({mcp_servers:{docs:entry}}));await review.approveMcp('docs',entry);
+ await second.connect();assert.equal(second.runtime.snapshot().permissionVerified,true);
+ await writeFile(settings,JSON.stringify({mcp_servers:{docs:{...entry,command:'changed'}}}));
+ await assert.rejects(second.runtime.send({text:'Do not send'}),/review/i);
+ assert.equal(second.calls.filter(c=>c.method==='turn/start').length,0);assert.equal(second.runtime.snapshot().permissionVerified,false);
+ await second.runtime.disconnect();await writeFile(settings,JSON.stringify({mcp_servers:{docs:entry}}));await second.connect();
+ await second.runtime.send({text:'Reviewed request'});assert.equal(second.calls.filter(c=>c.method==='turn/start').length,1);
+});
+
+test('delayed interactive configuration review cannot cross disconnect and reconnect',{timeout:2000},async t=>{
+ let rejectReview,entered;const begun=new Promise(resolve=>entered=resolve);let delay=false;
+ const h=await harness(t,{verifyConfiguration:async()=>{if(delay){entered();await new Promise((_,reject)=>rejectReview=reject);}}});
+ await h.connect();delay=true;const pending=h.runtime.send({text:'Old request'});pending.catch(()=>{});
+ await Promise.race([begun,pending.then(()=>{throw Error('A turn was sent without reviewing configuration');})]);
+ await h.runtime.disconnect();delay=false;await h.connect();rejectReview(Error('Old review failed'));await assert.rejects(pending,/interrupted|disconnected/);
+ assert.equal(h.calls.filter(c=>c.method==='turn/start').length,0);assert.equal(h.runtime.snapshot().status,'idle');assert.equal(h.runtime.snapshot().permissionVerified,true);
+});
 
 test('interactive Full access retains schema and Ask me verification while relaxing only sandbox availability',async t=>{
  const h=await harness(t);h.host.initializeResult.sandboxAvailability='unavailable';await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,fullAccess:true});assert.equal(h.runtime.snapshot().permissionVerified,true);assert.equal(h.runtime.snapshot().fullAccess,true);assert.ok(h.calls.find(c=>c.method==='spawn').spec.args.includes('--disable-sandbox'));await h.runtime.disconnect();assert.equal(h.runtime.snapshot().fullAccess,false);

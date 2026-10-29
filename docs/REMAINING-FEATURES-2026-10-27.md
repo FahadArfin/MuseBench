@@ -4,6 +4,8 @@ This audit supersedes the status table in [26 October's inventory](REMAINING-FEA
 
 ## Delivered in this pass
 
+29 October follow-up: [portable extension review](VALIDATION-portable-extension-review.md) closes the direct interactive-runtime gap on macOS/Linux and checks custom XDG configuration roots. The real Windows local-echo path passed with zero model requests; native Muse execution on other operating systems is not implied.
+
 | Area | Implementation and evidence | Practical limit |
 | --- | --- | --- |
 | Concurrent questions and approvals | Bounded request collection, individual selection/revisions, independent settlement and one-attempt receipts. Restored request pointers wait for full payloads; early settlement and delayed reissue have regression coverage. | Fixtures exercise concurrent/reconnect ordering. A missing payload stays blocked; unknown answers are not resent. |

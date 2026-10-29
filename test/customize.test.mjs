@@ -243,7 +243,7 @@ test('the Windows guard permits only reviewed user extensions and still rejects 
  const f=await fixture(),workspaceRoot=path.join(f.root,'project');await mkdir(workspaceRoot);
  const entry={transport:'stdio',command:'node',args:['server.mjs'],enabled:true,mode:'optional'};
  await writeFile(f.settings,JSON.stringify({mcp_servers:{docs:entry}}));
- const options={environment:{USERPROFILE:f.profile},workspaceRoot,extensionReview:f.review};
+ const options={platform:'win32',environment:{USERPROFILE:f.profile},workspaceRoot,extensionReview:f.review};
  await assert.rejects(checkConfiguration(options),/review/i);
  await f.review.approveMcp('docs',entry);await checkConfiguration(options);
  await writeFile(f.settings,JSON.stringify({mcp_servers:{docs:{...entry,command:'other'}}}));await assert.rejects(checkConfiguration(options),/review/i);
