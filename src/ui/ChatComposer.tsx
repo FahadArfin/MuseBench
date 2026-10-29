@@ -6,8 +6,10 @@ import {useSlashPalette} from './SlashPalette';
 import type {MuseSkill} from '../shared/slash-commands.mjs';
 import {useEffect,useLayoutEffect,useRef,useState,type Dispatch,type SetStateAction,type RefObject} from 'react';
 import {Paperclip,ListPlus,ArrowUp,Check,ChevronDown,FolderOpen,Lightbulb,Mic,Plus,Shield,ShieldCheck,Square,Terminal,X} from 'lucide-react';
-import type {CodeImage,RunOptions} from '../shared/types';
+import type {CodeImage,RunOptions,RuntimeState} from '../shared/types';
 import {ReasoningPicker,reasoningLabels as labels} from './ReasoningPicker';
+import {modelSettingsView} from '../shared/model-settings.mjs';
+import {ModelSettingsSummary} from './ModelSettingsSummary';
 import {useDictation} from './useDictation';
 import './composer.css';
 const approvals:{id:RunOptions['approval'];label:string;description:string}[]=[
@@ -15,7 +17,7 @@ const approvals:{id:RunOptions['approval'];label:string;description:string}[]=[
  {id:'auto',label:'Auto-review',description:'Muse reviews eligible requests. Unresolved approvals stop the run.'},
  {id:'never',label:'No prompts',description:'Run without approval prompts, within the Muse sandbox.'},
 ];
-type Props={onFullAccess:(value:boolean)=>void;canSteer?:boolean;fullAccess?:boolean;modelCatalog?:import("../shared/models.mjs").NativeModelCatalog;onRefreshModels:()=>void;images:CodeImage[];imageProjectId:string;onRemoveImage:(id:string)=>void;onAddImages:(files:File[])=>void;uploadingImages:boolean;onRunQueue?:()=>void;onQueue?:()=>void;onContext:()=>void;onCommand:(id:string,args:string,prefix:string)=>void;onLoadSkills:()=>void;skills:MuseSkill[];skillsStatus:string;theme:string;model:string;value:string;onChange:Dispatch<SetStateAction<string>>;inputRef:RefObject<HTMLTextAreaElement|null>;onSubmit:()=>void;onChooseProject:()=>void;onStop:()=>void;onConnection:()=>void;onOptions:(options:RunOptions)=>void;options:RunOptions;taskMode:'muse'|'manual'|'demo';onTaskMode:(mode:'muse'|'manual')=>void;messageMode:'chat'|'plan';onMessageMode:(mode:'chat'|'plan')=>void;showTask:boolean;busy:boolean;running:boolean;canSend:boolean;enterToSend:boolean;active:boolean;context:string;};
+type Props={runtime?:RuntimeState;onFullAccess:(value:boolean)=>void;canSteer?:boolean;fullAccess?:boolean;modelCatalog?:import("../shared/models.mjs").NativeModelCatalog;onRefreshModels:()=>void;images:CodeImage[];imageProjectId:string;onRemoveImage:(id:string)=>void;onAddImages:(files:File[])=>void;uploadingImages:boolean;onRunQueue?:()=>void;onQueue?:()=>void;onContext:()=>void;onCommand:(id:string,args:string,prefix:string)=>void;onLoadSkills:()=>void;skills:MuseSkill[];skillsStatus:string;theme:string;model:string;value:string;onChange:Dispatch<SetStateAction<string>>;inputRef:RefObject<HTMLTextAreaElement|null>;onSubmit:()=>void;onChooseProject:()=>void;onStop:()=>void;onConnection:()=>void;onOptions:(options:RunOptions)=>void;options:RunOptions;taskMode:'muse'|'manual'|'demo';onTaskMode:(mode:'muse'|'manual')=>void;messageMode:'chat'|'plan';onMessageMode:(mode:'chat'|'plan')=>void;showTask:boolean;busy:boolean;running:boolean;canSend:boolean;enterToSend:boolean;active:boolean;context:string;};
 export function ChatComposer(p:Props){
  const [skillsOpen,setSkillsOpen]=useState(false);
  const [menu,setMenu]=useState<'add'|'approval'|'reasoning'|null>(null);
@@ -24,6 +26,7 @@ export function ChatComposer(p:Props){
  const voice=useDictation(p.active&&!p.busy&&!p.running,p.context,p.onChange);
  const muse=p.taskMode==='muse',approval=approvals.find(item=>item.id===p.options.approval)!;
  const locked=p.busy||p.running||voice.recording||p.uploadingImages;
+ const settingsLocked=locked||!!p.runtime?.pending||!!p.runtime?.childrenBusy||!!p.runtime?.operationBusy||!!p.runtime?.restoringRequests;
  const slash=useSlashPalette({value:p.value,onChange:p.onChange,onCommand:(id,args,prefix)=>{if(id==='voice'){p.onChange(prefix);void voice.toggle();}else p.onCommand(id,args,prefix);},onLoadSkills:p.onLoadSkills,skills:p.skills,skillsStatus:p.skillsStatus,active:p.active&&!locked,context:p.context,options:p.options,plan:p.messageMode==='plan',theme:p.theme,model:p.model});
  const close=()=>{setMenu(null);opener.current?.focus();};
  const open=(kind:typeof menu,event:React.MouseEvent<HTMLButtonElement>)=>{opener.current=event.currentTarget;setMenu(menu===kind?null:kind);};
@@ -42,6 +45,7 @@ export function ChatComposer(p:Props){
   return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',keyboard,true);};
  },[menu]);
  const selectedModel=p.modelCatalog?.models.find(m=>p.options.model?m.id===p.options.model:m.isDefault);
+ const settings=modelSettingsView({options:p.options,runtime:{...p.runtime,modelCatalog:p.modelCatalog}});
  const choose=(options:RunOptions)=>{p.onOptions(options);close();};
  return <form ref={root} className="chat-composer codex-composer" onPaste={e=>{const files=Array.from(e.clipboardData.files).filter(f=>f.type.startsWith('image/'));if(files.length&&muse&&!p.busy&&!p.uploadingImages){e.preventDefault();p.onAddImages(files);}}} onDragOver={e=>{if(e.dataTransfer.types.includes('Files'))e.preventDefault();}} onDrop={e=>{if(e.dataTransfer.files.length){e.preventDefault();if(muse&&!p.busy&&!p.uploadingImages)p.onAddImages(Array.from(e.dataTransfer.files));}}} onSubmit={event=>{event.preventDefault();if(voice.recording)return;if(!p.value.trim()&&p.onRunQueue&&!locked&&p.canSend){p.onRunQueue();return;}if(!slash.submit())p.onSubmit();}}>
   {skillsOpen&&<SkillPicker skills={p.skills} status={p.skillsStatus} onClose={()=>setSkillsOpen(false)} onChoose={skill=>{p.onChange(skillPrompt(skill,p.value));setSkillsOpen(false);p.inputRef.current?.focus();}} onManage={()=>{setSkillsOpen(false);p.onCommand('customize','',p.value);}}/>}{slash.node}<input ref={imageInput} type="file" aria-label="Attach screenshots" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={e=>{p.onAddImages(Array.from(e.target.files??[]));e.target.value='';}}/>
@@ -62,10 +66,11 @@ export function ChatComposer(p:Props){
    </div>
    {p.messageMode==='plan'&&muse&&<span className="composer-plan-tag"><Lightbulb size={12}/>Plan</span>}
    <span className="composer-spacer"/>
-   {muse&&<div className="composer-control"><button type="button" className="reasoning-chip" aria-label="Reasoning effort" aria-expanded={menu==='reasoning'} disabled={locked} onClick={e=>open('reasoning',e)}><strong>{selectedModel?.label??p.options.model??'Muse'}</strong><span>{labels[p.options.reasoning]}</span><ChevronDown size={12}/></button>
-    {menu==='reasoning'&&<ReasoningPicker value={p.options.reasoning} levels={selectedModel?.efforts.length?selectedModel.efforts:REASONING_LEVELS} onChange={reasoning=>p.onOptions({...p.options,reasoning})}>
-      <label className="composer-mode-row"><span>Model</span><select aria-label="Muse model" value={p.options.model??''} onChange={e=>{const model=e.target.value,row=p.modelCatalog?.models.find(m=>model?m.id===model:m.isDefault);const {model:oldModel,...rest}=p.options;p.onOptions({...rest,...(model?{model}:{}),reasoning:row?.efforts.includes(p.options.reasoning)?p.options.reasoning:row?.defaultEffort??row?.efforts[0]??'high'});}}><option value="">Provider default</option>{p.modelCatalog?.models.map(m=><option key={m.id} value={m.id} disabled={!m.efforts.length}>{m.label}</option>)}</select></label>
-      {selectedModel?.description&&<p className="popover-help">{selectedModel.description}</p>}<button type="button" className="text-link" onClick={p.onRefreshModels}>{p.modelCatalog?'Refresh models':'Load installed models'}</button>
+   {muse&&<div className="composer-control"><button type="button" className="reasoning-chip" aria-label="Reasoning effort" title={p.running?'Inspect current and next-request settings':`Next request: ${settings.requested.model} · ${labels[p.options.reasoning]}`} aria-expanded={menu==='reasoning'} disabled={p.busy||voice.recording||p.uploadingImages} onClick={e=>open('reasoning',e)}><strong>{p.running?settings.observed?.model??'Awaiting Muse':selectedModel?.label??p.options.model??'Muse'}</strong><span>{p.running?'Running':`${labels[p.options.reasoning]} · Next`}</span><ChevronDown size={12}/></button>
+    {menu==='reasoning'&&<ReasoningPicker disabled={settingsLocked} value={p.options.reasoning} levels={selectedModel?.efforts.length?selectedModel.efforts:REASONING_LEVELS} onChange={reasoning=>p.onOptions({...p.options,reasoning})}>
+      <ModelSettingsSummary view={settings}/>
+      <label className="composer-mode-row"><span>Next model</span><select aria-label="Muse model" value={p.options.model??''} disabled={settingsLocked} onChange={e=>{const model=e.target.value,row=p.modelCatalog?.models.find(m=>model?m.id===model:m.isDefault);const {model:oldModel,...rest}=p.options;p.onOptions({...rest,...(model?{model}:{}),reasoning:row?.efforts.includes(p.options.reasoning)?p.options.reasoning:row?.defaultEffort??row?.efforts[0]??'high'});}}><option value="">Provider default</option>{p.options.model&&!selectedModel&&<option value={p.options.model} disabled>{p.options.model} (unavailable)</option>}{p.modelCatalog?.models.map(m=><option key={m.id} value={m.id} disabled={!m.efforts.length}>{m.label}</option>)}</select></label>
+      <p className="popover-help">{settingsLocked?'Settings can be changed when active work finishes.':'Changes apply when you send your next request. Queued prompts keep their saved settings.'}</p><button type="button" className="text-link" disabled={settingsLocked} onClick={p.onRefreshModels}>{p.modelCatalog?'Refresh models':'Load installed models'}</button>
      </ReasoningPicker>}
    </div>}
    <button type="button" className={`icon-button microphone-button ${voice.recording?'recording':''}`} aria-label={voice.recording?'Stop dictation':'Start dictation'} title={voice.recording?'Stop dictation':voice.state.available===false?'Dictation unavailable on this device':'Dictate with Windows speech recognition (on device)'} disabled={p.busy||p.running||voice.state.status==='stopping'||(!voice.recording&&voice.state.available===false)} onClick={()=>{setMenu(null);void voice.toggle();}}>{voice.recording?<Square size={14} fill="currentColor"/>:<Mic size={17}/>}</button>

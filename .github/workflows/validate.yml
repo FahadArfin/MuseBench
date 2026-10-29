@@ -32,6 +32,7 @@ jobs:
       - run: npm run test:native-failure
       - run: npm run test:native-question
       - run: npm run test:reply-copy
+      - run: npm run test:model-settings
       - run: npm run test:plugin-tools
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness

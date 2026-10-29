@@ -421,7 +421,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
     if(session.modelId!==row.modelId||session.providerId!==row.providerId){
      const commandId=owner.connection.mintCommandId();
      try{const result=await bounded(owner.connection.command('session/setModel',{sessionId:state.sessionId,model:{modelId:row.modelId,providerId:row.providerId,...(row.profileId?{profileId:row.profileId}:{})}},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(result?.commandId!==commandId||result.status!=='accepted')throw Error('Native model change was not confirmed.');session=(await bounded(owner.connection.request('session/read',{sessionId:state.sessionId}),timeoutMs))?.session;assertCurrent(token);if(session?.modelId!==row.modelId||session?.providerId!==row.providerId||!provesAskMe(session,workspace,state.sessionId))throw Error('Native model selection did not match its read-back.');}
-     catch(error){if(token===epoch)block('Native model selection is uncertain. Reconnect and verify it before sending.',false);throw error;}
+     catch(error){if(token===epoch){update({modelId:null});block('Native model selection is uncertain. Reconnect and verify it before sending.',false);}throw error;}
     }update({modelId:row.modelId});
    }
    dispatched=true;await adapter.send({text:text.trim(),mode,images});assertCurrent(token);

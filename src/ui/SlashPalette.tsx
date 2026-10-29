@@ -18,7 +18,7 @@ export function useSlashPalette(p:Props){
  if(submenu==='reasoning')entries=REASONING_LEVELS.map(level=>({id:`reasoning:${level}`,label:efforts[level],description:p.options.reasoning===level?'Selected':'',icon:'Brain',kind:'value',aliases:[]}));
  if(submenu==='approval')entries=[['ask','Ask for approval','Safe actions run; approval requests stop'],['auto','Auto-review','Muse reviews eligible requests'],['never','No prompts','Run without approval prompts']].map(([value,label,description])=>({id:`approval:${value}`,label,description,icon:'ShieldCheck',kind:'value',aliases:[]}));
  if(submenu==='theme')entries=['system','light','dark'].map(value=>({id:`theme:${value}`,label:value[0].toUpperCase()+value.slice(1),description:p.theme===value?'Selected':'',icon:'SunMoon',kind:'value',aliases:[]}));
- if(submenu==='model')entries=[{id:'model:default',label:p.model||'Muse provider default',description:'Model is selected by the installed Muse provider',icon:'Box',kind:'value',aliases:[]},{id:'reasoning',label:'Reasoning effort',description:efforts[p.options.reasoning],icon:'Brain',kind:'submenu',aliases:[]}];
+ if(submenu==='model')entries=[{id:'model:status',label:'Model settings',description:'Reported model and next-request choices',icon:'Box',kind:'value',aliases:[]},{id:'reasoning',label:'Reasoning effort',description:`Next request · ${efforts[p.options.reasoning]}`,icon:'Brain',kind:'submenu',aliases:[]}];
  if(submenu==='skills')entries=filterCommands('',p.skills).filter(entry=>entry.kind==='skill');
  const index=Math.min(selected,Math.max(0,entries.length-1));
  useEffect(()=>{list.current?.querySelector<HTMLElement>(`[data-option-index="${index}"]`)?.scrollIntoView({block:'nearest'});},[index,submenu,p.value]);

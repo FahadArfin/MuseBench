@@ -39,6 +39,7 @@
     "test:native-failure": "node scripts/native-failure-smoke.mjs && node scripts/native-failure-smoke.mjs --desktop",
     "test:native-question": "node scripts/native-question-smoke.mjs && node scripts/native-question-smoke.mjs --desktop",
     "test:reply-copy": "node scripts/reply-copy-smoke.mjs && node scripts/response-actions-smoke.mjs",
+    "test:model-settings": "node scripts/model-settings-smoke.mjs && node scripts/model-settings-smoke.mjs --desktop",
     "test:plugin-tools": "node scripts/plugin-tools-smoke.mjs && node scripts/plugin-tools-smoke.mjs --desktop",
     "test:typography": "node scripts/typography-smoke.mjs",
     "test:profile-identity": "node scripts/profile-identity-smoke.mjs && node scripts/profile-account-desktop-smoke.mjs",

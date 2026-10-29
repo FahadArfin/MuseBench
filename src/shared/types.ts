@@ -3,6 +3,7 @@ export interface ChildControlReceipt {commandId:string;sessionId:string;itemId:s
 export interface CompactionReceipt {commandId:string;sessionId:string;turnId:string;status:string;reason?:string;at:string;itemId?:string;tokensBefore?:number;tokensAfter?:number;summarizedThrough?:string;}
 export interface DictationState { id: string | null; status: 'idle' | 'starting' | 'listening' | 'stopping' | 'error'; available: boolean | null; language: string | null; text: string; error: string | null; }
 export interface RunOptions {model?:string; budget?:'standard'|'extended'|'deep'; reasoning: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'; approval: 'ask' | 'auto' | 'never'; }
+export interface RuntimeState {runOptions?:RunOptions;inputAccepted?:boolean;runId?:string|null;}
 export type Stage = 'plan' | 'changes' | 'preview' | 'checks' | 'review';
 export type CheckStatus = 'not-run' | 'running' | 'passed' | 'failed' | 'cancelled' | 'stale';
 export interface Project {lessons?:import('./project-lessons.mjs').ProjectLesson[];validationScripts?:string[];worktree?:{id:string;sourceRoot:string;branch:string;base:string}; repositoryUrl?:string|null; branch?:string|null; id: string; name: string; root: string; demo: boolean; scripts: Record<string,string>; instructions?:string; }

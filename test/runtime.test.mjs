@@ -648,6 +648,14 @@ test('runtime selects only a current native Meta model and verifies it before se
 test('runtime refuses unlisted model or unconfirmed model change without a turn',async t=>{
  for(const wrong of [false,true]){const h=await harness(t);await h.connect();const request=h.host.connection.request;h.host.connection.request=async(method,params)=>method==='model/list'?nativeCatalog():method==='session/read'?{session:{...h.session(),providerId:'meta',modelId:'previous'}}:request(method,params);h.host.connection.command=async(method,params,opts)=>{h.calls.push({method,params,opts});return {status:'accepted',commandId:opts.commandId};};await assert.rejects(h.runtime.send({text:'Hello',runOptions:{reasoning:'low',approval:'ask',model:wrong?'missing':'muse-spark-1.2'}}));assert.equal(h.calls.some(c=>c.method==='turn/start'),false);}
 });
+
+test('unconfirmed native model changes clear stale read-back evidence',async t=>{
+ const h=await harness(t);await h.connect();assert.equal(h.runtime.snapshot().modelId,'muse-spark-1.2');
+ const request=h.host.connection.request;h.host.connection.request=async(method,params)=>method==='session/read'?{session:{...h.session(),modelId:'previous'}}:request(method,params);
+ h.host.connection.command=async(method,params,opts)=>{assert.equal(method,'session/setModel');return {status:'accepted',commandId:opts.commandId};};
+ await assert.rejects(h.runtime.send({text:'Inspect',runOptions:{model:'muse-spark-1.2',reasoning:'low',approval:'ask'}}));
+ assert.equal(h.runtime.snapshot().status,'blocked');assert.equal(h.runtime.snapshot().modelId,null);
+});
 test('Provider default resets an earlier model selection using the current native catalog',async t=>{
  const h=await harness(t);await h.connect();let selected='earlier-explicit';const request=h.host.connection.request,command=h.host.connection.command;
  h.host.connection.request=async(method,params)=>method==='model/list'?nativeCatalog():method==='session/read'?{session:{...h.session(),modelId:selected}}:request(method,params);
