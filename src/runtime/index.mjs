@@ -395,6 +395,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   }catch(error){assertCurrent(token);block(error.message);throw error;}
  }
  async function send({text,mode='chat',runOptions,imagePaths=[]}={}) {
+  let dispatched=false;
+  try{
   const options=validateRunOptions(runOptions);
   if(options.approval!=='ask'||options.budget)throw Error('Interactive mode requires Ask for approval and no exec budget preset.');
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a prepared request up to 64,000 characters and a supported chat or plan mode.');
@@ -422,10 +424,11 @@ export function createRuntime({credentials,environment=process.env,platform=proc
      catch(error){if(token===epoch)block('Native model selection is uncertain. Reconnect and verify it before sending.',false);throw error;}
     }update({modelId:row.modelId});
    }
-   await adapter.send({text:text.trim(),mode,images});assertCurrent(token);
+   dispatched=true;await adapter.send({text:text.trim(),mode,images});assertCurrent(token);
    for(const [id,request] of deferredInputs){deferredInputs.delete(id);if(receivePending(request))block('Muse is waiting for your answer.',false);}
    return snapshot();
   }finally{if(token===epoch)sending=false;}
+  }catch(error){const value=error instanceof Error?error:new Error(String(error));if(!dispatched||value.inputAdmission==='not-sent')value.inputAdmission='not-sent';else value.inputAdmission='unknown';throw value;}
  }
 
  async function decide(decision) {

@@ -128,6 +128,7 @@ try{
  await click('button','Close details panel');
  for(const text of ['Polish the toolbar','Check keyboard navigation','Review the mobile layout']){for(const page of [browserPage,desktopPage])await page.evaluate(text=>{const input=document.querySelector('textarea[aria-label="Message Muse"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,text);input.dispatchEvent(new Event('input',{bubbles:true}));},text);await click('button','Queue message');}
  await compare('prompt-queue');
+ await click('button','Edit queued prompt 2');await compare('queued-message-editor');await click('button','Cancel');await compare('queue-edit-cancelled');
  for(let index=0;index<3;index++)await click('button','Remove queued prompt 1');
 
  await click('button','Reasoning effort');await compare('reasoning-picker');await click('button','Load installed models');await compare('native-model-catalog');await escape();

@@ -134,6 +134,16 @@ test('native settlement before request prevents stale question resurrection',asy
 });
 const permissions=()=>({profileId:':ask-me',reviewerAuthority:'human',reviewerAttached:false,axes:{filesystem:'sandboxed',network:'off',approval:'onRequest',reviewer:'human'}});
 
+test('interactive send distinguishes preflight rejection from lost native admission',async t=>{
+ const h=await harness(t);await h.connect();
+ await assert.rejects(h.runtime.send({text:' ',mode:'chat'}),error=>error.inputAdmission==='not-sent');
+ assert.equal(h.calls.filter(call=>call.method==='turn/start').length,0);
+ const original=h.host.connection.command;
+ h.host.connection.command=async(method,...args)=>{if(method==='turn/start'){h.calls.push({method});throw Error('Acknowledgment lost');}return original(method,...args);};
+ await assert.rejects(h.runtime.send({text:'Inspect'}),error=>error.inputAdmission==='unknown');
+ assert.equal(h.calls.filter(call=>call.method==='turn/start').length,1);
+});
+
 // This replaces only the external native process. The real runtime and
 // preserved session adapter still validate/dispatch/fold every protocol action.
 async function harness(t,options={}) {

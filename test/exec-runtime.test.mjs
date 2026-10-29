@@ -84,6 +84,14 @@ test('invalid run options are rejected before any native request starts',async t
  for(const runOptions of [{reasoning:'invented',approval:'ask'},{reasoning:'high',approval:'unrestricted'},{reasoning:'high',approval:'ask',sandbox:false}])await assert.rejects(h.runtime.send({text:'Explain',runOptions}),/option|reasoning|approval/i);
  assert.equal(h.calls.length,count);
 });
+
+test('exec send distinguishes preflight rejection from process dispatch uncertainty',async t=>{
+ const h=await harness(t,{modelThrows:true});await h.connect();const count=h.calls.length;
+ await assert.rejects(h.runtime.send({text:' ',mode:'chat'}),error=>error.inputAdmission==='not-sent');
+ assert.equal(h.calls.length,count);
+ await assert.rejects(h.runtime.send({text:'Inspect'}),error=>error.inputAdmission==='unknown');
+ assert.equal(h.calls.filter(call=>call.args.includes('meta')).length,0);
+});
 test('large context uses a prompt file and removes it after cancelled native cleanup',async t=>{
  const h=await harness(t);await h.connect();const text='Context text '.repeat(1400);await h.runtime.send({text});const args=h.calls.at(-1).args,file=args[args.indexOf('--prompt-file')+1];assert.ok(file);assert.match(await readFile(file,'utf8'),/Context text/);assert.ok(!args.includes(text));assert.ok(!args.includes('--disable-sandbox'));await h.runtime.disconnect();for(let i=0;i<30;i++){try{await stat(file);}catch(error){if(error.code==='ENOENT')return;throw error;}await new Promise(r=>setTimeout(r,10));}assert.fail('Temporary prompt was not removed');
 });

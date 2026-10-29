@@ -5,6 +5,17 @@ const root=sessionResult.session.workspaceRoot;
 async function setup(options={}){const port=new FixturePort();const adapter=new MuseSessionAdapter({connection:port,...descriptor(),timeoutMs:50,...options});await adapter.open(root);return {adapter,port};}
 const event=(method)=>structuredClone(events.find(e=>e.method===method));
 const mcpFailure='invalid run configuration: Required MCP server `musebench_workspace` failed during startup: the configured command is unavailable.';
+
+test('send reports the admission boundary without retrying unknown outcomes',async()=>{
+ const {adapter,port}=await setup();
+ await assert.rejects(adapter.send({text:' '}),error=>error.inputAdmission==='not-sent');
+ assert.equal(port.calls.length,1);
+ port.command=async(method)=>{port.calls.push({method});throw Error('Acknowledgment lost');};
+ await assert.rejects(adapter.send({text:'Inspect'}),error=>error.inputAdmission==='unknown');
+ assert.equal(port.calls.length,2);assert.equal(adapter.snapshot().status,'uncertain');
+ await assert.rejects(adapter.send({text:'Retry'}),error=>error.inputAdmission==='not-sent');
+ assert.equal(port.calls.length,2);
+});
 test('native terminal failure keeps its useful reason without replaying the request',async()=>{
  const {adapter,port}=await setup();await adapter.send({text:'Inspect the workspace'});
  const failed=event('turn/completed');Object.assign(failed.params,{terminal:'failed',reason:mcpFailure,error:{kind:'configError',message:'Lower priority detail',retryable:true}});port.emit(failed);

@@ -243,6 +243,8 @@ export function createExecRuntime({credentials,loadModels=readNativeModels,durab
   catch(error){if(error.code==='CATALOG_CLEANUP')update({status:'unavailable',cleanup:'unconfirmed',permissionVerified:false});throw error;}finally{modelRead=null;}
  }
  async function send({text,mode='chat',runOptions,imagePaths=[],sessionId=null,resumeSession=false}={}) {
+  let dispatched=false;
+  try{
   const options=validateRunOptions(runOptions);
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a message up to 64,000 characters in chat or plan mode.');
   if(connecting||closing||!state.permissionVerified||!usable.has(state.status)||owner&&!owner.closed)throw Error('Muse is blocked or uncertain. Connect a verified native runtime first.');
@@ -268,8 +270,9 @@ export function createExecRuntime({credentials,loadModels=readNativeModels,durab
   let prepared;try{prepared=await preparePrompt(prompt);current(token);}catch(error){await prepared?.dispose();if(token===epoch)update({status:'blocked',reason:'The request context could not be prepared. Try sending again.',permissionVerified:false});throw error;}
   const label=options.approval==='ask'?'Ask me':options.approval==='auto'?'Auto-review':state.fullAccess?'No prompts':'No prompts (sandboxed)';
   update({status:'running',runLimits:limits,inputAccepted:false,reason:null,failureCode:null,liveVerified:false,nativeSessionId:null,commandId:null,runId:null,modelId:null,providerId:null,usage:null,skills:[],shellResults:[],activity:{items:[],truncated:false},cleanup:undefined,runOptions:options,permissionProfile:options.approval==='never'?null:options.approval==='auto'?':auto-review':':ask-me',permissionArguments:permissionArgs(state.shellEnabled,options.approval,sessionId,state.fullAccess).map(arg=>arg==='hooks={}'?'hooks='+JSON.stringify(hooks):arg),permissionDescription:(state.fullAccess?fullDescription:state.shellEnabled?shellDescription:fileDescription).replace('Ask me',label).replace('Each request starts an independent native run',sessionId?"Each request resumes this chat’s native session":'Each request starts an independent native run')});
-  try{current(token);const args=execArgs(workspace,'meta','',limits.steps,state.shellEnabled,options,sessionId,state.fullAccess).slice(0,-2).map(arg=>arg==='hooks={}'?'hooks='+JSON.stringify(hooks):arg).concat(trustProject?['--trust-workspace']:[],imagePaths.flatMap(p=>['--image',p]),prepared.args);const run=begin(args,{token,model:true,resumeSession,duration:limits.wallTimeMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
+  try{current(token);const args=execArgs(workspace,'meta','',limits.steps,state.shellEnabled,options,sessionId,state.fullAccess).slice(0,-2).map(arg=>arg==='hooks={}'?'hooks='+JSON.stringify(hooks):arg).concat(trustProject?['--trust-workspace']:[],imagePaths.flatMap(p=>['--image',p]),prepared.args);dispatched=true;const run=begin(args,{token,model:true,resumeSession,duration:limits.wallTimeMs});void run.result.finally(prepared.dispose).catch(()=>{});}catch(error){await prepared.dispose();throw error;}
   return snapshot();
+  }catch(error){throw Object.assign(error instanceof Error?error:new Error(String(error)),{inputAdmission:dispatched?'unknown':'not-sent'});}
  }
 
  async function disconnect(){

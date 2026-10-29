@@ -87,6 +87,8 @@ export class MuseSessionAdapter {
   this.#state.restoration={status:'restored',sessionId:s.sessionId,viewCursor:result.viewCursor,historyMode:h.mode,pendingRequests:pointers,activeTurnId:s.activeTurnId,queuedTurnIds:[...this.#queuedTurns],turnCount:s.turnCount};
  }
  async send({text,mode='chat',images=[]}={}){
+  let dispatched=false;
+  try{
   if(!usable.has(this.#state.status))throw Error('Session cannot accept a turn in its current state');
   if(this.#queuedTurns.size)throw Error('Restored native queued work is still pending');
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Invalid turn input');
@@ -106,13 +108,14 @@ export class MuseSessionAdapter {
   catch(error){this.#halt('unavailable','command-id-unavailable');throw error;}
   const input=mode==='plan'?'Write a proposed plan only; do not make edits or run commands. This instruction is not an enforced permission boundary.\n\n'+text:text;
   try{
-   const ack=await this.#bounded(this.#connection.command('turn/start',{sessionId:this.#state.sessionId,input:[{type:'text',text:input},...pictures]},{commandId,maxAttempts:1}));
+   dispatched=true;const ack=await this.#bounded(this.#connection.command('turn/start',{sessionId:this.#state.sessionId,input:[{type:'text',text:input},...pictures]},{commandId,maxAttempts:1}));
    if(this.#epoch!==epoch)throw Error('Turn submission was interrupted');
    if(ack?.commandId!==commandId||ack.status!=='accepted'||ack.disposition!=='started'||ack.startedNewTurn!==true||!str(ack.turnId))throw Error('Unsupported or unconfirmed turn disposition');
    this.#state.turnId=ack.turnId;this.#state.rootTurnId=ack.turnId;this.#state.ownedTurnIds=[ack.turnId];this.#state.status='running';
    const held=this.#buffer;this.#buffer=[];for(const f of held)this.#receive(f);this.#emit();
    return this.snapshot();
   }catch(error){if(this.#epoch===epoch)this.#halt('uncertain','turn-submit-outcome-unknown');throw error;}
+  }catch(error){throw Object.assign(error instanceof Error?error:new Error(String(error)),{inputAdmission:dispatched?'unknown':'not-sent'});}
  }
  #receive(frame){
   if(halted.has(this.#state.status))return;

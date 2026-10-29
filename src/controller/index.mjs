@@ -21,7 +21,7 @@ import {restoreNativeSession,prepareNativeSession,settleNativeSession} from '../
 import {createWorktreeService} from './worktrees.mjs';
 import {createImageStore} from './code-images.mjs';
 import {imageReferences} from '../shared/code-images.mjs';
-import {moveQueuedPrompt} from '../shared/queued-prompts.mjs';
+import {moveQueuedPrompt,queuedPrompt,editQueuedPrompt} from '../shared/queued-prompts.mjs';
 import {planSidebarMove} from '../shared/sidebar-order.mjs';
 import {projectDetails} from '../shared/create-project.mjs';
 import {projectGit} from '../shared/project-git.mjs';
@@ -72,7 +72,7 @@ function restoreTask(record,knownProjectId){
   for(const item of task.messages){const run=task.runs.find(r=>r.promptId===(item.turnId??item.id));if(run)item.outcome=run.status;else if(['queued','working','waiting'].includes(item.outcome))item.outcome='interrupted';}
   task.pinned=task.pinned===true;task.archived=task.archived===true;task.archivedAt=task.archived?(Number.isFinite(Date.parse(task.archivedAt))?task.archivedAt:now()):null;
   task.checkReceipts=Array.isArray(task.checkReceipts)?task.checkReceipts.filter(c=>c&&typeof c.script==='string'&&typeof c.revision==='string').slice(-40):[];if(task.validationRun?.status==='running')task.validationRun.status='cancelled';
-  task.promptQueue=Array.isArray(task.promptQueue)?task.promptQueue.filter(q=>q&&typeof q.id==='string'&&typeof q.text==='string'&&q.text.length<=16000).slice(0,5):[];task.queuePaused=true;task.queueHold=task.promptQueue.length>0;
+  task.promptQueue=Array.isArray(task.promptQueue)?task.promptQueue.filter(q=>q&&typeof q.id==='string'&&typeof q.text==='string'&&q.text.length<=16000).slice(0,5).map(q=>({...q,...(q.delivery==='sending'?{delivery:'unknown'}:{})})):[];task.queuePaused=true;task.queueHold=task.promptQueue.length>0;
   task.goal=task.goal&&typeof task.goal.objective==='string'?{objective:task.goal.objective.slice(0,1000),status:task.goal.status==='paused'?'paused':'active',...(task.goal.driver?{driver:{...task.goal.driver,armed:false,reason:'Restarted; explicitly start a new bounded continuation'}}:{})}:null;
   task.createdAt=validDate(task.createdAt)?task.createdAt:task.messages.find(item=>validDate(item.at))?.at??now();
   task.updatedAt=validDate(task.updatedAt)?task.updatedAt:task.messages.findLast(item=>validDate(item.at))?.at??task.createdAt;
@@ -182,6 +182,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   if(state.task){
     const knownProject=state.projects.find(p=>p.id===state.activeProject?.id&&p.root===state.activeProject.root);
     history.sync(state.task,true);state.task=restoreTask(state.task,knownProject?.id);
+    // Task rows are written before the app selection snapshot. A crash between
+    // those writes must not replace a sending/unknown queue with an older copy.
+    const persistedQueue=taskRecords.get(state.task.id)?.promptQueue;
+    if(persistedQueue){state.task.promptQueue=structuredClone(persistedQueue);state.task.queueHold=persistedQueue.length>0;}
     if(!knownProject||state.task.projectId!==knownProject.id){state.task=null;state.error='The saved task has no valid project association. Select a project to continue.';}
     else taskRecords.set(state.task.id,structuredClone(state.task));
   }
@@ -470,7 +474,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           t.skillReceipts=[];t.nativeUsage=null;t.runtimeComplete=false;t.acceptedRevision=null;context.pending=true;
           const before=runtime.snapshot?.()??runtimeState;
           const prompt={id:randomUUID(),role:'user',text:action.text.slice(0,16000),files,images,sources:attachments,at:now()};
-          context.turn={taskId:t.id,promptId:prompt.id,messageBaseline:runtimeMessageIds(before),previousRunId:before.runId??null,runId:null,started:false,resetSeen:false};
+          context.turn={taskId:t.id,promptId:prompt.id,queueItemId:action.fromQueue?action.id:null,messageBaseline:runtimeMessageIds(before),previousRunId:before.runId??null,runId:null,started:false,resetSeen:false};
           t.runs=restoreRuns([...(t.runs??[]),{id:prompt.id,promptId:prompt.id,prompt:prompt.text,runId:null,status:'queued',startedAt:prompt.at,activities:[]}],{interrupt:false});
           t.messages.push(prompt);t.messages=t.messages.slice(-150);
           const {prompt:contextPrompt,...contextSummary}=prepared;t.contextSummary={...contextSummary,receipt:contextReceipt(prepared,{project,memories:state.memories,attachments,revision:contextSnapshot.revision})};
@@ -478,24 +482,31 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           context.task=t;saveRecord(t);persist();executions.patch(prompt.id,{phase:'dispatched'});
           try{await runtime.send({text:contextPrompt,imagePaths,...(durable?{sessionId:durable.session.id,resumeSession:Boolean(previousSession)}:{}),mode:action.mode??'chat',runOptions:restoreRunOptions(action.fromQueue?action.runOptions:t.runOptions)});}
           catch(e){
-            const rejected=executions.list(t.id).find(r=>r.id===prompt.id)?.result==='rejected',unknownNative=runtimeState.transport==='msp'&&durable&&!rejected;
+            const rejected=e?.inputAdmission==='not-sent'||executions.list(t.id).find(r=>r.id===prompt.id)?.result==='rejected',unknownNative=runtimeState.transport==='msp'&&durable&&!rejected;
             executions.patch(prompt.id,{phase:'settled',result:rejected?'rejected':'unknown',reason:String(e.message).slice(0,1000)});
             if(unknownNative){t.nativeSession={...durable.session,status:'needs-recovery'};const run=t.runs.find(r=>r.id===prompt.id);if(run){run.status='interrupted';run.endedAt=now();}prompt.outcome='interrupted';}
-            else if(!context.turn?.started){t.nativeSession=previousSession;state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};history.remove(t.id,prompt.id);t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}
-            context.pending=false;context.turn=null;throw e;
+            else if(!context.turn?.started){t.nativeSession=previousSession;if(!action.fromQueue&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};history.remove(t.id,prompt.id);t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}
+            context.pending=false;context.turn=null;throw Object.assign(new Error(String(e.message??e)),{queueDeliveryUnknown:action.fromQueue&&!rejected});
           }
         }else{t.messages.push({id:randomUUID(),role:'user',text:action.text,at:now()},{id:randomUUID(),role:'system',text:'Added to the local task journal. Manual and demo messages do not call a model.',at:now()});}if(!action.fromQueue&&state.drafts[draftKey(t.projectId,t.id)]?.text===action.text)delete state.drafts[draftKey(t.projectId,t.id)];saveRecord(t);
   };
 
+  const deliverQueued=async(t,item,owner,{runQueue=false}={})=>{
+    queuedPrompt(t,{taskId:t.id,id:item.id,expectedRevision:item.revision??0});
+    t.queuePaused=!runQueue;t.queueHold=!runQueue;item.delivery='sending';saveRecord(t);persist();
+    try{await sendToTask({...item,type:'sendMessage',fromQueue:true},t,owner);}
+    catch(error){item.delivery=error.queueDeliveryUnknown?'unknown':'ready';t.queuePaused=true;t.queueHold=true;t.queueError=error.message;throw error;}
+    finally{saveRecord(t);persist();}
+  };
   const queueEligible=c=>!closing&&!closed&&c.task?.mode==='muse'&&!c.task.queueHold&&!c.task.queuePaused&&c.task.promptQueue?.length&&!c.task.archived;
   const scheduleQueue=(owner=context)=>{
     if(owner.queueScheduled||!queueEligible(owner))return;owner.queueScheduled=true;
     const operation=queue.then(async()=>{
       const t=owner.task,next=owner.runtime?.snapshot?.();if(!queueEligible(owner)||owner.pending)return;
       if(next?.status!=='completed'||next.cleanup!=='confirmed'||!t.runtimeComplete){t.queuePaused=true;t.queueHold=true;saveRecord(t);emit();return;}
-      const item=t.promptQueue.shift();saveRecord(t);
-      try{await sendToTask({...item,type:'sendMessage',fromQueue:true},t,owner);}
-      catch(error){t.promptQueue.unshift(item);t.queuePaused=true;t.queueHold=true;t.queueError=error.message;}finally{saveRecord(t);emit();}
+      const item=t.promptQueue[0];
+      try{await deliverQueued(t,item,owner,{runQueue:true});}
+      catch(error){t.queuePaused=true;t.queueHold=true;t.queueError=error.message;}finally{saveRecord(t);emit();}
     });
     queue=operation.catch(()=>{});void operation.finally(()=>{owner.queueScheduled=false;if(!owner.pending&&owner.runtime?.snapshot?.().status==='completed'&&queueEligible(owner))scheduleQueue(owner);}).catch(()=>{});
   };
@@ -548,6 +559,11 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(next.transport==='exec'&&next.shellEnabled===true&&Array.isArray(next.shellResults)){const owned=Array.isArray(next.ownedRunIds)&&next.ownedRunIds.includes(turn.runId)?next.ownedRunIds.slice(0,5):[turn.runId];for(const item of next.shellResults)if(owned.includes(item?.runId)&&boundedShellResult(item))outputs.put(task.id,`shell:${item.runId}:${item.callId}`,item.command||'Native command',item.output,item.terminalStatus,item.truncated===true);for(const runId of owned)task.shellResults=mergeShellResults(task.shellResults,next.shellResults,runId);}
       }
       const verifiedApprovalPause=next.status==='blocked'&&next.permissionVerified===true&&typeof next.sessionId==='string'&&(['approval','input'].includes(next.pending?.kind)&&next.pending.sessionId===next.sessionId||next.transport==='msp'&&next.restoringRequests>0&&ownsTurn&&task.nativeSession?.id===next.sessionId);
+      const queued=turn?.queueItemId&&task.promptQueue?.find(item=>item.id===turn.queueItemId);
+      if(queued?.delivery==='sending'){
+        if(ownsTurn&&(next.inputAccepted===true||next.status==='completed'&&next.cleanup==='confirmed'))task.promptQueue=task.promptQueue.filter(item=>item.id!==queued.id);
+        else if(['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)&&!verifiedApprovalPause){queued.delivery=next.inputAccepted===false&&!turn.runId&&next.cleanup==='confirmed'?'ready':'unknown';task.queuePaused=true;task.queueHold=true;task.queueError=next.reason??(queued.delivery==='ready'?'Request was not accepted. Review and send it when ready.':'Request outcome is unknown. Check the session before sending again.');}
+      }
       if(turn&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)&&!verifiedApprovalPause){const rejected=next.inputAccepted===false&&!turn.runId&&next.cleanup==='confirmed';executions.patch(turn.promptId,{phase:'settled',result:rejected?'rejected':ownsTurn&&next.cleanup==='confirmed'&&['completed','failed','cancelled'].includes(next.status)?next.status:'unknown',acceptance:next.inputAccepted===true?'accepted':rejected?'rejected':'unknown',cleanup:next.cleanup??'unknown',reason:typeof next.reason==='string'?next.reason.slice(0,1000):null});}
       const progress=turn&&(task.runs??[]).find(item=>item.id===turn.promptId);
       if(progress){
@@ -564,7 +580,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       if(turn&&task.nativeSession&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)&&!verifiedApprovalPause)task.nativeSession=settleNativeSession(task.nativeSession,next,ownsTurn);
       if(turn&&next.transport==='exec'&&next.inputAccepted===false&&!turn.runId&&['failed','cancelled','unavailable'].includes(next.status)&&next.cleanup==='confirmed'){
         const rejected=task.messages.find(m=>m.id===turn.promptId);
-        if(rejected){const key=draftKey(task.projectId,task.id);if(!state.drafts[key]?.text)state.drafts[key]={text:rejected.text,files:rejected.files??[],images:rejected.images??[],mode:'chat',updatedAt:now()};history.remove(task.id,rejected.id);task.messages=task.messages.filter(m=>m.id!==rejected.id);}
+        if(rejected){const key=draftKey(task.projectId,task.id);if(!turn.queueItemId&&!state.drafts[key])state.drafts[key]={text:rejected.text,files:rejected.files??[],images:rejected.images??[],mode:'chat',updatedAt:now()};history.remove(task.id,rejected.id);task.messages=task.messages.filter(m=>m.id!==rejected.id);}
       }
       if(next.status==='completed'&&context.pending){task.runtimeComplete=ownsTurn;context.pending=false;if(next.transport!=='msp')context.turn=null;}
       if(['failed','cancelled','uncertain','unavailable'].includes(next.status)||(next.status==='blocked'&&!verifiedApprovalPause)){task.runtimeComplete=false;context.pending=false;context.turn=null;}
@@ -733,11 +749,13 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(!closing&&!t.queueHold&&context.pending&&['running','starting','submitting'].includes(state.runtime.status))t.queuePaused=false;break;
       }
       case 'moveQueued':{const t=requireTask();t.promptQueue=moveQueuedPrompt(t,action);break;}
-      case 'removeQueued':{const t=requireTask();t.promptQueue=(t.promptQueue??[]).filter(q=>q.id!==action.id);break;}
+      case 'beginQueueEdit':{const t=requireTask();queuedPrompt(t,action);t.queuePaused=true;t.queueHold=true;break;}
+      case 'editQueued':{const t=requireTask(),edited=editQueuedPrompt(t,action);t.promptQueue=t.promptQueue.map(item=>item.id===edited.id?edited:item);t.queuePaused=true;t.queueHold=true;break;}
+      case 'sendQueued':{const t=requireTask(),item=queuedPrompt(t,action);requireNavigationIdle();await deliverQueued(t,item,context);break;}
+      case 'removeQueued':{const t=requireTask();if(action.taskId!==undefined)queuedPrompt(t,action,{allowUnknown:true});t.promptQueue=(t.promptQueue??[]).filter(q=>q.id!==action.id);break;}
       case 'pauseQueue':{const t=requireTask();t.queuePaused=true;t.queueHold=true;break;}
       case 'resumeQueue':{
-        requireNavigationIdle();const t=requireTask();if(t.archived)throw Error('Restore this archived chat first.');const item=t.promptQueue?.shift();if(!item)break;t.queuePaused=false;t.queueHold=false;
-        try{await handle({type:'sendMessage',text:item.text,mode:item.mode,files:item.files,images:item.images,runOptions:item.runOptions,requiredChecks:item.requiredChecks,fromQueue:true});}catch(error){t.promptQueue.unshift(item);t.queuePaused=true;t.queueHold=true;throw error;}break;
+        const t=requireTask();if(t.archived)throw Error('Restore this archived chat first.');const item=t.promptQueue?.[0];if(!item)break;queuedPrompt(t,{taskId:t.id,id:item.id,expectedRevision:item.revision??0});requireNavigationIdle();await deliverQueued(t,item,context,{runQueue:true});break;
       }
       case 'forkTask':{
         requireNavigationIdle();const original=structuredClone(requireTask()),index=original.messages.findIndex(m=>m.id===action.messageId&&['user','assistant'].includes(m.role));if(index<0)throw Error('Choose a prompt or response to branch from.');const selected=original.messages[index];
