@@ -13,6 +13,9 @@ const tools=[
 ];
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>object(value)&&Object.keys(value).every(key=>keys.includes(key));
+// MCP request metadata (including Muse's callId) is opaque transport context.
+// It never changes tool arguments, workspace scope or authorization.
+const requestParams=(value,keys)=>exact(value,[...keys,'_meta'])&&(!Object.hasOwn(value,'_meta')||object(value._meta));
 const validId=id=>typeof id==='string'&&id.length<=128||typeof id==='number'&&Number.isSafeInteger(id);
 const rpcError=(id,code,message)=>({jsonrpc:'2.0',id,error:{code,message}});
 const toolError=message=>({content:[{type:'text',text:message}],isError:true});
@@ -55,11 +58,11 @@ export async function createWorkspaceMcpServer({root,input=process.stdin,output=
   if(method==='ping')return result({});
   if(!initialized)return rpcError(id,-32002,'Initialize the server first.');
   if(method==='tools/list'){
-   if(params!==undefined&&(!exact(params,[])||Object.keys(params).length))return rpcError(id,-32602,'This tool list does not use pagination.');
+   if(params!==undefined&&!requestParams(params,[]))return rpcError(id,-32602,'This tool list accepts only request metadata, not pagination.');
    return result({tools});
   }
   if(method!=='tools/call')return rpcError(id,-32601,'Method not found.');
-  if(!exact(params,['name','arguments'])||typeof params.name!=='string')return rpcError(id,-32602,'Invalid tool request.');
+  if(!requestParams(params,['name','arguments'])||typeof params.name!=='string')return rpcError(id,-32602,'Invalid tool request.');
   const args=params.arguments;
   if(params.name==='workspace_tool_search'){
    if(!exact(args,['query'])||typeof args.query!=='string'||args.query.length>200)return rpcError(id,-32602,'Invalid search arguments.');

@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
+import {CallToolRequestSchema,ListToolsRequestSchema} from '@modelcontextprotocol/sdk/types.js';
 const api=await import('../src/runtime/workspace-mcp.mjs').catch(error=>{if(error.code==='ERR_MODULE_NOT_FOUND')return{};throw error;});
 async function fixture(t,options={}){
  assert.equal(typeof api.createWorkspaceMcpServer,'function');
@@ -36,6 +37,38 @@ test('calls have a closed schema and cannot change roots, execute commands or es
  assert.equal(f.calls.length,1);
  f.send('tools/call',{name:'arbitrary',arguments:{}},3);await f.settle();assert.equal(f.rows.at(-1).error.code,-32602);
  f.send('workspace/execute',{command:'whoami'},4);await f.settle();assert.equal(f.rows.at(-1).error.code,-32601);
+});
+
+test('standard request metadata permits discovery, search and native Muse call correlation',async t=>{
+ const f=await fixture(t);await f.init();
+ const metadata={callId:'call_fixture',idempotencyKey:'fixture-once',progressToken:0,'example.org/context':{label:'untrusted'}};
+ const listing=ListToolsRequestSchema.parse({method:'tools/list',params:{_meta:metadata}});
+ f.send(listing.method,listing.params,1);await f.settle();assert.equal(f.rows.at(-1).error,undefined);assert.equal(f.rows.at(-1).result.tools.length,2);
+ const search=CallToolRequestSchema.parse({method:'tools/call',params:{name:'workspace_tool_search',arguments:{query:'definition'},_meta:metadata}});
+ f.send(search.method,search.params,2);await f.settle();assert.equal(f.rows.at(-1).error,undefined);assert.deepEqual(JSON.parse(f.rows.at(-1).result.content[0].text).operations.map(row=>row.name),['definition']);
+ const args={operation:'definition',path:'main.ts',line:2,column:2};
+ const call=CallToolRequestSchema.parse({method:'tools/call',params:{name:'workspace_tool_call',arguments:args,_meta:{...metadata,root:'C:/outside',operation:'exec',arguments:{path:'../private.ts'},command:'must-not-run'}}});
+ f.send(call.method,call.params,3);await f.settle();assert.equal(f.rows.at(-1).error,undefined);assert.deepEqual(f.calls,[args]);
+ assert.doesNotMatch(JSON.stringify(f.rows),/call_fixture|fixture-once|outside|must-not-run|private\.ts/);
+});
+
+test('invalid metadata and extra request or tool fields are rejected without navigation',async t=>{
+ const f=await fixture(t);await f.init();const args={operation:'hover',path:'main.ts',line:1,column:1};
+ for(const metadata of [null,[],false,17,'not-an-object']){
+  for(const [method,params] of [['tools/list',{_meta:metadata}],['tools/call',{name:'workspace_tool_call',arguments:args,_meta:metadata}]]){
+   f.send(method,params,1);await f.settle();assert.equal(f.rows.at(-1).error?.code,-32602);
+  }
+ }
+ for(const params of [{name:'workspace_tool_call',arguments:args,_meta:{},root:'C:/outside'},{name:'workspace_tool_call',arguments:{...args,_meta:{root:'C:/outside'}},_meta:{}}]){
+  f.send('tools/call',params,2);await f.settle();assert.equal(f.rows.at(-1).error?.code,-32602);
+ }
+ assert.equal(f.calls.length,0);
+});
+
+test('request metadata remains inside the existing frame bound',async t=>{
+ const f=await fixture(t,{maxFrameBytes:1024});await f.init();
+ f.send('tools/call',{name:'workspace_tool_call',arguments:{operation:'hover',path:'main.ts',line:1,column:1},_meta:{context:'x'.repeat(1024)}},1);
+ await f.settle();assert.equal(f.server.closed,true);assert.equal(f.disposed(),1);assert.equal(f.calls.length,0);
 });
 test('partial UTF-8 lines, malformed JSON and notifications do not corrupt the protocol',async t=>{
  const f=await fixture(t);await f.init();const count=f.rows.length;
@@ -73,7 +106,7 @@ test('real JSONL subprocess resolves a definition and exits after stdin closes',
  const closed=new Promise(resolve=>child.once('close',resolve));
  const request=(id,method,params)=>{const answer=new Promise(resolve=>waiters.set(id,resolve));child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\n');return answer;};
  const initialized=await request(1,'initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'test',version:'1'}});assert.equal(initialized.result.serverInfo.name,'musebench-workspace');
- const result=await request(2,'tools/call',{name:'workspace_tool_call',arguments:{operation:'definition',path:'main.ts',line:2,column:2}});assert.equal(result.result.isError,undefined);
+ const result=await request(2,'tools/call',{name:'workspace_tool_call',arguments:{operation:'definition',path:'main.ts',line:2,column:2},_meta:{callId:'call_node_fixture',idempotencyKey:'node-fixture'}});assert.equal(result.error,undefined);assert.equal(result.result.isError,undefined);
  const navigation=JSON.parse(result.result.content[0].text);assert.deepEqual(navigation.items.map(item=>item.path),['lib.ts']);assert.equal(navigation.scope.config,'fixed-no-project-config');
  child.stdin.end();assert.equal(await closed,0);assert.equal(stderr,'');
 });

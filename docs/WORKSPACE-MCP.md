@@ -79,6 +79,14 @@ In the shared **Session → Session MCP servers** disclosure, users can read or 
 
 The API reports configuration/auth facts only. It does not enumerate model-visible tool schemas or test server/tool health. `serverInventoryVerified: true` is therefore distinct from `toolInventoryVerified: false`. Actual model search/call receipts, negative native startup cases and dynamic schema reload remain separate acceptance checks. The official [experimental inventory contract](https://meta-models.github.io/muse-code-sdk/next/generated/msp/methods/mcpserver-list/) documents the session-scoped set.
 
+### Request metadata compatibility, 29 October
+
+The [Muse 1.4.9 release notes](https://dev.meta.ai/docs/muse-code/changelog) document `_meta.callId` on every MCP tool call, with an idempotency key when present. MCP also permits a request metadata object on discovery. The gateway previously rejected those envelopes as unknown request fields, so a successful metadata-free direct probe did not exercise the native client's call shape.
+
+`tools/list` and `tools/call` now accept the optional `_meta` object. It is ignored, never echoed or merged into tool arguments, and confers no permission. Non-object metadata, other unsupported request fields, invalid tool arguments and requests exceeding the existing frame bound remain rejected. Metadata is not deduplicated: these read-only queries may run again and report the current bounded disk snapshot. The server does not advertise task-augmented execution or progress notifications.
+
+The new discovery/search/navigation regression and real Node/Electron subprocess checks reproduced `-32602` before the fix; all 17 gateway/factory tests then passed. At **2026-10-29 11:55 UTC**, the updated probe resolved `lib.ts` with native-style metadata, zero stderr and clean child exit. The isolated Muse 1.4.14 session still admitted and listed the session gateway, verified Ask me, and confirmed host shutdown and workspace removal, with **zero model calls**. Its `requestMetadataVerified: true` field describes direct protocol evidence; `toolInventoryVerified: false` remains explicit. Model-issued tool use has not been established by these checks.
+
 ## Probe commands
 
 Run the direct Electron/gateway/TypeScript test without a native host:
