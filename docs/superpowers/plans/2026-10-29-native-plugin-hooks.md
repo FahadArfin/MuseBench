@@ -40,10 +40,10 @@ Use the native hook path, rather than copying hooks into project presets: copyin
 
 **Interfaces:** Add generic `pluginCapabilityId` / `nativePluginDecision` for `mcp_server` and `hook`; preserve MCP-only exports. Add `approvePluginHook`, `revokePluginHook`, `reviewedPluginCapabilities` while retaining existing MCP methods/storage. Generic configuration review consumes the combined check.
 
-- [ ] Add failing tests: approved hook is independent of same-name MCP; installation alone is insufficient; revoke/changed package/changed native hash/changed settings location deny execution; disabled known hooks confer no execution; unknown kinds stay blocked.
-- [ ] Run `node --test test/plugin-capabilities.test.mjs test/configuration-review.test.mjs test/runtime.test.mjs`. Expected initially: hook acceptance fails.
-- [ ] Implement the narrowly typed grant paths and combined guard, preserving current MCP grants.
-- [ ] Repeat command. Expected: all pass.
+- [x] Add failing tests: approved hook is independent of same-name MCP; installation alone is insufficient; revoke/changed package/changed native hash/changed settings location deny execution; disabled known hooks confer no execution; unknown kinds stay blocked.
+- [x] Run `node --test test/plugin-capabilities.test.mjs test/configuration-review.test.mjs test/runtime.test.mjs`. Expected initially: hook acceptance fails.
+- [x] Implement the narrowly typed grant paths and combined guard, preserving current MCP grants.
+- [x] Repeat command. Expected: all pass.
 
 ### Task 2: Native hook inspection and decisions
 
@@ -51,10 +51,10 @@ Use the native hook path, rather than copying hooks into project presets: copyin
 
 **Interfaces:** Existing `inspect`/`decide` result remains `PluginMcpReview`; each supported hook row adds `hook:{event,timeoutMs,async,matcher,compatibilityName}`. Source identities and native definition hashes remain in the same observed revision. Existing MCP rows unchanged. Hook normalization is in a focused module.
 
-- [ ] Add service tests for native hook metadata, exact kind-qualified approval/revoke, unsupported shell/unknown fields/events, ambiguous matchers, stale event/timeout/async definitions, package races and unrelated settings mutation.
-- [ ] Run `node --test test/plugin-capabilities.test.mjs test/customize.test.mjs`. Expected initially: hook inspection unsupported.
-- [ ] Validate the complete observed hook shape, bounded argv and source containment; route exact grant/revoke by kind. Show unsupported known rows with reasons, never downgrade them to ordinary supported MCP tools.
-- [ ] Repeat command. Expected: all pass.
+- [x] Add service tests for native hook metadata, exact kind-qualified approval/revoke, unsupported shell/unknown fields/events, ambiguous matchers, stale event/timeout/async definitions, package races and unrelated settings mutation.
+- [x] Run `node --test test/plugin-capabilities.test.mjs test/customize.test.mjs`. Expected initially: hook inspection unsupported.
+- [x] Validate the complete observed hook shape, bounded argv and source containment; route exact grant/revoke by kind. Show unsupported known rows with reasons, never downgrade them to ordinary supported MCP tools.
+- [x] Repeat command. Expected: all pass.
 
 ### Task 3: Shared compact hook controls
 
@@ -62,10 +62,10 @@ Use the native hook path, rather than copying hooks into project presets: copyin
 
 **Interfaces:** Consume `hook` row metadata; preserve current IPC names and revision-bound confirmation. Preview stores simulated grants by stable capability ID so hooks and MCP are independent.
 
-- [ ] Add failing preview/Electron checks for visible event/timeout/async description, explicit hook consent, independent approval/revoke, unsupported rows, keyboard and narrow layout.
-- [ ] Run `npm.cmd run test:plugin-tools`. Expected initially: hook controls absent.
-- [ ] Add a compact hook description and event-specific confirmation in plugin details; use “Tools & hooks” where appropriate. Retain the shared Installed row and no idle refresh.
-- [ ] Run build and `npm.cmd run test:plugin-tools`. Expected: all pass.
+- [x] Add failing preview/Electron checks for visible event/timeout/async description, explicit hook consent, independent approval/revoke, unsupported rows, keyboard and narrow layout.
+- [x] Run `npm.cmd run test:plugin-tools`. Expected initially: hook controls absent.
+- [x] Add a compact hook description and event-specific confirmation in plugin details; use “Tools & hooks” where appropriate. Retain the shared Installed row and no idle refresh.
+- [x] Run build and `npm.cmd run test:plugin-tools`. Expected: all pass.
 
 ### Task 4: Native production-path acceptance and review
 

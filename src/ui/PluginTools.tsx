@@ -1,7 +1,24 @@
 import {RefreshCw} from 'lucide-react';
 import type {CustomizeCommand,PluginMcpReview} from '../shared/customize-types';
+const observation='Observation only: output can report status, but cannot change context or control the session.';
+const hookEffects:Record<string,string>={
+ SessionStart:'Can add chat context or stop the turn.',
+ UserPromptSubmit:'Can add chat context or reject your prompt.',
+ PreToolUse:'Can replace tool inputs, deny a tool, or require approval. Changed inputs still follow the tool’s approval rules.',
+ PermissionRequest:'This hook can also approve or deny tool requests.',
+ PostToolUse:'Can add context or feedback, or stop the turn. Completed tools have already run.',
+ PostToolUseFailure:'Can add context or feedback, or stop the turn. It does not undo the failed tool.',
+ PostToolBatch:'Can add context or feedback, or stop the turn. Completed tools have already run.',
+ PreLLMCall:'Can add model context or block this model step.',
+ PostLLMCall:'Can add model context or block this model step.',
+ PreCompact:'Can cancel compaction before it starts.',PostCompact:observation,
+ SubagentStart:'Can add context to the sub-agent.',
+ Stop:'Can prevent the turn from finishing and ask the model to keep working, which may use more of your allowance.',
+ SubagentStop:'Can keep the sub-agent working instead of finishing, which may use more of your allowance.',
+ StopFailure:observation,SessionEnd:observation,Notification:observation,SessionFork:observation,ToolUseStart:observation,
+};
 export function PluginTools({value,disabled,inspect,ask}:{value?:PluginMcpReview;disabled:boolean;inspect:()=>void;ask:(title:string,description:string,command:CustomizeCommand)=>void}){
- const behavior=(server:PluginMcpReview['servers'][number])=>server.hook?`Runs automatically on ${server.hook.event}${server.hook.compatibilityName?` for ${server.hook.compatibilityName}`:''}, with a ${server.hook.timeoutMs/1000} s limit. ${server.hook.async?'Runs in the background; output does not change the session.':`Waits for completion; output may change chat context or block work.${server.hook.event==='PermissionRequest'?' This hook can also approve or deny tool requests.':''}`} `:'';
+ const behavior=(server:PluginMcpReview['servers'][number])=>server.hook?`Runs automatically on ${server.hook.event}${server.hook.compatibilityName?` for ${server.hook.compatibilityName}`:''}, with a ${server.hook.timeoutMs/1000} s limit. ${server.hook.async?'Runs in the background; output does not change the session.':`Waits for completion. ${hookEffects[server.hook.event]??'Review this event in the official Muse CLI before approving.'}`} `:'';
  return <section className="plugin-tools" aria-label="Tools & hooks">
   <header><h4>Tools &amp; hooks</h4><button className="icon-button" aria-label="Refresh plugin tools" disabled={disabled} onClick={inspect}><RefreshCw size={14}/></button></header>
   {!value?<p className="extension-meta">Open the tool details to review access.</p>:<>

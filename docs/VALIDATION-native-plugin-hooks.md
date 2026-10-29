@@ -33,7 +33,9 @@ Local reports: ignored `artifacts/native-plugin-hooks/contract-report.json` and 
 
 ## Validation
 
-All 1,328 tests passed, as did the production build, catalog preview/desktop suites, shared renderer parity and ten plugin-control checks on each renderer. Backend regressions cover separate same-name capabilities, missing/revoked/stale grants, package/settings/native-response races, complete source comparison, unsupported semantics, default/background/alias metadata and disabled records. Browser and Electron checks cover explicit consent, independent decisions, stable idle details, failures, late responses, shared installed rows, keyboard access and narrow layouts. Exact release and installed acceptance are recorded separately after publication.
+All 1,328 tests passed, as did the production build, catalog preview/desktop suites, shared renderer parity and eleven plugin-control checks on each renderer. Backend regressions cover separate same-name capabilities, missing/revoked/stale grants, package/settings/native-response races, complete source comparison, unsupported semantics, default/background/alias metadata and disabled records. Browser and Electron checks cover explicit consent, independent decisions, stable idle details, failures, late responses, shared installed rows, keyboard access and narrow layouts. Exact release and installed acceptance are recorded separately after publication.
+
+The independent final review found one important consent gap: foreground hooks had generic wording that did not explain changed tool inputs or continued model activity. Event-specific descriptions now cover those effects and distinguish observation-only events. The shared UI regression failed before the fix and passed afterward on both renderers. No critical or minor finding was reported.
 
 ## Primary references
 
