@@ -61,6 +61,8 @@ Twenty typed characters previously caused twenty additional dictation status req
 
 ## Further opportunities found, not implemented in this pass
 
+29 October follow-up: the dedicated durable draft route now addresses item 2 below. See [draft save evidence](../validation/2026-10-29-durable-draft-saves.md) for migration, operation counts and before/after measurements. The original observations below remain the historical baseline.
+
 1. **Bound or isolate large sidebar lists.** The actual sidebar in a development React fixture took median 2.3 / 17.5 / 52.8 ms per typed character with 100 / 1,000 / 3,000 saved chats. Every keystroke rerendered the sidebar; collapsed sections retained their DOM. Memoized grouping, stable navigation callbacks, and eventual windowed lists could help. Drag ordering, keyboard navigation, menu anchors, and selected-row visibility need to survive any windowing.
 2. **Reduce whole-state persistence for lightweight actions.** Synthetic long active messages increased draft-save dispatch from 3.21 to 23.02 ms. Quiet draft actions still persist broader state and build a return snapshot that the draft IPC handler discards. A dedicated durable draft path would avoid this without relying on a timer that could lose text on immediate send, navigation, or shutdown.
 3. **Reuse runtime status metadata.** With 100 retained idle runtimes, one `getState` made 600 runtime snapshot calls; a normal dispatch made 3,000. Larger native payload cost is an inference; the measured tiny-payload `getState` took 1.18 ms. Read status from observed metadata or one snapshot per context rather than repeatedly cloning runtime messages.

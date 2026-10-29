@@ -11,6 +11,7 @@ import {StringDecoder} from 'node:string_decoder';
 import {createOutputStore} from './output-artifacts.mjs';
 import {validateCheckScripts,missingChecks,checkDiagnostics} from '../shared/validation.mjs';
 import {createHistoryStore} from './chat-history.mjs';
+import {createDraftStore} from './code-drafts.mjs';
 import {restoreSkillReceipts} from '../shared/skill-receipts.mjs';
 import {restoreUsage,combineUsage} from '../shared/native-usage.mjs';
 import {DEFAULT_WORKFLOWS,validateWorkflow,workflowPrompts} from '../shared/workflows.mjs';
@@ -169,7 +170,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const state=saved?JSON.parse(saved.json):{projects:[],activeProject:null,task:null,checkpoints:[],preview:stopped(),runtime:missingRuntime(),busy:false,error:null};
   state.projectCreationRoot=newProjectsDir;
   state.workflows=Array.isArray(state.workflows)?state.workflows.flatMap(w=>{try{return[validateWorkflow(w)];}catch{return[];}}).slice(0,30):structuredClone(DEFAULT_WORKFLOWS);
-  state.drafts=state.drafts&&typeof state.drafts==='object'&&!Array.isArray(state.drafts)?state.drafts:{};
+  const draftStore=createDraftStore(db,state.drafts&&typeof state.drafts==='object'&&!Array.isArray(state.drafts)?state.drafts:{});
+  state.drafts=draftStore.read();
   state.memories=typeof state.memories==='string'?state.memories.slice(0,1500):'';
   state.preview=stopped();state.busy=false;state.error=null;state.runtime=runtime?.snapshot?.()??missingRuntime();
   const taskRecords=new Map();
@@ -211,7 +213,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     taskRecords.set(state.task.id,structuredClone(state.task));
     db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(state.task.id,JSON.stringify(state.task));
   };
-  const persist=()=>{if(closed)return;saveTask();state.tasks=summaries();db.prepare('INSERT INTO app(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify({...state,runtime:{...state.runtime,childInspections:undefined}}));for(const p of state.projects)db.prepare('INSERT INTO projects(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(p.id,JSON.stringify(p));};
+  const persist=()=>{if(closed)return;saveTask();draftStore.sync(state.drafts);state.tasks=summaries();db.prepare('INSERT INTO app(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify({...state,runtime:{...state.runtime,childInspections:undefined}}));for(const p of state.projects)db.prepare('INSERT INTO projects(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(p.id,JSON.stringify(p));};
   const emit=()=>{if(closed)return;persist();const view=getState();for(const listener of listeners)try{listener(view);}catch{}};
   const runtimeDirty=new Set();let runtimeTimer=null;
   const flushRuntime=()=>{
@@ -353,6 +355,25 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     void(async()=>{for(let i=0;i<150;i++){if(closed||previewToken!==token||state.preview.status==='failed')return;try{const response=await fetch(url,{signal:AbortSignal.timeout(400)});if(response.ok){await response.body?.cancel();if(previewToken===token){state.preview.status='running';state.preview.url=url;emit();}return;}}catch{}await new Promise(r=>setTimeout(r,100));}fail('Preview did not become ready within 15 seconds.');await killTree(child);})();state.task.previewRevision=null;
   };
   const draftKey=(projectId,taskId)=>`${projectId}:${taskId??'new'}`;
+  const writeDraft=async action=>{
+    if(!action||typeof action!=='object')throw Error('Invalid draft.');
+    const project=state.projects.find(p=>p.id===action.projectId);
+    if(!project||action.taskId!=null&&taskRecords.get(action.taskId)?.projectId!==project.id)throw Error('Draft project or chat is unavailable.');
+    if(typeof action.text!=='string'||action.text.length>16000||!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid draft.');
+    const key=draftKey(action.projectId,action.taskId),files=fileReferences(action.files),images=imageReferences(action.images);
+    await imageStore.resolve(action.projectId,images);
+    const value=!action.text&&!files.length&&!images.length?null:{text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};
+    draftStore.write(key,value);
+    if(value===null)delete state.drafts[key];else state.drafts[key]=value;
+  };
+  const saveCodeDraft=input=>{
+    if(closing||closed)return Promise.reject(Error('Controller closed.'));
+    // Retain ordering with sends/navigation and close draining, without
+    // flushing runtime progress, publishing state, or building a snapshot.
+    const operation=queue.then(async()=>{if(closed)throw Error('Controller closed.');await writeDraft(input);});
+    queue=operation.catch(()=>{});
+    return operation;
+  };
   const validateBinding=(projectId,taskId)=>{
     if(state.activeProject?.id!==projectId||taskId!=null&&state.task?.id!==taskId)throw Error('The selected project or chat changed. Open context again.');
   };
@@ -634,12 +655,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       }
       case 'decideLesson':{requireNavigationIdle();validateBinding(action.projectId,null);decideLesson(state.activeProject,action.id,action.decision);Object.assign(state.projects.find(p=>p.id===action.projectId),state.activeProject);break;}
       case 'setProjectInstructions':{requireNavigationIdle();validateBinding(action.projectId,null);if(typeof action.text!=='string'||action.text.length>4000)throw Error('Project instructions must be at most 4,000 characters.');state.activeProject.instructions=action.text.trim();const p=state.projects.find(p=>p.id===action.projectId);p.instructions=state.activeProject.instructions;break;}
-      case 'saveDraft':{
-        const p=state.projects.find(p=>p.id===action.projectId);if(!p||action.taskId!=null&&taskRecords.get(action.taskId)?.projectId!==p.id)throw Error('Draft project or chat is unavailable.');
-        if(typeof action.text!=='string'||action.text.length>16000||!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid draft.');
-        const key=draftKey(action.projectId,action.taskId),files=fileReferences(action.files),images=imageReferences(action.images);await imageStore.resolve(action.projectId,images);
-        if(!action.text&&!files.length&&!images.length)delete state.drafts[key];else state.drafts[key]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};break;
-      }
+      case 'saveDraft':await writeDraft(action);break;
       case 'moveSidebarItem':{
         requireNavigationIdle();
         const planned=planSidebarMove(state.projects,summaries(),state.sidebarOrder,action);
@@ -837,6 +853,6 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     });queue=op.catch(()=>{});return op;
   };
   const archiveTimer=setInterval(()=>{queue=queue.then(purgeArchived).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
+  return{getState,saveCodeDraft,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';
