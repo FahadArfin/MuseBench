@@ -11,12 +11,18 @@ let app,browser,server,page;
 const pass=label=>{report.checks.push(label);console.log('PASS '+label);};
 async function shot(name){const file=path.join(output,name+'.png');await page.screenshot({path:file});report.screenshots.push(file);}
 async function bounded(promise,label){let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error(label+' timed out')),12000);})]);}finally{clearTimeout(timer);}}
+async function localShell(){
+ const deadline=Date.now()+30000;
+ while(Date.now()<deadline){const candidate=app.windows().find(p=>!p.isClosed()&&p.url().startsWith('file:')&&/\/dist\/index\.html(?:[?#]|$)/.test(p.url()));if(candidate)return candidate;await new Promise(resolve=>setTimeout(resolve,70));}
+ throw Error('The local desktop renderer did not open.');
+}
 async function setResetWindows(windows){if(desktop)await app.evaluate((_electron,windows)=>{globalThis.__billingFixture.windows=windows;},windows);else await page.evaluate(windows=>{window.__resetFixture.windows=windows;},windows);}
 async function usageReads(){return desktop?app.evaluate(()=>globalThis.__billingFixture.usageReads):page.evaluate(()=>window.__resetFixture.usageReads);}
 try{
  if(desktop){
   const dataDir=path.join(output,'data');await mkdir(dataDir);const env={...process.env,MUSEBENCH_DATA_DIR:dataDir,MUSEBENCH_PROJECTS_DIR:path.join(output,'projects')};delete env.ELECTRON_RUN_AS_NODE;delete env.MUSEBENCH_DEV;
-  app=await electron.launch({cwd:process.cwd(),args:['.','--host-resolver-rules=MAP * ~NOTFOUND'],env});page=await app.firstWindow();
+  app=await electron.launch({cwd:process.cwd(),args:['.','--host-resolver-rules=MAP * ~NOTFOUND'],env});page=await localShell();
+  report.rendererURL=page.url();page.on('pageerror',e=>report.errors.push(e.message));
   await page.waitForFunction(()=>Boolean(window.musebench));
   await app.evaluate(({session})=>session.fromPartition('persist:musebench-billing').protocol.handle('https',()=>new Response('<!doctype html><title>Checkout fixture</title><h1>Isolated Meta checkout fixture</h1>',{headers:{'content-type':'text/html'}})));
   for(const [destination,url] of [['subscriptions','https://accountscenter.meta.com/'],['apiBilling','https://dev.meta.ai/billing/']]){
@@ -52,7 +58,7 @@ try{
   browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:1440,height:1000}});await page.goto('http://127.0.0.1:4326/preview.html');
  }
  if(!desktop)await page.evaluate(()=>{const original=window.musebench.commandInfo;const fixture=window.__resetFixture={windows:null,usageReads:0};window.musebench.commandInfo=async type=>{const r=await original(type);if(type==='usage'){fixture.usageReads++;if(fixture.windows)r.usage.windows=fixture.windows;}return r;};});
- page.setDefaultTimeout(15000);page.on('pageerror',e=>report.errors.push(e.message));
+ page.setDefaultTimeout(15000);if(!desktop)page.on('pageerror',e=>report.errors.push(e.message));
  await page.getByRole('button',{name:'Profile menu',exact:true}).click();await page.getByRole('menuitem',{name:'Usage',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Usage & billing',exact:true});await dialog.getByRole('radio',{name:/Muse Code account/}).waitFor();
  await dialog.getByText('9% left',{exact:true}).waitFor();pass('Subscription allowance visible in the shared Overview');await shot('overview');
@@ -100,5 +106,5 @@ try{
  await page.getByRole('menuitem',{name:'Usage',exact:true}).click();await dialog.getByRole('radio',{name:/Muse Code account/}).click();await dialog.getByText('9% left',{exact:true}).waitFor();pass('Account selection restores subscription allowance');
  await dialog.getByRole('tab',{name:'Analytics',exact:true}).click();await dialog.getByRole('heading',{name:'Activity history',exact:true}).waitFor();pass('Analytics remains reachable');
  assert.deepEqual(report.errors,[]);report.status='passed';
-}catch(error){report.status='failed';report.error=String(error);if(page)await shot('failure').catch(()=>{});throw error;}
+}catch(error){report.status='failed';report.error=String(error);if(app)report.observedWindows=app.windows().filter(p=>!p.isClosed()).map(p=>p.url().split(/[?#]/)[0]);if(page)await shot('failure').catch(()=>{});throw error;}
 finally{await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));await app?.close();await browser?.close();await server?.close();console.log('Report '+path.join(output,'report.json'));}
