@@ -24,5 +24,11 @@ test('explicit analysis toolset survives restore while old saved sessions never 
  assert.equal(restoreNativeSession(value).workspaceToolset,'analysis-v1');
  assert.equal(prepareNativeSession(null,value.root,{transport:'msp',nativeSessionId:'native',workspaceTools:true,workspaceToolset:'analysis-v1'}).session.workspaceToolset,'analysis-v1');
  const {workspaceToolset,...legacy}=value;assert.equal(restoreNativeSession(legacy).workspaceToolset,undefined);
- assert.equal(restoreNativeSession({...value,workspaceToolset:'all'}),null);
+ const blocked=restoreNativeSession({...value,workspaceToolset:'analysis-v2'});assert.equal(blocked.id,value.id);assert.equal(blocked.unsupportedWorkspaceToolset,'analysis-v2');assert.equal(blocked.status,'needs-recovery');assert.deepEqual(restoreNativeSession(blocked),blocked);assert.throws(()=>prepareNativeSession(blocked,value.root,{transport:'msp',nativeSessionId:value.id}),/unsupported workspace tool set/i);
+});
+
+test('malformed saved tool selections keep identity and require explicit recovery',()=>{
+ const value={id:'native',root:'C:/project',transport:'msp',seeded:true,status:'ready',workspaceTools:true};
+ for(const patch of [{workspaceToolset:null},{workspaceToolset:{}},{unsupportedWorkspaceToolset:{}},{unsupportedWorkspaceToolset:false}]){const restored=restoreNativeSession({...value,...patch});assert.equal(restored.id,value.id);assert.equal(restored.unsupportedWorkspaceToolset,true);assert.equal(restored.status,'needs-recovery');assert.deepEqual(restoreNativeSession(restored),restored);}
+ const restored=restoreNativeSession({...value,status:'needs-recovery',unsupportedWorkspaceToolset:'analysis-v1'});assert.equal(restored.workspaceToolset,'analysis-v1');assert.equal(restored.unsupportedWorkspaceToolset,undefined);
 });

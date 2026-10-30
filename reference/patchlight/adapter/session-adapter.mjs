@@ -14,9 +14,10 @@ const str = v => typeof v==='string' && v.length>0;
  */
 export class MuseSessionAdapter {
  #connection; #state; #messages=new Map(); #seen=new Map(); #buffer=[];
- #epoch=0; #timeout; #listeners=new Set(); #maxEvents; #maxText; #allowContinuation; #durable; #queuedTurns=new Set();
- constructor({connection,sdkVersion,initializeResult,fullAccess=false,allowContinuation=()=>false,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
+ #epoch=0; #timeout; #listeners=new Set(); #maxEvents; #maxText; #allowContinuation; #durable; #queuedTurns=new Set(); #observeToolItem;
+ constructor({connection,sdkVersion,initializeResult,fullAccess=false,allowContinuation=()=>false,observeToolItem=null,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
   this.#allowContinuation=allowContinuation;
+  this.#observeToolItem=typeof observeToolItem==='function'?observeToolItem:null;
   this.#durable=initializeResult?.sessionDurability===undefined||initializeResult.sessionDurability==='durable';
   this.#connection=connection;this.#timeout=timeoutMs;this.#maxEvents=maxEvents;this.#maxText=maxText;
   const gate=compatibility({sdkVersion,initializeResult,fullAccess});
@@ -38,6 +39,10 @@ export class MuseSessionAdapter {
  snapshot(){return structuredClone({...this.#state,messages:[...this.#messages.values()]});}
  subscribe(listener){this.#listeners.add(listener);return ()=>this.#listeners.delete(listener);}
  #emit(){for(const listener of this.#listeners){try{listener(this.snapshot());}catch{/* UI observers cannot alter protocol state. */}}}
+ #projectTool(item){
+  if(item?.kind!=='toolCall'||!this.#observeToolItem||!this.#state.ownedTurnIds?.includes(item.turnId))return;
+  try{this.#observeToolItem(structuredClone(item),{rootTurnId:this.#state.rootTurnId,ownedTurnIds:[...this.#state.ownedTurnIds]});}catch{/* Observation cannot change admission or native lifecycle. */}
+ }
  #halt(status,reason){this.#epoch++;this.#state.status=status;this.#state.reason=reason;this.#state.outcome='unknown';this.#buffer=[];this.#emit();}
  disconnect(reason='connection-lost'){if(this.#state.status!=='closed')this.#halt('unavailable',reason);}
  async #bounded(work){let timer;try{return await Promise.race([work,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('Command timeout; outcome uncertain')),this.#timeout))]);}finally{clearTimeout(timer);}}
@@ -72,10 +77,11 @@ export class MuseSessionAdapter {
    if(!['approval','userInput'].includes(p?.kind)||!str(p[p.kind==='approval'?'approvalId':'userInputId'])||typeof p.viewCursor!=='string')throw Error('Unsupported restored pending request');
    return structuredClone(p);
   });
-  let textSize=0;const messages=[],children=[];
+  let textSize=0;const messages=[],children=[],tools=[];
   for(const item of items){
    if(!str(item?.itemId)||!str(item.kind)||!Number.isInteger(item.revision)||item.revision<1)throw Error('Invalid restored item');
    if(['workflow','subagent'].includes(item.kind)){children.push(structuredClone(item));continue;}
+   if(item.kind==='toolCall'){tools.push(item);continue;}
    if(!messageKinds.has(item.kind))continue;
    if(typeof item.text!=='string'||!str(item.turnId)||typeof item.status!=='string'||(textSize+=item.text.length)>this.#maxText)throw Error('Native restore text exceeds supported history');
    const message={id:item.itemId,kind:item.kind,turnId:item.turnId,text:item.text,revision:item.revision,status:item.status,phase:item.messagePhase??'finalAnswer'};
@@ -85,6 +91,7 @@ export class MuseSessionAdapter {
   this.#state.status=s.status;this.#state.turnId=s.activeTurnId;this.#state.rootTurnId=s.activeTurnId;this.#state.ownedTurnIds=s.activeTurnId?[s.activeTurnId]:[];
   this.#state.restoredMessages=messages;this.#state.restoredChildren=children;
   this.#state.restoration={status:'restored',sessionId:s.sessionId,viewCursor:result.viewCursor,historyMode:h.mode,pendingRequests:pointers,activeTurnId:s.activeTurnId,queuedTurnIds:[...this.#queuedTurns],turnCount:s.turnCount};
+  for(const item of tools)this.#projectTool(item);
  }
  async send({text,mode='chat',images=[]}={}){
   let dispatched=false;
@@ -134,7 +141,7 @@ export class MuseSessionAdapter {
   }
   const recognized=['turn/started','turn/completed','item/started','item/updated','item/delta','item/completed'];
   if(!recognized.includes(method))return;
-  if(method==='item/updated'&&!messageKinds.has(p.item?.kind))return;
+  if(method==='item/updated'&&!messageKinds.has(p.item?.kind)&&!(this.#observeToolItem&&p.item?.kind==='toolCall'))return;
   if(!str(p.viewCursor)){this.disconnect('missing-event-cursor');return;}
   const payload=JSON.stringify(frame);
   if(this.#seen.has(p.viewCursor)){if(this.#seen.get(p.viewCursor)!==payload)this.disconnect('conflicting-event-cursor');return;}
@@ -165,6 +172,7 @@ export class MuseSessionAdapter {
   }else{
    const item=p.item;
    if(!item||!str(item.kind)){this.disconnect('malformed-item');return;}
+   if(item.kind==='toolCall'&&this.#observeToolItem){this.#projectTool(item);this.#emit();return;}
    if(!messageKinds.has(item.kind))return;
    if(!str(item.itemId)||typeof item.text!=='string'||item.text.length>this.#maxText||!Number.isInteger(item.revision)||item.revision<1||item.turnId!==this.#state.turnId){this.disconnect('malformed-message');return;}
    const old=this.#messages.get(item.itemId);

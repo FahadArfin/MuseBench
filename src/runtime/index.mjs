@@ -235,7 +235,6 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  function observe(frame) {
   if(!frame?.params||frame.params.sessionId!==state.sessionId)return;
   const p=frame.params;
-  if(state.workspaceTools&&['item/started','item/updated','item/completed'].includes(frame.method)&&workspaceActivity.observe(p.item,adapter?.snapshot().ownedTurnIds??[]))update({activity:workspaceActivity.snapshot()});
   if(['item/started','item/updated','item/completed'].includes(frame.method)&&['subagent','workflow'].includes(p.item?.kind)){children.observe(p.item);syncChildren();}
   if(['item/started','item/updated','item/completed'].includes(frame.method)&&p.item?.kind==='compaction'){compaction.observe(p.item);syncCompaction();}
   if(['session/permissionProfileChanged','session/approvalModeChanged'].includes(frame.method)){
@@ -345,7 +344,12 @@ export function createRuntime({credentials,environment=process.env,platform=proc
      return await fn(request);
     }),
    };
-   adapter=new MuseSessionAdapter({connection,sdkVersion,initializeResult:host.initializeResult,fullAccess,allowContinuation:s=>children.snapshot().items.some(i=>s.ownedTurnIds?.includes(i.turnId)),timeoutMs});
+   const observeToolItem=workspaceTools?(item,scope)=>{
+    if(token!==epoch||owner!==host)return;
+    if(scope.rootTurnId&&scope.rootTurnId!==workspaceActivityTurn){workspaceActivity.reset();workspaceActivityTurn=scope.rootTurnId;}
+    workspaceActivity.observe(item,scope.ownedTurnIds);
+   }:null;
+   adapter=new MuseSessionAdapter({connection,sdkVersion,initializeResult:host.initializeResult,fullAccess,allowContinuation:s=>children.snapshot().items.some(i=>s.ownedTurnIds?.includes(i.turnId)),observeToolItem,timeoutMs});
    unsubscribe=adapter.subscribe(syncAdapter);
    Promise.resolve(host.exited).then(()=>{if(token===epoch&&owner===host)void disconnect('Muse exited. Inspect any partial workspace changes, then reconnect.');},()=>{if(token===epoch&&owner===host)void disconnect('Muse host state is unknown. Inspect workspace changes before reconnecting.');});
    if(host.initializeResult.experimentalApi!==true)return await closePermissionGate();

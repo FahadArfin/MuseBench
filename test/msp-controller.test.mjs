@@ -121,3 +121,18 @@ test('explicit recovery disconnects a surviving idle native owner before exact r
 });
 
 
+
+test('unsupported saved tools preserve native identity across reopen and block connection until explicitly fresh',async t=>{
+ const {c,rt,open,dataDir}=await fixture(t);await c.dispatch({type:'connectMuse',transport:'msp',fullAccess:true,workspaceTools:true,workspaceToolset:'analysis-v1'});
+ const taskId=c.getState().task.id,saved=c.getState().task.nativeSession;await c.close();
+ const db=new DatabaseSync(join(dataDir,'musebench.sqlite'));try{
+  const task=JSON.parse(db.prepare('SELECT json FROM tasks WHERE id=?').get(taskId).json);task.nativeSession.workspaceToolset='analysis-v2';db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(task),taskId);
+  const app=JSON.parse(db.prepare('SELECT json FROM app WHERE id=1').get().json);if(app.task?.id===taskId)app.task.nativeSession=task.nativeSession;db.prepare('UPDATE app SET json=? WHERE id=1').run(JSON.stringify(app));
+ }finally{db.close();}
+ const nextRuntime=runtime(),next=await open(nextRuntime),restored=next.getState().task.nativeSession;
+ assert.equal(restored?.id,saved.id);assert.equal(restored.unsupportedWorkspaceToolset,'analysis-v2');assert.equal(restored.fullAccess,true);assert.equal(restored.workspaceTools,true);
+ let state=await next.dispatch({type:'connectMuse',transport:'msp',workspaceTools:true,workspaceToolset:'navigation-v1'});assert.match(state.error,/unsupported workspace tool set/i);assert.equal(nextRuntime.connections.length,0);
+ state=await next.dispatch({type:'recoverSession',choice:'continue'});assert.match(state.error,/unsupported workspace tool set/i);assert.equal(nextRuntime.connections.length,0);
+ await next.close();const finalRuntime=runtime(),final=await open(finalRuntime);assert.equal(final.getState().task.nativeSession.id,saved.id);assert.equal(final.getState().task.nativeSession.unsupportedWorkspaceToolset,'analysis-v2');
+ state=await final.dispatch({type:'recoverSession',choice:'fresh'});assert.equal(state.error,null);assert.equal(state.task.nativeSession,null);await final.dispatch({type:'connectMuse',transport:'msp'});assert.equal(finalRuntime.connections.length,1);assert.equal(finalRuntime.connections[0].sessionId,undefined);assert.equal(rt.sent.length,0);
+});

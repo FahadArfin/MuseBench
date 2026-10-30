@@ -7,13 +7,14 @@ import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {createRequire} from 'node:module';
 import {CallToolRequestSchema,ListToolsRequestSchema} from '@modelcontextprotocol/sdk/types.js';
+import {createSemanticNavigation} from '../src/controller/semantic-navigation.mjs';
 const api=await import('../src/runtime/workspace-mcp.mjs').catch(error=>{if(error.code==='ERR_MODULE_NOT_FOUND')return{};throw error;});
 async function fixture(t,options={}){
  assert.equal(typeof api.createWorkspaceMcpServer,'function');
  const root=await mkdtemp(path.join(tmpdir(),'muse-workspace-mcp-'));t.after(()=>rm(root,{recursive:true,force:true}));
  const input=new PassThrough(),output=new PassThrough(),calls=[],rows=[];let text='',disposed=0;
  output.on('data',chunk=>{text+=chunk.toString();for(let i;(i=text.indexOf('\n'))>=0;){rows.push(JSON.parse(text.slice(0,i)));text=text.slice(i+1);}});
- const service={query:async value=>{calls.push(value);return{items:[],snapshot:'test',operation:value.operation};},dispose:async()=>{disposed++;},...options.service};
+ const service=options.realService?createSemanticNavigation(root):{query:async value=>{calls.push(value);return{items:[],snapshot:'test',operation:value.operation};},dispose:async()=>{disposed++;},...options.service};
  const server=await api.createWorkspaceMcpServer({root,input,output,service,...options});t.after(()=>server.close());
  const send=(method,params,id=rows.length+1)=>input.write(JSON.stringify({jsonrpc:'2.0',id,method,...(params===undefined?{}:{params})})+'\n');
  const settle=async()=>{for(let i=0;i<4;i++)await new Promise(resolve=>setImmediate(resolve));};
@@ -179,4 +180,22 @@ test('CLI exits on frame and queue overflow with parent stdin deliberately kept 
    assert.notEqual(outcome,'timeout',`${path.basename(executable)} remained alive with parent stdin open`);assert.equal(outcome.signal,null);assert.equal(child.stdin.writableEnded,false);assert.equal(stderr,'');
   }finally{clearTimeout(timer);if(child.exitCode===null){child.kill();await closed;}}
  }
+});
+
+test('valid large outlines return bounded receipts without losing the JSONL connection',{timeout:10000},async t=>{
+ const f=await fixture(t,{toolset:'analysis-v1',realService:true});
+ await writeFile(path.join(f.root,'a.ts'),Array.from({length:100},(_,i)=>'export const '+'v'.repeat(51)+i+' = '+i+';').join('\n'));
+ await f.init();const calls=Array.from({length:8},(_,i)=>({id:'outline'+i,operation:'document_symbols',path:'a.ts'}));
+ f.send('tools/call',{name:'workspace_tool_batch',arguments:{calls}},1);
+ for(let i=0;i<400&&!f.server.closed&&!f.rows.some(row=>row.id===1);i++)await new Promise(resolve=>setTimeout(resolve,10));
+ assert.equal(f.server.closed,false,'A valid large batch must not close its server');
+ const reply=f.rows.find(row=>row.id===1);assert.ok(reply);assert.ok(Buffer.byteLength(JSON.stringify(reply)+'\n')<=135168);
+ const receipt=JSON.parse(reply.result.content[0].text);assert.deepEqual(receipt.calls.map(row=>row.id),calls.map(row=>row.id));
+ assert.ok(receipt.calls.some(row=>row.status==='failed'&&row.error==='SEMANTIC_OUTPUT_LIMIT'));
+ assert.ok(receipt.calls.some(row=>row.status==='completed'),'Retain results that still fit');
+ f.send('ping',{},2);await f.settle();assert.deepEqual(f.rows.find(row=>row.id===2).result,{});
+});
+
+test('a heavily escaped single result reports the limit without closing transport',async t=>{
+ const f=await fixture(t,{service:{query:async()=>({value:'"'.repeat(60000)}),dispose:async()=>{}}});await f.init();f.send('tools/call',{name:'workspace_tool_call',arguments:{operation:'hover',path:'a.ts',line:1,column:1}},1);await f.settle();assert.equal(f.server.closed,false);assert.equal(f.rows.find(row=>row.id===1)?.result.isError,true);f.send('ping',{},2);await f.settle();assert.ok(f.rows.some(row=>row.id===2));
 });

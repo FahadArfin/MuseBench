@@ -3,10 +3,16 @@ import {normalizeWorkspaceToolset} from './workspace-analysis.mjs';
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 export function restoreNativeSession(value){
  if(!value||!(value.transport==='msp'?typeof value.id==='string'&&value.id.length>0&&value.id.length<=200:uuid.test(value.id))||typeof value.root!=='string'||!value.root||!['ready','running','needs-recovery'].includes(value.status)||value.transport&&!['exec','msp'].includes(value.transport))return null;
- if(value.workspaceToolset!==undefined){try{normalizeWorkspaceToolset(value.workspaceToolset);if(value.transport!=='msp'||!value.workspaceTools)return null;}catch{return null;}}
- return{id:value.id,root:value.root,seeded:value.seeded===true,status:value.status==='running'?'needs-recovery':value.status,...(value.transport?{transport:value.transport}:{}),...(typeof value.fullAccess==='boolean'?{fullAccess:value.fullAccess}:{}),...(typeof value.workspaceTools==='boolean'?{workspaceTools:value.workspaceTools}:{}),...(value.workspaceToolset?{workspaceToolset:value.workspaceToolset}:{})};
+ const selection=value.workspaceToolset!==undefined?value.workspaceToolset:typeof value.unsupportedWorkspaceToolset==='string'?value.unsupportedWorkspaceToolset:undefined;
+ let unsupported=value.unsupportedWorkspaceToolset!==undefined&&typeof value.unsupportedWorkspaceToolset!=='string';
+ if(selection!==undefined){try{normalizeWorkspaceToolset(selection);if(value.transport!=='msp'||!value.workspaceTools)unsupported=true;}catch{unsupported=true;}}
+ // Keep the conversation identity even when a newer/invalid configuration cannot
+ // be resumed. Persist a bounded recovery marker instead of silently starting over.
+ const marker=typeof selection==='string'&&selection.length>0&&selection.length<=200?selection:true;
+ return{id:value.id,root:value.root,seeded:value.seeded===true,status:unsupported||value.status==='running'?'needs-recovery':value.status,...(value.transport?{transport:value.transport}:{}),...(typeof value.fullAccess==='boolean'?{fullAccess:value.fullAccess}:{}),...(typeof value.workspaceTools==='boolean'?{workspaceTools:value.workspaceTools}:{}),...(unsupported?{unsupportedWorkspaceToolset:marker}:selection?{workspaceToolset:selection}:{})};
 }
 export function prepareNativeSession(value,root,connection={}){
+ if(value?.unsupportedWorkspaceToolset)throw Error('This saved session uses an unsupported workspace tool set. Update MuseBench or explicitly start a fresh session.');
  if(value&&value.root!==root)throw Error('This session belongs to another folder. Start a fresh session before continuing.');
  if(value&&(value.transport??'exec')!==(connection.transport??'exec'))throw Error('This session belongs to another transport. Start a fresh session before continuing.');
  if(connection.transport==='msp'&&(!connection.nativeSessionId||value&&value.id!==connection.nativeSessionId))throw Error('The connected native session changed. Recover the saved session before continuing.');

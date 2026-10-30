@@ -104,9 +104,19 @@ export async function createWorkspaceMcpServer({root,input=process.stdin,output=
      return Buffer.byteLength(JSON.stringify(row))>budget?{id:row.id,operation:row.operation,status:'failed',error:'SEMANTIC_OUTPUT_LIMIT'}:row;
     })};
    }
-   const text=JSON.stringify(answer);
-   if(typeof text!=='string'||Buffer.byteLength(text)>maxResultBytes)return result(toolError('Navigation result exceeded the output limit. Narrow the query.'));
-   return result({content:[{type:'text',text}]});
+   let text=JSON.stringify(answer),reply=result({content:[{type:'text',text}]});
+   const fits=()=>typeof text==='string'&&Buffer.byteLength(text)<=maxResultBytes&&Buffer.byteLength(JSON.stringify(reply)+'\n')<=maxResultBytes+4096;
+   // MCP embeds JSON inside a text string. Budget the final encoded frame too:
+   // quotes and backslashes expand again in that envelope.
+   if(batch&&!fits()){
+    const largest=answer.calls.map((row,index)=>({index,size:Buffer.byteLength(JSON.stringify(JSON.stringify(row)))})).sort((a,b)=>b.size-a.size);
+    for(const {index} of largest){
+     const row=answer.calls[index];answer.calls[index]={id:row.id,operation:row.operation,status:'failed',error:'SEMANTIC_OUTPUT_LIMIT'};
+     text=JSON.stringify(answer);reply=result({content:[{type:'text',text}]});if(fits())break;
+    }
+   }
+   if(!fits())return result(toolError('Navigation result exceeded the output limit. Narrow the query.'));
+   return reply;
   }catch(error){
    const code=typeof error?.code==='string'&&/^SEMANTIC_(INPUT|PATH|POSITION|BUSY|LIMIT|STALE|TIMEOUT|DISPOSED|WORKER|UNAVAILABLE|CANCELLED)$/.test(error.code)?error.code:'SEMANTIC_UNAVAILABLE';
    return result(toolError('Navigation could not complete ('+code+'). Review the source position and workspace limits.'));

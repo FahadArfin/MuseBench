@@ -698,3 +698,20 @@ test('interactive host receives only the project-bound reviewed hooks and trust 
  const hooks={UserPromptSubmit:[{hooks:[{type:'command',commandWindows:'Write-Output reviewed',timeout:2}]}]};let reviewedRoot;const hookRoots=[];
  const h=await harness(t,{extensionReview:{allowProject:async root=>{reviewedRoot=root;return true;},nativeHooks:async root=>{hookRoots.push(root);return hooks;}}});await h.connect();assert.ok(hookRoots.length);assert.ok(hookRoots.every(root=>root===reviewedRoot));const args=h.calls.find(c=>c.method==='spawn').spec.args;assert.ok(args.includes('--trust-workspace'));assert.ok(args.includes('hooks='+JSON.stringify(hooks)));assert.ok(args.includes('managed_hooks_path=null'));
 });
+
+const replayBatch=()=>({itemId:'early-batch',kind:'toolCall',tool:'mcp__musebench_workspace__workspace_tool_batch',turnId:'turn-one',revision:2,status:'completed',visibleOutput:JSON.stringify({kind:'workspace-batch',version:1,calls:[{id:'outline',operation:'document_symbols',status:'completed',result:{items:[{name:'x'}],path:'a.ts'}}]})});
+async function analysisHarness(t){const h=await harness(t,{workspaceMcp:()=>({transport:'stdio',command:'node',args:['gateway']})});h.host.initializeResult.grantedCapabilities=['sessionMcp'];h.connectAnalysis=(sessionId)=>h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true,workspaceToolset:'analysis-v1',sessionId});return h;}
+test('workspace receipts emitted before turn acknowledgement replay only after ownership is established',async t=>{
+ const h=await analysisHarness(t);await h.connectAnalysis();const command=h.host.connection.command;
+ h.host.connection.command=async(method,params,options)=>{if(method==='turn/start'){h.emit({method:'item/completed',params:{sessionId:'session-one',viewCursor:'early-batch-done',item:replayBatch()}});assert.equal(h.runtime.snapshot().activity.items.length,0);}return command(method,params,options);};
+ await h.runtime.send({text:'Read fixture'});assert.equal(h.runtime.snapshot().activity.items[0]?.workspaceBatch.calls[0].id,'outline');assert.equal(h.runtime.snapshot().status,'running');assert.equal(h.calls.filter(row=>row.method==='turn/start').length,1);
+});
+test('active native restoration reconciles completed workspace receipts without submitting a turn',async t=>{
+ const h=await analysisHarness(t);h.host.connection.command=async()=>restoredNative(h,{session:{...h.session(),status:'running',activeTurnId:'turn-one',turnCount:1},history:{mode:'inline',items:[replayBatch(),{...replayBatch(),itemId:'foreign-batch',turnId:'foreign'}],snapshot:null}});
+ await h.connectAnalysis('session-one');const rows=h.runtime.snapshot().activity.items;assert.deepEqual(rows.map(row=>row.id),['early-batch']);assert.equal(rows[0].status,'completed');assert.equal(rows[0].workspaceBatch.calls[0].id,'outline');assert.equal(h.calls.filter(row=>row.method==='turn/start').length,0);
+});
+test('missing cursors and old connection notifications cannot project workspace receipts',async t=>{
+ const h=await analysisHarness(t),listeners=[],listen=h.host.connection.onNotification;h.host.connection.onNotification=fn=>{listeners.push(fn);listen(fn);};await h.connectAnalysis();await h.runtime.send({text:'First'});await h.runtime.disconnect();await h.connectAnalysis();await h.runtime.send({text:'Second'});
+ listeners[0]({method:'item/completed',params:{sessionId:'session-one',viewCursor:'old',item:replayBatch()}});assert.equal(h.runtime.snapshot().activity.items.length,0,'Old connection cannot project into the replacement');
+ h.emit({method:'item/completed',params:{sessionId:'session-one',item:replayBatch()}});assert.equal(h.runtime.snapshot().activity.items.length,0,'Malformed native events cannot project receipts');assert.equal(h.runtime.snapshot().status,'unavailable');
+});

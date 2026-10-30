@@ -43,7 +43,7 @@ Interfaces: optional `workspaceToolset` is `'navigation-v1'|'analysis-v1'`; requ
 ### Task 4: Review, publish and verified desktop delivery
 
 - [x] Record research limitations, direct evidence and 0.2.195 acceptance in docs; update roadmap OC03 as partial local implementation with explicit remaining prerequisites.
-- [ ] Fresh whole-branch independent review of immutable base..HEAD; material findings get one RED→GREEN fix pass and full suite. Preserve ledger/evidence.
+- [x] Fresh whole-branch independent review of immutable base..HEAD; material findings get one RED→GREEN fix pass and full suite. Preserve ledger/evidence.
 - [ ] Recheck latest main and local cleanliness, integrate/push completed feature. Wait for exact CI and published release; verify manifest, SHA256/SHA512, installer size and exact source.
 - [ ] Fresh idle preflight, preserve complete profile/sessions, graceful close, verified install/reopen. Verify actual native version/health and named controls where exposed. Run production ASAR analysis probe separately, not as provider acceptance.
 

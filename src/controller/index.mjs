@@ -609,6 +609,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const connectNative=async(owner,task,project,options={})=>{
     for(const field of ['fullAccess','workspaceTools'])if(options[field]!==undefined&&typeof options[field]!=='boolean')throw Error(`${field} must be an explicit boolean.`);
     const saved=task?.nativeSession,transport=options.transport??saved?.transport??(saved?'exec':undefined);
+    if(saved?.unsupportedWorkspaceToolset)throw Error('This saved session uses an unsupported workspace tool set. Update MuseBench or explicitly start a fresh session.');
     if(saved&&saved.root!==project.root)throw Error('This session belongs to another folder. Start a fresh session before continuing.');
     if(saved&&transport!==(saved.transport??'exec'))throw Error('This session belongs to another transport. Start a fresh session before continuing.');
     const request={binary:options.binary??preferredBinary??undefined,workspaceRoot:project.root,transport,fullAccess:options.fullAccess??saved?.fullAccess??false,workspaceTools:options.workspaceTools??saved?.workspaceTools??false,...(saved?.transport==='msp'?{sessionId:saved.id}:{})};
