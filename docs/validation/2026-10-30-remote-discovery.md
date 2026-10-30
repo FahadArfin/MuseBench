@@ -72,3 +72,22 @@ A separate parent-owned production-adapter header capture confirmed the public d
 Five actual HTTP regressions now cover identity JSON and POST-SSE negotiation/catalog/once-only invocation, identity oversized JSON/SSE unknown/no-replay outcomes, and continued unsupported-coding refusal. Four failed RED before the minimal correction; the unsupported-coding control already passed. Identity now uses the existing unencoded body path with all decoded-byte/frame/operation bounds intact. Focused discovery checks:86 passed/0failed. Fresh full suite after this production change:1,794 passed/0failed/1 unchanged skip. Production build passed with the existing warning.
 
 R4 joins the same consolidated correction wave before scoped review. Both earlier accepted archives and317prior evidence/archive files are preserved. Refreshed R4 source/package receipts use a separate `artifacts/remote-discovery-fix/r4/` output, with a new immutable freeze before package construction. Parent alone owns one distinct bounded public catalog recheck; public success is not inferred from local identity fixtures.
+
+
+### Final R1-R4 correction receipts
+
+Final implementation freeze: `a472f64e5b608907cff9b86656d39b7bc088e566`; tree `1ec83cc0d5be2554f4d164905f5c65845d5e9d72`. The distinct final package is `artifacts/remote-discovery-fix/r4/package/win-unpacked`. Its305source/build/runtime files, pinned client/core metadata and2Windows helpers matched the frozen inputs before and after acceptance; complete pre/post manifests are identical. All317prior original/R1-R3 evidence/archive files remained hash-identical. Original and R1-R3 accepted archives are retained separately.
+
+Source and exact-ASAR remote/local actual-Muse contracts each passed approval/denial with14scripted Responses requests,0inference,1effect,denial0extra,confirmed ownership/socket cleanup and removed temporary profiles. Shared UI passed8/8 each in browser/sourceElectron/exactpackage; paths under the R4 evidence directory are `discovery-tools-ui/browser-source-or4zMG`, `desktop-source-ZLcBVJ` and `installed-oxER7i`. The last label is an isolated directory-package override. Final exact-package narrow screenshot was inspected.
+
+Final ASAR SHA-256: `484d8030a6c3a1d36099e12b2aebee2c4e9a8433560f0d3125ae6b73f797cab7`.
+
+Final source remote native receipt SHA-256: `cac34599560db026579928199f1cecf75b381537fc7f70a39beb1f9c78cc0f2d`.
+
+Final ASAR remote native receipt SHA-256: `7fe757ef0aeb132b5e54d91a3984814a445bbf96c2906cfdd05ed795ff588241`.
+
+The parent then completed one distinct bounded production-adapter public HTTPS catalog check on that exact frozen implementation,18:46:58-59UTC. Microsoft Learn returned three catalog names: `microsoft_docs_search`, `microsoft_code_sample_search` and `microsoft_docs_fetch`; no credentials, tool invocation or model inference were used, and activeRequestsAfterClose was0. This establishes a limited live public catalog path; it does not establish personal-provider compatibility, native/model-issued tool execution or remote effects. The supplied report's source hashes were independently matched to the frozen inputs by this worker; no additional public request was performed here.
+
+All three parent receipts were copied unchanged to the R4 directory and hashed: original failed catalog `e901851590bf75cc7b812cc5ea56a7baa7d58fa911687d8cf7c5d79ee5fc6a6e`, actual-header diagnosis `411de0dd03d2e4c5e21346ea51492aada9b732f4234c709218cc1e91a0ea3050`, successful R4 public catalog `99acdcb69befedabe021d0d08416956dfdc87580388a39e978e59ad7c4ddeec7`. `final-evidence.json` records all native/public hashes, archive/executable hashes,305-file pre/post equality and317preserved files. The former failure remains a retained failed attempt rather than being overwritten by the later pass.
+
+Final scoped Sol review, integration with child-restart, CI/release/installer/hash/install acceptance remain parent-owned. No account authorization, real OAuth, paid inference, push, merge or installation was performed in this worker.
