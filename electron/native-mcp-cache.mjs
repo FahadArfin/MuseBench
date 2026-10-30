@@ -2,18 +2,24 @@ import {createReadStream,constants} from 'node:fs';
 import {mkdir,lstat,realpath,copyFile,link,rm} from 'node:fs/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import path from 'node:path';
+import {setTimeout as pause} from 'node:timers/promises';
 
 const environment={ELECTRON_RUN_AS_NODE:'1',NODE_OPTIONS:'',NODE_PATH:''};
-const digest=async file=>{const info=await lstat(file);if(!info.isFile()||info.isSymbolicLink())throw Error('App control requires regular, unlinked files.');const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex');};
+const digest=async file=>{const info=await lstat(file);if(!info.isFile()||info.isSymbolicLink())throw Error('App control requires regular, unlinked files.');if(info.nlink!==1)throw Object.assign(Error('App control refuses hard-linked files.'),{code:'MUSEBENCH_CONTROL_LINKED_FILE'});const hash=createHash('sha256');for await(const chunk of createReadStream(file))hash.update(chunk);return hash.digest('hex');};
+async function cachedDigest(file){
+ // Another publisher briefly owns a temporary hard link. Wait only for that
+ // metadata transition; an external or abandoned link never becomes usable.
+ for(let attempt=0;;attempt++)try{return await digest(file);}catch(error){if(error.code!=='MUSEBENCH_CONTROL_LINKED_FILE'||attempt>=9)throw error;await pause(20);}
+}
 async function directory(parent,name){const target=path.join(parent,name);await mkdir(target,{mode:0o700}).catch(error=>{if(error.code!=='EEXIST')throw error;});const info=await lstat(target);if(!info.isDirectory()||info.isSymbolicLink()||await realpath(target)!==target)throw Error('App control cache directory changed or is linked.');return target;}
 async function cachedFile(source,target,expected){
- try{if(await digest(target)!==expected)throw Error('App control cache integrity changed.');return;}catch(error){if(error.code!=='ENOENT')throw error;}
+ try{if(await cachedDigest(target)!==expected)throw Error('App control cache integrity changed.');return;}catch(error){if(error.code!=='ENOENT')throw error;}
  const temporary=target+'.'+randomUUID()+'.tmp';
  try{
   await copyFile(source,temporary,constants.COPYFILE_EXCL);if(await digest(temporary)!==expected)throw Error('App control source changed while copying.');
   // Publishing an immutable file must never replace a file used by another client.
   try{await link(temporary,target);}catch(error){if(error.code!=='EEXIST')throw error;}
-  if(await digest(target)!==expected)throw Error('App control cache integrity changed.');
+  await rm(temporary);if(await cachedDigest(target)!==expected)throw Error('App control cache integrity changed.');
  }finally{await rm(temporary,{force:true});}
 }
 

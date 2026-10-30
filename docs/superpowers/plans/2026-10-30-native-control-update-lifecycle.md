@@ -36,5 +36,6 @@ Interfaces: host connectionConfig accepts an async provider; state reports conne
 - [x] Add failing host and real-MCP lifecycle coverage, then return the cached configuration on Windows while preserving revocation and recovery.
 - [x] Shared Settings and preview remain aligned; packaged smoke uses actual generated config. Verify original desktop source files replaceable while cached stdio stays alive and serves a reopened host.
 - [x] Full offline suite, build, native/browser UI checks and packaged artifact checks pass.
-- [ ] Independent review, one TDD correction pass if material findings exist, commit/push.
+- [x] Independent review and one TDD correction pass for the hard-link finding; complete focused, full-suite and packaged checks.
+- [ ] Commit/push the reviewed correction.
 - [ ] Verify exact release, idle work and profile backup; install/reopen; migrate the existing Codex command without changing grants and verify actual installed cached-client lifecycle. Record actual proof versus isolated evidence.

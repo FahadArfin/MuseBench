@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm,readdir,symlink} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,readdir,symlink,link,lstat,copyFile} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {prepareNativeMcpConfig} from '../electron/native-mcp-cache.mjs';
@@ -31,4 +31,11 @@ test('corrupted or linked cache files are refused without replacing their conten
 test('a cache inside the installation cannot be advertised as update safe',async t=>{
  const f=await fixture(t);await mkdir(path.join(f.install,'profile'));await assert.rejects(prepareNativeMcpConfig({...f,dataDir:path.join(f.install,'profile')}),/outside|installation/i);
  const config=await prepareNativeMcpConfig({...f,platform:'linux'});assert.equal(config.command,f.executable);assert.equal(config.args[0],path.join(f.appRoot,'electron','native-mcp-server.mjs'));
+});
+
+for(const kind of ['runtime','bridge'])test('a hard-linked '+kind+' is refused even when its current bytes match',async t=>{
+ const f=await fixture(t),config=await prepareNativeMcpConfig(f),target=kind==='runtime'?config.command:config.args[0],outside=path.join(f.base,'external-'+kind);
+ await copyFile(target,outside);await rm(target);await link(outside,target);assert.equal((await lstat(target)).nlink,2);
+ await assert.rejects(prepareNativeMcpConfig(f),/link/i);
+ assert.equal((await lstat(target)).nlink,2,'Refusing a linked cache must not modify external files');assert.deepEqual(await readFile(target),await readFile(outside));
 });
