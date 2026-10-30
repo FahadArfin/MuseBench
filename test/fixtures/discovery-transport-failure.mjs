@@ -1,14 +1,22 @@
 // Isolated process: an unhandled rejection must fail this regression naturally.
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import {writeFile} from 'node:fs/promises';
 import {DiscoveryTransport} from '../../src/runtime/discovery-transport.mjs';
 const [mode,root]=process.argv.slice(2);
-const transport=new DiscoveryTransport({command:process.execPath,args:['-e','setInterval(()=>{},1000)'],cwd:root,env:process.env},{helperPath:path.resolve('native/bin/MuseBenchJob.exe'),sessionId:'fixture'});
-let errors=0;transport.onerror=()=>errors++;
+// A detached grandchild exercises the real Job boundary, including teardown
+// after deliberately losing the inner supervisor's cleanup receipt.
+const script=String.raw`const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',windowsHide:true,detached:true});process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'fixture/ready',params:{pids:[process.pid,child.pid]}})+'\n');setInterval(()=>{},1000);`;
+const transport=new DiscoveryTransport({command:process.execPath,args:['-e',script],cwd:root,env:process.env},{helperPath:path.resolve('native/bin/MuseBenchJob.exe'),sessionId:'fixture'});
+let errors=0,failedResolve,failedReject,readyResolve,readyReject;
+const failed=new Promise((resolve,reject)=>{failedResolve=resolve;failedReject=reject;}),ready=new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject;});
+transport.onerror=()=>{errors++;failedResolve();};transport.onmessage=readyResolve;
 await transport.start();
-for(let i=0;i<200&&!transport.child.nativePid;i++)await new Promise(resolve=>setTimeout(resolve,10));
-assert.ok(transport.child.nativePid);
-const pid=transport.child.nativePid;
+const startup=setTimeout(()=>readyReject(Error('Owned fixture exceeded the reviewed-source 30s startup budget.')),30000);
+let message;try{message=await ready;}finally{clearTimeout(startup);}
+assert.equal(message.method,'fixture/ready');assert.equal(message.params.pids[0],transport.child.nativePid);
+assert.equal(message.params.pids.length,2);for(const pid of message.params.pids)assert.ok(Number.isInteger(pid)&&pid>0);
+await writeFile(path.join(root,'owned-pids.json'),JSON.stringify(message.params.pids));
 if(mode==='supervisor')process.kill(transport.child.pid,'SIGKILL');
 else{
  // Release the real job first, then simulate the missing cleanup receipt for
@@ -21,11 +29,16 @@ else{
  else if(mode==='stdout'){transport.closed=false;transport.child.stdout.emit('data',Buffer.from('not-json\n'));}
  else throw Error('Unknown mode');
 }
-await new Promise(resolve=>setTimeout(resolve,150));
+// Match the existing Windows Job stop bound. A missing error event must fail
+// this isolated process so its independent outer Job can perform teardown.
+const failureTimeout=setTimeout(()=>failedReject(Error('Owned fixture did not report failure within the 8s cleanup bound.')),8000);
+try{await failed;}finally{clearTimeout(failureTimeout);}
 assert.ok(errors>0);assert.equal(transport.closed,true);
 await assert.rejects(transport.close(),/cleanup is unconfirmed/);
 await assert.rejects(transport.close(),/cleanup is unconfirmed/);
 await assert.rejects(transport.start(),/closed/);
 await assert.rejects(transport.send({jsonrpc:'2.0',id:1,method:'tools/list'}),/closed/);
-assert.throws(()=>process.kill(pid,0));
+// The outer test owner independently proves these recorded fixture PIDs gone.
+// That physical teardown must not turn the inner refusal into a valid receipt.
+assert.equal(transport.child.cleanupConfirmed,mode!=='supervisor');
 console.log('survived; cleanup unconfirmed; restart and send blocked');

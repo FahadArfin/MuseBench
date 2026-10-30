@@ -19,7 +19,13 @@ let server,browser,app,lastPage;
 // This runs in the local application renderer only; provider documents are fixtures.
 function observeLaunch(){
   if(window.__launchObservation)return;
-  const result=window.__launchObservation={frames:[],startedAt:performance.now(),timeOrigin:performance.timeOrigin};
+  const result=window.__launchObservation={frames:[],fontLoads:[],startedAt:performance.now(),timeOrigin:performance.timeOrigin};
+  const loadFont=document.fonts.load.bind(document.fonts);
+  document.fonts.load=(...args)=>{
+    const timing={font:args[0],requestedAt:performance.now(),alreadyLoaded:document.fonts.check(...args)};result.fontLoads.push(timing);
+    window.__launchFontReadinessStarted?.();
+    return loadFont(...args).then(fonts=>{timing.resolvedAt=performance.now();timing.count=fonts.length;return fonts;});
+  };
   const rect=element=>{if(!element)return null;const r=element.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
   const union=boxes=>{if(!boxes.length)return null;const x=Math.min(...boxes.map(box=>box.x)),y=Math.min(...boxes.map(box=>box.y));return {x,y,width:Math.max(...boxes.map(box=>box.x+box.width))-x,height:Math.max(...boxes.map(box=>box.y+box.height))-y};};
   const sample=()=>{
@@ -57,10 +63,13 @@ async function until(check,label,timeout=12000){
 const settled=page=>page.waitForFunction(()=>document.querySelector('.launch-content')&&!document.querySelector('.launch-overlay')&&document.documentElement.dataset.launchActive!=='true'&&!document.querySelector('.launch-content').inert);
 const observation=page=>page.evaluate(()=>window.__launchObservation);
 
-async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,fontDelay=0,rendererDelay=0,skip}={}){
+async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,fontDelay=0,fontDelayAfterReadiness=0,rendererDelay=0,skip}={}){
   const page=lastPage=await browser.newPage({viewport,reducedMotion,...(name==='preview-launch'?{recordVideo:{dir:output,size:viewport}}:{})});
+  let fontReadinessStarted;
+  const fontReadiness=new Promise(resolve=>{fontReadinessStarted=resolve;});
+  if(fontDelayAfterReadiness)await page.exposeBinding('__launchFontReadinessStarted',()=>fontReadinessStarted());
   page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(`${name}: ${error.message}`));
-  const load=report.sceneLoads??={};load[name]={failedRequests:[],failedResponses:[],crashed:false};
+  const load=report.sceneLoads??={};load[name]={failedRequests:[],failedResponses:[],fontRequests:[],crashed:false};
   page.on('crash',()=>{load[name].crashed=true;});
   page.on('requestfailed',request=>{if(new URL(request.url()).hostname==='127.0.0.1')load[name].failedRequests.push({url:request.url(),error:request.failure()?.errorText});});
   page.on('response',response=>{if(response.status()>=400&&new URL(response.url()).hostname==='127.0.0.1')load[name].failedResponses.push({url:response.url(),status:response.status()});});
@@ -70,7 +79,12 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
     // Reproduce a delayed renderer bundle without changing presentation timing.
     if(name==='preview-launch'&&process.argv.includes('--slow-renderer')&&/\/assets\/index-[^/]+\.js$/.test(url.pathname))await delay(7000);
     if(rendererDelay&&/\/assets\/index-[^/]+\.js$/.test(url.pathname))await delay(rendererDelay);
-    if(fontDelay&&/\/inter-latin-wght-normal-[^/]+\.woff2$/.test(url.pathname))await delay(fontDelay);
+    if(/\/inter-latin-wght-normal-[^/]+\.woff2$/.test(url.pathname)){
+      const timing={url:route.request().url(),requestedAt:Date.now()};load[name].fontRequests.push(timing);
+      if(fontDelayAfterReadiness){await fontReadiness;timing.readinessObservedAt=Date.now();await delay(fontDelayAfterReadiness);}
+      if(fontDelay)await delay(fontDelay);
+      timing.releasedAt=Date.now();
+    }
     return route.continue();
   });
   await page.addInitScript(observeLaunch);
@@ -105,11 +119,15 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
   }
   if(skip){await page.locator('.launch-overlay[data-phase="typing"]').waitFor();await skip(page);}
   await settled(page);await page.locator('.app').waitFor();
+  if(fontDelayAfterReadiness)await page.waitForFunction(()=>{
+    const observed=window.__launchObservation,loaded=observed?.fontLoads.find(load=>load.resolvedAt!==undefined);
+    return loaded&&observed.frames.at(-1)?.at>loaded.resolvedAt;
+  });
   const evidence=await observation(page);report.scenes[name]=evidence;
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,`${name}: no horizontal overflow`);
   assert.equal(await page.locator('.launch-content').getAttribute('inert'),null,`${name}: launch must release app interaction`);
   await page.screenshot({path:path.join(output,`${name}.png`)});
-  return {page,frames:evidence.frames};
+  return {page,frames:evidence.frames,fontLoads:evidence.fontLoads};
 }
 
 function checkLaunchMotion(frames,label){
@@ -194,11 +212,33 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
     }catch{res.statusCode=404;res.end();}
   });}}]});await server.listen();
   browser=await chromium.launch({headless:true});
-  // On a cold machine, load the brand font alongside the renderer rather than
-  // only discovering it after React mounts and starting its readiness deadline.
-  const coldFont=await browserScene('cold-brand-font',{fontDelay:650,rendererDelay:500});
+  // Absolute font/renderer delays do not control the wait after React mounts.
+  // Keep the real preloaded font cold until readiness starts, then release it
+  // inside the intentional 400ms budget; exercise the full motion contract.
+  const coldFont=await browserScene('cold-brand-font',{fontDelayAfterReadiness:100,rendererDelay:500});
+  assert(report.sceneLoads['cold-brand-font'].fontRequests[0].requestedAt<report.scenes['cold-brand-font'].timeOrigin+coldFont.fontLoads[0].requestedAt,'Brand font preload starts before renderer font readiness');
+  assert.equal(coldFont.fontLoads[0].alreadyLoaded,false,'Cold-font motion starts with the real font still pending');
+  assert.equal(coldFont.fontLoads[0].count,1,'Cold-font motion resolves the real brand font');
+  assert(coldFont.fontLoads[0].resolvedAt-coldFont.fontLoads[0].requestedAt<400,'Cold-font motion receives the font within the supported readiness budget');
   checkLaunchMotion(coldFont.frames,'cold brand font');await coldFont.page.close();
-  pass('Cold font and renderer loading overlap, preserving the normal animation without extending its readiness deadline');
+  pass('A cold real font arriving within the readiness budget preserves progressive typing, cursor tracking and the full sidebar flight');
+  const overBudget=await browserScene('over-budget-brand-font',{fontDelayAfterReadiness:650,rendererDelay:500});
+  const font=overBudget.fontLoads[0];
+  assert.equal(font.alreadyLoaded,false,'Over-budget font starts cold');
+  assert.equal(font.count,1,'Over-budget font eventually resolves successfully');
+  assert(font.resolvedAt-font.requestedAt>=650,'Over-budget font remains pending beyond the readiness budget');
+  assert(overBudget.frames.some(frame=>frame.phase==='preparing'&&frame.inert),'Over-budget launch was mounted and gated interaction while preparing');
+  const released=overBudget.frames.find(frame=>frame.at>=font.requestedAt&&!frame.active&&frame.phase===null);
+  assert(released&&released.at<font.resolvedAt,'Font timeout releases the app before the delayed font resolves');
+  assert(released.at-font.requestedAt<2100,'Font fallback stays within the unchanged hard readiness deadline');
+  assert(!released.inert&&released.targetVisible&&released.targetLettersOpaque,'Font fallback reveals a fully visible sidebar title and releases controls');
+  assert(!overBudget.frames.some(frame=>frame.rendered),'Over-budget font never starts a mismeasured flourish');
+  assert(overBudget.frames.some(frame=>frame.at>font.resolvedAt&&!frame.active&&!frame.inert&&frame.targetVisible),'Late font resolution keeps the app usable without replaying launch');
+  await overBudget.page.getByRole('button',{name:'Muse Code',exact:true}).click();
+  await overBudget.page.getByRole('textbox',{name:'Message Muse',exact:true}).waitFor();
+  assert.equal(await overBudget.page.locator('.launch-overlay').count(),0,'Controls work after font fallback without replaying launch');
+  await overBudget.page.close();
+  pass('An over-budget cold font releases a visible, usable app before it resolves and cannot replay the launch afterward');
   const normal=await browserScene('preview-launch');
   checkLaunchMotion(normal.frames,'dark theme');
   pass('Preview types the large blue Muse AI wordmark in the center, animates to the actual sidebar brand, and releases interaction in under 2.35 seconds');

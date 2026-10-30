@@ -4,7 +4,9 @@ import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 const gateway=await import('../src/runtime/discovery-gateway.mjs').catch(()=>({}));
-async function fixture(){const root=await mkdtemp(path.join(tmpdir(),'discovery-gateway-')),log=path.join(root,'log'),control=path.join(root,'control');await writeFile(control,'{}');const source={id:'global:fixture',name:'fixture',revision:'a'.repeat(64),command:process.execPath,args:[path.resolve('test/fixtures/discovery-server.mjs'),log,control],cwd:root,env:{...process.env,FIXTURE_ENV:'reviewed',FIXTURE_GRANDCHILD:'1'},enabledTools:['allowed'],disabledTools:['filtered'],startupMs:3000,callMs:200};return{root,log,control,source,records:async()=>JSON.parse('['+(await readFile(log,'utf8')).trim().split('\n').join(',')+']')};}
+// Positive fixtures use the reviewed-source startup default. Deadline failure
+// cases below deliberately keep their separate 500ms budget.
+async function fixture(){const root=await mkdtemp(path.join(tmpdir(),'discovery-gateway-')),log=path.join(root,'log'),control=path.join(root,'control');await writeFile(control,'{}');const source={id:'global:fixture',name:'fixture',revision:'a'.repeat(64),command:process.execPath,args:[path.resolve('test/fixtures/discovery-server.mjs'),log,control],cwd:root,env:{...process.env,FIXTURE_ENV:'reviewed',FIXTURE_GRANDCHILD:'1'},enabledTools:['allowed'],disabledTools:['filtered'],startupMs:30000,callMs:200};return{root,log,control,source,records:async()=>JSON.parse('['+(await readFile(log,'utf8')).trim().split('\n').join(',')+']')};}
 test('gateway filters catalogs, validates input, binds revisions and never retries uncertain calls',async()=>{
  assert.equal(typeof gateway.createDiscoveryGateway,'function','gateway exists');const f=await fixture();let valid=true;
  const service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),sessionId:'owned-native-session',verify:async()=>{if(!valid)throw Error('Source review changed');}});
@@ -20,6 +22,21 @@ test('gateway filters catalogs, validates input, binds revisions and never retri
  assert.equal((await f.records()).filter(r=>r.kind==='call').length,3);valid=false;await assert.rejects(service.search({query:''}),/changed/i);
  }finally{await service.dispose();const records=await f.records();for(const row of records.filter(r=>['start','grandchild'].includes(r.kind)))assert.throws(()=>process.kill(row.pid,0));await rm(f.root,{recursive:true,force:true});}
 });
+test('positive gateway startup admits a delayed owned fixture within the reviewed-source default',async()=>{
+ const f=await fixture();f.source.env.FIXTURE_START_DELAY_MS='3100';
+ const service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),verify:async()=>{},sessionId:'delayed-owned'});
+ try{
+  const result=await service.search({query:'fixture'}),catalogRevision=result.sources[0].catalogRevision;
+  assert.equal((await service.call({sourceId:f.source.id,catalogRevision,tool:'allowed',arguments:{value:7}})).outcome,'completed');
+  const records=await f.records();
+  for(const kind of ['start','initialize','call'])assert.equal(records.filter(row=>row.kind===kind).length,1,kind);
+ }finally{
+  await service.dispose();
+  for(const row of (await f.records()).filter(row=>['start','grandchild'].includes(row.kind)))assert.throws(()=>process.kill(row.pid,0));
+  await rm(f.root,{recursive:true,force:true});
+ }
+});
+
 test('unsupported schemas and fully encoded argument limits are rejected before effects',async()=>{
  assert.equal(typeof gateway.createDiscoveryGateway,'function');const f=await fixture(),service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),verify:async()=>{},sessionId:'owned'});
  try{await writeFile(f.control,JSON.stringify({schema:{type:'object',$ref:'https://invalid/schema'}}));const results=await service.search({query:''});assert.equal(results.sources[0].tools.length,0);assert.equal(results.sources[0].unsupported,1);await assert.rejects(service.call({sourceId:f.source.id,catalogRevision:results.sources[0].catalogRevision,tool:'allowed',arguments:{value:'\\"'.repeat(40000)}}),/limit/i);assert.equal((await f.records()).filter(r=>r.kind==='call').length,0);}finally{await service.dispose();await rm(f.root,{recursive:true,force:true});}
