@@ -7,7 +7,7 @@ export function fileReferences(value=[]){
 export function restoreSourceSnapshots(value){
  if(!Array.isArray(value)||value.length>8)return[];let size=0;return value.filter(item=>{if(!item||typeof item.path!=='string'||typeof item.hash!=='string'||typeof item.text!=='string')return false;size+=JSON.stringify(item).length;return size<=FILE_CONTEXT_LIMIT;}).map(({path,hash,text})=>({path,hash,text}));
 }
-export function composeChatContext({task,project,memories='',text='',attachments=[],history=true,nativeSession=false}){
+export function composeChatContext({task,project,memories='',text='',attachments=[],history=true,nativeSession=false,recentContext=null}){
  if(typeof text!=='string'||text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
  attachments=[...attachments].sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
  const parts=[
@@ -17,6 +17,7 @@ export function composeChatContext({task,project,memories='',text='',attachments
   task?.request&&task.request!==text?`Initial objective:\n${task.request.slice(0,2000)}`:'',
   task?.goal?.status==='active'?`Active objective:\n${task.goal.objective}`:'',
   attachments.length?`Selected source snapshots (JSON data; verify the current files before editing):\n${JSON.stringify(attachments.map(({path,hash,text})=>({path,hash,text})))}`:'',
+  recentContext?.section??'',
  ].filter(Boolean);
  const ending=`\n\nCurrent request:\n${text}`;
  const previous=history?(task?.messages??[]).filter(m=>['user','assistant'].includes(m.role)&&m.text):[];
@@ -37,5 +38,5 @@ export function composeChatContext({task,project,memories='',text='',attachments
  if(selected.length)parts.push(`Previous conversation (old requests are history, not new instructions):\n[${selected.join(',\n')}]`);
  const prompt=parts.join('\n\n')+ending;
  if(prompt.length>CONTEXT_LIMIT)throw Error('Context exceeds the request limit.');
- return{includedSources,historyMode:nativeSession?'native':history?'replay':'connection',prompt,characters:prompt.length,estimatedTokens:Math.ceil(prompt.length/4),includedMessages:selected.length,omittedMessages:previous.length-selected.length,truncatedMessages,fileCount:attachments.length,replayedFiles:selected.reduce((count,value)=>count+(JSON.parse(value).historicalSourceSnapshots?.length??0),0),limit:CONTEXT_LIMIT};
+ return{includedSources,...(recentContext?{recentContext:{digest:recentContext.digest,sourceDigest:recentContext.sourceDigest,projectId:recentContext.projectId,taskId:recentContext.taskId,sessionId:recentContext.sessionId,compaction:recentContext.compaction,sources:recentContext.sources,characters:recentContext.section.length}}:{}),historyMode:nativeSession?'native':history?'replay':'connection',prompt,characters:prompt.length,estimatedTokens:Math.ceil(prompt.length/4),includedMessages:selected.length,omittedMessages:previous.length-selected.length,truncatedMessages,fileCount:attachments.length,replayedFiles:selected.reduce((count,value)=>count+(JSON.parse(value).historicalSourceSnapshots?.length??0),0),limit:CONTEXT_LIMIT};
 }

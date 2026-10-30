@@ -1,5 +1,6 @@
 import {NativeChildrenPanel} from './NativeChildrenPanel';
 import {CompactionPanel} from './CompactionPanel';
+import {RecentContextPanel} from './RecentContextPanel';
 import {NativeContextUsage} from './NativeContextUsage';
 import {ReviewerPanel} from './ReviewerPanel';
 import {ContextReceipt} from './ContextReceipt';
@@ -20,7 +21,7 @@ export function SessionDialog({runtime,task,projects,busy,act,onClose}:{runtime:
   <SessionMcpPanel key={`${task.id}/${runtime.sessionId}/${runtime.connectionEpoch}/${runtime.permissionVerified}`} taskId={task.id} runtime={runtime}/>
   <NativeChildrenPanel task={task} runtime={runtime} busy={busy} act={act}/>
   <ReviewerPanel task={task} projects={projects} busy={busy||turnBusy} act={act} close={onClose}/>
-  <NativeContextUsage task={task} runtime={runtime}/><ContextReceipt receipt={task.contextSummary?.receipt} label="Last prepared request"/><NativeUsageView usage={task.nativeUsage}/><CompactionPanel task={task} runtime={runtime} busy={busy} act={act}/>
+  <NativeContextUsage task={task} runtime={runtime}/><RecentContextPanel key={task.id} task={task} runtime={runtime} busy={busy} act={act}/><ContextReceipt receipt={task.contextSummary?.receipt} label="Last prepared request"/><NativeUsageView usage={task.nativeUsage}/><CompactionPanel task={task} runtime={runtime} busy={busy} act={act}/>
   {error&&<p role="alert">{error}</p>}
  </dialog>;
 }
