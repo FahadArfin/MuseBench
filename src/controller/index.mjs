@@ -207,8 +207,9 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     history.sync(state.task,true);state.task=restoreTask(state.task,knownProject?.id);
     // Task rows are written before the app selection snapshot. A crash between
     // those writes must not replace a sending/unknown queue with an older copy.
-    const persistedQueue=taskRecords.get(state.task.id)?.promptQueue;
+    const persistedTask=taskRecords.get(state.task.id),persistedQueue=persistedTask?.promptQueue;
     if(persistedQueue){state.task.promptQueue=structuredClone(persistedQueue);state.task.queueHold=persistedQueue.length>0;}
+    state.task.contextCompactions=mergeCompactionHistory(state.task.contextCompactions,persistedTask?.contextCompactions);
     if(!knownProject||state.task.projectId!==knownProject.id){state.task=null;state.error='The saved task has no valid project association. Select a project to continue.';}
     else taskRecords.set(state.task.id,structuredClone(state.task));
   }
@@ -218,14 +219,24 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const contexts=new Map(),pendingActivity=new Map();let preferredBinary=runtime?.snapshot?.().binary??null;
   const retainActivity=(task,events)=>{for(const event of events){const key=JSON.stringify([task.id,event.source,event.sourceId,event.kind,event.identity??'']);if(!pendingActivity.has(key))pendingActivity.set(key,{taskId:task.id,event:{...event,at:now()}});}while(pendingActivity.size>200)pendingActivity.delete(pendingActivity.keys().next().value);};
   const persistActivity=(task,write)=>{const pending=[...pendingActivity].filter(([,item])=>item.taskId===task.id);if(!pending.length)return write();inbox.recordMany(task.id,pending.map(([,item])=>item.event),write);for(const [key] of pending)pendingActivity.delete(key);};
-  const newContext=(owner,task=null)=>{const observed=owner?.snapshot?.();return{id:randomUUID(),runtime:owner,task,root:null,pending:false,turn:null,workIdentity:workIdentity(observed),messageBaseline:runtimeMessageIds(observed),navigation:false,queueScheduled:false,unsubscribe:null};};
+  const newContext=(owner,task=null)=>{const observed=owner?.snapshot?.();return{id:randomUUID(),runtime:owner,task,everOwned:!!task,compactionTaskId:task?.id??null,compactionExcluded:new Set(),root:null,pending:false,turn:null,workIdentity:workIdentity(observed),messageBaseline:runtimeMessageIds(observed),navigation:false,queueScheduled:false,unsubscribe:null};};
   let context=newContext(runtime,state.task);if(state.task)contexts.set(state.task.id,context);
   const contextBusy=c=>!!c&&(c.pending||runtimeStatusBusy(readRuntimeStatus(c.runtime)));
   const saveRecord=t=>{if(!t)return;persistActivity(t,()=>{analytics.sync(t);history.sync(t);t.messages=t.messages.slice(-150);t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));});};
+  const compactionKey=row=>JSON.stringify([row.sessionId,row.itemId]);
+  const bindOwner=(owner,task)=>{
+    if(owner.compactionTaskId!==(task?.id??null)){
+      // A single-runtime host can retain old observations after disconnect. Only
+      // this chat's saved identities may reconcile across a later connection.
+      const known=new Set(mergeCompactionHistory([],task?.contextCompactions).map(compactionKey));
+      owner.compactionExcluded=new Set(mergeCompactionHistory([],owner.runtime?.snapshot?.().contextCompactions).map(compactionKey).filter(key=>!known.has(key)));
+    }
+    owner.task=task;owner.compactionTaskId=task?.id??null;if(task)owner.everOwned=true;
+  };
   const bindContext=task=>{
-    if(!runtimeFactory){contexts.clear();context.task=task;if(task)contexts.set(task.id,context);return;}
+    if(!runtimeFactory){contexts.clear();bindOwner(context,task);if(task)contexts.set(task.id,context);subscribeContext(context);return;}
     let next=task&&contexts.get(task.id);
-    if(!next){next=!context.task&&!contextBusy(context)?context:newContext(runtimeFactory());next.task=task;if(task)contexts.set(task.id,next);subscribeContext(next);}
+    if(!next){next=!context.everOwned&&!contextBusy(context)?context:newContext(runtimeFactory());bindOwner(next,task);if(task)contexts.set(task.id,next);subscribeContext(next);}
     context=next;runtime=context.runtime;state.runtime=runtime?.snapshot?.()??missingRuntime();
   };
   const requireSwitchable=()=>{if(!runtimeFactory)requireNavigationIdle();};
@@ -349,6 +360,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const deleteArchivedChat=async (id,allowUnarchived=false)=>{
     requireNavigationIdle();if(typeof allowUnarchived!=='boolean')throw Error('Invalid direct-delete choice.');const target=taskRecords.get(id);if(!target)throw Error('Chat not found.');if(!target.archived&&!allowUnarchived)throw Error('Archive this chat before permanently deleting it.');if(contextBusy(contexts.get(id)))throw Error('Stop this chat before deleting it.');
+    // A deleted chat's idle connection must not be reused or left unowned.
+    const owner=contexts.get(id);if(runtimeFactory&&owner){await owner.runtime?.disconnect?.();if(contextBusy(owner))throw Error('Native shutdown could not be confirmed. Disconnect Muse before deleting this chat.');}
     const previous={state:structuredClone(state),baseline,records:new Map(taskRecords)};
     if(state.task?.id===id){await navigationCleanup();state.task=null;baseline={};diffCache.clear();state.runtime=missingRuntime();}
     db.exec('BEGIN IMMEDIATE');
@@ -722,7 +735,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const selected=owner===selectedContext(),context=owner,runtime=owner.runtime,task=owner.task;
     if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;owner.workIdentity=workIdentity(next);if(selected)state.runtime=structuredClone(next);const inboxEvents=[];
     if(task&&next.childReceipts?.length){for(const receipt of next.childReceipts)task.childControlReceipts=[...(task.childControlReceipts??[]).filter(r=>r.commandId!==receipt.commandId),structuredClone(receipt)].slice(-40);saveRecord(task);}
-    if(task&&next.contextCompactions?.length){const history=mergeCompactionHistory(task.contextCompactions,next.contextCompactions);if(JSON.stringify(history)!==JSON.stringify(task.contextCompactions)){task.contextCompactions=history;saveRecord(task);}}
+    if(task&&owner.compactionTaskId===task.id&&contexts.get(task.id)===owner&&next.contextCompactions?.length){const admitted=mergeCompactionHistory([],next.contextCompactions).filter(row=>!owner.compactionExcluded.has(compactionKey(row))),history=mergeCompactionHistory(task.contextCompactions,admitted);if(JSON.stringify(history)!==JSON.stringify(task.contextCompactions)){task.contextCompactions=history;saveRecord(task);}}
     if(task&&next.compaction?.commandId){task.compactionReceipts=[...(task.compactionReceipts??[]).filter(r=>r.commandId!==next.compaction.commandId),structuredClone(next.compaction)].slice(-20);saveRecord(task);}
     if(task&&next.inputResponse?.userInputId){
       const receipt=next.inputResponse,key=`input:${receipt.sessionId}:${receipt.userInputId}`;

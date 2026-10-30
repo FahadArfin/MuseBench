@@ -36,6 +36,6 @@
 ### Task 3: Review and delivery
 **Files:** focused corrections, validation and roadmap.
 **Interfaces:** Reviewed source and exact verified Windows artifact; personal native inspection separate from isolated mutation evidence.
-- [ ] One fresh whole-branch review; re-grade findings and fix Important/Critical with RED to GREEN and full suite.
+- [x] One fresh whole-branch review; re-grade findings and fix Important/Critical with RED to GREEN and full suite.
 - [ ] Push feature, verify all six Windows groups and publication, then hash-check exact installer.
 - [ ] Fresh idle check, complete profile backup, graceful install/reopen, native version/UI and isolated installed context-history check. Record remaining external prerequisites.

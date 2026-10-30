@@ -20,6 +20,17 @@ Accordingly OC06 implements observed continuity and leaves retention tuning/back
 
 Logs and rulings are retained in `.superpowers/sdd/2026-10-30-context-continuity/`. Final checks, independent review and installed acceptance are recorded separately. Fixtures prove host behavior; they do not establish current provider context occupancy or live compaction quality.
 
+## Independent review and corrections
+
+One read-only independent review covered `58a5680..e985afc`. No Critical or Minor findings; two Important findings were accepted:
+
+1. Deleting the selected chat allowed its runtime observations to enter a successor chat. Reproduced with a disposable controller (`review-red.log`). Runtime contexts that have owned a chat are never reused by the background-capable host; deletion gracefully disconnects the idle owner. The single-runtime host excludes foreign pre-binding observation identities and restores its subscription. Controller persistence checks the exact owner, and the UI reads only the owning chat's admitted history. Prior sessions belonging to the same chat remain available. Graceful retirement received an additional failing regression (`review-retire-red.log`).
+2. A crash between task-row and app-snapshot writes could downgrade a persisted completed observation to an older unknown one. Reproduced by writing divergent snapshots into a disposable database. Startup now merges both histories by native revision, with regression coverage for either snapshot holding the newer result.
+
+Final correction evidence: full suite **1,666 passed, zero failures, one pre-existing optional skip** (`review-full.log`); production build passed (`review-build.log`). Shared preview `preview-DIc7hA` and Electron `desktop-D0PU1c` passed (`review-shared.log`). The preview deliberately includes an unowned runtime observation and confirms that only the three admitted task records appear. No personal data or model requests were used. No second review was requested after this bounded correction pass.
+
+The reviewer declined to judge live summarization quality/current provider context, this branch's not-yet-published installed acceptance, and historical 0.2.207 delivery claims. Those boundaries remain explicit; the historical release was independently rechecked during delivery work.
+
 ## Decisions
 
 Continue inline using the attached worktree and existing authorization; one fresh final review. Preserve evidence and avoid rerunning unchanged checks solely for bookkeeping. Keep separate observation history instead of broadening manual command receipts into automatic authority. Require verified connection ownership and native cursor validation before recording live history. No unverified API settings, background inference or personal-state changes.

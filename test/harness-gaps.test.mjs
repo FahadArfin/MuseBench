@@ -271,6 +271,32 @@ test('context observation history belongs to its emitting chat and persists safe
  const reopened=await createController({dataDir,runtime:fakeRuntime()});try{let s=reopened.getState();assert.equal(s.task.id,first);assert.equal(s.task.contextCompactions[0].status,'compacted');assert.equal(s.task.contextCompactions[1].status,'unknown');await reopened.dispatch({type:'selectTask',id:second});assert.deepEqual(reopened.getState().task.contextCompactions??[],[]);}finally{await reopened.close();}
 });
 
+for(const background of [true,false])test(`deleted chat context observations cannot enter its successor (background=${background})`,async t=>{
+ const {c,runtime,runtimes}=await fixture(t,{background}),first=await start(c);
+ const row={sessionId:'deleted-session',itemId:'deleted-observation',turnId:'old-turn',revision:1,trigger:'auto',status:'compacted',source:'live',at:'2026-10-30T12:00:00.000Z'};
+ runtime.emit({contextCompactions:[row]});assert.equal(c.getState().task.contextCompactions.length,1);
+ let disconnected=0;const disconnect=runtime.disconnect;runtime.disconnect=async()=>{disconnected++;return disconnect();};
+ assert.equal((await c.dispatch({type:'deleteTask',id:first,allowUnarchived:true})).error,null);assert.ok(disconnected>0,'deleted runtime is gracefully disconnected');const second=await start(c);
+ assert.deepEqual(c.getState().task.contextCompactions??[],[]);
+ if(background)assert.deepEqual(c.getState().runtime.contextCompactions??[],[],'a deleted chat runtime is never reused');
+ runtime.emit({contextCompactions:[{...row,revision:2,tokensAfter:10}]});assert.equal(c.getState().task.id,second);assert.deepEqual(c.getState().task.contextCompactions??[],[],'late old observations do not persist');
+ const current=runtimes.at(-1),fresh={...row,sessionId:'fresh-session',itemId:'fresh-observation',turnId:'fresh-turn'};
+ current.emit({contextCompactions:background?[fresh]:[row,fresh]});assert.deepEqual(c.getState().task.contextCompactions.map(r=>r.itemId),['fresh-observation']);
+ current.emit({contextCompactions:[fresh,{...fresh,sessionId:'later-session',itemId:'later-observation'}]});assert.equal(c.getState().task.contextCompactions.length,2,'previous sessions belonging to this chat remain');
+});
+
+for(const newer of ['task','app'])test(`restart keeps the newest context observation across an interrupted ${newer} snapshot write`,async t=>{
+ const {c,runtime,dataDir}=await fixture(t),taskId=await start(c);
+ const row={sessionId:'saved-session',itemId:'saved-observation',turnId:'turn',revision:1,trigger:'auto',status:'in-progress',source:'live',at:'2026-10-30T12:00:00.000Z'};
+ runtime.emit({contextCompactions:[row]});await c.close();
+ const db=new DatabaseSync(join(dataDir,'musebench.sqlite'));try{
+  const app=JSON.parse(db.prepare('SELECT json FROM app WHERE id=1').get().json),task=JSON.parse(db.prepare('SELECT json FROM tasks WHERE id=?').get(taskId).json);
+  app.task.contextCompactions=[row];task.contextCompactions=[row];const target=newer==='task'?task:app.task;target.contextCompactions=[{...row,revision:2,status:'compacted',tokensAfter:42}];
+  db.prepare('UPDATE app SET json=? WHERE id=1').run(JSON.stringify(app));db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(task),taskId);
+ }finally{db.close();}
+ const reopened=await createController({dataDir,runtime:fakeRuntime()});try{const history=reopened.getState().task.contextCompactions;assert.equal(history.length,1);assert.equal(history[0].revision,2);assert.equal(history[0].status,'compacted');assert.equal(history[0].tokensAfter,42);}finally{await reopened.close();}
+});
+
 test('a rejected second correction never relabels the first unknown steering receipt',async t=>{const {c,runtime}=await fixture(t);const taskId=await start(c);await c.dispatch({type:'sendMessage',text:'Work'});runtime.emit({transport:'msp',steeringSupported:true,turnId:'turn'});runtime.steer=async()=>{runtime.emit({steering:{commandId:'first',turnId:'turn',status:'unknown'}});throw Error('Unknown');};await c.dispatch({type:'steerMessage',taskId,expectedTurnId:'turn',text:'A'});runtime.steer=async()=>{throw Error('Previous command uncertain');};await c.dispatch({type:'steerMessage',taskId,expectedTurnId:'turn',text:'B'});assert.equal(c.getState().task.steeringReceipts[0].text,'A');});
 test('native child work reserves its checkout and refuses followups while another chat owns it',async t=>{const {c,runtime,runtimes}=await fixture(t,{background:true});const first=await start(c);await c.dispatch({type:'sendMessage',text:'First'});runtime.finish();runtime.emit({childControlsSupported:true,childrenBusy:true});const second=await start(c);let s=await c.dispatch({type:'sendMessage',text:'Conflicting'});assert.match(s.error,/checkout/);runtime.emit({childrenBusy:false});await c.dispatch({type:'sendMessage',text:'Other work'});await c.dispatch({type:'selectTask',id:first});let controls=0;runtime.childControl=async()=>controls++;s=await c.dispatch({type:'childControl',taskId:first,sessionId:'s',itemId:'i',revision:1,action:'followupTask',body:'Work'});assert.match(s.error,/checkout/);assert.equal(controls,0);assert.equal(c.getState().tasks.find(t=>t.id===second).runtimeBusy,true);});
 
