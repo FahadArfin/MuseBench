@@ -1,10 +1,15 @@
 import {createServer} from 'node:http';
-export async function peer({current=false,mode='json',call='ok',catalog,catalogStatus,session=false,contentEncoding}={}){
+export async function peer({current=false,mode='json',call='ok',catalog,catalogStatus,session=false,contentEncoding,oauthAuthority}={}){
  const requests=[],sockets=new Set();let effects=0;
  const server=createServer(async(req,res)=>{
   const raw=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>262144){req.destroy();return;}raw.push(chunk);}const body=Buffer.concat(raw).toString();let message;try{message=body?JSON.parse(body):null;}catch{}
   if(requests.length>1000){req.socket.destroy();return;}
   requests.push({method:req.method,url:req.url,headers:req.headers,message});
+  if(oauthAuthority){
+   const resource=`http://127.0.0.1:${server.address().port}/mcp`;
+   if(req.url.startsWith('/.well-known/oauth-protected-resource')){res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({resource,authorization_servers:[oauthAuthority.origin],scopes_supported:['read']}));return;}
+   if(!oauthAuthority.accepts((req.headers.authorization??'').replace(/^Bearer /,''))){res.writeHead(401,{'WWW-Authenticate':`Bearer resource_metadata="http://127.0.0.1:${server.address().port}/.well-known/oauth-protected-resource", scope="read"`});res.end();return;}
+  }
   if(contentEncoding)res.setHeader('Content-Encoding',contentEncoding);
   if(req.method==='DELETE'){res.writeHead(405);res.end();return;}
   if(req.method==='GET'){res.writeHead(405);res.end();return;}

@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   readCapturedOutput: input => ipcRenderer.invoke('musebench:captured-output',input),
   readChatHistory: input => ipcRenderer.invoke('musebench:chat-history',input),
   inspectDiscoverySources: input => ipcRenderer.invoke('musebench:discovery-sources',input),
+  discoveryAuth: input => ipcRenderer.invoke('musebench:discovery-auth',input),
+  onDiscoveryAuthUpdate: callback => {const listener=(_event,value)=>callback(value);ipcRenderer.on('musebench:discovery-auth-update',listener);return()=>ipcRenderer.removeListener('musebench:discovery-auth-update',listener);},
   readMcpServers: input => ipcRenderer.invoke('musebench:session-mcp',input),
   searchChats: input => ipcRenderer.invoke('musebench:chat-search',input),
   previewConversationImport: () => ipcRenderer.invoke('musebench:conversation-import-pick'),

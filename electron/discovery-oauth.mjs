@@ -19,6 +19,7 @@ export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,g
   }catch{return null;}
  }
  const selectedOwner=()=>snapshot(ownerSnapshot),runtimeOwner=reference=>snapshot(runtimeOwnerSnapshot,reference);
+ function currentGrant(source,bindingRevision){const grant=store.get(ref(source));return grant?.binding.bindingRevision===bindingRevision?grant:null;}
  function owner(taskId){const current=selectedOwner();if(closed||!current||current.taskId!==taskId)throw oauthFailure('owner-changed');return current;}
  const generation=id=>accountGenerations.get(id)??0;
  function accountBlocked(id){return mutation&&mutationSourceId===id||attempt&&!attempt.lease&&attempt.source.id===id&&!['ready','failed','cancelled','needs-sign-in'].includes(attempt.status);}
@@ -73,7 +74,20 @@ export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,g
    a.candidate={binding,registration:a.registration,metadata:a.review.metadata,destinations:a.review.destinations,tokens,tokenGeneration:0,phase:'ready'};await commitCandidate(a);
   }catch(error){if(attempt===a&&await current(a))await dispose(a,'failed',errorCode(error));}
  }
- async function getAttempt(command){const a=attempt;if(!a||a.id!==command.attemptId||a.owner.taskId!==command.taskId)throw oauthFailure('source-changed');if(a.controller.signal.aborted&&ownerEqual(a.owner,selectedOwner())){try{const s=await source(a.source);if(s.authSourceIdentity===a.source.authSourceIdentity)return a;}catch{}}if(!await current(a)){await invalidate(a);return a;}if(command.reviewRevision!==undefined&&command.reviewRevision!==a.reviewRevision)throw oauthFailure('source-changed');return a;}
+ function terminalProjectionCurrent(a){
+  if(attempt!==a||!ownerEqual(a.owner,selectedOwner()))return false;
+  let s;try{s=getSourceSnapshot?.(a.source);if(s&&typeof s.then==='function'){Promise.resolve(s).catch(()=>{});return false;}}catch{return false;}
+  return attempt===a&&ownerEqual(a.owner,selectedOwner())&&s?.id===a.source.id&&s.revision===a.source.revision&&s.authSourceIdentity===a.source.authSourceIdentity&&s.url===a.source.url&&s.global===true&&s.reviewed===true&&s.disabled===true;
+ }
+ async function getAttempt(command){
+  const a=attempt;if(!a||a.id!==command.attemptId||a.owner.taskId!==command.taskId)throw oauthFailure('source-changed');
+  if(a.controller.signal.aborted&&terminalProjectionCurrent(a))return a;
+  const valid=await current(a);if(attempt!==a)throw oauthFailure('source-changed');
+  if(a.controller.signal.aborted&&terminalProjectionCurrent(a))return a;
+  if(!valid){await invalidate(a);return a;}
+  if(command.reviewRevision!==undefined&&command.reviewRevision!==a.reviewRevision)throw oauthFailure('source-changed');return a;
+ }
+
  async function command(input){
   const c=validateDiscoveryAuthCommand(input);if(attempt&&!attempt.lease&&!ownerEqual(attempt.owner,selectedOwner())&&!['ready','failed','cancelled','needs-sign-in'].includes(attempt.status))await invalidate(attempt);const o=owner(c.taskId);
   if(c.type==='inspect')return inspectSource({id:c.sourceId,revision:c.sourceRevision});
@@ -81,7 +95,7 @@ export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,g
   if(mutation)throw oauthFailure('busy');mutation=true;mutationSourceId=['prepare','begin','forget'].includes(c.type)?c.sourceId??attempt?.source.id??null:null;
   try{
    if(c.type==='forget'){
-    const s=await source({id:c.sourceId,revision:c.sourceRevision},true),inspection=await summary(s),binding=store.listBindings(s.id).find(v=>v.binding.bindingRevision===c.bindingRevision);if(!binding||inspection.bindingRevision!==c.bindingRevision||inspection.reviewRevision!==c.reviewRevision)throw oauthFailure('source-changed');await stop(s);if(attempt?.source.id===s.id)await dispose(attempt);if(!ownerEqual(o,selectedOwner()))throw oauthFailure('owner-changed');await source(s,true);await store.forget(c.bindingRevision,{expectedGeneration:store.inspect().generation});return summary(s);
+    const s=await source({id:c.sourceId,revision:c.sourceRevision},true),inspection=await summary(s),binding=store.listBindings(s.id).find(v=>v.binding.bindingRevision===c.bindingRevision);if(!binding||inspection.bindingRevision!==c.bindingRevision||inspection.reviewRevision!==c.reviewRevision)throw oauthFailure('source-changed');await stop(s);const forgottenAttempt=attempt?.source.id===s.id?attempt:null;if(forgottenAttempt)await dispose(forgottenAttempt);if(!ownerEqual(o,selectedOwner()))throw oauthFailure('owner-changed');await source(s,true);await store.forget(c.bindingRevision,{expectedGeneration:store.inspect().generation});if(attempt===forgottenAttempt)attempt=null;return summary(s);
    }
    if(c.type==='prepare'){
     if(attempt&&!['ready','failed','cancelled','needs-sign-in'].includes(attempt.status))throw oauthFailure('busy');const s=await source({id:c.sourceId,revision:c.sourceRevision},true);if(store.inspect().status!=='ready')return safeAuthState({sourceId:s.id,sourceRevision:s.revision,status:'storage-unavailable',reasonCode:'storage-unavailable'});await stop(s);if(!ownerEqual(o,selectedOwner()))throw oauthFailure('owner-changed');await source(s,true);if(attempt)await dispose(attempt);
@@ -111,17 +125,24 @@ export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,g
   }finally{mutation=false;mutationSourceId=null;}
  }
  async function inspectSource(sourceRef){
-  if(attempt?.source.id===sourceRef.id&&attempt.source.revision===sourceRef.revision&&!['ready','cancelled'].includes(attempt.status)){
-   if(attempt.controller.signal.aborted){const local=await summary(sourceRef);return attempt.status==='failed'&&ownerEqual(attempt.owner,selectedOwner())?safeAuthState({...local,status:'failed',reasonCode:attempt.reasonCode}):local;}
-   if(!await current(attempt))await invalidate(attempt);else return safe(attempt);
+  const a=attempt;
+  const terminalSummary=async()=>{
+   const local=await summary(sourceRef);if(attempt!==a||!ownerEqual(a.owner,selectedOwner()))return local;
+   return terminalProjectionCurrent(a)&&['failed','cancelled'].includes(a.status)?safeAuthState({...local,status:a.status,reasonCode:a.reasonCode}):local;
+  };
+  if(a?.source.id===sourceRef.id&&a.source.revision===sourceRef.revision&&a.status!=='ready'){
+   if(a.controller.signal.aborted)return terminalSummary();
+   const valid=await current(a);if(attempt!==a)return summary(sourceRef);
+   if(a.controller.signal.aborted)return terminalSummary();
+   if(!valid){await invalidate(a);if(attempt!==a)return summary(sourceRef);return terminalSummary();}return safe(a);
   }return summary(sourceRef);
  }
  async function verifyLease(leaseId,insideIdleAdmission=false){
   const l=leases.get(leaseId),options={insideIdleAdmission};
-  try{leaseAuthority(l,options);for(const row of l.sources){const s=await source(row);leaseAuthority(l,options);const grant=store.get(ref(s),row.authBindingRevision);if(s.authSourceIdentity!==row.authSourceIdentity||!grant||grant.phase!=='ready')throw oauthFailure('source-changed');}leaseAuthority(l,options);return l;}catch(error){if(error?.code!=='busy')revokeLease(l);throw oauthFailure(errorCode(error));}
+  try{leaseAuthority(l,options);for(const row of l.sources){const s=await source(row);leaseAuthority(l,options);const grant=currentGrant(s,row.authBindingRevision);if(s.authSourceIdentity!==row.authSourceIdentity||!grant||grant.phase!=='ready')throw oauthFailure('source-changed');}leaseAuthority(l,options);return l;}catch(error){if(error?.code!=='busy')revokeLease(l);throw oauthFailure(errorCode(error));}
  }
  async function ensureFresh(l,row){
-  const options={insideIdleAdmission:true,allowPreparing:true};leaseAuthority(l,options);const s=await source(row);leaseAuthority(l,options);const g=store.get(ref(s),row.authBindingRevision);if(s.authSourceIdentity!==row.authSourceIdentity||!g||g.phase!=='ready')throw oauthFailure('invalid-grant');if(g.tokens.expiresAt===null||g.tokens.expiresAt>now())return;if(!g.tokens.refreshToken)throw oauthFailure('invalid-grant');if(attempt&&!['ready','failed','cancelled','needs-sign-in'].includes(attempt.status))throw oauthFailure('busy');
+  const options={insideIdleAdmission:true,allowPreparing:true};leaseAuthority(l,options);const s=await source(row);leaseAuthority(l,options);const g=currentGrant(s,row.authBindingRevision);if(s.authSourceIdentity!==row.authSourceIdentity||!g||g.phase!=='ready')throw oauthFailure('invalid-grant');if(g.tokens.expiresAt===null||g.tokens.expiresAt>now())return;if(!g.tokens.refreshToken)throw oauthFailure('invalid-grant');if(attempt&&!['ready','failed','cancelled','needs-sign-in'].includes(attempt.status))throw oauthFailure('busy');
   const checked=await source(row);leaseAuthority(l,options);if(checked.authSourceIdentity!==g.binding.authSourceIdentity)throw oauthFailure('source-changed');
   const a={id:opaque(),source:s,owner:l.owner,lease:l,status:'refreshing',controller:new AbortController(),deadline:now()+600000,bindingRevision:g.binding.bindingRevision};if(attempt)await dispose(attempt);leaseAuthority(l,options);attempt=a;reviewDigest(a);update(a);
   let intent,tokens;try{await check(a);attemptAuthority(a);intent=await store.beginRefresh(g.binding.bindingRevision,{expectedTokenGeneration:g.tokenGeneration});a.refreshTransactionId=intent.transactionId;await check(a);attemptAuthority(a);tokens=await flow.refresh({grant:intent.grant,signal:a.controller.signal});await check(a);attemptAuthority(a);}catch(error){if(intent)await store.requireReauthorization(intent.transactionId,'reauthorization-required').catch(()=>{});await dispose(a,'needs-sign-in','invalid-grant');throw oauthFailure('invalid-grant');}
@@ -133,11 +154,11 @@ export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,g
    if(!ownerEqual(requested,runtimeOwner(requested))||closed||!selection||selection.sessionId!==undefined&&(typeof selection.sessionId!=='string'||!selection.sessionId||selection.sessionId.length>200)||!Array.isArray(selection.sources)||selection.sources.length>4||selection.sources.some(s=>!s||!/^global:[A-Za-z0-9_.-]{1,100}$/.test(s.id)||!/^[a-f0-9]{64}$/.test(s.revision)||!/^[a-f0-9]{64}$/.test(s.authBindingRevision))||new Set(selection.sources.map(s=>s.id)).size!==selection.sources.length)throw oauthFailure('source-changed');
    const l={leaseId:opaque(),owner:{...requested},knownSessionId:selection.sessionId,sessionId:null,phase:'preparing',controller:new AbortController(),sources:selection.sources.map(row=>({id:row.id,revision:row.revision,authBindingRevision:row.authBindingRevision,accountGeneration:generation(row.id)})),refreshing:false},options={allowPreparing:true};
    leases.set(l.leaseId,l);
-   try{leaseAuthority(l,options);for(const row of l.sources){const s=await source(row);leaseAuthority(l,options);const g=store.get(ref(s),row.authBindingRevision);if(!g||g.phase!=='ready'||g.binding.bindingRevision!==row.authBindingRevision)throw oauthFailure('invalid-grant');row.authSourceIdentity=s.authSourceIdentity;await ensureFresh(l,row);leaseAuthority(l,options);}leaseAuthority(l,options);l.phase='ready';return{leaseId:l.leaseId};}catch(error){revokeLease(l);throw oauthFailure(errorCode(error));}
+   try{leaseAuthority(l,options);for(const row of l.sources){const s=await source(row);leaseAuthority(l,options);const g=currentGrant(s,row.authBindingRevision);if(!g||g.phase!=='ready'||g.binding.bindingRevision!==row.authBindingRevision)throw oauthFailure('invalid-grant');row.authSourceIdentity=s.authSourceIdentity;await ensureFresh(l,row);leaseAuthority(l,options);}leaseAuthority(l,options);l.phase='ready';return{leaseId:l.leaseId};}catch(error){revokeLease(l);throw oauthFailure(errorCode(error));}
   },
   async bindSession({leaseId,sessionId}){const l=await verifyLease(leaseId);leaseAuthority(l);if(typeof sessionId!=='string'||!sessionId||sessionId.length>200||/[\x00-\x1f\x7f]/.test(sessionId)||l.sessionId!==null&&l.sessionId!==sessionId||l.knownSessionId!==undefined&&l.knownSessionId!==sessionId)throw oauthFailure('source-changed');l.sessionId=sessionId;},
   async prepareTurn({owner:requested,leaseId}){const l=leases.get(leaseId);leaseAuthority(l);if(!l.sessionId||!ownerEqual(requested,l.owner))throw oauthFailure('owner-changed');if(typeof withIdleLease!=='function')throw oauthFailure('busy');l.refreshing=true;try{await withIdleLease({leaseId,owner:{...l.owner}},async()=>{await verifyLease(leaseId,true);leaseAuthority(l,{insideIdleAdmission:true});for(const row of l.sources)await ensureFresh(l,row);await verifyLease(leaseId,true);leaseAuthority(l,{insideIdleAdmission:true});});leaseAuthority(l,{insideIdleAdmission:true});}catch(error){throw oauthFailure(errorCode(error));}finally{l.refreshing=false;}},
-  async readAccessToken({leaseId,sessionId,sourceId,sourceRevision,authBindingRevision}){const l=await verifyLease(leaseId);leaseAuthority(l);const row=l.sources.find(v=>v.id===sourceId&&v.revision===sourceRevision&&v.authBindingRevision===authBindingRevision);if(!l.sessionId||l.sessionId!==sessionId||!row)throw oauthFailure('source-changed');const g=store.get({sourceId,authSourceIdentity:row.authSourceIdentity},authBindingRevision);if(!g||g.phase!=='ready'||g.tokens.expiresAt!==null&&g.tokens.expiresAt<=now())throw oauthFailure('invalid-grant');return{token:g.tokens.accessToken,expiresAt:g.tokens.expiresAt};},
+  async readAccessToken({leaseId,sessionId,sourceId,sourceRevision,authBindingRevision}){const l=await verifyLease(leaseId);leaseAuthority(l);const row=l.sources.find(v=>v.id===sourceId&&v.revision===sourceRevision&&v.authBindingRevision===authBindingRevision);if(!l.sessionId||l.sessionId!==sessionId||!row)throw oauthFailure('source-changed');const g=currentGrant({id:sourceId,authSourceIdentity:row.authSourceIdentity},authBindingRevision);if(!g||g.phase!=='ready'||g.tokens.expiresAt!==null&&g.tokens.expiresAt<=now())throw oauthFailure('invalid-grant');return{token:g.tokens.accessToken,expiresAt:g.tokens.expiresAt};},
   verifyLease:async leaseId=>{const l=await verifyLease(leaseId);leaseAuthority(l);},async closeLease(leaseId){revokeLease(leases.get(leaseId));},isBusy:()=>mutation||!!attempt&&!['ready','failed','cancelled','needs-sign-in'].includes(attempt.status)||[...leases.values()].some(v=>v.refreshing),
   async close(){closed=true;for(const l of leases.values())revokeLease(l);if(attempt)await dispose(attempt);attempt=null;},
  };

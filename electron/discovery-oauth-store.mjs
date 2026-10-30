@@ -149,7 +149,14 @@ export async function createDiscoveryOAuthStore({dataDir,protection,fsAdapter=fi
   commitGrant(value,{expectedGeneration,authorityGuard}={}){return queue(async()=>{
    expected(expectedGeneration);const g=grant(value);if(g.phase!=='ready')throw failure('invalid-grant');
    const existing=record.grants.find(v=>v.binding.grantId===g.binding.grantId);if(existing&&(existing.phase==='refresh-in-flight'||existing.binding.bindingRevision!==g.binding.bindingRevision))throw failure('invalid-grant');
-   const grants=record.grants.filter(v=>v.binding.grantId!==g.binding.grantId);grants.push(g);await save(next(grants),{authorityGuard});return clone(g);
+   const retired=[];
+   const grants=record.grants.filter(v=>v.binding.grantId!==g.binding.grantId).map(previous=>{
+    if(previous.binding.sourceId!==g.binding.sourceId||previous.binding.authSourceIdentity!==g.binding.authSourceIdentity)return previous;
+    // A successful new enrollment replaces reusable credentials atomically.
+    // Keep its old metadata for explicit Forget, never resurrect old tokens.
+    if(previous.refreshTransactionId)retired.push(previous.refreshTransactionId);
+    const value={...previous,phase:'reauthorization-required',tokens:{expiresAt:previous.tokens.expiresAt},reasonCode:'reauthorization-required'};delete value.refreshTransactionId;return value;
+   });grants.push(g);await save(next(grants),{authorityGuard});for(const id of retired)activeRefreshes.delete(id);return clone(g);
   });},
   beginRefresh(bindingRevision,{expectedTokenGeneration}={}){return queue(async()=>{
    const g=findBinding(bindingRevision);if(g.phase!=='ready'||g.tokenGeneration!==expectedTokenGeneration||!g.tokens.refreshToken)throw failure('invalid-grant');

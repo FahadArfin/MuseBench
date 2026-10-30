@@ -285,7 +285,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   }
  }
 
- async function connect({binary=state.binary,workspaceRoot,fullAccess=false,sessionId=null,workspaceTools=false,workspaceToolset,toolDiscovery}={}) {
+ async function connect({binary=state.binary,workspaceRoot,fullAccess=false,sessionId=null,workspaceTools=false,workspaceToolset,toolDiscovery,discoveryTaskId}={}) {
   const discovery=toolDiscovery===undefined?undefined:discoverySelection(toolDiscovery);
   if(discovery&&typeof discoveryMcp!=='function')throw Error('Reviewed on-demand tools are unavailable.');
   if(typeof fullAccess!=='boolean')throw Error('Full access must be explicitly selected.');
@@ -327,7 +327,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    let sessionConfig,openingCommandId;
    if(discovery){
     if(!host.initializeResult.grantedCapabilities?.includes('sessionMcp'))throw Error('Native host did not grant the sessionMcp capability.');
-    const lease=await discoveryMcp(workspace,discovery);if(token!==epoch){await lease?.close();assertCurrent(token);}discoveryLease=lease;assertCurrent(token);
+    const lease=await discoveryMcp(workspace,discovery,{owner:{taskId:discoveryTaskId,root:workspace,epoch:token},isCurrent:()=>token===epoch&&!closing,sessionId});if(token!==epoch){await lease?.close();assertCurrent(token);}discoveryLease=lease;assertCurrent(token);
     const server=discoveryLease?.config;
     if(server?.transport!=='stdio'||server.mode!=='required'||typeof server.command!=='string'||!Array.isArray(server.args)||typeof discoveryLease.verify!=='function'||typeof discoveryLease.close!=='function')throw Error('Invalid trusted on-demand MCP configuration.');
     sessionConfig={mcpServers:{musebench_discovery:structuredClone(server)}};
@@ -387,6 +387,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    catch{assertCurrent(token);return await closePermissionGate();}
    assertCurrent(token);
    if(!provesAskMe(openedSession,workspace,adapter.snapshot().sessionId))return await closePermissionGate();
+   assertCurrent(token);await discoveryLease?.bindSession?.(adapter.snapshot().sessionId);assertCurrent(token);
    for(const p of adapter.snapshot().restoration?.pendingRequests??[])restoreAwaiting.add((p.kind==='approval'?'approval:':'input:')+(p.approvalId??p.userInputId));
    if(restoreAwaiting.size)blockedReason='Restoring pending native requests.';
    for(const item of adapter.snapshot().restoredChildren??[])children.observe(item);
@@ -461,6 +462,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
      catch(error){if(token===epoch){update({modelId:null});block('Native model selection is uncertain. Reconnect and verify it before sending.',false);}throw error;}
     }update({modelId:row.modelId});
    }
+   await discoveryLease?.prepareTurn?.();assertCurrent(token);
    dispatched=true;await adapter.send({text:text.trim(),mode,images});assertCurrent(token);
    for(const [id,request] of deferredInputs){deferredInputs.delete(id);if(receivePending(request))block('Muse is waiting for your answer.',false);}
    return snapshot();
@@ -540,6 +542,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const publish=r=>update({childReceipts:[...(state.childReceipts??[]).filter(x=>x.commandId!==commandId),r].slice(-40)});let submitted=false;childCommands.add(key);
   try{
    if(!stopping&&input.action!=='readResult')await verifyWorkConfiguration(token);
+   if(startsWork){await discoveryLease?.prepareTurn?.();assertCurrent(token);}
    assertCurrent(token);const target=children.prepare(input);
    if(!stopping&&(pending||compaction.pending()||sending||!state.permissionVerified))throw Error('The child connection changed while its configuration was checked.');
    if(startsWork){childWork.set(key,{itemId:input.itemId,revision:input.revision,action:input.action,childId:input.childId,attempt:input.attempt});syncChildren();}publish(receipt);submitted=true;
@@ -598,5 +601,5 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();
   }catch(error){if(token===epoch){if(!submitted||error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
  }
- return {snapshot,inspectDiscoverySources:root=>{if(typeof discoveryMcp?.inspect!=='function')throw Error('On-demand source inspection is unavailable.');return discoveryMcp.inspect(root);},statusSnapshot:()=>projectRuntimeStatus(state),subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,inspectChild,readMcpServers,answerInput,decide,close:()=>disconnect()};
+ return {snapshot,discoveryEpoch:()=>epoch,inspectDiscoverySources:root=>{if(typeof discoveryMcp?.inspect!=='function')throw Error('On-demand source inspection is unavailable.');return discoveryMcp.inspect(root);},statusSnapshot:()=>projectRuntimeStatus(state),subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,inspectChild,readMcpServers,answerInput,decide,close:()=>disconnect()};
 }

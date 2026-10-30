@@ -9,7 +9,7 @@ const exact=(value,keys)=>object(value)&&Object.keys(value).every(key=>keys.incl
 const bytes=value=>Buffer.byteLength(JSON.stringify(value));
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const wireBytes=value=>bytes({jsonrpc:'2.0',id:'x'.repeat(128),result:{content:[{type:'text',text:JSON.stringify(value)}]}});
-export function createDiscoveryGateway({sources,helperPath,sessionId,verify}={}){
+export function createDiscoveryGateway({sources,helperPath,sessionId,verify,readAccessToken}={}){
  if(!Array.isArray(sources)||!sources.length||sources.length>4||typeof verify!=='function')throw Error('A trusted reviewed selection is required.');
  const states=new Map(sources.map(source=>[source.id,{source,client:null,transport:null,closed:false,catalog:null}]));let closed=false,busy=false;
  async function operation(fn){if(closed)throw Error('Gateway closed; reconnect and review again.');if(busy)throw Error('Gateway is busy. Arbitrary-effect batching is unsupported.');busy=true;try{await verify();return await fn();}finally{busy=false;}}
@@ -17,7 +17,7 @@ export function createDiscoveryGateway({sources,helperPath,sessionId,verify}={})
   if(state.closed)throw Error('Source closed; reconnect and review again.');
   if(state.source.transport==='streamable-http'){
    if(state.client?.closed){state.closed=true;throw Error('Remote source closed; reconnect and review again.');}
-   if(!state.client){state.client=createRemoteDiscoveryClient(state.source);state.transport=state.client;try{await state.client.connect({signal});}catch(error){state.closed=true;await state.client.close();throw error;}}return;
+   if(!state.client){state.client=createRemoteDiscoveryClient(state.source,{...(state.source.authBindingRevision?{readAccessToken:()=>{if(typeof readAccessToken!=='function')throw Error('Signed-in source is unavailable.');return readAccessToken(state.source);}}:{})});state.transport=state.client;try{await state.client.connect({signal});}catch(error){state.closed=true;await state.client.close();throw error;}}return;
   }
   if(!state.client){const transport=new DiscoveryTransport(state.source,{helperPath,sessionId}),client=new Client({name:'musebench-discovery',version:'1.0.0'},{capabilities:{},jsonSchemaValidator:{getValidator(){throw Error('SDK schema compilation is not permitted for discovery sources.');}}});state.client=client;state.transport=transport;
    transport.onclose=()=>{state.closed=true;};

@@ -15,6 +15,7 @@ export function createCodeRuntime({execFactory,mspFactory,...options}={}){
   if(selected!==kind){unsubscribe?.();runtime=factories[selected]();kind=selected;subscribe();}await runtime.connect(input);emit();return snapshot();
  },async disconnect(){await runtime.disconnect();emit();return snapshot();},async close(){await runtime.disconnect();unsubscribe?.();listeners.clear();}};
  api.inspectDiscoverySources=root=>{if(typeof options.discoveryMcp?.inspect!=='function')throw Error('On-demand source inspection is unavailable.');return options.discoveryMcp.inspect(root);};
+ api.discoveryEpoch=()=>runtime.discoveryEpoch?.()??0;
  for(const name of ['send','steer','answerInput','decide','refreshModels','compact','childControl','inspectChild','readMcpServers'])api[name]=async(...args)=>{if(typeof runtime[name]!=='function')throw Error('This control is unavailable on the current connection.');return runtime[name](...args);};
  return api;
 }

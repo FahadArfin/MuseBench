@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {prepareNativeSession,restoreNativeSession,settleNativeSession} from '../src/shared/native-session.mjs';
+test('OAuth enrollment identity survives restart; unknown marker keeps native ID and requires recovery',()=>{
+ const selection={sources:[{id:'global:fixture',revision:'a'.repeat(64),authBindingRevision:'b'.repeat(64)}]},value={id:'actual-native-id',root:'C:/project',transport:'msp',seeded:true,status:'ready',toolDiscovery:selection};assert.deepEqual(restoreNativeSession(value).toolDiscovery,selection);assert.throws(()=>prepareNativeSession(value,value.root,{transport:'msp',nativeSessionId:value.id,toolDiscovery:{sources:[{...selection.sources[0],authBindingRevision:'c'.repeat(64)}]}}),/saved|review/i);const unknown=restoreNativeSession({...value,toolDiscovery:{sources:[{...selection.sources[0],authBindingRevision:'unsupported'}]}});assert.equal(unknown.id,value.id);assert.equal(unknown.status,'needs-recovery');assert.equal(unknown.unsupportedToolDiscovery,true);
+});
 test('native session migration seeds history once and never crosses roots or interrupted runs',()=>{
  const first=prepareNativeSession(null,'C:\\project');assert.equal(first.history,true);
  const ready=settleNativeSession(first.session,{status:'completed',cleanup:'confirmed',nativeSessionId:first.session.id},true);

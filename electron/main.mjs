@@ -1,4 +1,10 @@
 import {createDiscoveryMcpConfig} from './discovery-mcp-config.mjs';
+import {createDiscoveryOAuthStore} from './discovery-oauth-store.mjs';
+import {createDiscoveryOAuthFlow} from './discovery-oauth-flow.mjs';
+import {createDiscoveryOAuthCallback} from './discovery-oauth-callback.mjs';
+import {createDiscoveryOAuth} from './discovery-oauth.mjs';
+import {createRemoteNetwork} from '../src/runtime/discovery-remote-network.mjs';
+import {validateDiscoveryAuthCommand} from '../src/shared/discovery-auth.mjs';
 import {createBackgroundEngine} from './background-engine.mjs';
 import {createNativeControlRouter} from './native-control-router.mjs';
 import {createBillingReader} from './billing-reader.mjs';
@@ -67,7 +73,10 @@ else {
     const dataDir = app.getPath('userData');
     const extensionReview=createExtensionReview({dataDir,profile:userProfile()});
     const workspaceMcp=createWorkspaceMcpConfig({appRoot:root});
-    const discoveryMcp=createDiscoveryMcpConfig({appRoot:root,helperPath,extensionReview});
+    let discoveryOAuth;
+    const discoveryMcp=createDiscoveryMcpConfig({appRoot:root,helperPath,extensionReview,oauth:()=>discoveryOAuth});
+    const discoveryStore=await createDiscoveryOAuthStore({dataDir,protection:{available:async()=>safeStorage.isEncryptionAvailable()&&!['basic_text','plaintext'].includes(safeStorage.getSelectedStorageBackend?.()),encrypt:text=>safeStorage.encryptStringAsync(text),decrypt:bytes=>safeStorage.decryptStringAsync(bytes)}});
+    discoveryOAuth=createDiscoveryOAuth({store:discoveryStore,flow:createDiscoveryOAuthFlow({networkFactory:({url,limits})=>createRemoteNetwork({url},{limits})}),callbackFactory:createDiscoveryOAuthCallback,resolveSource:discoveryMcp.resolveAuthSource,getSourceSnapshot:discoveryMcp.getAuthSourceSnapshot,ownerSnapshot:()=>controller?.discoveryOwnerSnapshot(),runtimeOwnerSnapshot:discoveryMcp.runtimeOwnerSnapshot,stopSourceLeases:id=>controller?.discoverySourceBusy(id)?false:discoveryMcp.stopSourceLeases(id),withIdleLease:discoveryMcp.withIdleLease,openBrowser:url=>shell.openExternal(url),onSafeUpdate:event=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:discovery-auth-update',event);}});
     codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>!!ui?.onboarding?.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
     const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,discoveryMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp,discoveryMcp});
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
@@ -75,7 +84,7 @@ else {
     // New working copies have their own location; saved originals stay put.
     const projectsDir = projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride
       : process.platform === 'win32' ? path.join(path.parse(dataDir).root,'MuseBenchWorkspaces',createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0,12)) : undefined;
-    controller = await createController({ dataDir, projectsDir, newProjectsDir: projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride : path.join(app.getPath('documents'),'MuseBench'), templateDir: path.join(root,'templates','tea-store'), runtimeFactory });
+    controller = await createController({ dataDir, projectsDir, newProjectsDir: projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride : path.join(app.getPath('documents'),'MuseBench'), templateDir: path.join(root,'templates','tea-store'), runtimeFactory,discoveryOAuth:()=>discoveryOAuth });
     // Windows can redirect the app's known Roaming folder under its package
     // identity. Anchor Work's strict path checks to that trusted physical root.
     const workDataDir=await workDataDirectory(dataDir);
@@ -103,9 +112,9 @@ else {
     dictation = createDictation({helperPath: app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchSpeech.exe') : path.join(root,'native','bin','MuseBenchSpeech.exe'), onState: value => { if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:dictation-update',value); }});
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{if(!window||window.isDestroyed())throw Error('Open MuseBench to choose a folder.');const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
     mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||!!ui?.onboarding?.isBusy()})});
-    ownedWorkBusy=()=>nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||ui?.onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
+    ownedWorkBusy=()=>discoveryOAuth.isBusy()||nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||ui?.onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
     const updateBusy=()=>pendingIpc>0||ownedWorkBusy();
-    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',ui?.onboarding?.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
+    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['tool-signin','Tool sign-in',discoveryOAuth.isBusy()],['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',ui?.onboarding?.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
     let firstWindow=true,blockedDialog=false,pendingWindowClose=false;
     const showBlocked=async message=>{if(blockedDialog||closing)return;blockedDialog=true;try{await openWindow();await dialog.showMessageBox(window,{type:'info',title:'MuseBench is still working',message,detail:updateBlockers().map(row=>row.label+': '+row.detail).join('\n'),buttons:['Keep running']});}finally{blockedDialog=false;}};
     openWindow=()=>{
@@ -128,7 +137,7 @@ else {
     const nativeRouter=createNativeControlRouter({app,controller,getView:()=>ui?.nativeService,getBackground:()=>background.snapshot(),isBlocked:()=>closing||updateInstalling||customize.isBusy()||codeBilling.isBusy()||!!ui?.onboarding?.isBusy()});
     nativeControl=await createNativeControlHost({dataDir,service:nativeRouter,connectionConfig:()=>prepareNativeMcpConfig({dataDir,executable:process.execPath,appRoot:root})});
     closeOwned=async()=>{
-      closing=true;ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();ui?.onboarding?.close();
+      closing=true;ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();ui?.onboarding?.close();await discoveryOAuth.close();await discoveryStore.close();
       const results=await Promise.allSettled([nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close(),background.close()]);
       for(const notification of notifications)notification.close();notifications.clear();
       await sessionDurability.close();if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
@@ -239,6 +248,7 @@ else {
     handler('musebench:captured-output',input=>controller.readCapturedOutput(input));
     handler('musebench:chat-history',input=>controller.readChatHistory(input));
     handler('musebench:discovery-sources',input=>controller.inspectDiscoverySources(input));
+    handler('musebench:discovery-auth',input=>controller.discoveryAuth(validateDiscoveryAuthCommand(input)));
     handler('musebench:session-mcp',input=>controller.readMcpServers(input));
     handler('musebench:chat-search',input=>controller.searchChats(input));
     handler('musebench:conversation-import-pick',async()=>{

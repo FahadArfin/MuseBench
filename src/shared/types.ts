@@ -135,6 +135,8 @@ export interface McpInventory {sessionId:string;readAt:string;servers:{name:stri
 export interface RuntimeState {connectionEpoch?:number;}
 export interface MuseBenchBridge {
  inspectDiscoverySources(input:{taskId:string}):Promise<import('./tool-discovery.mjs').DiscoveryInspection>;
+ discoveryAuth(input:import('./discovery-auth.mjs').DiscoveryAuthCommand):Promise<import('./discovery-auth.mjs').SafeAuthState>;
+ onDiscoveryAuthUpdate(callback:(event:{taskId:string;sourceId:string})=>void):()=>void;
  readMcpServers(input:{taskId:string;sessionId:string}):Promise<McpInventory>;
  inspectCodeContext(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[]}):Promise<CodeContextResult>;
  readChatHistory(input:{taskId:string;before?:string;messageId?:string;offset?:number;limit?:number}):Promise<HistoryPage>;

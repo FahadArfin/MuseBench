@@ -7,6 +7,8 @@ import {readMcpSource,mcpSettingsPath,settingsMcp,canonicalMcpEntry,mcpTransport
 import {discoverySelection} from '../shared/tool-discovery.mjs';
 import {resolveDiscoveryExecutable,discoveryPluginNames} from './discovery-resolution.mjs';
 import {remoteConfiguration} from './discovery-remote-network.mjs';
+import {authSourceIdentity} from './discovery-auth-identity.mjs';
+import {userProfile} from '../shared/platform.mjs';
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const text=(value,max=16384)=>typeof value==='string'&&value.length<=max&&!/[\x00-\x1f\x7f]/.test(value);
 // These values would affect the app-owned Node wrapper or the Windows .NET Job
@@ -35,6 +37,7 @@ function expandRemoteTemplate(template,environment,names){
  }return output;
 }
 export async function inspectDiscoverySources({workspaceRoot,environment=process.env,extensionReview,platform=process.platform}={}){
+ environment={...environment};
  const root=await canonical(workspaceRoot,'directory'),file=await readMcpSource(mcpSettingsPath(environment,platform));
  const directoryIdentity=async directory=>{const value=await lstat(directory,{bigint:true});return[String(value.dev),String(value.ino),String(value.birthtimeNs)];},rootIdentity=await directoryIdentity(root);
  const servers=file?settingsMcp(file.doc).servers:{};if(Object.keys(servers).length>250)throw Error('Too many MCP definitions to inspect.');
@@ -44,9 +47,11 @@ export async function inspectDiscoverySources({workspaceRoot,environment=process
  }
  const plugins=await extensionReview?.pluginState?.(),pluginNames=await discoveryPluginNames(plugins,extensionReview);
  const base={};for(const name of nativeEnvironment){const matches=Object.keys(environment).filter(key=>platform==='win32'?key.toUpperCase()===name.toUpperCase():key===name);if(matches.length>1)throw Error('Ambiguous environment names cannot be reviewed.');if(matches.length&&typeof environment[matches[0]]==='string')base[name]=environment[matches[0]];}
- const rows=[],definitions=new Map();
+ const rows=[],definitions=new Map(),globalReviews=[],referencedEnvironment=new Set();
  for(const [name,raw] of Object.entries(servers)){
   if(!/^[A-Za-z0-9_.-]{1,100}$/.test(name))continue;
+  let globallyReviewed=false;try{globallyReviewed=await extensionReview?.allowMcp?.(name,raw)===true;}catch{}globalReviews.push([name,globallyReviewed]);
+  for(const template of [raw?.url,...Object.values(object(raw?.headers)?raw.headers:{})])if(typeof template==='string')for(const match of template.matchAll(/\$\{([A-Za-z_][A-Za-z0-9_]*)/g))referencedEnvironment.add(match[1]);
   let entry={},definition,reason='';const remoteNames=new Set();
   try{
    entry=canonicalMcpEntry(raw);
@@ -56,7 +61,7 @@ export async function inspectDiscoverySources({workspaceRoot,environment=process
    if(pluginNames.unknown)throw Error('A plugin MCP declaration has unknown source names and cannot be inspected safely. Keep this source on its direct path.');
    const transport=mcpTransport(entry);if(!['stdio','streamable-http'].includes(transport))throw Error('Unsupported source transport.');
    if(entry.enabled!==false)throw Error('Direct sources must be explicitly disabled in Customize before on-demand use.');
-   if(!await extensionReview?.allowMcp?.(name,raw))throw Error('Review this exact definition in Customize first.');
+   if(!globallyReviewed)throw Error('Review this exact definition in Customize first.');
    const common=['type','enabled','required','enabled_tools','disabled_tools','startup_timeout_sec','tool_timeout_sec','framing'],allowed=[...common,...(transport==='stdio'?['command','args','cwd','env']:['url','headers'])];
    if(Object.keys(entry).some(key=>!allowed.includes(key))||entry.framing!==undefined&&!(transport==='stdio'?['auto','line_delimited_json']:['auto']).includes(entry.framing))throw Error('Unsupported or contradictory source transport fields. Only JSONL stdio and remote HTTP are supported.');
    if(entry.required!==undefined&&typeof entry.required!=='boolean')throw Error('Invalid source requirement setting.');
@@ -72,6 +77,11 @@ export async function inspectDiscoverySources({workspaceRoot,environment=process
     if(!text(entry.url,16384)||entry.headers!==undefined&&(!object(entry.headers)||Object.keys(entry.headers).length>32))throw Error('Invalid remote source configuration.');
     const headers=Object.fromEntries(Object.entries(entry.headers??{}).map(([key,value])=>{if(!text(value))throw Error('Invalid remote header value.');return[key,expandRemoteTemplate(value,environment,remoteNames)];}));
     definition={...commonDefinition,...remoteConfiguration({...entry,url:expandRemoteTemplate(entry.url,environment,remoteNames),headers})};
+    if(!Object.keys(headers).some(key=>key.toLowerCase()==='authorization')){
+     const settingsPath=await realpath(file.path),profilePath=await realpath(userProfile(environment,platform));
+     const authPolicy={version:1,mode:'public-native-bearer'};
+     definition={...definition,global:true,reviewed:true,disabled:true,urlTemplate:entry.url,environmentNames:[...remoteNames].sort(),authSourceIdentity:authSourceIdentity({sourceId:definition.id,transport,globalSettingsPath:settingsPath,nativeProfilePath:profilePath,urlTemplate:entry.url,resolvedUrl:definition.url,headerTemplates:entry.headers??{},resolvedHeaders:headers,authPolicy})};
+    }
    }
    else{const cwd=await canonical(entry.cwd??root,'directory'),executable=await resolveDiscoveryExecutable(entry.command,{cwd,env,platform});definition={...commonDefinition,...executable,args:entry.args??[],cwd,cwdIdentity:await directoryIdentity(cwd),env};}
    if(Buffer.byteLength(JSON.stringify(definition))>65536)throw Error('Source execution settings exceed the review limit.');
@@ -79,6 +89,7 @@ export async function inspectDiscoverySources({workspaceRoot,environment=process
   const revision=configurationDigest({root,rootIdentity,name,raw,definition:definition??null,overlays,plugins:plugins?.revision??null,pluginFacts:pluginNames.facts,reason});
   const row={id:'global:'+name,name,revision,transport:mcpTransport(entry)==='stdio'?'stdio':'streamable-http',headerKeys:object(entry.headers)?Object.keys(entry.headers).filter(key=>text(key,100)).sort():[],address:definition?.url??definition?.command??(text(entry.command,4096)?entry.command:mcpTransport(entry)==='stdio'?'Unavailable executable':'Unavailable remote endpoint'),cwd:text(entry.cwd,4096)?entry.cwd:root,environmentKeys:object(entry.env)?Object.keys(entry.env).filter(key=>text(key,200)).sort():[],eligible:!reason,reason:reason||'Reviewed disabled source. Startup ≤30s; calls ≤300s; stops with this connection.'};
   if(row.transport==='streamable-http'){
+   row.authEligible=!!definition?.authSourceIdentity;
    row.environmentKeys=[...remoteNames].sort();
    if(definition&&/\$\$|\$\{/.test(entry.url)){row.address=entry.url;row.resolvedOrigin=new URL(definition.url).origin;}
   }
@@ -86,7 +97,10 @@ export async function inspectDiscoverySources({workspaceRoot,environment=process
  }
  for(const fact of pluginNames.facts.slice(0,250))rows.push({id:'plugin:'+fact.pluginId+':'+(fact.name??'unknown'),name:fact.pluginId+' / '+(fact.name??'Unknown MCP declaration'),revision:configurationDigest({plugins:plugins?.revision??null,fact}),address:'Installed plugin source',cwd:root,environmentKeys:[],eligible:false,reason:fact.unknown?'Plugin source names could not be safely inspected.':'Plugin source execution remains on its existing direct native path.'});
  if(plugins&&(await extensionReview.pluginState()).revision!==plugins.revision)throw Error('Plugin source configuration changed during inspection. Refresh and review again.');
- return{root,rows,definitions};
+ const effectiveEnvironment=[...referencedEnvironment].sort().map(name=>[name,Object.keys(environment).filter(key=>platform==='win32'?key.toUpperCase()===name.toUpperCase():key===name).sort().map(key=>[key,environment[key]])]);
+ const provenance=file?{settingsPath:await realpath(file.path),settingsRevision:file.revision,profilePath:await realpath(userProfile(environment,platform))}:{settingsPath:mcpSettingsPath(environment,platform),profilePath:userProfile(environment,platform)};
+ const authorityRevision=configurationDigest({provenance,effectiveEnvironment,globalReviews,plugins:plugins?.revision??null,pluginFacts:pluginNames.facts});
+ return{root,rows,definitions,authorityRevision};
 }
 export async function resolveDiscoverySelection({selection,...options}){
  const selected=discoverySelection(selection),snapshot=await inspectDiscoverySources(options);

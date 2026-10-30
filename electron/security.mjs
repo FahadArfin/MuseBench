@@ -1,4 +1,5 @@
 import {discoverySelection} from '../src/shared/tool-discovery.mjs';
+export {validateDiscoveryAuthCommand} from '../src/shared/discovery-auth.mjs';
 import {validateScheduleAction} from '../src/shared/code-schedules.mjs';
 import {normalizeWorkspaceToolset} from '../src/shared/workspace-analysis.mjs';
 import {validateInputAction} from '../src/shared/user-input.mjs';

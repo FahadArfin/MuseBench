@@ -1,0 +1,36 @@
+import {useEffect,useRef,useState} from 'react';
+import type {DiscoverySource} from '../shared/tool-discovery.mjs';
+import type {DiscoveryAuthCommand,SafeAuthState} from '../shared/discovery-auth.mjs';
+
+const labels:Record<string,string>={'not-configured':'Sign-in optional','ready':'Signed in on this device','waiting-browser':'Waiting for your browser','issuer-review':'Review sign-in provider','review-required':'Review sign-in details','registration-required':'Public client setup required','save-recovery':'Sign-in received · saving needs attention','needs-sign-in':'Sign in again','storage-unavailable':'Protected sign-in storage unavailable','forget-review':'Saved sign-in no longer matches this source','cancelled':'Sign-in cancelled','failed':'Sign-in could not be completed'};
+export function DiscoveryAuthControls({taskId,source,onChanged,disabled}:{taskId:string;source:DiscoverySource;onChanged:(state:SafeAuthState)=>void;disabled:boolean}){
+ const [state,setState]=useState<SafeAuthState|undefined>(source.auth),[busy,setBusy]=useState(false),[reviewed,setReviewed]=useState(false),[setup,setSetup]=useState(false),[clientId,setClientId]=useState(''),[port,setPort]=useState(''),[error,setError]=useState('');
+ const generation=useRef(0),changed=useRef(onChanged);changed.current=onChanged;
+ const sourceCommand={taskId,sourceId:source.id,sourceRevision:source.revision};
+ const apply=(value:SafeAuthState)=>{setReviewed(false);setState(value);changed.current(value);};
+ useEffect(()=>{generation.current++;setState(source.auth);setReviewed(false);setSetup(false);setError('');return()=>{generation.current++;};},[taskId,source.id,source.revision]);
+ useEffect(()=>window.musebench?.onDiscoveryAuthUpdate(event=>{if(event.taskId!==taskId||event.sourceId!==source.id)return;const token=generation.current;void window.musebench!.discoveryAuth({...sourceCommand,type:'inspect'}).then(value=>{if(token===generation.current)apply(value);}).catch(()=>{});}),[taskId,source.id,source.revision]);
+ const command=async(input:DiscoveryAuthCommand)=>{const token=generation.current;setBusy(true);setError('');try{if(!window.musebench)throw Error('Sign-in controls are unavailable.');const value=await window.musebench.discoveryAuth(input);if(token===generation.current)apply(value);}catch{if(token===generation.current)setError('Sign-in state changed or is unavailable. Check status or refresh sources.');}finally{if(token===generation.current)setBusy(false);}};
+ const attempt=state?.attemptId?{taskId,attemptId:state.attemptId}:null;
+ const review=attempt&&state?.reviewRevision?{...attempt,reviewRevision:state.reviewRevision,reviewed:true as const}:null;
+ if(!source.authEligible)return null;
+ return <section className="discovery-auth" aria-label={`Sign-in for ${source.name}`}><div role="status"><strong>{labels[state?.status??'not-configured']??state?.status.replaceAll('-',' ')}</strong></div>
+ {state?.reason&&<p>{state.reason}</p>}
+ {error&&<p role="alert">{error}</p>}
+ <fieldset disabled={disabled||busy}><legend className="sr-only">Source sign-in actions</legend>
+ {(!state||state.canPrepare)&&<><label><input type="checkbox" checked={reviewed} onChange={e=>setReviewed(e.target.checked)}/>I allow sign-in discovery at {state?.origin??source.resolvedOrigin??source.address}.</label><button type="button" disabled={!reviewed} onClick={()=>void command({...sourceCommand,type:'prepare',reviewedEndpoint:true})}>Prepare sign-in</button></>}
+ {state&&['issuer-review','review-required','registration-required','save-recovery','forget-review','ready'].includes(state.status)&&<>
+ <dl>{[['Source template',state.urlTemplate],['Destination',state.origin],['Issuer',state.issuerOrigin],['Resource',state.resourceOrigin],['Registration',state.registrationOrigin],['Token endpoint',state.tokenOrigin],['Environment names',state.environmentNames?.join(', ')||'None'],['Scopes',state.scopes?.join(', ')||'None'],['Public client method',state.registrationMethod],['Callback',state.callbackPort?`127.0.0.1:${state.callbackPort}/oauth/mcp/callback`:undefined]].filter(([,value])=>value).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+ {(state.canBegin||state.canSelectIssuer||state.canReviewDestination||state.canSavePublicClient||state.canRetrySave||state.canForget)&&<label><input type="checkbox" aria-label={`Review sign-in for ${source.name}`} checked={reviewed} onChange={e=>setReviewed(e.target.checked)}/>I reviewed these sign-in details{state.registrationMethod==='dcr'?'; Begin registers a public client with this provider':''}.</label>}
+ {review&&state.canReviewDestination&&state.destinationChoices?.map(choice=><button type="button" key={choice.id} disabled={!reviewed} onClick={()=>void command({...review,type:'reviewDestination',destinationChoiceId:choice.id})}>Review metadata at {choice.origin}</button>)}
+ {review&&state.canSelectIssuer&&state.issuerChoices?.map(choice=><button type="button" key={choice.id} disabled={!reviewed} onClick={()=>void command({...review,type:'selectIssuer',issuerChoiceId:choice.id})}>Review provider {choice.origin}</button>)}
+ {review&&state.canBegin&&<button type="button" disabled={!reviewed} onClick={()=>void command({...review,type:'begin'})}>Begin sign-in</button>}
+ {review&&state.canRetrySave&&<button type="button" disabled={!reviewed} onClick={()=>void command({...review,type:'retrySave'})}>Retry saving</button>}
+ {state.canSavePublicClient&&<button type="button" onClick={()=>setSetup(!setup)}>Set up public client</button>}
+ {setup&&review&&state.canSavePublicClient&&<div className="discovery-auth-setup"><label>Public client ID<input aria-label="Public client ID" value={clientId} maxLength={16384} onChange={e=>setClientId(e.target.value)}/></label><label>Callback port<input aria-label="Callback port" type="number" min={1024} max={65535} value={port} onChange={e=>setPort(e.target.value)}/></label><button type="button" disabled={!reviewed||!clientId||!Number.isInteger(Number(port))||Number(port)<1024||Number(port)>65535} onClick={()=>void command({...review,type:'savePublicClient',clientId,callbackPort:Number(port)})}>Save public client</button><small>Use a provider-approved native public client. Never enter a client secret.</small></div>}
+ {state.canForget&&state.bindingRevision&&state.reviewRevision&&<><p>Forget deletes this app’s local sign-in. It does not sign you out of the provider, CLI or browser.</p><button type="button" disabled={!reviewed} onClick={()=>void command({...sourceCommand,type:'forget',reviewRevision:state.reviewRevision!,reviewed:true,bindingRevision:state.bindingRevision!})}>Forget local sign-in</button></>}
+ </>}
+ {state?.status==='ready'&&<p>Review and select this source again before connecting. Sign-in starts no session or request.</p>}
+ <div className="discovery-auth-actions"><button type="button" onClick={()=>void command({...sourceCommand,type:'inspect'})}>Check status</button>{attempt&&state?.canCancel&&<button type="button" onClick={()=>void command({...attempt,type:'cancel'})}>Cancel sign-in</button>}</div>
+ </fieldset></section>;
+}

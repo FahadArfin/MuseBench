@@ -29,6 +29,13 @@ async function settled(controller, predicate) {
   for(let i=0;i<160;i++) { const s=controller.getState(); if(predicate(s)) return s; await new Promise(r=>setTimeout(r,50)); }
   assert.fail('controller did not settle');
 }
+test('OAuth controller derives selected owner and navigation reconciles an interactive attempt without disconnecting background owners',async t=>{
+ const f=await fixture(t);await f.controller.close();const calls=[],runtimes=[];
+ const auth={command:async input=>{calls.push({kind:'command',input});return{sourceId:'global:fixture',sourceRevision:'a'.repeat(64),status:'waiting-browser',credentialAvailable:false};},inspectSource:async ref=>{calls.push({kind:'reconcile',ref});}};
+ const runtimeFactory=()=>{let epoch=0;const value={snapshot:()=>({status:'unavailable',binary:null,permissionVerified:false}),subscribe:()=>()=>{},discoveryEpoch:()=>epoch,connect:async()=>{epoch++;},disconnect:async()=>{epoch++;calls.push({kind:'disconnect'});}};runtimes.push(value);return value;};
+ const c=await createController({...f.options,runtimeFactory,discoveryOAuth:()=>auth});f.controllers.push(c);const first=c.getState().task.id,source={taskId:first,sourceId:'global:fixture',sourceRevision:'a'.repeat(64)};
+ assert.deepEqual(c.discoveryOwnerSnapshot(),{taskId:first,root:f.root,epoch:0});await c.discoveryAuth({...source,type:'prepare',reviewedEndpoint:true});assert.equal(calls.filter(row=>row.kind==='command').length,1);await c.dispatch({type:'connectMuse',transport:'msp'});assert.equal(c.discoveryOwnerSnapshot().epoch,1);assert.equal(calls.filter(row=>row.kind==='reconcile').length,1);await c.dispatch({type:'newTask',mode:'manual',request:'Second chat'});assert.notEqual(c.getState().task.id,first);assert.equal(calls.filter(row=>row.kind==='reconcile').length,2);assert.equal(calls.filter(row=>row.kind==='disconnect').length,0);await assert.rejects(c.discoveryAuth({...source,type:'inspect'}),/selected chat/);assert.equal(runtimes.length,2);
+});
 
 test('snapshots include added and deleted files and invalidate evidence on refresh', async t=>{
   const {controller:c,root}=await fixture(t);
