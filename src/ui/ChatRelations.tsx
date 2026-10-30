@@ -1,6 +1,7 @@
 import {ArrowUpLeft,GitBranch,MoreHorizontal} from 'lucide-react';
+import {useMemo} from 'react';
 import type {Action,Task,TaskSummary} from '../shared/types';
-import {relationParent} from '../shared/chat-relations.mjs';
+import {createChatRelationIndex} from '../shared/chat-relations.mjs';
 import {useChatActions} from './useChatActions';
 import './chat-sidebar.css';
 
@@ -10,7 +11,8 @@ export function CurrentChatOptions({task,tasks,busy,active,act}:{task:Task;tasks
 }
 
 export function ChatRelation({task,tasks,busy,onParent}:{task:Task;tasks:TaskSummary[];busy:boolean;onParent:(id:string)=>void}){
- const parent=relationParent(task,tasks),relation=task.chatRelation;
+ const index=useMemo(()=>createChatRelationIndex(tasks),[tasks]),relation=task.chatRelation;
+ const main=index.main(task),parent=relation?.kind==='side'?(main.id===task.id?null:main):index.parent(task);
  const unresolved=(task.forkReceipts??[]).filter(receipt=>['unknown','submitting','verifying','releasing'].includes(receipt.status));
  if(!relation&&!unresolved.length)return null;
  return <div className="chat-relation" aria-label="Chat relationship">

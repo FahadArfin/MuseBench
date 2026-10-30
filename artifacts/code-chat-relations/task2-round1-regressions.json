@@ -1,0 +1,37 @@
+[
+  {
+    "command": "node scripts/code-render-responsiveness-smoke.mjs",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-round1-regression-1.txt"
+  },
+  {
+    "command": "node scripts/dictation-subscription-smoke.mjs",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-round1-regression-2.txt"
+  },
+  {
+    "command": "node scripts/timeline-performance-regression.mjs",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-round1-regression-3.txt"
+  },
+  {
+    "command": "node scripts/chat-navigation-smoke.mjs",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-round1-regression-4.txt"
+  },
+  {
+    "command": "node scripts/chat-navigation-smoke.mjs --desktop",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-round1-regression-5.txt"
+  },
+  {
+    "command": "node scripts/sidebar-drag-smoke.mjs",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-round1-regression-6.txt"
+  },
+  {
+    "command": "node scripts/response-actions-smoke.mjs",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-round1-regression-7.txt"
+  }
+]

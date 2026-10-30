@@ -19,3 +19,25 @@ export function relationParent(task,tasks){
 }
 /** Sides created from sides are siblings; a broken ancestry promotes the source. */
 export function mainChat(task,tasks){let current=task;const seen=new Set();while(current.chatRelation?.kind==='side'&&!seen.has(current.id)){seen.add(current.id);const parent=relationParent(current,tasks);if(!parent)break;current=parent;}return current;}
+
+/** One snapshot-owned graph: each side edge is visited once, including cycles. */
+export function createChatRelationIndex(tasks){
+ const byId=new Map(tasks.map(task=>{const id=task.id;return[id,{task,id,projectId:task.projectId,archived:task.archived,relation:restoreChatRelation(task.chatRelation,id)}];})),resolved=new Map();
+ const direct=node=>{const parent=node.relation&&byId.get(node.relation.parentTaskId);return parent&&!parent.archived&&parent.projectId===node.projectId&&parent.id!==node.id?parent:null;};
+ for(const node of byId.values()){
+  if(resolved.has(node.id))continue;
+  const path=[],seen=new Set();let current=node,main=null;
+  while(current){
+   if(resolved.has(current.id)){main=resolved.get(current.id);break;}
+   if(seen.has(current.id))break;
+   seen.add(current.id);path.push(current);
+   if(current.relation?.kind!=='side'){main=current;break;}
+   current=direct(current);
+  }
+  for(const item of path)resolved.set(item.id,main);
+ }
+ return{
+  main(task){return resolved.get(task.id)?.task??task;},
+  parent(task){const node=byId.get(task.id);if(!node?.relation||node.relation.kind==='side'&&!resolved.get(node.id))return null;return direct(node)?.task??null;},
+ };
+}

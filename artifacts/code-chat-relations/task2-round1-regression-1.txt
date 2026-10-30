@@ -1,0 +1,25 @@
+{
+  "checks": {
+    "collapsedDetailsAbsent": true,
+    "expandedOutputAccessible": true,
+    "closingDetailsInert": true,
+    "closedDetailsReleased": true,
+    "codeCopyCorrect": true,
+    "historyNodeAfterDraft": true,
+    "codeCopyStateAfterDraft": true,
+    "historyNodeAfterStream": true,
+    "streamedMarkdownCorrect": true,
+    "streamedResponseCopyCorrect": true,
+    "draftRetained": true,
+    "feedbackSurvivesSnapshot": true,
+    "branchUsesCurrentMessage": true,
+    "otherChatFeedbackIsolated": true,
+    "otherChatDetailsCollapsed": true,
+    "otherChatResponseCopyCorrect": true,
+    "otherChatBranchCorrect": true
+  },
+  "timings": {
+    "draftMs": 54.8999999910593
+  },
+  "errors": []
+}

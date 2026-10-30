@@ -1,0 +1,6 @@
+PASS Typing ten characters does not revisit any of the 1,000 unchanged sidebar titles
+PASS A skipped sidebar render still dispatches through the latest committed callback
+PASS Equivalent cloned data preserves the open menu, focus and row anchor
+PASS Real title and busy-state changes remain visible and dismiss unsafe menu actions
+PASS Moving the selected chat expands its current project and keyboard reorder keeps exact ownership
+Report: C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\chat-navigation\after-preview-aCOAT0

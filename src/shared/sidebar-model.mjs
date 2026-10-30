@@ -1,9 +1,9 @@
 import {sidebarKey,sidebarSort} from './sidebar-order.mjs';
-import {mainChat} from './chat-relations.mjs';
+import {createChatRelationIndex} from './chat-relations.mjs';
 /** Nest only usable side links. Organization order and independent collections stay flat. */
-export function projectChatRelations(rows,tasks){
+export function projectChatRelations(rows,tasks,index=createChatRelationIndex(tasks)){
  const roots=[],children=new Map(),visible=new Set(rows.map(row=>row.id));
- for(const row of rows){const main=row.chatRelation?.kind==='side'?mainChat(row,tasks):row;
+ for(const row of rows){const main=index.main(row);
   if(main.id===row.id||!visible.has(main.id))roots.push(row);
   else{if(!children.has(main.id))children.set(main.id,[]);children.get(main.id).push(row);}
  }

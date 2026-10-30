@@ -1,0 +1,11 @@
+(node:44468) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS Desktop clipboard has exact Markdown and safe rich headings, lists, code and links; timestamp is preserved
+PASS Trusted clipboard IPC rejects HTML objects and oversized source without overwriting the clipboard
+PASS A rich host write failure falls back to a completed plain-text write through the actual Copy action
+PASS Feedback is selectable, persists locally, and Escape closes its menu
+PASS Installed local speech engine starts successfully (muted validation)
+PASS Read aloud starts and stops using the speech interface (test voice)
+PASS Branch creates a new chat through the chosen response with no repeated response draft
+PASS Output actions and the direct branch button fit a narrow window
+C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\response-actions\source-zTN1Sz

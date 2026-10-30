@@ -1,0 +1,29 @@
+(node:47992) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS Current menu creates a fresh linked side without sending or inheriting parent state; parent draft survives
+PASS Backlink and nesting navigate independent drafts; accessible disclosure collapses and reopens
+PASS A side chat creates a sibling under the same main chat
+PASS /side text creates an unsent fresh linked draft
+PASS /branch forks saved conversation context into an independent top-level chat
+PASS Fork from here binds the rendered source and copies only the chosen prefix
+PASS A stale sidebar menu still creates against its exact source after selection switches
+PASS Creating from project overview opens the new chat
+PASS Narrow reduced-motion controls fit; keyboard menu navigation and Escape restore focus
+PASS Archiving the main chat promotes surviving sides without losing their drafts
+PASS A later sample side prompt renders without a synthetic parent/request message
+AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
++ actual - expected
+
+  [
++   'Side chat',
+    'Actual side question'
+  ]
+
+    at file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/scripts/code-chat-relations-smoke.mjs:68:845 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: [Array],
+  expected: [Array],
+  operator: 'deepStrictEqual'
+}
+Report: C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\code-chat-relations\ui-preview-nNnc2U

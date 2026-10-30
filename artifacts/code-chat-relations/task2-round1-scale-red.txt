@@ -1,0 +1,93 @@
+TAP version 13
+# Subtest: sidebar collections preserve manual order, recent fallback and archived membership
+ok 1 - sidebar collections preserve manual order, recent fallback and archived membership
+  ---
+  duration_ms: 7.3005
+  ...
+# Subtest: grouping reads project membership once per task instead of once per project
+ok 2 - grouping reads project membership once per task instead of once per project
+  ---
+  duration_ms: 1.3492
+  ...
+# Subtest: equivalent copies ignore project instruction bodies but detect every sidebar task field
+ok 3 - equivalent copies ignore project instruction bodies but detect every sidebar task field
+  ---
+  duration_ms: 0.6961
+  ...
+# Subtest: stable data never reads unrelated project payloads or scans unchanged array contents
+ok 4 - stable data never reads unrelated project payloads or scans unchanged array contents
+  ---
+  duration_ms: 0.1038
+  ...
+# Subtest: project relations nest sides once, keep forks top-level and promote unavailable parents
+ok 5 - project relations nest sides once, keep forks top-level and promote unavailable parents
+  ---
+  duration_ms: 0.4226
+  ...
+# Subtest: relation projection flattens legacy side chains under the surviving main and rejects cycles
+ok 6 - relation projection flattens legacy side chains under the surviving main and rejects cycles
+  ---
+  duration_ms: 0.3892
+  ...
+# Subtest: sidebar relation memo compares every primitive field and accepts equivalent cloned links
+ok 7 - sidebar relation memo compares every primitive field and accepts equivalent cloned links
+  ---
+  duration_ms: 0.3521
+  ...
+# Subtest: large direct side graph resolves all rows with linear field reads
+not ok 8 - large direct side graph resolves all rows with linear field reads
+  ---
+  duration_ms: 13.3165
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\sidebar-model.test.mjs:47:39'
+  failureType: 'testCodeFailure'
+  error: 'Ancestry must not repeatedly scan the graph (75001 field reads)'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    Object.get [as id] (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/sidebar-model.test.mjs:49:261)
+    file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/shared/chat-relations.mjs:10:37
+    Array.map (<anonymous>)
+    relationParent (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/shared/chat-relations.mjs:10:27)
+    mainChat (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/shared/chat-relations.mjs:21:176)
+    projectChatRelations (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/shared/sidebar-model.mjs:6:68)
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/sidebar-model.test.mjs:50:39)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+  ...
+# Subtest: large chain side graph resolves all rows with linear field reads
+not ok 9 - large chain side graph resolves all rows with linear field reads
+  ---
+  duration_ms: 9.04
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\sidebar-model.test.mjs:47:39'
+  failureType: 'testCodeFailure'
+  error: 'Ancestry must not repeatedly scan the graph (75001 field reads)'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    Object.get [as id] (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/sidebar-model.test.mjs:49:261)
+    file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/shared/chat-relations.mjs:10:37
+    Array.map (<anonymous>)
+    relationParent (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/shared/chat-relations.mjs:10:27)
+    mainChat (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/shared/chat-relations.mjs:21:176)
+    projectChatRelations (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/shared/sidebar-model.mjs:6:68)
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/sidebar-model.test.mjs:50:39)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 7
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 92.4933

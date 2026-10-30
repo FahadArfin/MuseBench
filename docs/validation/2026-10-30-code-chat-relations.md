@@ -40,3 +40,15 @@ Inspected `desktop.png`, `current-menu.png`, `fork-backlink.png`, `narrow-reduce
 - The first organization run failed its old separator expectation after adding the new action group. The final run covers the updated menu and passes both product variants.
 
 All failed receipts, screenshots and isolated fixture files remain locally preserved. Only clean logs, reports and screenshots are committed; profiles, SQLite data, caches and binaries are excluded. No push, CI, publication, installer or live-provider result is claimed by this validation. The new smoke accepts `MUSEBENCH_EXECUTABLE` for root's later exact-installed-artifact check and is part of the existing `chats` CI suite. CI uploads only its clean report files on failure.
+
+## Independent review fix round 1
+
+The next source revision fixes two review findings: forks of side chats now render only stored messages instead of adding the “Side chat” template request, and sidebar ancestry uses a snapshot-owned indexed/cache projection instead of rescanning the graph per side/ancestor. Side backlinks now naturally use the final usable main in supported legacy chains. Original domain relation helpers and runtime/controller actions remain unchanged.
+
+New RED receipts: `task2-round1-fork-side-red.txt`, `task2-round1-fork-side-reply-red.txt`, `task2-round1-desktop-red.txt` each show the extra synthetic prompt; `task2-round1-scale-red.txt` shows both large graph cases exceeding the linear operation budget.
+
+Latest focused helper result: `node --test test/sidebar-model.test.mjs test/chat-relations.test.mjs`, 28 passed / zero failed or skipped (`task2-round1-helpers-green.txt`). This covers 150 seeded mixed-graph comparisons to the original helper semantics, independent snapshot caches, fork boundaries, and large direct/chained graphs. Both 3,000-node graphs need 35,998 instrumented task field reads; measured projections took 6.8217ms direct and 3.9575ms chained. The test enforces a 75,000-read cap rather than a machine-dependent elapsed-time threshold.
+
+Latest product smoke: preview14 checks (`ui-preview-UW7EC2/report.json`), Electron13 checks (`ui-desktop-1oMZ6r/report.json`), zero renderer errors. Both variants exercise chat-level and reply-level forks of an answered side through the actual product controls and assert exactly one actual prompt in the stored and rendered history. Electron answers are offline saved fixtures under real controller-created side baselines; no provider request runs. Inspected the new `fork-side-chat.png` / `fork-side-reply.png` screenshots.
+
+Typecheck and Vite build passed. All seven targeted renderer/dictation/timeline/browser+Electron-sidebar/drag/response-action commands passed; exact command map in `task2-round1-regressions.json`, logs `task2-round1-regression-1.txt` through `-7.txt`. Full-suite and full-build results above remain evidence for the preceding revision; root requested scoped verification for this review round and owns final integration checks.

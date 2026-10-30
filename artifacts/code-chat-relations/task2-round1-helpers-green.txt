@@ -1,0 +1,154 @@
+TAP version 13
+# (node:52612) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fresh sides isolate context and preserve the explicit parent draft, queues and goals
+ok 1 - fresh sides isolate context and preserve the explicit parent draft, queues and goals
+  ---
+  duration_ms: 200.6628
+  ...
+# Subtest: relations survive restart and parent deletion without cascading or hiding a side
+ok 2 - relations survive restart and parent deletion without cascading or hiding a side
+  ---
+  duration_ms: 90.8358
+  ...
+# Subtest: invalid and archived explicit sources preserve selection and create nothing
+ok 3 - invalid and archived explicit sources preserve selection and create nothing
+  ---
+  duration_ms: 86.5605
+  ...
+# Subtest: chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+ok 4 - chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+  ---
+  duration_ms: 111.5856
+  ...
+# Subtest: relationship validation and projection never nest cycles, malformed or cross-project parents
+ok 5 - relationship validation and projection never nest cycles, malformed or cross-project parents
+  ---
+  duration_ms: 0.3581
+  ...
+# Subtest: indexed ancestry preserves every direct-parent/main result across malformed, cyclic and unavailable graphs
+ok 6 - indexed ancestry preserves every direct-parent/main result across malformed, cyclic and unavailable graphs
+  ---
+  duration_ms: 13.5816
+  ...
+# Subtest: indexed graphs are owned by their snapshot and terminate side ancestry at fork boundaries
+ok 7 - indexed graphs are owned by their snapshot and terminate side ancestry at fork boundaries
+  ---
+  duration_ms: 0.5148
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is deleted
+ok 8 - side ancestry stops at its independent fork main when the original source is deleted
+  ---
+  duration_ms: 0.1325
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is deleted
+ok 9 - controller creates sibling sides under the surviving fork after its original source is deleted
+  ---
+  duration_ms: 121.1368
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is archived
+ok 10 - side ancestry stops at its independent fork main when the original source is archived
+  ---
+  duration_ms: 0.2357
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is archived
+ok 11 - controller creates sibling sides under the surviving fork after its original source is archived
+  ---
+  duration_ms: 94.6404
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is moved
+ok 12 - side ancestry stops at its independent fork main when the original source is moved
+  ---
+  duration_ms: 0.0913
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is moved
+ok 13 - controller creates sibling sides under the surviving fork after its original source is moved
+  ---
+  duration_ms: 175.0038
+  ...
+# Subtest: side-cycle checks stop at the fork boundary while fork backlinks remain independently navigable
+ok 14 - side-cycle checks stop at the fork boundary while fork backlinks remain independently navigable
+  ---
+  duration_ms: 0.17
+  ...
+# Subtest: desktop accepts exact-source side and chat-level fork actions with bounded text
+ok 15 - desktop accepts exact-source side and chat-level fork actions with bounded text
+  ---
+  duration_ms: 0.6738
+  ...
+# Subtest: native fork restores independently without copying usage, goals or access leases
+ok 16 - native fork restores independently without copying usage, goals or access leases
+  ---
+  duration_ms: 85.1092
+  ...
+# Subtest: unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+ok 17 - unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+  ---
+  duration_ms: 101.4757
+  ...
+# Subtest: known native rejection creates no copied child and allows a later deliberate fork
+ok 18 - known native rejection creates no copied child and allows a later deliberate fork
+  ---
+  duration_ms: 84.7117
+  ...
+# Subtest: durable fork receipt wins over a stale app selection snapshot after crash
+ok 19 - durable fork receipt wins over a stale app selection snapshot after crash
+  ---
+  duration_ms: 98.6843
+  ...
+# Subtest: sidebar collections preserve manual order, recent fallback and archived membership
+ok 20 - sidebar collections preserve manual order, recent fallback and archived membership
+  ---
+  duration_ms: 8.7807
+  ...
+# Subtest: grouping reads project membership once per task instead of once per project
+ok 21 - grouping reads project membership once per task instead of once per project
+  ---
+  duration_ms: 1.4823
+  ...
+# Subtest: equivalent copies ignore project instruction bodies but detect every sidebar task field
+ok 22 - equivalent copies ignore project instruction bodies but detect every sidebar task field
+  ---
+  duration_ms: 0.7246
+  ...
+# Subtest: stable data never reads unrelated project payloads or scans unchanged array contents
+ok 23 - stable data never reads unrelated project payloads or scans unchanged array contents
+  ---
+  duration_ms: 0.1114
+  ...
+# Subtest: project relations nest sides once, keep forks top-level and promote unavailable parents
+ok 24 - project relations nest sides once, keep forks top-level and promote unavailable parents
+  ---
+  duration_ms: 0.5623
+  ...
+# Subtest: relation projection flattens legacy side chains under the surviving main and rejects cycles
+ok 25 - relation projection flattens legacy side chains under the surviving main and rejects cycles
+  ---
+  duration_ms: 0.1432
+  ...
+# Subtest: sidebar relation memo compares every primitive field and accepts equivalent cloned links
+ok 26 - sidebar relation memo compares every primitive field and accepts equivalent cloned links
+  ---
+  duration_ms: 0.2626
+  ...
+# Subtest: large direct side graph resolves all rows with linear field reads
+ok 27 - large direct side graph resolves all rows with linear field reads
+  ---
+  duration_ms: 13.5428
+  ...
+# {"shape":"direct","count":3000,"fieldReads":35998,"durationMs":6.8217}
+# Subtest: large chain side graph resolves all rows with linear field reads
+ok 28 - large chain side graph resolves all rows with linear field reads
+  ---
+  duration_ms: 9.4518
+  ...
+# {"shape":"chain","count":3000,"fieldReads":35998,"durationMs":3.957500000000003}
+1..28
+# tests 28
+# suites 0
+# pass 28
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1366.417

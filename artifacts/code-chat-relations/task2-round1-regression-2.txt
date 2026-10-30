@@ -1,0 +1,8 @@
+PASS Twenty typed characters retain immediate saves and one dictation subscription/status request
+PASS Availability refresh updates inactive composer metadata without capturing unrelated speech or resubscribing
+PASS Unrelated renders preserve the listener and speech uses the newest draft callback once
+PASS Switching chats excludes speech before passive cancellation and late events from the previous chat
+PASS Delayed start and streaming speech use the newest callback and reject other capture IDs
+PASS Disabling voice and switching during a pending start reject stale captures without resubscribing
+PASS Unmount releases the listener and late events cannot save another draft
+Report: C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\output\playwright\dictation-subscription\report.json

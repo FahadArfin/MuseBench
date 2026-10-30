@@ -44,3 +44,8 @@ test('sidebar relation memo compares every primitive field and accepts equivalen
  for(const [key,value] of Object.entries({kind:'fork',parentTaskId:'another',parentTitle:'Renamed',context:'native',createdAt:'later',messageId:'answer'})){const after=structuredClone(before);after.tasks[0].chatRelation[key]=value;assert.equal(sameSidebarData(before,after),false,key);}
  const after=structuredClone(before);delete after.tasks[0].chatRelation;assert.equal(sameSidebarData(before,after),false);
 });
+for(const shape of ['direct','chain'])test(`large ${shape} side graph resolves all rows with linear field reads`,t=>{
+ const count=3000,budget=count*25;let reads=0;
+ const rows=Array.from({length:count},(_,i)=>{const row=task(String(i),'a',i?{chatRelation:relation(shape==='direct'?'0':String(i-1))}:{});for(const key of ['id','projectId','archived','chatRelation']){const value=row[key];Object.defineProperty(row,key,{get(){assert(++reads<=budget,`Ancestry must not repeatedly scan the graph (${reads} field reads)`);return value;}});}return row;});
+ const started=performance.now(),view=projectChatRelations(rows,rows);assert.equal(view.roots.length,1);assert.equal(view.roots[0].id,'0');assert.equal(view.children.get('0').length,count-1);assert.equal(new Set(view.children.get('0').map(row=>row.id)).size,count-1);assert(reads<=budget);t.diagnostic(JSON.stringify({shape,count,fieldReads:reads,durationMs:performance.now()-started}));
+});

@@ -1,0 +1,11 @@
+(node:21780) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS Dragging projects changes their order
+PASS Chats can be reordered inside a project
+PASS Dropping into an empty Pinned section pins chats; subsequent drops set their order
+PASS Moving a pinned chat to Recents unpins and positions it
+PASS Alt+Shift+arrow keys reorder focused chats
+PASS Dropping a chat on another project moves its association
+PASS Moving the open chat keeps its draft and switches the active working project
+PASS Saved order and membership survive renderer reload
+C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\sidebar-drag\source-u1S5Wc
