@@ -9,7 +9,7 @@ const ownerEqual=(a,b)=>a&&b&&a.taskId===b.taskId&&a.root===b.root&&a.epoch===b.
 const ref=s=>({sourceId:s.id,authSourceIdentity:s.authSourceIdentity});
 const origin=v=>new URL(v).origin;
 const errorCode=error=>['registration-required','unsupported-public-client','issuer-mismatch','scope-changed','storage-unavailable','storage-full','callback-unavailable','source-changed','owner-changed','expired','busy','invalid-grant'].includes(error?.code)?error.code:'network-failed';
-export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,getSourceSnapshot,ownerSnapshot,runtimeOwnerSnapshot,stopSourceLeases,withIdleLease,openBrowser,onSafeUpdate=()=>{},now=Date.now}){
+export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,getSourceSnapshot,ownerSnapshot,runtimeOwnerSnapshot,admitSourceMutation,withIdleLease,openBrowser,onSafeUpdate=()=>{},now=Date.now}){
  let attempt=null,closed=false,mutation=false,mutationSourceId=null;const leases=new Map(),accountGenerations=new Map();
  function snapshot(read,reference){
   if(typeof read!=='function')return null;
@@ -48,7 +48,7 @@ export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,g
   if(typeof getSourceSnapshot!=='function'||closed||attempt!==a||a.controller.signal.aborted||now()>=a.deadline||!ownerEqual(a.owner,selectedOwner()))return false;
   try{const s=getSourceSnapshot({id:a.source.id,revision:a.source.revision});if(s&&typeof s.then==='function'){Promise.resolve(s).catch(()=>{});return false;}return !!s&&s.id===a.source.id&&s.revision===a.source.revision&&s.authSourceIdentity===a.source.authSourceIdentity&&s.url===a.source.url&&s.global===true&&s.reviewed===true&&s.disabled===true&&s.transport==='streamable-http'&&!Object.keys(s.headers??{}).some(k=>k.toLowerCase()==='authorization')&&ownerEqual(a.owner,selectedOwner())&&!a.controller.signal.aborted&&attempt===a;}catch{return false;}
  }
- async function stop(s){const next=generation(s.id)+1;if(!Number.isSafeInteger(next))throw oauthFailure('source-changed');accountGenerations.set(s.id,next);for(const l of leases.values())if(l.sources.some(v=>v.id===s.id))revokeLease(l);try{if(await stopSourceLeases(s.id)===false)throw 0;}catch{throw oauthFailure('busy');}}
+ async function stop(s,admission){const next=generation(s.id)+1;if(!Number.isSafeInteger(next))throw oauthFailure('source-changed');accountGenerations.set(s.id,next);for(const l of leases.values())if(l.sources.some(v=>v.id===s.id))revokeLease(l);try{await admission.stop();}catch{throw oauthFailure('busy');}}
  async function summary(sourceRef){
   const s=await source(sourceRef),o=selectedOwner(),grant=store.get(ref(s)),bindings=store.listBindings(s.id),selected=grant?.binding??bindings.at(-1)?.binding;
   const storage=store.inspect();const available=grant?.phase==='ready';
@@ -92,13 +92,22 @@ export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,g
   const c=validateDiscoveryAuthCommand(input);if(attempt&&!attempt.lease&&!ownerEqual(attempt.owner,selectedOwner())&&!['ready','failed','cancelled','needs-sign-in'].includes(attempt.status))await invalidate(attempt);const o=owner(c.taskId);
   if(c.type==='inspect')return inspectSource({id:c.sourceId,revision:c.sourceRevision});
   if(c.type==='status'||c.type==='cancel'){const a=await getAttempt(c);if(c.type==='cancel'&&a.status!=='cancelled')await dispose(a);return safe(a);}
-  if(mutation)throw oauthFailure('busy');mutation=true;mutationSourceId=['prepare','begin','forget'].includes(c.type)?c.sourceId??attempt?.source.id??null:null;
+  if(mutation)throw oauthFailure('busy');
+  let admission,captured,sourceId=null;
+  if(['prepare','begin','forget'].includes(c.type)){
+   if(c.type==='begin'){captured=attempt;if(!captured||captured.id!==c.attemptId||captured.owner.taskId!==c.taskId)throw oauthFailure('source-changed');if(captured.status==='cancelled')return safe(captured);if(!ownerEqual(captured.owner,o))throw oauthFailure('source-changed');sourceId=captured.source.id;}else sourceId=c.sourceId;
+   let reservation;try{reservation=admitSourceMutation?.(sourceId);}catch{throw oauthFailure('busy');}
+   if(reservation===null&&captured)return safeAuthState({...safe(captured),reasonCode:'busy'});
+   if(reservation&&typeof reservation.then==='function'){Promise.resolve(reservation).catch(()=>{});throw oauthFailure('busy');}
+   if(!reservation||typeof reservation!=='object'||Array.isArray(reservation)||Object.keys(reservation).length!==2||!Object.hasOwn(reservation,'stop')||!Object.hasOwn(reservation,'release')||typeof reservation.stop!=='function'||typeof reservation.release!=='function')throw oauthFailure('busy');admission=reservation;
+  }
+  mutation=true;mutationSourceId=sourceId;
   try{
    if(c.type==='forget'){
-    const s=await source({id:c.sourceId,revision:c.sourceRevision},true),inspection=await summary(s),binding=store.listBindings(s.id).find(v=>v.binding.bindingRevision===c.bindingRevision);if(!binding||inspection.bindingRevision!==c.bindingRevision||inspection.reviewRevision!==c.reviewRevision)throw oauthFailure('source-changed');await stop(s);const forgottenAttempt=attempt?.source.id===s.id?attempt:null;if(forgottenAttempt)await dispose(forgottenAttempt);if(!ownerEqual(o,selectedOwner()))throw oauthFailure('owner-changed');await source(s,true);await store.forget(c.bindingRevision,{expectedGeneration:store.inspect().generation});if(attempt===forgottenAttempt)attempt=null;return summary(s);
+    const s=await source({id:c.sourceId,revision:c.sourceRevision},true),inspection=await summary(s),binding=store.listBindings(s.id).find(v=>v.binding.bindingRevision===c.bindingRevision);if(!binding||inspection.bindingRevision!==c.bindingRevision||inspection.reviewRevision!==c.reviewRevision)throw oauthFailure('source-changed');await stop(s,admission);const forgottenAttempt=attempt?.source.id===s.id?attempt:null;if(forgottenAttempt)await dispose(forgottenAttempt);if(!ownerEqual(o,selectedOwner()))throw oauthFailure('owner-changed');await source(s,true);await store.forget(c.bindingRevision,{expectedGeneration:store.inspect().generation});if(attempt===forgottenAttempt)attempt=null;return summary(s);
    }
    if(c.type==='prepare'){
-    if(attempt&&!['ready','failed','cancelled','needs-sign-in'].includes(attempt.status))throw oauthFailure('busy');const s=await source({id:c.sourceId,revision:c.sourceRevision},true);if(store.inspect().status!=='ready')return safeAuthState({sourceId:s.id,sourceRevision:s.revision,status:'storage-unavailable',reasonCode:'storage-unavailable'});await stop(s);if(!ownerEqual(o,selectedOwner()))throw oauthFailure('owner-changed');await source(s,true);if(attempt)await dispose(attempt);
+    if(attempt&&!['ready','failed','cancelled','needs-sign-in'].includes(attempt.status))throw oauthFailure('busy');const s=await source({id:c.sourceId,revision:c.sourceRevision},true);if(store.inspect().status!=='ready')return safeAuthState({sourceId:s.id,sourceRevision:s.revision,status:'storage-unavailable',reasonCode:'storage-unavailable'});await stop(s,admission);if(!ownerEqual(o,selectedOwner()))throw oauthFailure('owner-changed');await source(s,true);if(attempt)await dispose(attempt);
     const a={id:opaque(),source:s,owner:o,status:'discovering',controller:new AbortController(),deadline:now()+600000};attempt=a;a.timer=setTimeout(()=>{if(attempt===a)void dispose(a,'cancelled','expired');},600000);a.timer.unref?.();
     try{const old=store.get(ref(s));await reserve(a,old?.registration.callbackPort??s.publicClient?.callbackPort);return await reviewedResource(a);}catch(error){if(await current(a))await dispose(a,'failed',errorCode(error));return safe(a);}
    }
@@ -117,12 +126,12 @@ export function createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,g
     }
     if(c.type==='retrySave'){if(a.status!=='save-recovery'||!a.candidate)throw oauthFailure('source-changed');return commitCandidate(a);}
     if(c.type==='begin'){
-     if(a.status!=='review-required'||!a.review.metadata||a.registrationStarted)throw oauthFailure('source-changed');await stop(a.source);await check(a);attemptAuthority(a);a.registrationStarted=true;a.registration=await flow.register({review:a.review,clientMetadata:a.clientMetadata,signal:a.controller.signal});await check(a);
+     if(a.status!=='review-required'||!a.review.metadata||a.registrationStarted)throw oauthFailure('source-changed');await stop(a.source,admission);await check(a);attemptAuthority(a);a.registrationStarted=true;a.registration=await flow.register({review:a.review,clientMetadata:a.clientMetadata,signal:a.controller.signal});await check(a);
      a.state=randomBytes(32).toString('base64url');const started=await flow.authorize({review:a.review,registration:a.registration,callbackUri:a.listener.uri,state:a.state});await check(a);attemptAuthority(a);a.verifier=started.codeVerifier;a.listener.arm({attemptId:a.id,state:a.state,issuer:a.review.issuer,issRequired:a.review.metadata.authorization_response_iss_parameter_supported===true,expiresAt:a.deadline});a.status='waiting-browser';await openBrowser(started.authorizationUrl);await check(a);update(a);return safe(a);
     }
     throw oauthFailure('unsupported');
    }catch(error){if(!await current(a))return invalidate(a);await dispose(a,'failed',errorCode(error));return safe(a);}
-  }finally{mutation=false;mutationSourceId=null;}
+  }finally{mutation=false;mutationSourceId=null;admission?.release();}
  }
  async function inspectSource(sourceRef){
   const a=attempt;

@@ -1,5 +1,7 @@
 # App-owned remote OAuth: local acceptance, 30 October 2026
 
+Correction round1 follows independent review of `dfdc1abb320fd836fdad5c9f52d73aaf04cd92f0`: a refused source-wide account mutation could temporarily gate or revoke busy background authorization. Trusted synchronous mutation reservation now precedes source lookup, source-blocking flags and revocation; accepted reservations block new factory/dispatch/idle admission and retain existing provisional/refresh race protections. The focused correction suite passes265/265 with0failures/skips. The full/build/native/protection/package receipts below remain historical evidence for the old immutable source, not acceptance of this correction. No broad suite/build/native/package rerun occurred in this scoped round; a refreshed final freeze/package is required after whole-feature review. All prior artifacts/packages remain intact.
+
 Task3 completes the app-owned public-client sign-in path for reviewed disabled global remote MCP sources. This is local source, real native, OS-protection and exact-package evidence. Independent whole-feature review, publication, installation and personal-provider compatibility remain separately owned. Desktop **0.2.241** remains the installed release; its [separate receipt](2026-10-30-desktop-0.2.241.md) predates OAuth delivery.
 
 ## Behavior and authority

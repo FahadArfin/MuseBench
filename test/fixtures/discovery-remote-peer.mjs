@@ -1,5 +1,5 @@
 import {createServer} from 'node:http';
-export async function peer({current=false,mode='json',call='ok',catalog,catalogStatus,session=false,contentEncoding,oauthAuthority}={}){
+export async function peer({current=false,mode='json',call='ok',catalog,catalogStatus,session=false,contentEncoding,oauthAuthority,beforeCall}={}){
  const requests=[],sockets=new Set();let effects=0;
  const server=createServer(async(req,res)=>{
   const raw=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>262144){req.destroy();return;}raw.push(chunk);}const body=Buffer.concat(raw).toString();let message;try{message=body?JSON.parse(body):null;}catch{}
@@ -23,7 +23,7 @@ export async function peer({current=false,mode='json',call='ok',catalog,catalogS
   if(message?.method==='initialize'){if(session)res.setHeader('Mcp-Session-Id','private-fixture-session');result={protocolVersion:'2025-11-25',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}};}
   else if(message?.method==='tools/list')result={tools:catalog??[{name:'allowed',description:'fixture remote',inputSchema:{type:'object',properties:{value:{type:'integer'}},required:['value'],additionalProperties:false}}]};
   else if(message?.method==='tools/call'){
-   effects++;
+   effects++;await beforeCall?.();
    if(call==='disconnect'){req.socket.destroy();return;}
    if(call==='hang')return;
    if(call==='auth'){res.writeHead(401);res.end();return;}

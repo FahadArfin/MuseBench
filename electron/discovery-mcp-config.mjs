@@ -12,7 +12,7 @@ async function checked(value){if(typeof value!=='string'||!path.isAbsolute(value
 // Ephemeral per-connection broker. Source env/args never enter the renderer,
 // provider-facing schema, command line, persisted session or diagnostic output.
 export function createDiscoveryMcpConfig({appRoot,executable=process.execPath,helperPath,environment=process.env,extensionReview,platform=process.platform,oauth=()=>null}={}){
- const snapshots=new Map(),sourceRoots=new Map(),connections=new Set(),key=ref=>ref.id+'\0'+ref.revision;
+ const snapshots=new Map(),sourceRoots=new Map(),connections=new Set(),mutations=new Set(),mutationEpochs=new Map(),key=ref=>ref.id+'\0'+ref.revision;
  let inspectionTail=Promise.resolve(),observedAuthority;
  const inspect=workspaceRoot=>{
   const inspectionEnvironment={...environment};
@@ -26,8 +26,10 @@ export function createDiscoveryMcpConfig({appRoot,executable=process.execPath,he
  const resolveAuthSource=async ref=>{const root=sourceRoots.get(key(ref));if(!root)throw Error('Source review changed.');let current;try{current=await inspect(root);}catch(error){for(const [id,value] of snapshots)if(value.root===root)snapshots.delete(id);throw error;}const source=current.definitions.get(ref.id);if(!source||source.revision!==ref.revision||!source.authSourceIdentity)throw Error('Source review changed.');return source;};
  const current=entry=>!entry.closed&&entry.isCurrent()===true;
  const factory=async(workspaceRoot,selection,authority={})=>{
-  const reviewed=discoverySelection(selection),root=await checked(workspaceRoot),app=await checked(appRoot),command=await checked(executable),script=await checked(path.join(app,'src','runtime','discovery-mcp.mjs'));
+  const reviewed=discoverySelection(selection),admissionEpochs=reviewed.sources.map(row=>mutationEpochs.get(row.id)??0);if(reviewed.sources.some(row=>mutations.has(row.id)))throw Error('On-demand source sign-in is changing.');
+  const root=await checked(workspaceRoot),app=await checked(appRoot),command=await checked(executable),script=await checked(path.join(app,'src','runtime','discovery-mcp.mjs'));
   if(platform==='win32')await checked(helperPath);
+  if(reviewed.sources.some((row,index)=>mutations.has(row.id)||(mutationEpochs.get(row.id)??0)!==admissionEpochs[index]))throw Error('On-demand source sign-in is changing.');
   const authRows=reviewed.sources.filter(row=>row.authBindingRevision),auth=authRows.length?oauth():null;
   if(authRows.length&&(!auth||typeof authority.isCurrent!=='function'||authority.owner?.root!==root))throw Error('A trusted live OAuth owner is required.');
   const entry={owner:authority.owner,isCurrent:authority.isCurrent??(()=>true),sources:reviewed.sources,closed:false,idle:false,dispatches:0,authLease:null,close:null};
@@ -60,7 +62,7 @@ export function createDiscoveryMcpConfig({appRoot,executable=process.execPath,he
      if(lifetimeOpened)throw Error();lifetimeOpened=true;res.setTimeout(0);res.writeHead(200,{'Content-Type':'application/octet-stream','Cache-Control':'no-store'});res.flushHeaders();res.once('close',()=>{gatewayClosed=true;entry.closed=true;connections.delete(entry);if(entry.authLease)void auth.closeLease(entry.authLease.leaseId);void workerTransport?.close().catch(()=>{});});return;
     }
     else if(['/search','/call'].includes(req.url)){
-     if(entry.idle)throw Error();entry.dispatches++;dispatched=true;
+     if(entry.idle||entry.sources.some(row=>mutations.has(row.id)))throw Error();entry.dispatches++;dispatched=true;
      await resolve();const client=await workerClient();if(closed||cancellation.signal.aborted)throw Error();assertLive();
      callArguments=value.arguments;submitted=true;
      const result=await client.callTool({name:req.url==='/search'?'discovery_search':'discovery_call',arguments:value.arguments},undefined,{timeout:330000,signal:cancellation.signal});
@@ -89,7 +91,12 @@ export function createDiscoveryMcpConfig({appRoot,executable=process.execPath,he
  factory.inspect=async workspaceRoot=>{const {root,rows}=await inspect(workspaceRoot);for(const row of rows)if(row.authEligible&&oauth()){row.auth=await oauth().inspectSource({id:row.id,revision:row.revision});if(row.auth.credentialAvailable)row.authBindingRevision=row.auth.bindingRevision;}return{root,rows};};
  factory.resolveAuthSource=resolveAuthSource;factory.getAuthSourceSnapshot=ref=>snapshots.get(key(ref))?.source;
  factory.runtimeOwnerSnapshot=ref=>{const entry=[...connections].find(entry=>entry.owner?.taskId===ref.taskId&&entry.owner?.root===ref.root&&entry.owner?.epoch===ref.epoch);return entry&&current(entry)?{...entry.owner}:null;};
- factory.withIdleLease=async({leaseId,owner},operation)=>{const entry=[...connections].find(entry=>entry.authLease?.leaseId===leaseId&&entry.owner?.taskId===owner.taskId&&entry.owner?.root===owner.root&&entry.owner?.epoch===owner.epoch);if(!entry||!current(entry)||entry.idle)throw Error('On-demand source is busy.');entry.idle=true;try{if(entry.dispatches!==0)throw Error('On-demand source is busy.');return await operation();}finally{entry.idle=false;}};
- factory.stopSourceLeases=async sourceId=>{const entries=[...connections].filter(entry=>entry.sources.some(row=>row.id===sourceId));if(entries.some(entry=>entry.dispatches||entry.idle))return false;await Promise.all(entries.map(entry=>entry.close?.()));return true;};
+ factory.withIdleLease=async({leaseId,owner},operation)=>{const entry=[...connections].find(entry=>entry.authLease?.leaseId===leaseId&&entry.owner?.taskId===owner.taskId&&entry.owner?.root===owner.root&&entry.owner?.epoch===owner.epoch);if(!entry||!current(entry)||entry.idle||entry.sources.some(row=>mutations.has(row.id)))throw Error('On-demand source is busy.');entry.idle=true;try{if(entry.dispatches!==0)throw Error('On-demand source is busy.');return await operation();}finally{entry.idle=false;}};
+ factory.admitSourceMutation=sourceId=>{
+  if(typeof sourceId!=='string'||!/^global:[A-Za-z0-9_.-]{1,100}$/.test(sourceId)||mutations.has(sourceId))return null;
+  const entries=[...connections].filter(entry=>entry.sources.some(row=>row.id===sourceId));if(entries.some(entry=>entry.dispatches||entry.idle))return null;
+  const next=(mutationEpochs.get(sourceId)??0)+1;if(!Number.isSafeInteger(next))return null;mutationEpochs.set(sourceId,next);mutations.add(sourceId);let released=false;
+  return{stop:async()=>{if(released)throw Error('Source mutation reservation closed.');for(const entry of entries){entry.closed=true;connections.delete(entry);}await Promise.all(entries.map(entry=>entry.close?.()));},release:()=>{if(!released){released=true;mutations.delete(sourceId);}}};
+ };
  return factory;
 }
