@@ -13,7 +13,7 @@ const packageJson=JSON.parse(await readFile(new URL('../package.json',import.met
 // Union of release + validation at ccf56e2. This baseline prevents a speedup
 // accidentally omitting an expensive check. New coverage is added deliberately.
 const required=[
- 'node scripts/discovery-oauth-smoke.mjs','node scripts/discovery-oauth-smoke.mjs --desktop','node scripts/discovery-oauth-protection.mjs --local-fixture',
+ 'node scripts/discovery-oauth-smoke.mjs','node scripts/discovery-oauth-smoke.mjs --desktop','node scripts/discovery-oauth-recovery-smoke.mjs','node scripts/discovery-oauth-recovery-smoke.mjs --desktop','node scripts/discovery-oauth-protection.mjs --local-fixture',
  'npm run test:background-engine','npm run test:recent-context','npm run test:context-history','npm run test:integration-panels',
  'npm test','npm run test:startup-animation','npm run test:session-recovery','npm run test:profile-identity',
  'npm run test:typography','npm run test:motion','npm run test:activity','npm run test:child-inspection','npm run test:child-restart',

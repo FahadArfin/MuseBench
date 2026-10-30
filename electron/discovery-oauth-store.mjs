@@ -163,14 +163,14 @@ export async function createDiscoveryOAuthStore({dataDir,protection,fsAdapter=fi
    const transactionId=randomUUID(),pending={...g,phase:'refresh-in-flight',refreshTransactionId:transactionId};await save(next(record.grants.map(v=>v===g?pending:v)));activeRefreshes.add(transactionId);
    return{transactionId,grant:clone(pending)};
   });},
-  completeRefresh(transactionId,value){return queue(async()=>{
+  completeRefresh(transactionId,value,{authorityGuard}={}){return queue(async()=>{
    if(!activeRefreshes.has(transactionId))throw failure('invalid-grant');const g=record.grants.find(v=>v.refreshTransactionId===transactionId&&v.phase==='refresh-in-flight');if(!g)throw failure('invalid-grant');
    if(value?.scopes!==undefined){let checked;try{checked=normalizeAuthBinding({...g.binding,bindingRevision:undefined,scopes:value.scopes});}catch{throw failure('invalid-grant');}if(checked.bindingRevision!==g.binding.bindingRevision)throw failure('invalid-grant');}
    const candidate={...g,tokens:tokens(value),tokenGeneration:g.tokenGeneration+1,phase:'ready'};delete candidate.refreshTransactionId;
    const updated=grant(candidate);
    // Lost/failed save retains both the durable intent and active transaction. The
    // caller may retry this save with its private candidate, never repeat the POST.
-   await save(next(record.grants.map(v=>v===g?updated:v)));activeRefreshes.delete(transactionId);return clone(updated);
+   await save(next(record.grants.map(v=>v===g?updated:v)),{authorityGuard});activeRefreshes.delete(transactionId);return clone(updated);
   });},
   requireReauthorization(transactionId,reasonCode){return queue(async()=>{
    if(!text(reasonCode,100)||!activeRefreshes.has(transactionId))throw failure('invalid-grant');const g=record.grants.find(v=>v.refreshTransactionId===transactionId);if(!g)throw failure('invalid-grant');

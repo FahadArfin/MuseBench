@@ -85,7 +85,7 @@ Store.get(authSourceRef,bindingRevision?) -> private Grant|null
 Store.commitGrant(grant,{expectedGeneration,authorityGuard?}) -> Promise<Grant>
 Store.beginRefresh(bindingRevision,{expectedTokenGeneration})
   -> Promise<{transactionId:string;grant:Grant}>
-Store.completeRefresh(transactionId,tokens) -> Promise<Grant>
+Store.completeRefresh(transactionId,tokens,{authorityGuard?}) -> Promise<Grant>
 Store.requireReauthorization(transactionId,reasonCode) -> Promise<void>
 Store.forget(bindingRevision,{expectedGeneration}) -> Promise<void>
 Store.close() -> Promise<void>
@@ -135,7 +135,7 @@ Dedicated trusted main opener uses shell.openExternal only for the SDK-produced 
 
 ```ts
 createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,getSourceSnapshot,ownerSnapshot,runtimeOwnerSnapshot,
-  stopSourceLeases,withIdleLease,openBrowser,onSafeUpdate,now}) -> OAuth
+  admitSourceMutation,withIdleLease,openBrowser,onSafeUpdate,now}) -> OAuth
 OAuth.command(input:DiscoveryAuthCommand) -> Promise<SafeAuthState>
 OAuth.inspectSource(sourceRef) -> SafeAuthSummary // local-only
 OAuth.prepareConnection({owner,selection}) -> Promise<AuthLease>
@@ -232,3 +232,10 @@ Task3 terminal-status correction (parent ruling, 30 October): capture the intera
 Task3 correction round1 private mutation admission (parent ruling): replace the asynchronous `stopSourceLeases(sourceId)` service hook with required trusted synchronous `admitSourceMutation(sourceId)`. Main first checks source-wide controller busy authority across all contexts, then factory admission synchronously checks existing dispatch/idle ownership and reserves the source. Return `null` for a busy refusal or exactly a non-thenable object with own callable `{stop,release}`; absent/throwing/thenable/malformed authority fails closed. Begin derives this source only from its captured attempt ID and selected owner, never renderer fields. Obtain reservation before source lookup/Forget summary or any source-blocking mutation flag. A refusal changes no source gate, generation, lease, in-flight request, browser or exchange. Begin busy projection preserves its current attempt rather than disposing it.
 
 An admitted reservation blocks new source factories, native dispatch and idle-turn admission synchronously across awaits. Factories capture a per-source admission epoch before their first canonical-path await and reject changed epochs even after reservation release. At the validated stop boundary, service increments account generation and revokes established/provisional leases, then awaits reservation.stop(); the factory invalidates captured registered/provisional owners synchronously and awaits their existing cleanup. Stop has no later busy-refusal check: cleanup failure remains an accepted mutation with revoked authority and honest failure, never restoration of old leases. Service releases the reservation in finally. Existing held-resolver, close-during-refresh and synchronous effect/publication guards remain required. Cost: one private reservation interface and ephemeral admission epochs; no public IPC/API/dependency change.
+
+
+Final-wave refresh recovery (parent ruling,30October): execution and known local-save capability have distinct lifetimes. On a genuine returned-refresh save failure during provisional preconnection only, while exact selected main `{taskId,root,epoch}` still matches, transfer the candidate to bounded private local-save recovery before normal execution-lease revocation. Ordinary failed connect cleanup does not increment epoch; no general adoption/epoch bypass is added. Recovery binds exact source/revision/auth identity, latest binding, active refresh transaction, source account generation, owner, opaque review and10minute deadline. It cannot read tokens, admit tools or submit native work. Explicit disconnect changes epoch; close/cancel/source/account/latest-binding/owner/expiry invalidates stale recovery. Established connected refresh recovery retains keyed live-lease authority, including during repeated local write failures; it does not transfer merely because that owner disappears.
+
+`Store.completeRefresh(transactionId,tokens,{authorityGuard?})` now supports the same strict synchronous final guard/atomic rename publication used by enrollment. Service checks recovery authority before local completion and at actual durable publication after async encryption/fsync/CAS. A known local write failure retains candidate and durable intent for explicit Retry saving; stale authority publishes nothing. Retry never repeats refresh/code exchange, browser opening, native turn or effect. The actual factory/runtime/controller cleanup path and production RuntimeDialog are mandatory regression boundaries. Failed auth preparation restores current idle adapter projection only before any native submission; submitted/uncertain outcome semantics remain unchanged. Connected idle UI exposes local status/cancel/retry while execution and account controls remain locked; active work disables them. Ready is compact with explicit details/reauthorization/local Forget disclosure, independent discovery/details/Forget review and truthful durable scopes.
+
+Regression-location reconciliation: factory owner/marker/private-route/admission/recovery cases live in `test/discovery-oauth-integration.test.mjs`; `test/discovery-mcp-config.test.mjs` retains its existing broker coverage and remains in focused verification. No duplicate test is added solely to touch the originally planned filename. Production dialog lifecycle UI lives in `scripts/discovery-oauth-recovery-smoke.mjs` with only the external native process simulated; service/controller/runtime/factory/store and shared RuntimeDialog are real.

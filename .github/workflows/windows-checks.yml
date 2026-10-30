@@ -58,6 +58,7 @@ jobs:
             artifacts/child-inspection-ui/**/report.json
             artifacts/child-restart-ui/**/report.json
             artifacts/remote-oauth/ui/**/report.json
+            artifacts/remote-oauth/recovery-ui/**/report.json
             artifacts/remote-oauth/protection/**/report.json
             artifacts/native-failure-ui/**/report.json
             artifacts/native-question-ui/**/report.json

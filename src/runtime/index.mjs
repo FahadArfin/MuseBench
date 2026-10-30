@@ -462,7 +462,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
      catch(error){if(token===epoch){update({modelId:null});block('Native model selection is uncertain. Reconnect and verify it before sending.',false);}throw error;}
     }update({modelId:row.modelId});
    }
-   await discoveryLease?.prepareTurn?.();assertCurrent(token);
+   try{await discoveryLease?.prepareTurn?.();assertCurrent(token);}catch(error){if(token===epoch&&adapter&&!dispatched)syncAdapter(adapter.snapshot());throw error;}
    dispatched=true;await adapter.send({text:text.trim(),mode,images});assertCurrent(token);
    for(const [id,request] of deferredInputs){deferredInputs.delete(id);if(receivePending(request))block('Muse is waiting for your answer.',false);}
    return snapshot();
