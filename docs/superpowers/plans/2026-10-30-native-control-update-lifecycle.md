@@ -37,5 +37,6 @@ Interfaces: host connectionConfig accepts an async provider; state reports conne
 - [x] Shared Settings and preview remain aligned; packaged smoke uses actual generated config. Verify original desktop source files replaceable while cached stdio stays alive and serves a reopened host.
 - [x] Full offline suite, build, native/browser UI checks and packaged artifact checks pass.
 - [x] Independent review and one TDD correction pass for the hard-link finding; complete focused, full-suite and packaged checks.
-- [ ] Commit/push the reviewed correction.
+- [x] Commit/push the reviewed correction (0.2.191).
+- [x] Reproduce and correct the actual Windows Store child-directory alias failure found during installed acceptance; retain link rejection and verify the actual profile with the published runtime.
 - [ ] Verify exact release, idle work and profile backup; install/reopen; migrate the existing Codex command without changing grants and verify actual installed cached-client lifecycle. Record actual proof versus isolated evidence.

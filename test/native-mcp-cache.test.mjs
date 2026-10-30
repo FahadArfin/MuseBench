@@ -39,3 +39,9 @@ for(const kind of ['runtime','bridge'])test('a hard-linked '+kind+' is refused e
  await assert.rejects(prepareNativeMcpConfig(f),/link/i);
  assert.equal((await lstat(target)).nlink,2,'Refusing a linked cache must not modify external files');assert.deepEqual(await readFile(target),await readFile(outside));
 });
+
+test('an unlinked Windows directory alias uses its canonical location without rejecting the profile',{skip:process.platform!=='win32'},async t=>{
+ const f=await fixture(t),control=path.join(f.dataDir,'NATIVE-CONTROL');await mkdir(control);await writeFile(path.join(control,'connection.json'),'descriptor sentinel');
+ const config=await prepareNativeMcpConfig(f);assert.ok(config.command.startsWith(control+path.sep));assert.equal(await readFile(path.join(config.args[2],'native-control','connection.json'),'utf8'),'descriptor sentinel');
+ assert.equal((await lstat(control)).isSymbolicLink(),false);
+});
