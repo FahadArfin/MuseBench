@@ -11,6 +11,9 @@ on:
         required: false
 permissions:
   contents: read
+env:
+  # The cache is optional; a stalled download must not hold every release worker.
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: '1'
 concurrency:
   group: musebench-release
   cancel-in-progress: false

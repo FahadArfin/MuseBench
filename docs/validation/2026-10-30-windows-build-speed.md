@@ -21,3 +21,11 @@ Scope: scheduling and reporting only. Production desktop/preview behavior and pa
 ## Remaining verification
 
 The 3-4 minute estimate depends on runner availability and must be confirmed by a completed GitHub release for this exact change. A successful CI run is not installed desktop proof. The current installed 0.2.181 remains unchanged until the newest candidate passes release checks, published-artifact hashes, fresh app-idle checks and profile backup.
+
+## Measured releases and cache fallback
+
+Subsequent verified Windows releases confirmed the parallel pipeline: 0.2.189 took 4m19s, 0.2.192 took 4m06s and 0.2.210 took 4m54s end to end. The latter packaged in 2m39s while all six validation groups ran independently. These are observed runs, not a guaranteed duration.
+
+On 30 October, run 41066297810 exposed a separate infrastructure delay: every worker stalled inside setup-node's 51 MB npm-cache restore. The package log advanced to 4 MB at 13:49:00 UTC and then remained stalled; Node installation had already completed. The same restore had taken about six seconds in the prior successful run. The stalled attempt was cancelled without publishing or installing anything.
+
+Both release and reusable Windows-check workflows now set `SEGMENT_DOWNLOAD_TIMEOUT_MINS=1`, using the cache action's [supported segment-download timeout](https://github.com/actions/cache/tree/v4#environment-variables). If restoring this single-segment cache stalls, setup can fall back to the existing lockfile-based `npm ci`. Node version, dependencies, checks, packaging and publication gates are unchanged. This bounds cache-download waiting, not total job duration; runner availability and other network operations still affect elapsed time.

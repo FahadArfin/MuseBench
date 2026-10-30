@@ -8,6 +8,9 @@ on:
         default: false
 permissions:
   contents: read
+env:
+  # On a stalled cache download, continue with the lockfile-based npm install.
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: '1'
 jobs:
   check:
     name: Windows / ${{ matrix.suite }}
