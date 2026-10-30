@@ -9,7 +9,7 @@ import {build} from 'esbuild';
 import {extractFile} from '@electron/asar';
 import {chromium,_electron as electron} from 'playwright';
 const desktop=process.argv.includes('--desktop'),installed=desktop&&!!process.env.MUSEBENCH_EXECUTABLE,variant=installed?'installed':desktop?'desktop-source':'browser-source';
-await mkdir('artifacts/discovery-tools-ui',{recursive:true});const output=await mkdtemp(path.resolve('artifacts/discovery-tools-ui',variant+'-'));
+const evidenceRoot=process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR?path.join(path.resolve(process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR),'discovery-tools-ui'):path.resolve('artifacts/discovery-tools-ui');await mkdir(evidenceRoot,{recursive:true});const output=await mkdtemp(path.join(evidenceRoot,variant+'-'));
 const report={variant,checks:[],errors:[],modelRequests:0,externalNetwork:false,rendererDigest:null};const pass=name=>{report.checks.push(name);console.log('PASS '+name);};let server,app,browser,page;
 const fixture=`import {createPreviewBridge} from './src/preview/bridge.ts';const bridge=createPreviewBridge();const inspect=bridge.inspectDiscoverySources,dispatch=bridge.dispatch;window.discoveryFixture={inspections:0,actions:[],pending:false};bridge.inspectDiscoverySources=async input=>{window.discoveryFixture.inspections++;if(window.discoveryFixture.mode==='failure')throw Error('Source list unavailable. Retry this review.');if(window.discoveryFixture.pending)await new Promise(resolve=>window.discoveryFixture.finish=resolve);return inspect(input);};bridge.dispatch=async action=>{window.discoveryFixture.actions.push(action);return dispatch(action);};window.musebench=bridge;window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`;
 try{

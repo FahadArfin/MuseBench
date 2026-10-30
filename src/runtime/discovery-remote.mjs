@@ -1,12 +1,13 @@
 // Remote-only v2 adapter. The local/native v1 transport remains independent.
 import {Client,StreamableHTTPClientTransport,SSEClientTransport} from '@modelcontextprotocol/client';
 import {createRemoteNetwork} from './discovery-remote-network.mjs';
+import {discoverySetupError} from './discovery-errors.mjs';
 const rawResult={'~standard':{version:1,vendor:'musebench-bounded-result',validate:value=>({value})}};
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 export function createRemoteDiscoveryClient(source,{lookup,networkOptions={}}={}){
  let transport,client,closed=false,connecting=false,lastStatus=null,networkFailure=false,lastNetworkError,closing;
  const network=createRemoteNetwork(source,{...networkOptions,lookup,onFailure:error=>{networkFailure=true;lastNetworkError=error;if(!connecting)void close(false);}});
- const fetch=async(input,init)=>{lastStatus=null;const response=await network.fetch(input,init);lastStatus=response.status;if([401,403].includes(response.status)){await response.body?.cancel();throw Error('Remote authorization setup is required. Review configured headers; app-owned OAuth is not available yet.');}return response;};
+ const fetch=async(input,init)=>{lastStatus=null;const response=await network.fetch(input,init);lastStatus=response.status;if([401,403].includes(response.status)){await response.body?.cancel();throw discoverySetupError('authorization');}return response;};
  const makeClient=legacy=>new Client({name:'musebench-discovery',version:'1.0.0'},{capabilities:{},inputRequired:{autoFulfill:false},versionNegotiation:{mode:legacy?'legacy':'auto',probe:{maxRetries:0,timeoutMs:source.startupMs}},jsonSchemaValidator:{getValidator(){throw Error('Eager schema compilation is unsupported.');}}});
  function attach(value){transport=value;transport.onerror=()=>{if(!connecting){void close(false);if(value instanceof SSEClientTransport){
    // EventSource 3.x installs its reconnect timer AFTER firing onerror. Close
@@ -23,7 +24,7 @@ export function createRemoteDiscoveryClient(source,{lookup,networkOptions={}}={}
  }
  async function operation(ms,signal,fn){
   if(closed)throw Error('Remote source closed; reconnect and review again.');const controller=new AbortController(),combined=AbortSignal.any([controller.signal,...[signal].filter(Boolean)]);const timer=setTimeout(()=>controller.abort(),ms);
-  network.begin(combined);try{combined.throwIfAborted();return await fn(combined);}catch(error){await close(false);if(lastStatus===401||lastStatus===403)throw Error('Remote authorization setup is required. Review configured headers; app-owned OAuth is not available yet.');if(lastNetworkError)throw lastNetworkError;throw Error('Remote source failed or exceeded its bounds; reconnect and review again.');}finally{clearTimeout(timer);network.end();}
+  network.begin(combined);try{combined.throwIfAborted();return await fn(combined);}catch(error){await close(false);if(lastStatus===401||lastStatus===403)throw discoverySetupError('authorization');if(lastNetworkError)throw lastNetworkError;throw Error('Remote source failed or exceeded its bounds; reconnect and review again.');}finally{clearTimeout(timer);network.end();}
  }
  const result=value=>{if(!object(value)||value.resultType==='input_required'||Object.hasOwn(value,'inputRequests')||Object.hasOwn(value,'task'))throw Error('Remote interaction or task results are unsupported.');return value;};
  return{

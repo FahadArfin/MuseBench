@@ -5,6 +5,7 @@ import {lookup as dnsLookup} from 'node:dns/promises';
 import {isIP} from 'node:net';
 import {createGunzip,createInflate,createBrotliDecompress} from 'node:zlib';
 import {Transform} from 'node:stream';
+import {discoverySetupError} from './discovery-errors.mjs';
 export const REMOTE_LIMITS=Object.freeze({headers:16384,body:2097152,frame:1048576,operation:4194304,wire:4194304});
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const fail=message=>Error(message);
@@ -29,7 +30,16 @@ export function remoteConfiguration(entry){
 // Return public / private / loopback / prohibited. IPv4-mapped IPv6 is classified
 // through its actual IPv4 address, never through its textual spelling.
 export function remoteAddressKind(address){
- if(isIP(address)===4){const p=address.split('.').map(Number),[a,b]=p;if(a===127)return'loopback';if(a===10||a===172&&b>=16&&b<=31||a===192&&b===168)return'private';if(a===0||a>=224||a===169&&b===254||a===100&&b>=64&&b<=127||a===192&&[0,2].includes(b)||a===198&&[18,19,51].includes(b)||a===203&&b===0)return'prohibited';return'public';}
+ if(isIP(address)===4){
+  const value=address.split('.').reduce((n,octet)=>n*256+Number(octet),0),prefix=(base,bits)=>Math.floor(value/2**(32-bits))===Math.floor(base/2**(32-bits));
+  if(prefix(0x7f000000,8))return'loopback';
+  if(prefix(0x0a000000,8)||prefix(0xac100000,12)||prefix(0xc0a80000,16))return'private';
+  // Exact IANA protocol/documentation/benchmark prefixes, plus existing shared,
+  // link-local, multicast/reserved policy. Public neighboring ranges stay public.
+  // https://www.iana.org/assignments/iana-ipv4-special-registry
+  if([[0,8],[0x64400000,10],[0xa9fe0000,16],[0xc0000000,24],[0xc0000200,24],[0xc6120000,15],[0xc6336400,24],[0xcb007100,24],[0xe0000000,3]].some(([base,bits])=>prefix(base,bits)))return'prohibited';
+  return'public';
+ }
  if(isIP(address)!==6||address.includes('%'))return'prohibited';
  let text=address.toLowerCase();if(text.includes('.')){const at=text.lastIndexOf(':'),p=text.slice(at+1).split('.').map(Number);text=text.slice(0,at)+':'+((p[0]<<8)|p[1]).toString(16)+':'+((p[2]<<8)|p[3]).toString(16);}
  const sides=text.split('::'),left=sides[0]?sides[0].split(':'):[],right=sides[1]?sides[1].split(':'):[],words=[...left,...Array(sides.length===2?8-left.length-right.length:0).fill('0'),...right].map(v=>parseInt(v,16));
@@ -46,7 +56,7 @@ export async function resolveRemoteDestination(url,{lookup=dnsLookup}={}){
 }
 export function createRemoteNetwork(source,{lookup=dnsLookup,onFailure=()=>{},limits=REMOTE_LIMITS}={}){
  const configured=new URL(source.url),owner=new AbortController(),requests=new Set();let operation=null,backgroundBytes=0;
- const fatal=message=>{const error=fail(message);onFailure(error);return error;};
+ const fatal=(message,setupKind)=>{const error=setupKind?discoverySetupError(setupKind):fail(message);onFailure(error);return error;};
  const account=count=>{if(operation){operation.bytes+=count;if(operation.bytes>limits.operation)throw fatal('Remote operation exceeds its network byte limit.');}else{backgroundBytes+=count;if(backgroundBytes>limits.operation*4)throw fatal('Remote background stream exceeds its lifetime limit.');}};
  const api={
   begin(signal){if(operation)throw fail('Remote operation already active.');operation={bytes:0,signal};},
@@ -62,10 +72,10 @@ export function createRemoteNetwork(source,{lookup=dnsLookup,onFailure=()=>{},li
    const body=init.body??'';if(typeof body!=='string'||Buffer.byteLength(body)>262144)throw fatal('Remote request body exceeds its limit.');account(Buffer.byteLength(body));
    return new Promise((resolve,reject)=>{
     const req=(url.protocol==='https:'?https:http).request(url,{method:init.method??'GET',headers,agent:false,rejectUnauthorized:true,maxHeaderSize:limits.headers,signal,lookup:(_hostname,options,callback)=>callback(null,options.all?[destination]:destination.address,destination.family)},res=>{
-     const finishError=message=>{const error=fatal(message);res.destroy(error);req.destroy(error);reject(error);};
+     const finishError=(message,setupKind)=>{const error=fatal(message,setupKind);res.destroy(error);req.destroy(error);reject(error);};
      const headerBytes=res.rawHeaders.reduce((n,v)=>n+Buffer.byteLength(v)+4,0);try{account(headerBytes);}catch(error){res.destroy(error);reject(error);return;}
      if(headerBytes>limits.headers){finishError('Remote response headers exceed their limit.');return;}
-     if(res.statusCode>=300&&res.statusCode<400){finishError('Remote redirects are refused. Configure the final endpoint and review it.');return;}
+     if(res.statusCode>=300&&res.statusCode<400){finishError(null,'redirect');return;}
      const responseHeaders=new Headers();for(let i=0;i<res.rawHeaders.length;i+=2)responseHeaders.append(res.rawHeaders[i],res.rawHeaders[i+1]);
      let stream=res;const encoding=res.headers['content-encoding'];if(encoding){const decoder=encoding==='gzip'?createGunzip():encoding==='deflate'?createInflate():encoding==='br'?createBrotliDecompress():null;if(!decoder){finishError('Unsupported remote content encoding.');return;}const counter=new Transform({transform(chunk,_encoding,callback){compressed+=chunk.length;callback(compressed>limits.wire?fatal('Remote wire response exceeds its limit.'):null,chunk);}});res.on('error',error=>decoder.destroy(error));counter.on('error',error=>decoder.destroy(error));stream=res.pipe(counter).pipe(decoder);}
      let compressed=0,bytes=0,frame=0,line=0,cr=false;const sse=/^text\/event-stream\b/i.test(res.headers['content-type']??'');

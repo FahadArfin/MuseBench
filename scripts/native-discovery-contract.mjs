@@ -167,6 +167,6 @@ finally{
  if(!['confirmed','no-runtime'].includes(report.cleanup)){report.status='failed';process.exitCode=1;}
  const target=path.resolve(root);assert.equal(path.dirname(target),temporary);assert.ok(path.basename(target).startsWith('muse-native-tool-contract-'));
  if(['confirmed','no-runtime'].includes(report.cleanup)){await rm(target,{recursive:true,force:true});report.workspaceRemoved=true;}else{report.workspaceRemoved=false;report.retainedWorkspace=target;}
- const output=path.join(repoRoot,'artifacts',(process.env.MUSEBENCH_DISCOVERY_APP_ROOT?'native-discovery-packaged-contract':'native-discovery-contract')+(remoteMode?'-remote':''));await mkdir(output,{recursive:true});await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));
+ const output=path.join(process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR?path.resolve(process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR):path.join(repoRoot,'artifacts'),(process.env.MUSEBENCH_DISCOVERY_APP_ROOT?'native-discovery-packaged-contract':'native-discovery-contract')+(remoteMode?'-remote':''));await mkdir(output,{recursive:true});await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));
  console.log(JSON.stringify({status:report.status,stage:report.stage,error:report.error,cases:report.cases,requests:report.requests.length,cleanup:report.cleanup,workspaceRemoved:report.workspaceRemoved,modelInferenceRequests:0}));
 }

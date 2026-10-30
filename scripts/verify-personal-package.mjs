@@ -63,5 +63,6 @@ for (const helper of process.platform==='win32'?['MuseBenchJob', 'MuseBenchSpeec
 }
 const report = { checkedAt: new Date().toISOString(), status: 'passed', platform:process.platform,arch:process.arch,packageDir,files: checked, executableSha256: sha(readFileSync(executable)), archiveSha256: sha(readFileSync(archive)), nativeHelpers };
 mkdirSync(path.join(root,'artifacts'),{recursive:true});
-writeFileSync(path.join(root, 'artifacts/personal-package-verification.json'), JSON.stringify(report, null, 2));
+const reportDirectory=process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR?path.resolve(process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR):path.join(root,'artifacts');mkdirSync(reportDirectory,{recursive:true});
+writeFileSync(path.join(reportDirectory,process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR?'package-verification.json':'personal-package-verification.json'), JSON.stringify(report, null, 2));
 console.log(`PASS ${checked.length} packaged source/build files and ${Object.keys(nativeHelpers).length} native helpers match the validated source`);

@@ -19,6 +19,21 @@ async function canonical(value,kind){
  if(key(actual)!==key(path.resolve(value))||info.isSymbolicLink()||!(kind==='file'?info.isFile():info.isDirectory()))throw Error('Symbolic links and noncanonical execution paths are unsupported.');return actual;
 }
 function expand(value,environment){let expandedLength=value.length;return value.replace(/\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g,(all,key,fallback)=>{if(all==='$$')return '$';if(protectedKey(key))throw Error('Wrapper or billing environment references are unsupported.');const found=Object.keys(environment).find(k=>process.platform==='win32'?k.toUpperCase()===key.toUpperCase():k===key);const result=found?environment[found]:fallback;if(typeof result!=='string')throw Error('A referenced environment variable is unavailable.');expandedLength+=result.length-all.length;if(expandedLength>16384)throw Error('Expanded source setting exceeds its 16 KiB limit.');return result;});}
+// Parse only the input template. Escaped dollars and substituted environment
+// values are literal output and must never be reinterpreted as expressions.
+function expandRemoteTemplate(template,environment,names){
+ let output='';const append=value=>{if(output.length+value.length>16384)throw Error('Expanded source setting exceeds its 16 KiB limit.');output+=value;};
+ for(let i=0;i<template.length;){
+  if(template[i]!=='$'){const end=template.indexOf('$',i);append(template.slice(i,end<0?template.length:end));i=end<0?template.length:end;continue;}
+  if(template[i+1]==='$'){append('$');i+=2;continue;}
+  if(template[i+1]!=='{'){append('$');i++;continue;}
+  const end=template.indexOf('}',i+2),expression=end<0?null:/^([A-Za-z_][A-Za-z0-9_]*)(?::-([^{}]*))?$/.exec(template.slice(i+2,end));
+  if(!expression)throw Error('Remote source template contains malformed or unsupported interpolation.');
+  const [,key,fallback]=expression;if(protectedKey(key))throw Error('Wrapper or billing environment references are unsupported.');names.add(key);
+  const found=Object.keys(environment).find(k=>process.platform==='win32'?k.toUpperCase()===key.toUpperCase():k===key),resolved=found?environment[found]:undefined,value=resolved===undefined||resolved===''&&fallback!==undefined?fallback?.replace(/\$\$/g,'$'):resolved;
+  if(typeof value!=='string')throw Error('A referenced environment variable is unavailable.');append(value);i=end+1;
+ }return output;
+}
 export async function inspectDiscoverySources({workspaceRoot,environment=process.env,extensionReview,platform=process.platform}={}){
  const root=await canonical(workspaceRoot,'directory'),file=await readMcpSource(mcpSettingsPath(environment,platform));
  const directoryIdentity=async directory=>{const value=await lstat(directory,{bigint:true});return[String(value.dev),String(value.ino),String(value.birthtimeNs)];},rootIdentity=await directoryIdentity(root);
@@ -32,7 +47,7 @@ export async function inspectDiscoverySources({workspaceRoot,environment=process
  const rows=[],definitions=new Map();
  for(const [name,raw] of Object.entries(servers)){
   if(!/^[A-Za-z0-9_.-]{1,100}$/.test(name))continue;
-  let entry={},definition,reason='';
+  let entry={},definition,reason='';const remoteNames=new Set();
   try{
    entry=canonicalMcpEntry(raw);
    if(overlays.includes(name))throw Error('A project overlay uses this name. Use Customize to review the direct source.');
@@ -55,8 +70,8 @@ export async function inspectDiscoverySources({workspaceRoot,environment=process
    const commonDefinition={id:'global:'+name,name,transport,enabledTools:entry.enabled_tools??null,disabledTools:entry.disabled_tools??[],startupMs:(entry.startup_timeout_sec??30)*1000,callMs:(entry.tool_timeout_sec??300)*1000};
    if(transport==='streamable-http'){
     if(!text(entry.url,16384)||entry.headers!==undefined&&(!object(entry.headers)||Object.keys(entry.headers).length>32))throw Error('Invalid remote source configuration.');
-    const headers=Object.fromEntries(Object.entries(entry.headers??{}).map(([key,value])=>{if(!text(value))throw Error('Invalid remote header value.');return[key,expand(value,environment)];}));
-    definition={...commonDefinition,...remoteConfiguration({...entry,url:expand(entry.url,environment),headers})};
+    const headers=Object.fromEntries(Object.entries(entry.headers??{}).map(([key,value])=>{if(!text(value))throw Error('Invalid remote header value.');return[key,expandRemoteTemplate(value,environment,remoteNames)];}));
+    definition={...commonDefinition,...remoteConfiguration({...entry,url:expandRemoteTemplate(entry.url,environment,remoteNames),headers})};
    }
    else{const cwd=await canonical(entry.cwd??root,'directory'),executable=await resolveDiscoveryExecutable(entry.command,{cwd,env,platform});definition={...commonDefinition,...executable,args:entry.args??[],cwd,cwdIdentity:await directoryIdentity(cwd),env};}
    if(Buffer.byteLength(JSON.stringify(definition))>65536)throw Error('Source execution settings exceed the review limit.');
@@ -64,8 +79,7 @@ export async function inspectDiscoverySources({workspaceRoot,environment=process
   const revision=configurationDigest({root,rootIdentity,name,raw,definition:definition??null,overlays,plugins:plugins?.revision??null,pluginFacts:pluginNames.facts,reason});
   const row={id:'global:'+name,name,revision,transport:mcpTransport(entry)==='stdio'?'stdio':'streamable-http',headerKeys:object(entry.headers)?Object.keys(entry.headers).filter(key=>text(key,100)).sort():[],address:definition?.url??definition?.command??(text(entry.command,4096)?entry.command:mcpTransport(entry)==='stdio'?'Unavailable executable':'Unavailable remote endpoint'),cwd:text(entry.cwd,4096)?entry.cwd:root,environmentKeys:object(entry.env)?Object.keys(entry.env).filter(key=>text(key,200)).sort():[],eligible:!reason,reason:reason||'Reviewed disabled source. Startup ≤30s; calls ≤300s; stops with this connection.'};
   if(row.transport==='streamable-http'){
-   const templates=[entry.url,...Object.values(object(entry.headers)?entry.headers:{})].filter(value=>typeof value==='string');
-   row.environmentKeys=[...new Set(templates.flatMap(value=>[...value.matchAll(/\$\$|\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}/g)].map(match=>match[1]).filter(Boolean)))].sort();
+   row.environmentKeys=[...remoteNames].sort();
    if(definition&&/\$\$|\$\{/.test(entry.url)){row.address=entry.url;row.resolvedOrigin=new URL(definition.url).origin;}
   }
   rows.push(row);if(!reason)definitions.set(row.id,{...definition,revision});
