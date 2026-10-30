@@ -37,4 +37,4 @@
 - [x] Add the bounded native runner. Run `node scripts/native-tool-contract.mjs --local-fixture`; require search, definition, batch and denied-call evidence plus confirmed cleanup, zero inference and zero credentials.
 - [x] Add a configured-catalog case to the shared picker smoke; run browser and Electron variants and the production build.
 - [x] Reconcile roadmap delivery labels and record exact native contract evidence and remaining prerequisites.
-- [ ] Obtain independent branch review, fix material findings, rerun relevant checks, commit and push under standing authorization.
+- [x] Obtain independent branch review, fix material findings, rerun relevant checks, commit and push under standing authorization.
