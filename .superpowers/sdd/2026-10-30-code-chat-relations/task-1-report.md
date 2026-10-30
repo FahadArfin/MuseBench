@@ -42,3 +42,19 @@ Contract iteration evidence: native-contract-first-report.json preserves the ini
 Reviewed final diff against Task 1 and Global Constraints. No src/ui or src/preview changes. Existing forkedFrom and native identities remain compatible; relation projections preserve orphans. Explicit source validation precedes child creation, uncertain/rejected native operations never fall back to a saved-conversation copy, late acquired IDs remain visible, and tool/permission review stays authoritative.
 
 Remaining scope: Task 2 must add shared compact controls, exact source-bound callbacks, preview parity, relation nesting/backlinks and responsive/keyboard/reduced-motion tests; root handles independent review, build, push, CI, publish/install. No live paid-provider behavior is claimed. The native probe proves the pinned local protocol with scripted provider responses, while controller/runtime integration tests prove admission/isolation/routing. Unknown native forks intentionally require manual/native inspection as described above.
+
+
+## Review fix round 1: independent fork ancestry boundary
+
+Addressed Important P2 from task-1-review.md. Verified the failure before editing production code: side S -> fork F -> unavailable original P incorrectly invalidated S -> F. relationParent now validates the requested direct parent, follows only side ancestry to detect malformed side cycles, and stops at the independent main/fork boundary. A fork provenance link remains a separately validated direct backlink. Thus deleted, archived or moved original sources cannot orphan a side of their surviving fork; creating another side from that side attaches a sibling under the surviving fork.
+
+Covering tests added in test/chat-relations.test.mjs:
+- Three helper cases named "side ancestry stops at its independent fork main when the original source is deleted/archived/moved": relationParent(side) and mainChat(side) return the surviving fork, while that fork's unavailable original backlink is null.
+- Three real controller cases named "controller creates sibling sides under the surviving fork after its original source is deleted/archived/moved": create original -> fork -> side, mutate the original using the public delete/archive/project-move actions, create another side from the first side, assert the new side's exact parent is the surviving fork and its messages remain empty.
+- "side-cycle checks stop at the fork boundary while fork backlinks remain independently navigable": reject three-side cycles and self-relations, preserve side -> fork main projection, and permit the fork's direct backlink to its original side independently of nesting. Existing two-side-cycle and cross-project/unavailable-parent tests remain unchanged.
+
+RED command: `node --test test/chat-relations.test.mjs` before the fix. Output: 17 tests, 10 pass, 7 fail, 0 skipped, exit 1; all seven new cases failed for the reported ancestry behavior. Exact receipt: artifacts/code-chat-relations/review-round1-red.txt.
+
+GREEN command: `node --test test/chat-relations.test.mjs test/harness-gaps.test.mjs test/exec-controller.test.mjs`. Output: 104 tests, 104 pass, 0 fail, 0 skipped, duration 11.732 s, exit 0. Exact receipt: artifacts/code-chat-relations/review-round1-green.txt. Source whitespace check `git diff --check -- src/shared/chat-relations.mjs test/chat-relations.test.mjs` exited 0 (ordinary LF/CRLF checkout warnings only).
+
+Self-review: the change is limited to relation projection and covering tests; no controller/native/UI/preview behavior was broadened, no provider/profile/app operations occurred. Side ancestry still rejects unavailable direct parents, project mismatches and side-only cycles. Fork backlinks remain navigable only when their direct source exists in the same project and is unarchived. Full suite was not repeated for this narrow fix, as directed; the prior full/native contract results above remain historical evidence for their tested revision.

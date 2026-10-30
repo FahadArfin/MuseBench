@@ -4,13 +4,16 @@ export function restoreChatRelation(value,taskId){
  if(!value||!['side','fork'].includes(value.kind)||!text(value.parentTaskId,200)||value.parentTaskId===taskId||!text(value.parentTitle,100)||!text(value.createdAt,80)||!Number.isFinite(Date.parse(value.createdAt))||!(value.kind==='side'?value.context==='fresh':['native','retained'].includes(value.context))||value.messageId!==undefined&&!text(value.messageId,200))return null;
  return{kind:value.kind,parentTaskId:value.parentTaskId,parentTitle:value.parentTitle,context:value.context,createdAt:value.createdAt,...(value.messageId?{messageId:value.messageId}:{})};
 }
-/** Only available same-project acyclic links are navigable/nestable. Orphans survive. */
+/** Side ancestry stops at its independent main; fork provenance is a direct backlink. */
 export function relationParent(task,tasks){
- const byId=new Map(tasks.map(t=>[t.id,t])),seen=new Set([task.id]);let current=task,first=null;
+ const relation=restoreChatRelation(task.chatRelation,task.id);if(!relation)return null;
+ const byId=new Map(tasks.map(t=>[t.id,t])),seen=new Set([task.id]),first=byId.get(relation.parentTaskId);let current=first;
  for(let i=0;i<=tasks.length;i++){
-  const relation=restoreChatRelation(current.chatRelation,current.id);if(!relation)return current===task?null:first;
-  const parent=byId.get(relation.parentTaskId);if(!parent||parent.archived||parent.projectId!==task.projectId||seen.has(parent.id))return null;
-  first??=parent;seen.add(parent.id);current=parent;
+  if(!current||current.archived||current.projectId!==task.projectId||seen.has(current.id))return null;
+  if(relation.kind==='fork')return first;
+  seen.add(current.id);
+  const ancestor=restoreChatRelation(current.chatRelation,current.id);if(ancestor?.kind!=='side')return first;
+  current=byId.get(ancestor.parentTaskId);
  }
  return null;
 }

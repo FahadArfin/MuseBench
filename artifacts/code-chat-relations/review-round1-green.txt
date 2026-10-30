@@ -1,0 +1,536 @@
+TAP version 13
+# (node:48384) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fresh sides isolate context and preserve the explicit parent draft, queues and goals
+ok 1 - fresh sides isolate context and preserve the explicit parent draft, queues and goals
+  ---
+  duration_ms: 176.7189
+  ...
+# Subtest: relations survive restart and parent deletion without cascading or hiding a side
+ok 2 - relations survive restart and parent deletion without cascading or hiding a side
+  ---
+  duration_ms: 94.2466
+  ...
+# Subtest: invalid and archived explicit sources preserve selection and create nothing
+ok 3 - invalid and archived explicit sources preserve selection and create nothing
+  ---
+  duration_ms: 83.7426
+  ...
+# Subtest: chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+ok 4 - chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+  ---
+  duration_ms: 106.4944
+  ...
+# Subtest: relationship validation and projection never nest cycles, malformed or cross-project parents
+ok 5 - relationship validation and projection never nest cycles, malformed or cross-project parents
+  ---
+  duration_ms: 0.3457
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is deleted
+ok 6 - side ancestry stops at its independent fork main when the original source is deleted
+  ---
+  duration_ms: 0.2963
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is deleted
+ok 7 - controller creates sibling sides under the surviving fork after its original source is deleted
+  ---
+  duration_ms: 106.1711
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is archived
+ok 8 - side ancestry stops at its independent fork main when the original source is archived
+  ---
+  duration_ms: 0.1448
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is archived
+ok 9 - controller creates sibling sides under the surviving fork after its original source is archived
+  ---
+  duration_ms: 99.4852
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is moved
+ok 10 - side ancestry stops at its independent fork main when the original source is moved
+  ---
+  duration_ms: 0.1908
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is moved
+ok 11 - controller creates sibling sides under the surviving fork after its original source is moved
+  ---
+  duration_ms: 196.1496
+  ...
+# Subtest: side-cycle checks stop at the fork boundary while fork backlinks remain independently navigable
+ok 12 - side-cycle checks stop at the fork boundary while fork backlinks remain independently navigable
+  ---
+  duration_ms: 0.2746
+  ...
+# Subtest: desktop accepts exact-source side and chat-level fork actions with bounded text
+ok 13 - desktop accepts exact-source side and chat-level fork actions with bounded text
+  ---
+  duration_ms: 0.7276
+  ...
+# Subtest: native fork restores independently without copying usage, goals or access leases
+ok 14 - native fork restores independently without copying usage, goals or access leases
+  ---
+  duration_ms: 89.8631
+  ...
+# Subtest: unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+ok 15 - unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+  ---
+  duration_ms: 96.6521
+  ...
+# Subtest: known native rejection creates no copied child and allows a later deliberate fork
+ok 16 - known native rejection creates no copied child and allows a later deliberate fork
+  ---
+  duration_ms: 84.1033
+  ...
+# Subtest: durable fork receipt wins over a stale app selection snapshot after crash
+ok 17 - durable fork receipt wins over a stale app selection snapshot after crash
+  ---
+  duration_ms: 92.3586
+  ...
+# (node:19036) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: screenshot follows draft, queue and native image argument without embedding bytes in chat JSON
+ok 18 - screenshot follows draft, queue and native image argument without embedding bytes in chat JSON
+  ---
+  duration_ms: 178.6633
+  ...
+# Subtest: durable Code chat reuses its native session without replaying history and requires recovery after stop
+ok 19 - durable Code chat reuses its native session without replaying history and requires recovery after stop
+  ---
+  duration_ms: 155.8318
+  ...
+# Subtest: exec/controller accepts completion attribution only after the authoritative terminal and exit zero
+ok 20 - exec/controller accepts completion attribution only after the authoritative terminal and exit zero
+  ---
+  duration_ms: 121.7827
+  ...
+# Subtest: native activity belongs to its prompt, persists after completion and stops on cancellation
+ok 21 - native activity belongs to its prompt, persists after completion and stops on cancellation
+  ---
+  duration_ms: 185.4253
+  ...
+# Subtest: native approval stop does not leave a false waiting thread after its process is stopped
+ok 22 - native approval stop does not leave a false waiting thread after its process is stopped
+  ---
+  duration_ms: 120.1027
+  ...
+# Subtest: background workflow continuation stays attributed to one prompt until process exit
+ok 23 - background workflow continuation stays attributed to one prompt until process exit
+  ---
+  duration_ms: 131.8397
+  ...
+# Subtest: chat run settings persist, reach native execution, and cannot change during a run
+ok 24 - chat run settings persist, reach native execution, and cannot change during a run
+  ---
+  duration_ms: 129.7096
+  ...
+# Subtest: exec/controller billing failure cannot authorize a local checkpoint
+ok 25 - exec/controller billing failure cannot authorize a local checkpoint
+  ---
+  duration_ms: 125.0081
+  ...
+# Subtest: exec/controller missing terminal despite successful exit and assistant claims cannot authorize a local checkpoint
+ok 26 - exec/controller missing terminal despite successful exit and assistant claims cannot authorize a local checkpoint
+  ---
+  duration_ms: 120.8797
+  ...
+# Subtest: exec/controller completed terminal with failed process exit cannot authorize a local checkpoint
+ok 27 - exec/controller completed terminal with failed process exit cannot authorize a local checkpoint
+  ---
+  duration_ms: 110.3329
+  ...
+# Subtest: exec/controller failed terminal with successful process exit cannot authorize a local checkpoint
+ok 28 - exec/controller failed terminal with successful process exit cannot authorize a local checkpoint
+  ---
+  duration_ms: 111.5802
+  ...
+# Subtest: exec/controller conflicting terminal records cannot authorize a local checkpoint
+ok 29 - exec/controller conflicting terminal records cannot authorize a local checkpoint
+  ---
+  duration_ms: 115.7484
+  ...
+# Subtest: exec/controller dispatch remains available to disconnect a pending process and ignores its late completion
+ok 30 - exec/controller dispatch remains available to disconnect a pending process and ignores its late completion
+  ---
+  duration_ms: 112.2985
+  ...
+# Subtest: exec/controller replaces streamed assistant claims with an empty failed terminal response
+ok 31 - exec/controller replaces streamed assistant claims with an empty failed terminal response
+  ---
+  duration_ms: 135.7142
+  ...
+# Subtest: first-turn input receipt survives restart and stop before terminal, and resumes with offset
+ok 32 - first-turn input receipt survives restart and stop before terminal, and resumes with offset
+  ---
+  duration_ms: 177.7404
+  ...
+# Subtest: unacknowledged first-turn interruption requires a fresh session
+ok 33 - unacknowledged first-turn interruption requires a fresh session
+  ---
+  duration_ms: 113.5046
+  ...
+# Subtest: missing retained native log blocks resume without launching another model
+ok 34 - missing retained native log blocks resume without launching another model
+  ---
+  duration_ms: 124.1459
+  ...
+# Subtest: branching a durable chat creates an independent native session
+ok 35 - branching a durable chat creates an independent native session
+  ---
+  duration_ms: 147.0244
+  ...
+# Subtest: native output from another session never completes the bound chat
+ok 36 - native output from another session never completes the bound chat
+  ---
+  duration_ms: 100.953
+  ...
+# Subtest: two native exec owners keep session events and cancellation isolated
+ok 37 - two native exec owners keep session events and cancellation isolated
+  ---
+  duration_ms: 223.7937
+  ...
+# (node:37248) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: context reading uses the durable task row after an interrupted app snapshot write
+ok 38 - context reading uses the durable task row after an interrupted app snapshot write
+  ---
+  duration_ms: 117.7081
+  ...
+# Subtest: missing, foreign or disconnected context facts never promote a saved reading
+ok 39 - missing, foreign or disconnected context facts never promote a saved reading
+  ---
+  duration_ms: 80.4483
+  ...
+# Subtest: context readings follow their chat and restart as saved, never as live
+ok 40 - context readings follow their chat and restart as saved, never as live
+  ---
+  duration_ms: 189.2835
+  ...
+# Subtest: context reading cannot leak into a deleted chat successor (false)
+ok 41 - context reading cannot leak into a deleted chat successor (false)
+  ---
+  duration_ms: 86.9692
+  ...
+# Subtest: context reading cannot leak into a deleted chat successor (true)
+ok 42 - context reading cannot leak into a deleted chat successor (true)
+  ---
+  duration_ms: 105.7785
+  ...
+# Subtest: update restart guard covers inactive chats and releases only after native work settles
+ok 43 - update restart guard covers inactive chats and releases only after native work settles
+  ---
+  duration_ms: 118.8832
+  ...
+# Subtest: any source folder can be opened without package.json
+ok 44 - any source folder can be opened without package.json
+  ---
+  duration_ms: 81.8624
+  ...
+# Subtest: new workspace actions reject malformed data and internal queue flags
+ok 45 - new workspace actions reject malformed data and internal queue flags
+  ---
+  duration_ms: 0.712
+  ...
+# Subtest: context inspection refuses stale bindings and credentials even when files are explicitly requested
+ok 46 - context inspection refuses stale bindings and credentials even when files are explicitly requested
+  ---
+  duration_ms: 95.6309
+  ...
+# Subtest: follow-ups replay prior exchanges and project guidance without trusting project configuration
+ok 47 - follow-ups replay prior exchanges and project guidance without trusting project configuration
+  ---
+  duration_ms: 115.2404
+  ...
+# Subtest: file context excludes secrets, pins reviewed contents and rejects changed files before dispatch
+ok 48 - file context excludes secrets, pins reviewed contents and rejects changed files before dispatch
+  ---
+  duration_ms: 84.0814
+  ...
+# Subtest: context budget is explicit and the newest request is never truncated
+ok 49 - context budget is explicit and the newest request is never truncated
+  ---
+  duration_ms: 209.3546
+  ...
+# Subtest: follow-up context retains earlier selected source snapshots even when the assistant only acknowledged them
+ok 50 - follow-up context retains earlier selected source snapshots even when the assistant only acknowledged them
+  ---
+  duration_ms: 105.1532
+  ...
+# Subtest: queue advances only on verified success and captures its own options
+ok 51 - queue advances only on verified success and captures its own options
+  ---
+  duration_ms: 166.3634
+  ...
+# Subtest: stop and unconfirmed completion cannot launch queued requests
+ok 52 - stop and unconfirmed completion cannot launch queued requests
+  ---
+  duration_ms: 140.8702
+  ...
+# Subtest: adding another prompt does not resume an explicitly paused queue
+ok 53 - adding another prompt does not resume an explicitly paused queue
+  ---
+  duration_ms: 152.5773
+  ...
+# Subtest: drafts and paused queues survive restart without sending work
+ok 54 - drafts and paused queues survive restart without sending work
+  ---
+  duration_ms: 120.837
+  ...
+# Subtest: branching keeps earlier context, restores the selected prompt as draft and never reverts files
+ok 55 - branching keeps earlier context, restores the selected prompt as draft and never reverts files
+  ---
+  duration_ms: 117.9339
+  ...
+# Subtest: archived chats remain searchable and can be restored without retaining a pin
+ok 56 - archived chats remain searchable and can be restored without retaining a pin
+  ---
+  duration_ms: 91.7698
+  ...
+# Subtest: branches retain failed-turn outcome markers in replayed context
+ok 57 - branches retain failed-turn outcome markers in replayed context
+  ---
+  duration_ms: 121.2715
+  ...
+# Subtest: failed outcomes survive eviction from the bounded activity journal
+ok 58 - failed outcomes survive eviction from the bounded activity journal
+  ---
+  duration_ms: 1092.8441
+  ...
+# Subtest: stopped turns keep cancelled outcomes after branching
+ok 59 - stopped turns keep cancelled outcomes after branching
+  ---
+  duration_ms: 113.8759
+  ...
+# Subtest: closing with a pending enqueue never starts queued work and persists a hold
+ok 60 - closing with a pending enqueue never starts queued work and persists a hold
+  ---
+  duration_ms: 142.8315
+  ...
+# Subtest: queued attachment validation failure stays paused when later prompts are added
+ok 61 - queued attachment validation failure stays paused when later prompts are added
+  ---
+  duration_ms: 178.555
+  ...
+# Subtest: closing during an already scheduled queue preflight retains the unsent entry
+ok 62 - closing during an already scheduled queue preflight retains the unsent entry
+  ---
+  duration_ms: 106.7706
+  ...
+# Subtest: closing while connection preparation is pending never sends the prompt
+ok 63 - closing while connection preparation is pending never sends the prompt
+  ---
+  duration_ms: 84.8285
+  ...
+# Subtest: close cancels runtime preflight before waiting for controller operations
+ok 64 - close cancels runtime preflight before waiting for controller operations
+  ---
+  duration_ms: 137.1913
+  ...
+# Subtest: branch from an assistant response includes that output, excludes later turns and preserves the original
+ok 65 - branch from an assistant response includes that output, excludes later turns and preserves the original
+  ---
+  duration_ms: 167.6106
+  ...
+# Subtest: queued prompts can move during a run and execute in the chosen order
+ok 66 - queued prompts can move during a run and execute in the chosen order
+  ---
+  duration_ms: 130.14
+  ...
+# Subtest: queue reordering persists and does not resume paused work
+ok 67 - queue reordering persists and does not resume paused work
+  ---
+  duration_ms: 102.0802
+  ...
+# Subtest: full received responses remain searchable past the renderer limit
+ok 68 - full received responses remain searchable past the renderer limit
+  ---
+  duration_ms: 105.3892
+  ...
+# Subtest: definitive asynchronous rejection restores draft and removes unaccepted history
+ok 69 - definitive asynchronous rejection restores draft and removes unaccepted history
+  ---
+  duration_ms: 96.6059
+  ...
+# Subtest: workflow phase gates hold both manual dequeue and automatic continuation
+ok 70 - workflow phase gates hold both manual dequeue and automatic continuation
+  ---
+  duration_ms: 88.4502
+  ...
+# Subtest: stored context receipt matches the exact prompt delivered to the runtime
+ok 71 - stored context receipt matches the exact prompt delivered to the runtime
+  ---
+  duration_ms: 93.9731
+  ...
+# Subtest: checkpoint restoration binds review revision, refuses active writers and preserves redo
+ok 72 - checkpoint restoration binds review revision, refuses active writers and preserves redo
+  ---
+  duration_ms: 135.8016
+  ...
+# Subtest: project lessons retain actual source provenance and reject stale acceptance
+ok 73 - project lessons retain actual source provenance and reject stale acceptance
+  ---
+  duration_ms: 98.825
+  ...
+# Subtest: execution receipts survive restart and notification updates never dispatch a new run
+ok 74 - execution receipts survive restart and notification updates never dispatch a new run
+  ---
+  duration_ms: 94.279
+  ...
+# Subtest: bounded continuation runs validation, stops on passing evidence and yields to queued user input
+ok 75 - bounded continuation runs validation, stops on passing evidence and yields to queued user input
+  ---
+  duration_ms: 1428.2933
+  ...
+# Subtest: restart disarms a pending goal and untrusted dispatch cannot claim controller origin
+ok 76 - restart disarms a pending goal and untrusted dispatch cannot claim controller origin
+  ---
+  duration_ms: 427.6135
+  ...
+# Subtest: goal continuation rejects passing checks when a later edit changes the reviewed revision
+ok 77 - goal continuation rejects passing checks when a later edit changes the reviewed revision
+  ---
+  duration_ms: 1190.7159
+  ...
+# Subtest: independent review pins a source revision, refuses recursion and integrates only explicitly
+ok 78 - independent review pins a source revision, refuses recursion and integrates only explicitly
+  ---
+  duration_ms: 144.3861
+  ...
+# Subtest: stream snapshots coalesce while terminal state and source history stay immediate and complete
+ok 79 - stream snapshots coalesce while terminal state and source history stay immediate and complete
+  ---
+  duration_ms: 114.4804
+  ...
+# Subtest: pending approval bypasses stream batching and periodic progress eventually publishes
+ok 80 - pending approval bypasses stream batching and periodic progress eventually publishes
+  ---
+  duration_ms: 164.0166
+  ...
+# Subtest: goal expiry during connection preparation never dispatches its prompt
+ok 81 - goal expiry during connection preparation never dispatches its prompt
+  ---
+  duration_ms: 400.4682
+  ...
+# Subtest: disconnect settles an owned receipt with confirmed cleanup
+ok 82 - disconnect settles an owned receipt with confirmed cleanup
+  ---
+  duration_ms: 99.4923
+  ...
+# Subtest: disconnect settles an owned receipt with unknown cleanup
+ok 83 - disconnect settles an owned receipt with unknown cleanup
+  ---
+  duration_ms: 176.4499
+  ...
+# Subtest: disconnect without a terminal callback settles as unknown
+ok 84 - disconnect without a terminal callback settles as unknown
+  ---
+  duration_ms: 90.1673
+  ...
+# Subtest: review integration preserves a files-only parent draft
+ok 85 - review integration preserves a files-only parent draft
+  ---
+  duration_ms: 129.3933
+  ...
+# Subtest: review integration preserves a images-only parent draft
+ok 86 - review integration preserves a images-only parent draft
+  ---
+  duration_ms: 126.2853
+  ...
+# Subtest: branching and restart retain shortened response provenance in context receipts
+ok 87 - branching and restart retain shortened response provenance in context receipts
+  ---
+  duration_ms: 136.7554
+  ...
+# Subtest: steering preserves the active run and draft on rejection, then records admitted correction
+ok 88 - steering preserves the active run and draft on rejection, then records admitted correction
+  ---
+  duration_ms: 99.1904
+  ...
+# Subtest: legacy non-durable interactive connection seeds app history once
+ok 89 - legacy non-durable interactive connection seeds app history once
+  ---
+  duration_ms: 134.7776
+  ...
+# Subtest: uncertain steering preserves a durable receipt and draft without inventing a user turn
+ok 90 - uncertain steering preserves a durable receipt and draft without inventing a user turn
+  ---
+  duration_ms: 112.2706
+  ...
+# Subtest: restart reconciles unfinished native compaction as unknown without deleting history
+ok 91 - restart reconciles unfinished native compaction as unknown without deleting history
+  ---
+  duration_ms: 82.2075
+  ...
+# Subtest: context observation history belongs to its emitting chat and persists safely across restart
+ok 92 - context observation history belongs to its emitting chat and persists safely across restart
+  ---
+  duration_ms: 181.3799
+  ...
+# Subtest: deleted chat context observations cannot enter its successor (background=true)
+ok 93 - deleted chat context observations cannot enter its successor (background=true)
+  ---
+  duration_ms: 79.4502
+  ...
+# Subtest: deleted chat context observations cannot enter its successor (background=false)
+ok 94 - deleted chat context observations cannot enter its successor (background=false)
+  ---
+  duration_ms: 77.4274
+  ...
+# Subtest: restart keeps the newest context observation across an interrupted task snapshot write
+ok 95 - restart keeps the newest context observation across an interrupted task snapshot write
+  ---
+  duration_ms: 95.8598
+  ...
+# Subtest: restart keeps the newest context observation across an interrupted app snapshot write
+ok 96 - restart keeps the newest context observation across an interrupted app snapshot write
+  ---
+  duration_ms: 97.8299
+  ...
+# Subtest: a rejected second correction never relabels the first unknown steering receipt
+ok 97 - a rejected second correction never relabels the first unknown steering receipt
+  ---
+  duration_ms: 108.7966
+  ...
+# Subtest: native child work reserves its checkout and refuses followups while another chat owns it
+ok 98 - native child work reserves its checkout and refuses followups while another chat owns it
+  ---
+  duration_ms: 160.2637
+  ...
+# Subtest: native reporting and later child followup stay attached to the original app prompt
+ok 99 - native reporting and later child followup stay attached to the original app prompt
+  ---
+  duration_ms: 97.4214
+  ...
+# Subtest: composer access switches an idle connection and refuses active or stale targets
+ok 100 - composer access switches an idle connection and refuses active or stale targets
+  ---
+  duration_ms: 103.5286
+  ...
+# Subtest: execution access accepts only an explicit boolean and task identity
+ok 101 - execution access accepts only an explicit boolean and task identity
+  ---
+  duration_ms: 0.3126
+  ...
+# Subtest: composer access keeps the selected executable across fresh chat runtimes
+ok 102 - composer access keeps the selected executable across fresh chat runtimes
+  ---
+  duration_ms: 79.9838
+  ...
+# Subtest: native question pauses retain run attribution through the answer and completion
+ok 103 - native question pauses retain run attribution through the answer and completion
+  ---
+  duration_ms: 84.7318
+  ...
+# Subtest: confirmed native answers survive restart and unknown answers never enter replay
+ok 104 - confirmed native answers survive restart and unknown answers never enter replay
+  ---
+  duration_ms: 113.7869
+  ...
+1..104
+# tests 104
+# suites 0
+# pass 104
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11732.4515
