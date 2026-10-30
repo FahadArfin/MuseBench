@@ -11,9 +11,11 @@ import * as sdk from '@muse-code/sdk';
 import {createRuntime,curateEnvironment,discoverMuseBinaries} from '../src/runtime/index.mjs';
 import {createDiscoveryMcpConfig} from '../electron/discovery-mcp-config.mjs';
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
+import {peer} from '../test/fixtures/discovery-remote-peer.mjs';
 import {TARGET} from '../reference/patchlight/adapter/compatibility.mjs';
 
 assert.deepEqual(process.argv.slice(2),['--local-fixture']);
+const remoteMode=process.env.MUSEBENCH_DISCOVERY_REMOTE==='1';let remotePeer;
 const require=createRequire(import.meta.url),repoRoot=fileURLToPath(new URL('..',import.meta.url)),appRoot=process.env.MUSEBENCH_DISCOVERY_APP_ROOT||repoRoot;
 const temporary=await realpath(tmpdir()),root=await mkdtemp(path.join(temporary,'muse-native-tool-contract-'));
 const profile=path.join(root,'profile'),workspace=path.join(root,'project'),model='musebench-contract-fixture';
@@ -106,10 +108,11 @@ try{
  await writeFile(path.join(workspace,'lib.ts'),'export const value = 7;\n');await writeFile(path.join(workspace,'main.ts'),"import {value} from './lib';\nvalue;\n");
  server=createServer((req,res)=>{void respond(req,res);});server.requestTimeout=10000;server.headersTimeout=10000;
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));serverUrl=`http://127.0.0.1:${server.address().port}/v1`;
- const definition={command:process.env.MUSEBENCH_DISCOVERY_FIXTURE_NODE||process.execPath,args:[path.join(repoRoot,'test','fixtures','discovery-server.mjs'),sourceLog],cwd:workspace,env:{FIXTURE_ENV:'exact-reviewed-fixture'},enabled:false,framing:'line_delimited_json',enabled_tools:['allowed'],disabled_tools:['filtered']};
+ if(remoteMode)remotePeer=await peer({current:true});
+ const definition=remoteMode?{type:'streamable-http',url:remotePeer.url,headers:{Authorization:'Bearer ${REMOTE_FIXTURE_TOKEN}'},enabled:false,enabled_tools:['allowed'],disabled_tools:['filtered']}:{command:process.env.MUSEBENCH_DISCOVERY_FIXTURE_NODE||process.execPath,args:[path.join(repoRoot,'test','fixtures','discovery-server.mjs'),sourceLog],cwd:workspace,env:{FIXTURE_ENV:'exact-reviewed-fixture'},enabled:false,framing:'line_delimited_json',enabled_tools:['allowed'],disabled_tools:['filtered']};
  const settings={mcpServers:{fixture:definition},schema_version:1,provider:'meta',model,endpoint_transport:{base_url:serverUrl,auth:'none'},model_catalog:[{model_id:model,provider_id:'meta',profile_id:'tbh',display_label:'Local contract fixture',visibility:'visible',display_order:0,is_default:true,context_limit:32768,output_limit:8192,description:'Scripted local contract fixture'}]};
  const settingsFile=path.join(profile,'.config','muse','settings.json');await writeFile(settingsFile,JSON.stringify(settings));
- const environment={...curateEnvironment(),HOME:profile,USERPROFILE:profile,APPDATA:path.join(profile,'AppData','Roaming'),LOCALAPPDATA:path.join(profile,'AppData','Local'),XDG_CONFIG_HOME:path.join(profile,'.config'),XDG_DATA_HOME:path.join(profile,'.local','share'),XDG_CACHE_HOME:path.join(profile,'.cache'),HOMEDRIVE:path.parse(profile).root.slice(0,2),HOMEPATH:profile.slice(2)};
+ const environment={...curateEnvironment(),...(remoteMode?{REMOTE_FIXTURE_TOKEN:'exact-reviewed-remote-fixture'}:{}),HOME:profile,USERPROFILE:profile,APPDATA:path.join(profile,'AppData','Roaming'),LOCALAPPDATA:path.join(profile,'AppData','Local'),XDG_CONFIG_HOME:path.join(profile,'.config'),XDG_DATA_HOME:path.join(profile,'.local','share'),XDG_CACHE_HOME:path.join(profile,'.cache'),HOMEDRIVE:path.parse(profile).root.slice(0,2),HOMEPATH:profile.slice(2)};
  const sdkVersion=JSON.parse(await readFile(require.resolve('@muse-code/sdk/package.json'),'utf8')).version;
  const wrappedSdk={...sdk,spawnMspConnection(options){
   // Use the production arguments and environment; only withhold shell/write
@@ -127,6 +130,7 @@ try{
  }};
  const review=createExtensionReview({dataDir:path.join(root,'reviews'),profile,environment});await review.approveMcp('fixture',definition);
  const trusted=createDiscoveryMcpConfig({appRoot,executable:process.env.MUSEBENCH_DISCOVERY_EXECUTABLE||require('electron'),helperPath:process.env.MUSEBENCH_DISCOVERY_HELPER||path.join(repoRoot,'native','bin','MuseBenchJob.exe'),environment,extensionReview:review});const inspection=await trusted.inspect(workspace);assert.equal(inspection.rows[0].eligible,true);
+ assert.equal(remotePeer?.requests.length??0,0,'Inspection must not connect');
  const selection={sources:inspection.rows.map(({id,revision})=>({id,revision})),reviewed:true};
  stage='connect';runtime=createRuntime({environment,extensionReview:review,discoveryMcp:async(...args)=>{gatewayCreates++;return trusted(...args);},loadSdk:async()=>({sdk:wrappedSdk,sdkVersion}),timeoutMs:5000});
  const state=await bounded(runtime.connect({binary:discoverMuseBinaries()[0],workspaceRoot:workspace,fullAccess:true,toolDiscovery:selection}));
@@ -144,23 +148,25 @@ try{
    assert.deepEqual(calls.map(c=>c.tool),steps.map(s=>registered(s.name)));assert.ok(calls.every(c=>c.status==='completed'));
    const catalog=JSON.parse(calls[0].output);assert.equal(catalog.sources.length,1);assert.deepEqual(catalog.sources[0].tools.map(t=>t.name),['allowed']);
    const receipt=JSON.parse(calls[1].output);assert.equal(receipt.sourceId,'global:fixture');assert.equal(receipt.tool,'allowed');assert.equal(receipt.outcome,'completed');assert.equal(final.activity.items.length,2);assert.match(final.activity.items[1].detail,/global:fixture.*allowed.*completed/);
-   const starts=(await readFile(sourceLog,'utf8')).trim().split('\n').map(JSON.parse);assert.equal(starts.filter(x=>x.kind==='start').length,1);assert.equal(starts.filter(x=>x.kind==='call').length,1);assert.equal(starts[0].cwd,workspace);assert.equal(starts[0].session,ownedSession);assert.equal(starts[0].secret,'exact-reviewed-fixture');
+   if(remoteMode){assert.equal(remotePeer.effects,1);assert.equal(remotePeer.requests.filter(r=>r.message?.method==='initialize').length,0);assert.ok(remotePeer.requests.every(r=>r.headers.authorization==='Bearer exact-reviewed-remote-fixture'));}
+   else{const starts=(await readFile(sourceLog,'utf8')).trim().split('\n').map(JSON.parse);assert.equal(starts.filter(x=>x.kind==='start').length,1);assert.equal(starts.filter(x=>x.kind==='call').length,1);assert.equal(starts[0].cwd,workspace);assert.equal(starts[0].session,ownedSession);assert.equal(starts[0].secret,'exact-reviewed-fixture');}
 
   }else{
    assert.equal(calls.length,1);assert.equal(calls[0].status,'rejected');assert.equal(calls[0].output,undefined);assert.equal(final.activity.items[0].detail,'Tool request was not approved');
    const refused=report.toolOutputs.find(x=>x.callId===calls[0].callId);assert.ok(refused);assert.match(refused.output,/denied|aborted|rejected/i);assert.doesNotMatch(refused.output,/"gateway"|"operations"/);
-   assert.equal((await readFile(sourceLog,'utf8')).trim().split('\n').map(JSON.parse).filter(x=>x.kind==='call').length,1);
+   if(remoteMode)assert.equal(remotePeer.effects,1);else assert.equal((await readFile(sourceLog,'utf8')).trim().split('\n').map(JSON.parse).filter(x=>x.kind==='call').length,1);
   }
   report.cases.push({scenario,terminal:'completed',tools:calls.map(c=>({name:c.tool,status:c.status})),nativeActivityVerified:true});
  }
- check();assert.equal(report.approvals.filter(a=>a.decision==='approved').length,2);assert.equal(report.approvals.filter(a=>a.decision==='abort').length,1);assert.equal(gatewayCreates,1);report.counts={gatewayCreates,ownedValidationWorkers:1,sourceStarts:1,originalDirectStarts:0,downstreamCalls:1};report.status='passed';
+ check();assert.equal(report.approvals.filter(a=>a.decision==='approved').length,2);assert.equal(report.approvals.filter(a=>a.decision==='abort').length,1);assert.equal(gatewayCreates,1);report.counts={gatewayCreates,ownedValidationWorkers:1,sourceStarts:remoteMode?0:1,remoteConnections:remoteMode?1:0,originalDirectStarts:0,downstreamCalls:1};report.status='passed';
 }catch(error){report.status='failed';report.stage=stage;report.error=String(error.stack??error).slice(0,4000);process.exitCode=1;}
 finally{
- try{await runtime?.disconnect();report.cleanup=runtime?.snapshot().cleanup??'no-runtime';if(report.cleanup==='confirmed'){const rows=(await readFile(sourceLog,'utf8')).trim().split('\n').map(JSON.parse);for(const row of rows.filter(r=>r.kind==='start'))assert.throws(()=>process.kill(row.pid,0));report.processCleanupVerified=true;}}catch{report.cleanup='unconfirmed';}
+ try{await runtime?.disconnect();report.cleanup=runtime?.snapshot().cleanup??'no-runtime';if(report.cleanup==='confirmed'){if(remoteMode){for(let i=0;i<30&&remotePeer.sockets;i++)await sleep();assert.equal(remotePeer.sockets,0);report.remoteSocketCleanupVerified=true;report.remote={currentOnly:true,initializeRequests:remotePeer.requests.filter(r=>r.message?.method==='initialize').length,downstreamCalls:remotePeer.effects};}else{const rows=(await readFile(sourceLog,'utf8')).trim().split('\n').map(JSON.parse);for(const row of rows.filter(r=>r.kind==='start'))assert.throws(()=>process.kill(row.pid,0));}report.processCleanupVerified=true;}}catch{report.cleanup='unconfirmed';}
+ await remotePeer?.close();
  if(server){server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
  if(!['confirmed','no-runtime'].includes(report.cleanup)){report.status='failed';process.exitCode=1;}
  const target=path.resolve(root);assert.equal(path.dirname(target),temporary);assert.ok(path.basename(target).startsWith('muse-native-tool-contract-'));
  if(['confirmed','no-runtime'].includes(report.cleanup)){await rm(target,{recursive:true,force:true});report.workspaceRemoved=true;}else{report.workspaceRemoved=false;report.retainedWorkspace=target;}
- const output=path.join(repoRoot,'artifacts',process.env.MUSEBENCH_DISCOVERY_APP_ROOT?'native-discovery-packaged-contract':'native-discovery-contract');await mkdir(output,{recursive:true});await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));
+ const output=path.join(repoRoot,'artifacts',(process.env.MUSEBENCH_DISCOVERY_APP_ROOT?'native-discovery-packaged-contract':'native-discovery-contract')+(remoteMode?'-remote':''));await mkdir(output,{recursive:true});await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));
  console.log(JSON.stringify({status:report.status,stage:report.stage,error:report.error,cases:report.cases,requests:report.requests.length,cleanup:report.cleanup,workspaceRemoved:report.workspaceRemoved,modelInferenceRequests:0}));
 }

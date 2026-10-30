@@ -19,6 +19,17 @@ function visit(relative) {
 for (const dir of ['electron', 'dist', 'src/controller', 'src/runtime', 'src/work', 'src/spaces', 'src/sites', 'templates']) visit(dir);
 for (const name of readdirSync(path.join(root, 'reference/patchlight/adapter'))) if (name.endsWith('.mjs')) files.push(`reference/patchlight/adapter/${name}`);
 for (const name of readdirSync(path.join(root, 'src/shared'))) if (name.endsWith('.mjs')) files.push(`src/shared/${name}`);
+// Remote v2 is a separate pinned graph. Check its runtime bytes and package
+// exports too: a working local/native v1 path is not remote package proof.
+for(const name of ['client','core']){
+ const directory=`node_modules/@modelcontextprotocol/${name}`,metadataFile=`${directory}/package.json`;
+ const sourceMetadata=JSON.parse(readFileSync(path.join(root,metadataFile),'utf8'));
+ const packagedMetadata=JSON.parse(asar.extractFile(archive,path.normalize(metadataFile)).toString());
+ assert.equal(sourceMetadata.version,'2.4.0');
+ for(const key of ['name','version','type','exports','dependencies'])assert.deepEqual(packagedMetadata[key],sourceMetadata[key],`${metadataFile} changed ${key}`);
+ function runtime(relative){for(const entry of readdirSync(path.join(root,relative))){const file=`${relative}/${entry}`;if(statSync(path.join(root,file)).isDirectory())runtime(file);else if(/\.(mjs|cjs)$/.test(entry))files.push(file);}}
+ runtime(`${directory}/dist`);
+}
 // Embedded Muse views load fonts from production packages, while the local
 // renderer uses Vite's dist assets. Verify both paths survive packaging intact.
 for (const family of ['inter', 'jetbrains-mono']) {
