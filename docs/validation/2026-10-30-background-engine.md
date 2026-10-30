@@ -14,3 +14,9 @@ Local evidence lives in `.superpowers/sdd/2026-10-30-background-engine/` and `ar
 Full suite/build, independent review and exact released/installed acceptance are recorded below when completed. Personal profile background settings remain unchanged; fixture opt-in is not a user setting change.
 
 Task 2 final checks: 1,611 passed, 0 failed, 1 pre-existing optional skip (1,612 tests); build passed with the existing Vite chunk warning. Shared background smoke and existing complete native-control smoke passed. The narrow preview screenshot was visually inspected.
+
+Final independent review covered 80cceaa..c48ce43. No Critical findings. Both Important findings were reproduced and fixed in one correction pass: updater listeners now survive service shutdown until Electron's final quit, and synchronous installer failure requires a fresh reopen; personal sign-in contributes authoritative activity until its account window closes. Regression tests cover shutdown rejection, installer throw/event, late errors, and personal sign-in after its opening command has settled. RED: `review-red.log`; focused GREEN: 108 tests in `review-green.log`.
+
+The Minor coverage gap was also resolved: the real desktop smoke holds a replacement window's load promise, requests close, then releases it and verifies one deferred disposal. Its sign-in fixture never navigates to a provider and verifies both close and quit preserve the account window. Shared preview and desktop checks passed (`review-smoke.log`, `desktop-8Nfm2j/report.json`). Full correction suite: 1,613 passed, 0 failed, one existing optional skip (`review-full.log`). Build passed (`review-build.log`). The lifecycle smoke also supports an explicit installed executable for separate exact-package fixture proof.
+
+The existing native-control regression smoke also passed after correction, including revocation, real window-close exit, cached relay portability and reconnect (`review-native.log`).

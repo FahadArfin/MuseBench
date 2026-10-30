@@ -90,8 +90,12 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     guardContents(login.webContents,()=>inform('This sign-in redirect is not supported.'));
     login.webContents.setWindowOpenHandler(details=>openHandler({...entry,contents:login.webContents},owner,details));
     login.once('ready-to-show',()=>{if(!closed&&!login.isDestroyed()){login.show();login.focus();}});
-    login.once('closed',()=>{owner.owned.delete(loginContents);setupLoginWindow=null;if(!closed&&alive(entry))entry.contents.reload();});
+    login.once('closed',()=>{owner.owned.delete(loginContents);setupLoginWindow=null;if(!closed){if(alive(entry))entry.contents.reload();publish();}});
+    publish();
     await login.loadURL(target);
+  }
+  function isAuthenticating() {
+    return !closed && Boolean(setupLoginWindow && !setupLoginWindow.isDestroyed() || personalAuthenticating(current()?.origin) || museAuthPending() || [...popups].some(popup => personalAuthenticating(popup.origin)));
   }
   function snapshot() {
     const entry = current(), contents = alive(entry) ? entry.contents : null;
@@ -101,8 +105,8 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       canGoForward: Boolean(contents?.navigationHistory.canGoForward()), visible: Boolean(entry?.visible),
       available: personalAvailability(), compact, notice,
       appearance: { ...appearance }, profile: accountSync.snapshot(), agentProfile, schedules: destination==='chat'&&alive(entry)&&scheduledDocument(contents)?schedules:null,
-      authenticating: Boolean(personalAuthenticating(entry?.origin) || museAuthPending() || [...popups].some(popup => personalAuthenticating(popup.origin))),
-      authWindowOpen: popups.size > 0,
+      authenticating: isAuthenticating(),
+      authWindowOpen: Boolean(setupLoginWindow && !setupLoginWindow.isDestroyed()) || popups.size > 0,
       library: catalog.snapshot(),
     };
   }
@@ -750,5 +754,5 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     selectDestination('chat'); publish();
   }
   accountSync.start();
-  return { snapshot, dispatch, hide, close, checkLogin, openLogin, setLaunchHold, preloadInitial };
+  return { snapshot, dispatch, hide, close, checkLogin, openLogin, isAuthenticating, setLaunchHold, preloadInitial };
 }

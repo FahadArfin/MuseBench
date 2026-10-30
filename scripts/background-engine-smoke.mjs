@@ -12,7 +12,7 @@ const env=isolatedDesktopEnvironment(profile);
 let app,page;const report={checks:[],providerCalls:0,errors:[]};
 const pass=label=>{report.checks.push(label);console.log('PASS '+label);};
 const shell=async()=>{const deadline=Date.now()+10000;while(Date.now()<deadline){const found=app.windows().find(p=>p.url().includes('/dist/index.html'));if(found){found.setDefaultTimeout(8000);await found.waitForFunction(()=>!!window.musebench);return found;}await new Promise(resolve=>setTimeout(resolve,100));}throw Error('MuseBench shell did not open.');};
-const launch=async()=>{app=await electron.launch({args:['.','--host-resolver-rules=MAP * 0.0.0.0, EXCLUDE localhost'],env});app.process().stderr.on('data',chunk=>{const text=chunk.toString();if(/Uncaught|UnhandledPromiseRejection|Shutdown regression/.test(text))report.errors.push(text);});page=await shell();};
+const launch=async()=>{const executablePath=process.env.MUSEBENCH_EXECUTABLE;app=await electron.launch({...(executablePath?{executablePath}:{}),args:[...(executablePath?[]:['.']),'--host-resolver-rules=MAP * 0.0.0.0, EXCLUDE localhost'],env});app.process().stderr.on('data',chunk=>{const text=chunk.toString();if(/Uncaught|UnhandledPromiseRejection|Shutdown regression/.test(text))report.errors.push(text);});page=await shell();};
 try{
  await launch();
  assert.equal(await page.evaluate(()=>typeof window.musebench.backgroundEngine),'function');
@@ -30,12 +30,34 @@ try{
  await call('navigate',{target:'settings',section:'general'});
  const toggle=page.getByRole('switch',{name:'Keep running when the window closes'});assert.equal(await toggle.getAttribute('aria-checked'),'false');await toggle.click();await page.waitForFunction(async()=> (await window.musebench.backgroundEngine({type:'status'})).enabled);
  const before=await call('app_status');const pid=app.process().pid;pass('Desktop setting defaults off and explicitly enables the tray without provider work');
+ // No provider navigation: hold the account window on its initial blank page.
+ await app.evaluate(({BrowserWindow,dialog})=>{const load=BrowserWindow.prototype.loadURL;BrowserWindow.prototype.loadURL=function(url,...args){if(this.getTitle()==='Sign in to Muse'){BrowserWindow.prototype.loadURL=load;return Promise.resolve();}return load.call(this,url,...args);};globalThis.blockedSignIn=[];globalThis.restoreSignInDialog=()=>{dialog.showMessageBox=original;};const original=dialog.showMessageBox;dialog.showMessageBox=async(_window,options)=>{globalThis.blockedSignIn.push(options);return{response:0};};});
+ await page.evaluate(()=>window.musebench.onboarding({type:'loginPersonal'}));
+ assert.equal((await page.evaluate(()=>window.musebench.personalState())).authenticating,true);
+ await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html')).close());
+ await page.waitForFunction(()=>!!window.musebench);
+ await app.evaluate(({app})=>app.quit());
+ const authGuard=await app.evaluate(({BrowserWindow})=>({windows:BrowserWindow.getAllWindows().length,closed:BrowserWindow.getAllWindows().some(w=>w.isDestroyed())}));
+ assert.equal(authGuard.windows,2);assert.equal(authGuard.closed,false);
+ await app.evaluate(({BrowserWindow})=>{BrowserWindow.getAllWindows().find(w=>w.getTitle()==='Sign in to Muse').close();globalThis.restoreSignInDialog();});
+ assert.equal((await page.evaluate(()=>window.musebench.personalState())).authenticating,false);
+ pass('After the sign-in command settles, close and quit preserve the account window until it is dismissed');
  for(let i=0;i<3;i++){
   const closed=page.waitForEvent('close');await app.evaluate(({BrowserWindow})=>{BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html')).close();});await closed;
   assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length),0);
   const state=await call('app_status');assert.equal(state.engine.windowOpen,false);assert.deepEqual(state.chats,before.chats);assert.equal(app.process().pid,pid);
   assert.equal((await mobileRequest('/v1/state',paired.token)).chats[0].id,seeded.task.id);assert.equal((await call('read_chat',{taskId:seeded.task.id})).total,2);
   assert.equal((await call('diagnostics')).responsive,null);await assert.rejects(call('inspect_ui'),/Open MuseBench/);
+  if(i===0){
+   // Hold attachWindow after navigation, before its loading promise completes.
+   await app.evaluate(({app,BrowserWindow})=>{const load=BrowserWindow.prototype.loadURL;BrowserWindow.prototype.loadURL=function(url,...args){if(!url.includes('/dist/index.html'))return load.call(this,url,...args);BrowserWindow.prototype.loadURL=load;return load.call(this,url,...args).then(()=>new Promise(resolve=>{globalThis.releaseShellLoad=resolve;}));};app.emit('second-instance');app.emit('activate');});
+   page=await shell();await page.waitForLoadState('load');
+   await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html')).close());
+   assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length),1);
+   const deferredClose=page.waitForEvent('close');await app.evaluate(()=>globalThis.releaseShellLoad());await deferredClose;
+   assert.equal((await call('app_status')).engine.windowOpen,false);
+   pass('A close requested during replacement-window loading is deferred, then completes without duplicate windows');
+  }
   await app.evaluate(({app})=>{app.emit('second-instance');app.emit('second-instance');app.emit('activate');});page=await shell();await page.waitForLoadState('domcontentloaded');
   assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(w=>w.webContents.getURL().includes('/dist/index.html')).length),1);
   assert.equal((await page.evaluate(()=>window.musebench.backgroundEngine({type:'status'}))).enabled,true);

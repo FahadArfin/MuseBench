@@ -56,13 +56,14 @@ export function createAppUpdates({updater,version,enabled,isBusy,getBlockers,pre
   if(command==='check'&&state.status==='downloaded')return snapshot();
   if(command==='download'&&state.status!=='available')throw Error('Check for an available update first.');
   if(command==='install'&&(state.status!=='downloaded'||state.downloadedVersion!==state.availableVersion||blockers().length||isBusy())){patch({error:'Finish or stop active work before restarting to update.'});throw Error('Finish or stop active work before restarting to update.');}
-  operation=true;
+  operation=true;let installPrepared=false;
   try{
    if(command==='check'){patch({status:'checking',error:null});await updater.checkForUpdates();if(state.status==='checking')throw Error('Update check did not confirm a result.');}
    if(command==='download'){patch({status:'downloading',percent:0,error:null});await updater.downloadUpdate();if(state.status!=='downloaded')throw Error('Download was not confirmed.');}
-   if(command==='install'){patch({status:'installing',error:null});await prepareInstall();updater.quitAndInstall(true,true);}
+   if(command==='install'){patch({status:'installing',error:null});await prepareInstall();installPrepared=true;updater.quitAndInstall(true,true);}
   }catch(error){
-   patch({status:error.restartRequired?'restart-required':command==='install'?'downloaded':command==='download'?'available':'error',error:error.restartRequired?'Shutdown could not be confirmed. Close and reopen MuseBench before retrying.':command==='install'?'Could not restart to update. Finish active work and try again.':command==='download'?'Download failed. Check your connection and try again.':'Could not check for updates. Check your connection and try again.'});
+   const restartRequired=error.restartRequired||installPrepared;
+   patch({status:restartRequired?'restart-required':command==='install'?'downloaded':command==='download'?'available':'error',error:restartRequired?(installPrepared?'Could not start the installer. Close and reopen MuseBench before retrying.':'Shutdown could not be confirmed. Close and reopen MuseBench before retrying.'):command==='install'?'Could not restart to update. Finish active work and try again.':command==='download'?'Download failed. Check your connection and try again.':'Could not check for updates. Check your connection and try again.'});
   }finally{operation=false;}
   return snapshot();
  }

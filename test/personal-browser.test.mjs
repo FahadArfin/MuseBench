@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import {createOnboarding} from '../electron/onboarding.mjs';
+import {createUpdateShutdown} from '../electron/app-updates.mjs';
 const implementation = await import('../electron/personal.mjs').catch(() => ({}));
 
 function harness(options = {}) {
@@ -47,6 +49,19 @@ function harness(options = {}) {
   return { browser, views, sessions, states, external, shortcuts, window, popups, presentations, actions, presentation, libraryAdapter, metaAdapter, metaActions, dismissals };
 }
 const layout = { type: 'layout', visible: true, bounds: { x: 300, y: 80, width: 700, height: 620 } };
+
+test('personal sign-in stays busy after its opening command settles until the account window closes',async t=>{
+ const h=harness({warmLimit:0});t.after(()=>h.browser.close());
+ const onboarding=createOnboarding({getBinary:()=>null,personal:h.browser});
+ assert.equal(onboarding.isBusy(),false);
+ await onboarding.command({type:'loginPersonal'});
+ assert.equal(h.popups.length,1);assert.equal(onboarding.isBusy(),true);
+ assert.equal(h.browser.snapshot().authenticating,true);assert.equal(h.browser.snapshot().authWindowOpen,true);
+ const shutdown=createUpdateShutdown({isBusy:()=>onboarding.isBusy(),voice:async()=>({status:'idle'}),lock(){},closeServices:async()=>assert.fail('Must preserve the sign-in window'),verifyClosed:()=>true});
+ await assert.rejects(shutdown.prepare(),/Active work/);
+ assert.equal(h.popups[0].destroyed,false);h.popups[0].close();
+ assert.equal(onboarding.isBusy(),false);assert.equal(h.browser.snapshot().authWindowOpen,false);
+});
 
 test('launch prepares the default chat behind the animation and reveals the same native document', async t => {
   const h = harness({warmLimit:0});

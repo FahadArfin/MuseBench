@@ -42,7 +42,7 @@
 ### Task 3: Review and verified delivery
 **Files:** docs/ROADMAP-2026-10-29.md, docs/validation/2026-10-30-background-engine.md and focused corrections if required.
 **Interfaces:** Exact-source published release, manifest/hash validation and native installed proof, distinct from fixtures.
-- [ ] Request one fresh whole-branch review. Re-grade findings; fix Important/Critical in one test-driven pass; record/defer Minor.
+- [x] Request one fresh whole-branch review. Re-grade findings; fix Important/Critical in one test-driven pass; record/defer Minor.
 - [ ] Run full suite/build and relevant UI smokes, update roadmap/evidence, commit and push authorized main.
 - [ ] Wait for exact-source Windows checks/publication. Verify installer against release manifest and hashes, confirm idle state, back up profile, gracefully install and reopen.
 - [ ] Verify installed version/settings through native MCP. Keep personal background preference unchanged. Record exact delivery evidence.

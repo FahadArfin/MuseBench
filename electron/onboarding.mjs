@@ -42,5 +42,5 @@ export function createOnboarding({getBinary,getRuntime=()=>({}),personal,spawnPr
   if(input.type==='cancel'){generation++;child?.kill();child=null;code={status:'required',message:'Sign-in cancelled.'};}
   return state();
  }
- return {command,isBusy:()=>!!child,close(){generation++;child?.kill();child=null;}};
+ return {command,isBusy:()=>!!child||!!personal.isAuthenticating?.(),close(){generation++;child?.kill();child=null;}};
 }

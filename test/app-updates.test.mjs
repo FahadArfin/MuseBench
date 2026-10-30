@@ -34,6 +34,21 @@ test('surface blockers name only active work and exclude raw payloads',()=>{
  assert.equal(updateSurfaceBlockers('voice','Dictation',{status:'listening',text:'private'})[0].label,'Dictation');
 });
 test('failed shutdown requires reopen and never repeats installation',async()=>{const {service,calls}=setup({prepareInstall:async()=>{throw Object.assign(Error('cleanup unknown'),{restartRequired:true});}});await service.dispatch('check');await service.dispatch('download');await service.dispatch('install');assert.equal(service.snapshot().status,'restart-required');await service.dispatch('check');await service.dispatch('install');assert.deepEqual(calls,['check','download']);});
+
+test('shutdown and installer failures retain visible recovery state after services close',async()=>{
+ for(const failure of ['shutdown','installer-throw','installer-event']){
+  let closed=0,installCalls=0;
+  const shutdown=createUpdateShutdown({isBusy:()=>false,voice:async()=>({status:'idle'}),lock(){},closeServices:async()=>{closed++;if(failure==='shutdown')throw Error('private storage failure');},verifyClosed:()=>true});
+  const {service,updater}=setup({prepareInstall:()=>shutdown.prepare()});
+  updater.quitAndInstall=()=>{installCalls++;if(failure==='installer-throw')throw Error('private installer failure');updater.emit('error',Error('private installer failure'));};
+  await service.dispatch('check');await service.dispatch('download');await service.dispatch('install');
+  assert.equal(closed,1);assert.equal(installCalls,failure==='shutdown'?0:1);
+  assert.equal(service.snapshot().status,'restart-required',failure);assert.match(service.snapshot().error,/reopen/);
+  assert.doesNotMatch(service.snapshot().error,/private/);assert.equal(updater.listenerCount('error'),1);
+  updater.emit('error',Error('late error'));await service.dispatch('install');assert.equal(closed,1);
+  service.close();assert.equal(updater.listenerCount('error'),0);
+ }
+});
 test('window and quit must wait for update shutdown; lock survives closed services',async()=>{
  let finish,locked=false;const shutdown=createUpdateShutdown({isBusy:()=>false,voice:async()=>({status:'idle'}),lock:value=>{locked=value;},closeServices:()=>new Promise(r=>finish=r),verifyClosed:()=>true});
  const pending=shutdown.prepare();assert.equal(shutdown.preparing(),true);await new Promise(r=>setImmediate(r));assert.equal(shutdown.preparing(),true);assert.equal(locked,true);finish();await pending;assert.equal(shutdown.preparing(),false);assert.equal(locked,true);

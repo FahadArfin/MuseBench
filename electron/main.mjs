@@ -124,7 +124,7 @@ else {
     const nativeRouter=createNativeControlRouter({app,controller,getView:()=>ui?.nativeService,getBackground:()=>background.snapshot(),isBlocked:()=>closing||updateInstalling||customize.isBusy()||codeBilling.isBusy()||!!ui?.onboarding?.isBusy()});
     nativeControl=await createNativeControlHost({dataDir,service:nativeRouter,connectionConfig:()=>prepareNativeMcpConfig({dataDir,executable:process.execPath,appRoot:root})});
     closeOwned=async()=>{
-      closing=true;updates?.close();ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();ui?.onboarding?.close();
+      closing=true;ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();ui?.onboarding?.close();
       const results=await Promise.allSettled([nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close(),background.close()]);
       for(const notification of notifications)notification.close();notifications.clear();
       await sessionDurability.close();if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
@@ -337,6 +337,9 @@ else {
   }).catch(startupFailed);
 }
 app.on('window-all-closed',()=>{if(background)background.windowClosed();else app.quit();});
+// Installation preparation may fail after services close. Keep its state and
+// error listener alive until Electron confirms the final quit.
+app.on('will-quit',()=>updates?.close());
 app.on('before-quit',event=>{
   if(updateShutdown?.preparing()){event.preventDefault();return;}
   if(closing)return;
