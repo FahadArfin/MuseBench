@@ -73,9 +73,16 @@ test('project replacement during native connection is rejected before sending',a
 
 for(const scenario of [{name:'same checkout check',relation:'same'},{name:'same checkout validation',relation:'same',validation:true},{name:'nested scheduled checkout',relation:'nested'},{name:'ancestor scheduled checkout',relation:'ancestor'},{name:'unrelated checkout',relation:'unrelated',allowed:true}])test(`scheduled admission respects ${scenario.name}`,async t=>{
  const f=await fixture(t),checkRoot=scenario.relation==='ancestor'?path.join(f.root,'child'):f.root,scheduleRoot=scenario.relation==='nested'?path.join(f.root,'child'):scenario.relation==='unrelated'?f.root+'-other':f.root;
- await mkdir(checkRoot,{recursive:true});await mkdir(scheduleRoot,{recursive:true});await writeFile(path.join(checkRoot,'package.json'),JSON.stringify({scripts:{test:'node hold.mjs'}}));await writeFile(path.join(checkRoot,'hold.mjs'),'setInterval(()=>{},1000);');
+ await mkdir(checkRoot,{recursive:true});await mkdir(scheduleRoot,{recursive:true});await writeFile(path.join(checkRoot,'package.json'),JSON.stringify({scripts:{test:'node hold.mjs'}}));
+ // These cases test admission against an established check, not stopping npm
+ // while it is still spawning descendants. A finite fixture also cannot hang
+ // the whole unit worker if teardown fails on a busy Windows checkout.
+ await writeFile(path.join(checkRoot,'hold.mjs'),'console.log("Schedule check fixture ready");setTimeout(()=>process.exit(0),15000);');
  if(checkRoot!==f.root){await f.act({type:'openProject',path:checkRoot});await f.act({type:'newTask',mode:'manual',request:'Check this project'});}const checkTask=f.c.getState().task.id,checkProject=f.c.getState().activeProject.id;
  if(scheduleRoot!==checkRoot)await f.act({type:'openProject',path:scheduleRoot});const saved=await f.save();await f.enable(saved);await f.act({type:'selectTask',id:checkTask});
  if(scenario.validation)await f.act({type:'saveValidationProfile',projectId:checkProject,scripts:['test']});await f.act(scenario.validation?{type:'runValidation'}:{type:'runCheck',script:'test'});assert.equal(f.c.getState().task.check.status,'running');
+ const readyDeadline=Date.now()+10000;
+ while(!f.c.getState().task.check.log.includes('Schedule check fixture ready')&&f.c.getState().task.check.status==='running'&&Date.now()<readyDeadline)await new Promise(resolve=>setTimeout(resolve,30));
+ assert.match(f.c.getState().task.check.log,/Schedule check fixture ready/,'The fixture child is ready before exercising scheduling admission');
  f.advance(60000);await f.c.tickCodeSchedules();const row=f.c.getState().codeSchedules[0];assert.equal(f.runtimes.reduce((n,r)=>n+r.sent.length,0),scenario.allowed?1:0);assert.equal(row.attempts,scenario.allowed?1:0);assert.equal(f.c.getState().task.check.status,'running');if(!scenario.allowed){assert.equal(row.active,null);assert.equal(row.history[0].status,'skipped');assert.match(row.history[0].reason,/check|validation/i);}
 });
