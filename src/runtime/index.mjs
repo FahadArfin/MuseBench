@@ -170,7 +170,13 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const snapshot=()=>structuredClone({...state,connectionEpoch:epoch});
  const emit=()=>{for(const fn of listeners){try{fn(snapshot());}catch{/* A renderer observer is never a protocol authority. */}}};
  const update=patch=>{state={...state,...patch,pendingRequests:pendingView()};if(state.contextUsage&&(!state.permissionVerified||state.sessionId!==state.contextUsage.sessionId))state.contextUsage={...state.contextUsage,connected:false};emit();};
- const syncChildren=()=>{const view=children.snapshot();if(usable.has(adapter?.snapshot().status)&&view.items.some(childWorking))awaitingChildReport=true;for(const [key,target] of childWork){const i=view.items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&(target.action==='retry'?(['completed','failed','cancelled'].includes(i.status)||i.children?.some(c=>c.childId===target.childId&&c.attempt>target.attempt)):childWorking(i)))childWork.delete(key);}update({children:view,childrenBusy:view.items.some(childWorking)||childWork.size>0||awaitingChildReport,childWorkPending:childWork.size});if(adapter)syncAdapter(adapter.snapshot());};
+ // Child observations and foreground completion must agree on restart settlement.
+ const childWorkSettled=(item,target,foregroundTerminal=false)=>{
+  if(!item||item.revision<=target.revision)return false;
+  if(target.action==='retry')return ['completed','failed','cancelled'].includes(item.status)||item.children?.some(c=>c.childId===target.childId&&c.attempt>target.attempt);
+  return foregroundTerminal?!childWorking(item):childWorking(item);
+ };
+ const syncChildren=()=>{const view=children.snapshot();if(usable.has(adapter?.snapshot().status)&&view.items.some(childWorking))awaitingChildReport=true;for(const [key,target] of childWork){const i=view.items.find(i=>i.itemId===target.itemId);if(childWorkSettled(i,target))childWork.delete(key);}update({children:view,childrenBusy:view.items.some(childWorking)||childWork.size>0||awaitingChildReport,childWorkPending:childWork.size});if(adapter)syncAdapter(adapter.snapshot());};
  const interruptChildCommands=()=>update({childReceipts:(state.childReceipts??[]).map(r=>r.status==='submitting'?{...r,status:'unknown',reason:'Connection lost before command admission was confirmed.'}:r)});
  const syncCompaction=()=>{const receipt=compaction.snapshot();if(!compaction.pending())clearTimeout(compactionTimer);update({compaction:receipt,contextCompactions:compaction.history(),operationBusy:compaction.pending()});};
  const block=(reason,invalidatePermissions=true)=>{blockedReason=reason;update({status:'blocked',reason,...(invalidatePermissions?{permissionVerified:false}:{}),pending:displayPending(pending,pendingRevision)});};
@@ -182,7 +188,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   if(terminalUnavailable){childReads.clear();state={...state,childInspections:[]};clearPending();blockedReason=null;interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Connection lost before compaction was confirmed.');syncCompaction();}
   if(s.pending&&!pending){putPending({kind:s.pending.approvalId?'approval':'input',...s.pending});}
   const terminal=['completed','failed','cancelled'].includes(s.status)?`${s.turnId}:${s.status}`:null;
-  if(terminal&&terminal!==lastTerminal){for(const [key,target] of childWork){const i=children.snapshot().items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&!childWorking(i))childWork.delete(key);}lastTerminal=terminal;awaitingChildReport=children.snapshot().items.some(childWorking)||childWork.size>0;}
+  if(terminal&&terminal!==lastTerminal){for(const [key,target] of childWork){const i=children.snapshot().items.find(i=>i.itemId===target.itemId);if(childWorkSettled(i,target,true))childWork.delete(key);}lastTerminal=terminal;awaitingChildReport=children.snapshot().items.some(childWorking)||childWork.size>0;}
   const childrenActive=children.snapshot().items.some(childWorking)||childWork.size>0;
   const childrenBusy=childrenActive||awaitingChildReport;
   const status=terminalUnavailable?s.status:blockedReason?'blocked':connecting&&s.status==='idle'?'checking-permissions':terminal&&childrenBusy?'running':s.status;

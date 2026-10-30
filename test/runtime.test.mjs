@@ -579,6 +579,29 @@ test('workflow restart waits for a later attempt before releasing its pending co
  await assert.rejects(h.runtime.childControl({...input,revision:4}),/attempt changed/);assert.equal(calls,1);
 });
 
+for(const order of ['unknown-before-terminal','terminal-before-unknown'])test(`foreground completion cannot settle an unknown workflow restart: ${order}`,async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Delegate'});
+ const item={itemId:'workflow',kind:'workflow',workflowRunId:'native-run',turnId:'turn-one',revision:1,status:'inProgress',children:[{childId:'a',attempt:1,status:'started'}]};
+ const emit=i=>h.emit({method:'item/updated',params:{sessionId:'session-one',item:i}});
+ const terminal=()=>h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'foreground-done'}});emit(item);
+ let calls=0;h.host.connection.command=async(method,params,opts)=>{calls++;assert.equal(method,'workflow/childControl');assert.equal(params.attempt,1);assert.equal(opts.maxAttempts,1);return {commandId:opts.commandId,status:'accepted'};};
+ const input={sessionId:'session-one',itemId:'workflow',revision:1,action:'retry',childId:'a',attempt:1};
+ await h.runtime.childControl(input);assert.equal(h.runtime.snapshot().childReceipts.at(-1).status,'accepted');
+ if(order==='terminal-before-unknown')terminal();
+ emit({...item,revision:2,status:'futureState'});
+ if(order==='unknown-before-terminal')terminal();
+ assert.equal(h.runtime.snapshot().childWorkPending,1,'Foreground completion is not restart settlement');
+ assert.equal(h.runtime.snapshot().childrenBusy,true);assert.equal(h.runtime.snapshot().status,'running');
+ await assert.rejects(h.runtime.send({text:'Must not race unconfirmed restart'}));
+ await assert.rejects(h.runtime.childControl({...input,revision:2}),/available/);assert.equal(calls,1);
+ emit({...item,revision:3});
+ await assert.rejects(h.runtime.childControl({...input,revision:3}),/pending/);assert.equal(calls,1);
+ assert.equal(h.runtime.snapshot().childWorkPending,1);assert.equal(h.runtime.snapshot().childrenBusy,true);
+ emit({...item,revision:4,children:[{childId:'a',attempt:2,status:'started'}]});
+ assert.equal(h.runtime.snapshot().childWorkPending,0);assert.equal(h.runtime.snapshot().childrenBusy,true);
+ await assert.rejects(h.runtime.childControl({...input,revision:4}),/attempt changed/);assert.equal(calls,1);
+});
+
 test('uncertain workflow restart is never replayed after a later attempt arrives',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Delegate'});
  const item={itemId:'workflow',kind:'workflow',workflowRunId:'native-run',turnId:'turn-one',revision:1,status:'inProgress',children:[{childId:'a',attempt:1,status:'started'}]};
