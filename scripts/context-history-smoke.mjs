@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict';
+import {mkdir,mkdtemp,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {createServer} from 'vite';
+import {chromium,_electron as electron} from 'playwright';
+import {createController} from '../src/controller/index.mjs';
+import {isolatedDesktopEnvironment} from './isolated-desktop-environment.mjs';
+import {waitForDesktopRenderer} from './electron-window.mjs';
+const desktop=process.argv.includes('--desktop'),variant=desktop?(process.env.MUSEBENCH_EXECUTABLE?'installed':'desktop'):'preview';
+await mkdir('artifacts/context-history',{recursive:true});const output=await mkdtemp(path.resolve('artifacts/context-history',variant+'-'));
+const at='2026-10-30T12:00:00.000Z',base={sessionId:'current-session',turnId:'turn',revision:2,trigger:'auto',status:'compacted',source:'restored',at};
+const history=[{...base,sessionId:'previous-session',itemId:'old',trigger:'manual',status:'noop'},{...base,itemId:'compacted',tokensBefore:24000,tokensAfter:9000,summarizedThrough:'opaque-boundary'},{...base,itemId:'unfinished',status:'unknown',reason:'Native completion was not observed.'}];
+let app,browser,server,page;const report={variant,checks:[],errors:[],modelRequests:0};const pass=text=>{report.checks.push(text);console.log('PASS '+text);};
+try{
+ if(desktop){
+  const profile=path.join(output,'profile'),project=path.join(output,'project');await mkdir(project);await writeFile(path.join(project,'README.md'),'Context history fixture');const controller=await createController({dataDir:profile});await controller.dispatch({type:'openProject',path:project});const seeded=await controller.dispatch({type:'newTask',mode:'manual',request:'Context history fixture'});await controller.close();
+  const db=new DatabaseSync(path.join(profile,'musebench.sqlite'));try{const saved=JSON.parse(db.prepare('SELECT json FROM app WHERE id=1').get().json);saved.task.contextCompactions=history;saved.task.nativeSession={id:'current-session',root:project,seeded:true,status:'ready',transport:'msp'};db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(saved.task),seeded.task.id);db.prepare('UPDATE app SET json=? WHERE id=1').run(JSON.stringify(saved));}finally{db.close();}
+  const executablePath=process.env.MUSEBENCH_EXECUTABLE;app=await electron.launch({...(executablePath?{executablePath}:{}),args:[...(executablePath?[]:['.']),'--host-resolver-rules=MAP * ~NOTFOUND'],env:isolatedDesktopEnvironment(profile)});page=await waitForDesktopRenderer(app);assert.equal(await app.evaluate(({app})=>app.getPath('userData')),profile);
+ }else{
+  server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-context-history',server:{host:'127.0.0.1',port:0}});await server.listen();browser=await chromium.launch();page=await browser.newPage({viewport:{width:1200,height:960}});
+  await page.addInitScript(history=>{let bridge,owner;const decorate=s=>{if(s.task){owner??=s.task.id;s.task.contextCompactions=s.task.id===owner?history:[];}s.runtime={...s.runtime,simulation:true,permissionVerified:true,transport:'msp',sessionId:'current-session',restoration:{status:'restored',sessionId:'current-session'},compactionSupported:false};return s;};Object.defineProperty(window,'musebench',{configurable:true,get:()=>bridge,set:value=>{bridge=value;const read=value.getState,on=value.onState,dispatch=value.dispatch;value.getState=async()=>decorate(await read());value.onState=fn=>on(s=>fn(decorate(s)));value.dispatch=async action=>{if(['sendMessage','compactSession'].includes(action.type))throw Error('No model request allowed');return decorate(await dispatch(action));};}});},history);
+  await page.goto(server.resolvedUrls.local[0]+'preview.html');
+ }
+ page.setDefaultTimeout(8000);page.on('pageerror',e=>report.errors.push(e.message));await page.getByRole('group',{name:'Choose workspace'}).getByRole('button',{name:'Muse Code',exact:true}).click();
+ const chip=page.getByRole('button',{name:'Context history',exact:true});await chip.waitFor();await chip.click();const dialog=page.getByRole('dialog',{name:'Chat session'}),panel=dialog.getByRole('region',{name:'Context history'});await panel.waitFor();assert.equal(await panel.locator('.context-observation').count(),3);assert.match(await panel.innerText(),/Current context occupancy and exact retained content are not reported/);if(!desktop)await panel.getByText(/Preview sample/).waitFor();
+ const observations=panel.locator('.context-observation');await observations.nth(1).locator('summary').focus();await page.keyboard.press('Enter');await panel.getByText('24,000 → 9,000 tokens reported by Muse',{exact:true}).waitFor();await observations.first().locator('summary').click();await observations.first().getByText(/^Token counts not reported/).waitFor();assert.match(await panel.innerText(),/Token counts not reported/);assert.match(await panel.innerText(),/Previous session/);assert.match(await panel.innerText(),/Restored native observation/);assert.equal(await panel.locator('progress,[role="progressbar"]').count(),0);pass('Bounded history distinguishes past sessions, restored observations and unknown current occupancy');
+ if(!desktop){assert.match(await dialog.innerText(),/Native session restored/);assert.doesNotMatch(await dialog.innerText(),/Reconnecting seeds a new session/);}assert.equal(await dialog.getByRole('button',{name:'Compact context',exact:true}).isEnabled(),false);pass('History opens without starting compaction; existing manual controls retain their capability guard');
+ await page.setViewportSize({width:520,height:820});await panel.scrollIntoViewIfNeeded();assert.equal(await panel.evaluate(el=>el.scrollWidth>el.clientWidth+1),false);await panel.screenshot({path:path.join(output,'narrow.png')});pass('Keyboard disclosures and narrow context history fit without horizontal overflow');
+ await dialog.getByRole('button',{name:'Close session',exact:true}).click();await page.evaluate(()=>window.musebench.dispatch({type:'newTask',mode:'manual',request:'Separate context history fixture'}));await chip.waitFor({state:'hidden'});pass('Switching chats does not carry the previous chat context history');
+ assert.deepEqual(report.errors,[]);report.status='passed';
+}catch(error){report.status='failed';report.failure=error.stack;throw error;}finally{await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));await app?.close();await browser?.close();await server?.close();console.log('Report: '+output);}

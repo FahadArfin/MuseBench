@@ -236,7 +236,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   if(!frame?.params||frame.params.sessionId!==state.sessionId)return;
   const p=frame.params;
   if(['item/started','item/updated','item/completed'].includes(frame.method)&&['subagent','workflow'].includes(p.item?.kind)){children.observe(p.item);syncChildren();}
-  if(['item/started','item/updated','item/completed'].includes(frame.method)&&p.item?.kind==='compaction'&&typeof p.viewCursor==='string'&&p.viewCursor.length>0&&state.permissionVerified){compaction.observe(p.item,state.sessionId);syncCompaction();}
+
   if(['session/permissionProfileChanged','session/approvalModeChanged'].includes(frame.method)){
    block('Muse permissions changed. Disconnect and reconnect to verify the selected profile before continuing.');
    // A blocked approval can still belong to an active turn. Stop on every
@@ -334,7 +334,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
      if(['session/start','session/resume'].includes(method))openedSession=result?.session;
      return result;
     },
-    onNotification:fn=>{notificationHandler=fn;raw.onNotification(frame=>{if(connecting){try{holdOpening({kind:'notification',frame});}catch(error){void disconnect(error.message);}return;}routeNotification(frame);});},
+    onNotification:fn=>{notificationHandler=fn;raw.onNotification(frame=>{if(token!==epoch||owner!==host)return;if(connecting){try{holdOpening({kind:'notification',frame});}catch(error){void disconnect(error.message);}return;}routeNotification(frame);});},
     onProtocolError:fn=>raw.onProtocolError(fn),
     onServerRequest:fn=>raw.onServerRequest(async request=>{
      if(connecting&&['approval/request','userInput/request'].includes(request.method)){holdOpening({kind:'request',frame:request});return {};}
@@ -349,7 +349,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
     if(scope.rootTurnId&&scope.rootTurnId!==workspaceActivityTurn){workspaceActivity.reset();workspaceActivityTurn=scope.rootTurnId;}
     workspaceActivity.observe(item,scope.ownedTurnIds);
    }:null;
-   adapter=new MuseSessionAdapter({connection,sdkVersion,initializeResult:host.initializeResult,fullAccess,allowContinuation:s=>children.snapshot().items.some(i=>s.ownedTurnIds?.includes(i.turnId)),observeToolItem,timeoutMs});
+   const observeContextItem=item=>{if(token!==epoch||owner!==host||!state.permissionVerified)return;compaction.observe(item,state.sessionId);syncCompaction();};
+   adapter=new MuseSessionAdapter({connection,sdkVersion,initializeResult:host.initializeResult,fullAccess,observeContextItem,allowContinuation:s=>children.snapshot().items.some(i=>s.ownedTurnIds?.includes(i.turnId)),observeToolItem,timeoutMs});
    unsubscribe=adapter.subscribe(syncAdapter);
    Promise.resolve(host.exited).then(()=>{if(token===epoch&&owner===host)void disconnect('Muse exited. Inspect any partial workspace changes, then reconnect.');},()=>{if(token===epoch&&owner===host)void disconnect('Muse host state is unknown. Inspect workspace changes before reconnecting.');});
    if(host.initializeResult.experimentalApi!==true)return await closePermissionGate();

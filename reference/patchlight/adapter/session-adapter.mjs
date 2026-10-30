@@ -14,10 +14,11 @@ const str = v => typeof v==='string' && v.length>0;
  */
 export class MuseSessionAdapter {
  #connection; #state; #messages=new Map(); #seen=new Map(); #buffer=[];
- #epoch=0; #timeout; #listeners=new Set(); #maxEvents; #maxText; #allowContinuation; #durable; #queuedTurns=new Set(); #observeToolItem;
- constructor({connection,sdkVersion,initializeResult,fullAccess=false,allowContinuation=()=>false,observeToolItem=null,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
+ #epoch=0; #timeout; #listeners=new Set(); #maxEvents; #maxText; #allowContinuation; #durable; #queuedTurns=new Set(); #observeToolItem; #observeContextItem;
+ constructor({connection,sdkVersion,initializeResult,fullAccess=false,allowContinuation=()=>false,observeToolItem=null,observeContextItem=null,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
   this.#allowContinuation=allowContinuation;
   this.#observeToolItem=typeof observeToolItem==='function'?observeToolItem:null;
+  this.#observeContextItem=typeof observeContextItem==='function'?observeContextItem:null;
   this.#durable=initializeResult?.sessionDurability===undefined||initializeResult.sessionDurability==='durable';
   this.#connection=connection;this.#timeout=timeoutMs;this.#maxEvents=maxEvents;this.#maxText=maxText;
   const gate=compatibility({sdkVersion,initializeResult,fullAccess});
@@ -142,7 +143,7 @@ export class MuseSessionAdapter {
   }
   const recognized=['turn/started','turn/completed','item/started','item/updated','item/delta','item/completed'];
   if(!recognized.includes(method))return;
-  if(method==='item/updated'&&!messageKinds.has(p.item?.kind)&&!(this.#observeToolItem&&p.item?.kind==='toolCall'))return;
+  if(method==='item/updated'&&!messageKinds.has(p.item?.kind)&&!(this.#observeToolItem&&p.item?.kind==='toolCall')&&!(this.#observeContextItem&&p.item?.kind==='compaction'))return;
   if(!str(p.viewCursor)){this.disconnect('missing-event-cursor');return;}
   const payload=JSON.stringify(frame);
   if(this.#seen.has(p.viewCursor)){if(this.#seen.get(p.viewCursor)!==payload)this.disconnect('conflicting-event-cursor');return;}
@@ -174,6 +175,7 @@ export class MuseSessionAdapter {
    const item=p.item;
    if(!item||!str(item.kind)){this.disconnect('malformed-item');return;}
    if(item.kind==='toolCall'&&this.#observeToolItem){this.#projectTool(item);this.#emit();return;}
+   if(item.kind==='compaction'&&this.#observeContextItem){this.#observeContextItem(item);return;}
    if(!messageKinds.has(item.kind))return;
    if(!str(item.itemId)||typeof item.text!=='string'||item.text.length>this.#maxText||!Number.isInteger(item.revision)||item.revision<1||item.turnId!==this.#state.turnId){this.disconnect('malformed-message');return;}
    const old=this.#messages.get(item.itemId);

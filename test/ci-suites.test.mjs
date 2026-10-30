@@ -13,7 +13,7 @@ const packageJson=JSON.parse(await readFile(new URL('../package.json',import.met
 // Union of release + validation at ccf56e2. This baseline prevents a speedup
 // accidentally omitting an expensive check. New coverage is added deliberately.
 const required=[
- 'npm run test:background-engine','npm run test:integration-panels',
+ 'npm run test:background-engine','npm run test:context-history','npm run test:integration-panels',
  'npm test','npm run test:startup-animation','npm run test:session-recovery','npm run test:profile-identity',
  'npm run test:typography','npm run test:motion','npm run test:activity','npm run test:child-inspection',
  'npm run test:native-failure','npm run test:native-question','npm run test:reply-copy','npm run test:model-settings',

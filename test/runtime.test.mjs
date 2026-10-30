@@ -628,6 +628,16 @@ test('invalid frames and old connection notifications cannot add context observa
  oldNotify({method:'item/completed',params:{sessionId:'session-one',viewCursor:'old-cursor',item}});assert.deepEqual(h.runtime.snapshot().contextCompactions,[]);
  h.emit({method:'item/completed',params:{sessionId:'session-one',item}});assert.deepEqual(h.runtime.snapshot().contextCompactions,[]);
 });
+test('old notifications buffered during reconnect cannot become current context history',async t=>{
+ const h=await harness(t);let old;const subscribe=h.host.connection.onNotification;h.host.connection.onNotification=fn=>{old=fn;subscribe(fn);};await h.connect();const oldNotify=old;await h.runtime.disconnect();const reconnect=h.connect();
+ oldNotify({method:'item/completed',params:{sessionId:'session-one',viewCursor:'stale-opening',item:{kind:'compaction',itemId:'stale',turnId:'old',revision:1,status:'completed',outcome:'compacted',trigger:'auto'}}});await reconnect;assert.deepEqual(h.runtime.snapshot().contextCompactions,[]);
+});
+test('conflicting native event cursors cannot fabricate completed compaction history',async t=>{
+ const h=await harness(t);await h.connect();const item={kind:'compaction',itemId:'same',turnId:'old',revision:1,status:'inProgress',trigger:'auto'};
+ h.emit({method:'item/started',params:{sessionId:'session-one',viewCursor:'same-cursor',item}});
+ h.emit({method:'item/completed',params:{sessionId:'session-one',viewCursor:'same-cursor',item:{...item,revision:2,status:'completed',outcome:'compacted'}}});
+ assert.equal(h.runtime.snapshot().contextCompactions[0].status,'unknown');assert.equal(h.runtime.snapshot().contextCompactions[0].revision,1);
+});
 test('runtime restores compaction observations after native identity and permission verification',async t=>{
  const h=await harness(t),item={kind:'compaction',itemId:'restored-compact',turnId:'old-turn',revision:3,status:'completed',outcome:'compacted',trigger:'auto',tokensBefore:100,tokensAfter:60};
  h.host.connection.command=async(method)=>{assert.equal(method,'session/resume');return restoredNative(h,{history:{mode:'inline',items:[item],snapshot:null}});};

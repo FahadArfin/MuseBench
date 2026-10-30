@@ -29,9 +29,9 @@
 ### Task 2: Shared context history presentation
 **Files:** src/ui/CompactionPanel.tsx, src/ui/App.tsx, src/ui/SessionDialog.tsx, src/preview/bridge.ts, scripts/context-history-smoke.mjs, scripts/run-ci-suite.mjs, package.json, test/ci-suites.test.mjs, docs/CONTEXT-HISTORY.md, docs/ROADMAP-2026-10-29.md, validation/research notes.
 **Interfaces:** Native observations plus existing manual receipts, shared read-only history, explicit unknown values and session/source identity. Observation chip opens Session only.
-- [ ] Write failing shared browser/real Electron fixture checks for history, unknown tokens, restored session wording, item isolation and narrow layout.
-- [ ] Implement compact shared controls, fixture labels and CI smoke in an existing parallel group.
-- [ ] Run shared smoke, existing session recovery checks, full tests and production build; commit.
+- [x] Write failing shared browser/real Electron fixture checks for history, unknown tokens, restored session wording, item isolation and narrow layout.
+- [x] Implement compact shared controls, fixture labels and CI smoke in an existing parallel group.
+- [x] Run shared smoke, existing session recovery checks, full tests and production build; commit.
 
 ### Task 3: Review and delivery
 **Files:** focused corrections, validation and roadmap.
