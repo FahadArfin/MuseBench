@@ -26,6 +26,17 @@ try{
  await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.getByRole('heading',{name:'What would you like to build?'}).waitFor();report.checks.push('Fresh Code workspace opens');
  await page.screenshot({path:'artifacts/portable-desktop/code.png'});
+ // Stub only the OS picker. The packaged preload, IPC controller, worker, ZIP
+ // dependency and durable history remain real and confined to this test profile.
+ const exportFile=path.join(data,'conversations.json'),exportText=JSON.stringify([{name:'Packaged import probe',chat_messages:[{sender:'human',text:'packaged source text'}]}]);await writeFile(exportFile,exportText);
+ await app.evaluate(({dialog},file)=>{const original=dialog.showOpenDialog;globalThis.restoreImportPicker=()=>{dialog.showOpenDialog=original;};dialog.showOpenDialog=async()=>({canceled:false,filePaths:[file]});},exportFile);
+ try{
+  const preview=await page.evaluate(()=>window.musebench.previewConversationImport());assert.equal(preview.conversations[0].title,'Packaged import probe');assert.equal(preview.simulation,undefined);
+  const saved=await page.evaluate(preview=>window.musebench.confirmConversationImport({token:preview.token,ids:[preview.conversations[0].id]}),preview);assert.equal(saved.imported,1);
+  const history=await page.evaluate(id=>window.musebench.readChatHistory({taskId:id}),saved.ids[0]);assert.equal(history.coverage,'imported');assert.equal(history.messages[0].text,'packaged source text');assert.equal(await readFile(exportFile,'utf8'),exportText);
+  await page.evaluate(async({id,token})=>{await window.musebench.removeImportedConversation(id);await window.musebench.discardConversationImport(token);},{id:saved.ids[0],token:preview.token});
+  report.checks.push('Packaged ASAR import worker and real preload/controller persist selected source text; picker is a clean fixture');
+ }finally{await app.evaluate(()=>globalThis.restoreImportPicker());}
  const control=await page.evaluate(()=>window.musebench.nativeControl({type:'enable'}));assert.equal(control.running,true);
  nativeClient=new Client({name:'packaged-native-check',version:'1.0.0'});await nativeClient.connect(new StdioClientTransport({...control.connectionConfig,stderr:'pipe'}));
  const result=await nativeClient.callTool({name:'app_status',arguments:{}});assert.ok(!result.isError,result.content?.[0]?.text);const native=JSON.parse(result.content[0].text);assert.equal(native.version,expected.version);assert.equal(native.packaged,true);

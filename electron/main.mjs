@@ -154,6 +154,11 @@ else {
     handler('musebench:chat-history',input=>controller.readChatHistory(input));
     handler('musebench:session-mcp',input=>controller.readMcpServers(input));
     handler('musebench:chat-search',input=>controller.searchChats(input));
+    handler('musebench:conversation-import-pick',async()=>{
+      const result=await dialog.showOpenDialog(window,{title:'Import conversations',properties:['openFile'],filters:[{name:'Conversation exports',extensions:['json','zip','md','txt']}]});
+      return result.canceled?null:controller.prepareConversationImport(result.filePaths[0]);
+    });
+    handler('musebench:conversation-import',input=>controller.conversationImport(input));
     handler('musebench:code-draft',input=>controller.saveCodeDraft(validateAction({...input,type:'saveDraft'})));
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
     mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||!!onboarding?.isBusy()})});

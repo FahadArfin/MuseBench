@@ -17,6 +17,7 @@ import {StringDecoder} from 'node:string_decoder';
 import {createOutputStore} from './output-artifacts.mjs';
 import {validateCheckScripts,missingChecks,checkDiagnostics} from '../shared/validation.mjs';
 import {createHistoryStore} from './chat-history.mjs';
+import {createConversationImports} from './conversation-imports.mjs';
 import {createDraftStore} from './code-drafts.mjs';
 import {readRuntimeStatus,projectRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
 import {workIdentity,workLabel} from '../shared/work-activity.mjs';
@@ -178,6 +179,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const db=new DatabaseSync(path.join(dataDir,'musebench.sqlite'));
   db.exec('PRAGMA secure_delete=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS app(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS baselines(task_id TEXT PRIMARY KEY,revision TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,revision TEXT NOT NULL,json TEXT NOT NULL);');
   const history=createHistoryStore(db),outputs=createOutputStore(db),analytics=createAnalyticsStore(db);
+  const imports=createConversationImports(db,history);
   const saved=db.prepare('SELECT json FROM app WHERE id=1').get();
   const executions=createExecutionLedger(db),inbox=createActivityInbox(db),runChanges=createRunChangeStore(db);
   const state=saved?JSON.parse(saved.json):{projects:[],activeProject:null,task:null,checkpoints:[],preview:stopped(),runtime:missingRuntime(),busy:false,error:null};
@@ -239,6 +241,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const rows=[],title=task=>`Code · ${String(task?.title||'Chat').replace(/[\x00-\x1f\x7f]/g,' ').slice(0,140)}`;
     if(closing||closed)rows.push({id:'code-closing',label:'Code connection',detail:'Shutdown is still in progress.'});
     if(state.busy)rows.push({id:'code-workspace',label:'Code workspace',detail:'A workspace operation is still in progress.'});
+    if(imports.isBusy())rows.push({id:'conversation-import',label:'Conversation import',detail:'An export is being read or saved.'});
     if(checkProcess||state.task?.check?.status==='running'||state.task?.validationRun?.status==='running')rows.push({id:'code-check',label:title(state.task),detail:'A project check is running.'});
     for(const owner of new Set([context,...contexts.values()])){
       if(!owner)continue;const status=readRuntimeStatus(owner.runtime),id=owner.task?.id??owner.id;
@@ -485,18 +488,31 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const searchChats=({query='',includeArchived=false}={})=>{
     if(typeof query!=='string'||query.length>200||typeof includeArchived!=='boolean')throw Error('Invalid chat search.');
-    const needle=query.trim().toLocaleLowerCase();return summaries().filter(t=>includeArchived||!t.archived).flatMap(summary=>{
+    const needle=query.trim().toLocaleLowerCase();const native=summaries().filter(t=>includeArchived||!t.archived).flatMap(summary=>{
       const t=taskRecords.get(summary.id),project=state.projects.find(p=>p.id===t.projectId);
       const hit=needle?history.search(t.id,query):null;
       const source=[t.title,project.name].find(text=>text.toLocaleLowerCase().includes(needle));
       if(!hit&&source===undefined)return[];
       return[{...summary,projectName:project.name,snippet:hit?.snippet??source,...(hit?{messageId:hit.messageId,offset:hit.offset,at:hit.at}:{})}];
-    }).sort((a,b)=>Number(b.pinned)-Number(a.pinned)||b.updatedAt.localeCompare(a.updatedAt)).slice(0,100);
+    });
+    return [...native,...imports.search(query)].sort((a,b)=>Number(b.pinned)-Number(a.pinned)||b.updatedAt.localeCompare(a.updatedAt)).slice(0,100);
   };
   const semanticQueries=new Set();
   const semanticNavigate=async input=>{const project=state.activeProject;if(closing||closed)throw Error('Controller closed.');if(!project||input?.projectId!==project.id)throw Error('Choose the current project.');const service=createSemanticNavigation(project.root);semanticQueries.add(service);try{const result=await service.query(input);if(closing||closed||state.activeProject?.id!==project.id)throw Error('The selected project changed. Run navigation again.');return result;}finally{await service.dispose();semanticQueries.delete(service);}};
   const readCapturedOutput=input=>{if(!input||!taskRecords.has(input.taskId))throw Error('Chat not found.');return outputs.read(input);};
-  const readChatHistory=input=>{if(!input||!taskRecords.has(input.taskId))throw Error('Chat not found.');return history.page(input);};
+  const readChatHistory=input=>{if(!input||!taskRecords.has(input.taskId)&&!imports.has(input.taskId))throw Error('Chat not found.');const page=history.page(input);return imports.has(input.taskId)?{...page,coverage:'imported'}:page;};
+  const prepareConversationImport=async source=>{if(closing||closed)throw Error('Controller closed.');return imports.prepare(source);};
+  const conversationImport=async input=>{
+    if(closing||closed)throw Error('Controller closed.');
+    switch(input?.type){
+      case 'preview':return imports.previewPage(input);
+      case 'search':return imports.searchPreview(input);
+      case 'confirm':return imports.confirm(input);
+      case 'discard':imports.discard(input.token);return;
+      case 'remove':imports.remove(input.id);return;
+      default:throw Error('Invalid conversation import command.');
+    }
+  };
   const selectedContext=()=>context;
   const connectNative=async(owner,task,project,options={})=>{
     for(const field of ['fullAccess','workspaceTools'])if(options[field]!==undefined&&typeof options[field]!=='boolean')throw Error(`${field} must be an explicit boolean.`);
@@ -970,6 +986,6 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     });queue=op.catch(()=>{});return op;
   };
   const archiveTimer=setInterval(()=>{queue=queue.then(async()=>{if(closed||closing)return;if(inbox.prune())emit();await purgeArchived();}).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,getUpdateBlockers,saveCodeDraft,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
+  return{getState,getUpdateBlockers,prepareConversationImport,conversationImport,saveCodeDraft,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&!imports.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';

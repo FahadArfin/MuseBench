@@ -119,8 +119,12 @@ export interface QueuedPrompt extends CodeDraft {revision?:number;delivery?:'rea
 export interface ContextReceipt {version:number;promptHash:string;revision:string|null;historyMode:string;nativeContext:string;messages:{id:string;role:string;truncated:boolean}[];sources:{path:string;hash:string;characters:number}[];instructions:{personal:string|null;project:string|null};characters:number;}
 export interface ContextSummary {receipt?:ContextReceipt;historyMode?:'replay'|'native'|'connection';characters:number;estimatedTokens:number;includedMessages:number;omittedMessages:number;truncatedMessages:number;fileCount:number;replayedFiles:number;limit:number;}
 export interface CodeContextResult extends ContextSummary {prompt:string;attachments:(ContextFile&{text:string})[];files:(ContextFile&{characters:number})[];}
-export interface ChatSearchResult extends TaskSummary {projectName:string;snippet:string;messageId?:string;offset?:number;at?:string;}
-export interface HistoryPage {messages:(Message&{textLength:number;offset:number;captureTruncated?:boolean})[];total:number;before:string|null;coverage:string;}
+export interface ImportedProvenance {format:string;sourceName:string;sourceDigest:string;importedAt:string;messageCount:number;omittedMessages:number;omittedBlocks:number;simulation?:boolean;}
+export interface ImportConversation {id:string;title:string;format:string;messageCount:number;textBytes:number;omittedMessages:number;omittedBlocks:number;snippet:string;duplicate:boolean;}
+export interface ConversationImportPreview {token:string;sourceName:string;sourceDigest:string;expiresAt:string;conversations:ImportConversation[];skippedConversations:number;textBytes:number;simulation?:boolean;}
+export interface ConversationImportConfirmation {imported:number;skipped:number;ids:string[];preview:ConversationImportPreview;}
+export interface ChatSearchResult extends TaskSummary {projectName:string;snippet:string;messageId?:string;offset?:number;at?:string|null;imported?:ImportedProvenance;}
+export interface HistoryPage {messages:(Omit<Message,'at'>&{at:string|null;textLength:number;offset:number;captureTruncated?:boolean})[];total:number;before:string|null;coverage:string;}
 export interface McpInventory {sessionId:string;readAt:string;servers:{name:string;source:'settings'|'plugin'|'session'|'unknown';transport:'stdio'|'streamableHttp'|'unknown';oauth:'loggedIn'|'loggedOut'|'notSupported'|'unknown'}[];omitted:number;simulation?:boolean;}
 export interface RuntimeState {connectionEpoch?:number;}
 export interface MuseBenchBridge {
@@ -128,6 +132,12 @@ export interface MuseBenchBridge {
  inspectCodeContext(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[]}):Promise<CodeContextResult>;
  readChatHistory(input:{taskId:string;before?:string;messageId?:string;offset?:number;limit?:number}):Promise<HistoryPage>;
  searchChats(input:{query:string;includeArchived:boolean}):Promise<ChatSearchResult[]>;
+ previewConversationImport():Promise<ConversationImportPreview|null>;
+ readImportPreview(input:{token:string;id:string;before?:string;messageId?:string;offset?:number;limit?:number}):Promise<HistoryPage>;
+ searchImportPreview(input:{token:string;query:string}):Promise<ImportConversation[]>;
+ confirmConversationImport(input:{token:string;ids:string[]}):Promise<ConversationImportConfirmation>;
+ discardConversationImport(token:string):Promise<void>;
+ removeImportedConversation(id:string):Promise<void>;
  inspectWorktrees(input:{projectId:string}):Promise<WorktreeState>;
  inspectProjectActions(input:{projectId:string;taskId:string}):Promise<import('./project-actions.mjs').ProjectActionsSnapshot>;
  importCodeImage(input:{projectId:string;taskId:string|null;name:string;dataUrl:string}):Promise<CodeImage>;

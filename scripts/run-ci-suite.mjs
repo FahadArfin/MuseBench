@@ -10,7 +10,7 @@ export const CI_SUITES={
  unit:[['npm','test']],
  appearance:npm('startup-animation','motion','typography'),
  navigation:npm('preview-parity','browser-preview','onboarding-preview','navigation-cache'),
- extensions:npm('catalog-preview','catalog-desktop','plugin-tools','billing-preview','billing-desktop'),
+ extensions:npm('catalog-preview','catalog-desktop','plugin-tools','billing-preview','billing-desktop','conversation-import'),
  chats:npm('chat-organization','code-responsiveness','chat-navigation','profile-identity','session-recovery','update-details'),
  native:[
   ['node','scripts/mobile-settings-smoke.mjs'],['node','scripts/native-control-smoke.mjs'],

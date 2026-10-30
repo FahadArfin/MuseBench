@@ -17,5 +17,11 @@ export function useCodeDraft(bridge:MuseBenchBridge|undefined,projectId:string|u
  const setText=(value:SetStateAction<string>)=>update({text:typeof value==='function'?value(current.current.draft.text):value});
  const setFiles=(files:ContextFile[])=>update({files});
  const setMode=(mode:'chat'|'plan')=>update({mode});
- return{images:draft.images??[],setImages:(images:CodeImage[])=>update({images}),message:draft.text,setMessage:setText,files:draft.files??[],setFiles,messageMode:draft.mode??'chat',setMessageMode:setMode,setDraftFor};
+ function appendDraftText(targetKey:string,excerpt:string){
+  if(!projectId||targetKey!==key||current.current.key!==targetKey)throw Error('The selected chat changed. Choose the destination again.');
+  const text=[current.current.draft.text,excerpt].filter(Boolean).join('\n\n');
+  if(text.length>16000)throw Error('This excerpt and draft exceed 16,000 characters. Copy a smaller selection instead.');
+  update({text});
+ }
+ return{images:draft.images??[],setImages:(images:CodeImage[])=>update({images}),message:draft.text,setMessage:setText,files:draft.files??[],setFiles,messageMode:draft.mode??'chat',setMessageMode:setMode,setDraftFor,appendDraftText};
 }

@@ -60,6 +60,7 @@ jobs:
             artifacts/plugin-tools-ui/**/report.json
             artifacts/project-actions/**/report.json
             artifacts/run-changes/**/report.json
+            artifacts/conversation-import/**/report.json
             artifacts/chat-navigation/**/report.json
             artifacts/sidebar-drag/**/report.json
             artifacts/native-control/report.json
