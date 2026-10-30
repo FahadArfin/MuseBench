@@ -40,3 +40,13 @@ Independent whole-feature review found no material correctness, regression or se
 Source acceptance is complete. CI/release and installed C08 acceptance must be verified against the resulting exact commit and published artifact. The separately verified prior installation is recorded in [desktop 0.2.178 acceptance](2026-10-29-desktop-0.2.178.md).
 
 The implementation plan and local red/green/review evidence are retained under `docs/superpowers/plans/2026-10-29-chat-navigation.md` and `.superpowers/sdd/2026-10-29-chat-navigation/` respectively. Local fixture reports are ignored, not published account data.
+
+## Release-runner correction
+
+Candidate `1df983840601e41b95bddf8890f4214b99561291` passed validation run 40983970618. Release run 40983970691 failed its Windows navigation-cache smoke; the other six platform builds passed and publication was correctly skipped. Desktop 0.2.178 stayed installed.
+
+The failure recorded two retained pages visible during a transition. Thirty ordinary local repeats did not reproduce it. A bounded offline probe widened the synchronous native layout by 3 ms while generating resize events and switching pages. Its transition trace reproduced the same Muse/Meta Media pair: a Playwright Inspector command interrupted an outstanding `setBounds`, performed a nested selection/layout, then the interrupted outer layout resumed and showed its old selection.
+
+This matches [Node's Inspector interrupt dispatch](https://github.com/nodejs/node/blob/v24.22.0/src/inspector/main_thread_interface.cc#L191-L200). Local Playwright 1.64.1 sends `app.evaluate` through the Node Inspector's `Runtime.callFunctionOn`; MuseBench's actual personal navigation arrives through normal Electron IPC. The correction admits smoke-driver mutations on `setImmediate`, including shutdown and fixture authentication changes. Production navigation is unchanged.
+
+The smoke retains the original single-visible-view assertion and adds an 80-cycle resize/switch stress check, a command-depth assertion and bounded failure traces. The pre-fix failing trace is retained in `navigation-stress-interrupt.json` under the evidence ledger. The corrected complete smoke passed, and all 77 personal-browser unit tests passed. Final repeat/review receipts remain in the same ledger. These are offline runner checks, not a new provider or installed acceptance claim.

@@ -23,7 +23,7 @@ app.commandLine.appendSwitch('disable-component-update');
 app.on('window-all-closed', () => {});
 void app.whenReady().then(async () => {
 const fixture = ${JSON.stringify(fixture)};
-const state = { requests: 0, requestsByView: {}, blockedRequests: 0, externalOpens: 0, publications: 0, maxVisible: 0, visibilityViolations: [], auth: 'ready' };
+const state = { requests: 0, requestsByView: {}, blockedRequests: 0, externalOpens: 0, publications: 0, maxVisible: 0, visibilityViolations: [], commandDepthViolations: 0, auth: 'ready' };
 const allowedHosts = new Set(['muse.ai', 'www.meta.ai', 'meta.ai', 'auth.muse.ai', 'auth.meta.ai', 'auth.meta.com', 'www.facebook.com', 'www.instagram.com']);
 const install = async owner => {
   for (const scheme of ['http', 'https']) await owner.protocol.handle(scheme, request => {
@@ -45,15 +45,35 @@ isolatedSession.webRequest.onBeforeRequest({ urls: ['http://*/*', 'https://*/*']
 });
 const window = new BrowserWindow({ width: 1000, height: 800, show: false, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
 await window.loadURL('data:text/html,<title>Offline navigation cache smoke</title>');
-function observeVisibility(stage) {
+const transitions = []; let nativeDepth = 0;
+function transition(stage, change = null) {
+  transitions.push({ stage, change, nativeDepth });
+  if (transitions.length > 60) transitions.shift();
+}
+function observeVisibility(stage, change = null) {
   const visible = window.contentView.children.filter(view => view.webContents && !view.webContents.isDestroyed() && view.getVisible());
   state.maxVisible = Math.max(state.maxVisible, visible.length);
-  if (visible.length > 1 && state.visibilityViolations.length < 10) state.visibilityViolations.push({ stage, views: visible.map(view => ({ id: view.webContents.id, url: view.webContents.getURL() })) });
+  if (visible.length > 1 && state.visibilityViolations.length < 10) state.visibilityViolations.push({ stage, change, command: state.command, nativeDepth, transitions: [...transitions], stack: new Error().stack, views: visible.map(view => ({ id: view.webContents.id, url: view.webContents.getURL() })) });
 }
 class ObservedView {
   constructor(options) {
-    const view = new WebContentsView(options), setVisible = view.setVisible.bind(view);
-    view.setVisible = value => { setVisible(value); observeVisibility('setVisible'); };
+    const view = new WebContentsView(options);
+    for (const method of ['setVisible', 'setBounds']) {
+      const original = view[method].bind(view);
+      view[method] = value => {
+        const change = { id: view.webContents.id, value };
+        nativeDepth++; transition(method + ':enter', change);
+        try {
+          original(value);
+          if (method === 'setBounds' && state.stress) {
+            const deadline = Date.now() + 3;
+            while (Date.now() < deadline) { /* Expose Inspector reentry during layout in this offline fixture only. */ }
+          }
+          observeVisibility(method, change);
+        }
+        finally { transition(method + ':exit', change); nativeDepth--; }
+      };
+    }
     return view;
   }
 }
@@ -70,7 +90,7 @@ const controller = createPersonalBrowser({
     observeVisibility('publication');
   },
 });
-globalThis.__navigationCacheSmoke = { controller, window, state, webContents, runPersonalAction, readPersonalToolState };
+globalThis.__navigationCacheSmoke = { controller, window, state, transition, nativeDepth: () => nativeDepth, webContents, runPersonalAction, readPersonalToolState };
 }).catch(error => { globalThis.__navigationCacheBootError = error?.message ?? String(error); });
 `);
 
@@ -91,7 +111,26 @@ async function until(predicate, name, timeout = 10000) {
   throw Error(`${name} did not settle within ${timeout}ms`);
 }
 async function dispatch(command) {
-  return app.evaluate(async (_, command) => globalThis.__navigationCacheSmoke.controller.dispatch(command), command);
+  return app.evaluate(async (_, command) => {
+    // Inspector evaluation can interrupt synchronous native layout. Schedule
+    // mutations like real IPC instead of changing selection inside that layout.
+    await new Promise(resolve => setImmediate(resolve));
+    const harness = globalThis.__navigationCacheSmoke;
+    if (harness.nativeDepth()) harness.state.commandDepthViolations++;
+    harness.state.command = command;
+    harness.transition('command:enter', command);
+    try { return await harness.controller.dispatch(command); }
+    finally { harness.transition('command:exit', command); }
+  }, command);
+}
+async function closeController() {
+  return app.evaluate(async () => {
+    await new Promise(resolve => setImmediate(resolve));
+    const harness = globalThis.__navigationCacheSmoke;
+    if (!harness) return;
+    clearInterval(harness.pulse);
+    harness.controller.close();
+  });
 }
 async function counters() {
   return app.evaluate(() => ({ ...globalThis.__navigationCacheSmoke.state }));
@@ -236,6 +275,30 @@ try {
   }
   pass('Warmed Muse Search, Meta Search and Media reuse documents with drafts, search terms and scroll intact');
 
+  // Widen a real synchronous layout and repeatedly dispatch across Inspector.
+  // Direct controller calls reenter it and reproduce the retained-page overlap;
+  // event-loop admission must leave every native transition exclusive.
+  {
+    await app.evaluate(async () => {
+      await new Promise(resolve => setImmediate(resolve));
+      const h = globalThis.__navigationCacheSmoke;
+      h.state.stress = true; h.pulse = setInterval(() => h.window.emit('resize'), 1);
+    });
+    for (let index = 0; index < 80; index++) {
+      await navigate('bot');
+      await delay(index % 7);
+      await openTool('meta-media');
+      await delay(index % 11);
+    }
+    await app.evaluate(async () => {
+      await new Promise(resolve => setImmediate(resolve));
+      const h = globalThis.__navigationCacheSmoke;
+      clearInterval(h.pulse); h.state.stress = false;
+    });
+    assert.equal((await counters()).commandDepthViolations, 0, 'Commands must not interrupt a synchronous native layout');
+    pass('Rapid page switches and resize publications admit commands only through the normal main event loop');
+  }
+
   const search = await openTool('meta-search');
   const openSearchState = await readPreserved(search.id);
   await openTool('meta-search');
@@ -349,7 +412,7 @@ try {
   pass('Authentication changes discard cached tools and reopening starts with a fresh document');
 
   await dispatch({ type: 'layout', visible: false });
-  await app.evaluate(() => { globalThis.__navigationCacheSmoke.state.auth = 'required'; });
+  await app.evaluate(async () => { await new Promise(resolve => setImmediate(resolve)); globalThis.__navigationCacheSmoke.state.auth = 'required'; });
   const beforeSignedOutWarm = (await views()).map(view => view.id).sort((a, b) => a - b);
   const signedOutToolRequests = await requestCounts([freshFeed.id]);
   await dispatch({ type: 'layout', visible: true, bounds: { x: 0, y: 0, width: 950, height: 700 } });
@@ -359,16 +422,16 @@ try {
   assert.deepEqual(await requestCounts([freshFeed.id]), signedOutToolRequests, 'Signed-out warmup must not navigate the active tool');
   pass('Speculative warmup is suppressed when authentication is required');
 
-  await app.evaluate(() => { globalThis.__navigationCacheSmoke.state.auth = 'ready'; });
+  await app.evaluate(async () => { await new Promise(resolve => setImmediate(resolve)); globalThis.__navigationCacheSmoke.state.auth = 'ready'; });
   await dispatch({ type: 'prewarm', target: 'meta-vibes' });
-  await app.evaluate(() => globalThis.__navigationCacheSmoke.controller.close());
+  await closeController();
   const atClose = await counters();
   await delay(220);
   const afterClose = await counters();
   assert.equal(afterClose.requests, atClose.requests, 'Shutdown must cancel queued warmups');
   assert.equal(afterClose.publications, atClose.publications, 'Shutdown must stop state publications');
   assert.equal((await views()).length, 0, 'Shutdown must dispose retained and speculative views');
-  assert.equal(afterClose.maxVisible, 1, `At most one view may be visible: ${JSON.stringify(afterClose.visibilityViolations)}`);
+  assert.equal(afterClose.maxVisible, 1, `At most one view may be visible; ${afterClose.visibilityViolations.length} recorded violations are in report.json`);
   assert.equal(afterClose.externalOpens, 0);
   assert.equal(afterClose.blockedRequests, 0, 'Fixture must not attempt external or model requests');
   pass('Close cancels queued warming and destroys every remote view; at most one view was ever visible');
@@ -382,8 +445,8 @@ try {
   if (app) {
     try {
       const counts = await counters();
-      report.counts = { fixtureRequests: counts.requests, blockedRequests: counts.blockedRequests, externalOpens: counts.externalOpens, maxVisibleViews: counts.maxVisible, visibilityViolations: counts.visibilityViolations };
-      await app.evaluate(() => globalThis.__navigationCacheSmoke?.controller.close());
+      report.counts = { fixtureRequests: counts.requests, blockedRequests: counts.blockedRequests, externalOpens: counts.externalOpens, maxVisibleViews: counts.maxVisible, commandDepthViolations: counts.commandDepthViolations, visibilityViolations: counts.visibilityViolations };
+      await closeController();
     } catch {}
     await app.close().catch(() => {});
   }
