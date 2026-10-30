@@ -7,11 +7,13 @@ import {projectDetails} from '../src/shared/create-project.mjs';
 import {fileReferences} from '../src/shared/chat-context.mjs';
 import {validateRunOptions} from '../src/shared/run-options.mjs';
 import {validateActivityRead} from '../src/shared/activity-inbox.mjs';
+import {validateRunReview} from '../src/shared/run-changes.mjs';
 import {validateProjectActionRequest} from '../src/shared/project-actions.mjs';
 const actions = new Set(['stopWork','inspectChild','answerInput','setExecutionAccess','childControl','compactSession','steerMessage','createReviewer','integrateReview','cancelReviewers','continueGoal','pauseGoalContinuation','proposeLesson','decideLesson','restoreCheckpoint','saveValidationProfile','runValidation','refreshModels','archiveWorktree','restoreWorktree','recoverWorktree','setupWorktree','saveWorkflow','deleteWorkflow','queueWorkflow','handoffContext','recoverSession','moveSidebarItem','createWorktree','openWorktree','createProject','setProjectInstructions','saveDraft','setTaskFlags','deleteTask','forkTask','queueMessage','beginQueueEdit','editQueued','sendQueued','moveQueued','removeQueued','pauseQueue','resumeQueue','renameTask','setGoal','setMemories','openProject','selectProject','selectTask','createDemo','createCommandCopy','newTask','setRunOptions','updatePlan','approvePlan','applyDemo','refresh','runCheck','cancelCheck','startPreview','stopPreview','inspectPreview','accept','sendMessage','connectMuse','disconnectMuse','runtimeDecision','clearError']);
 export {allowedExternal} from '../src/shared/external-links.mjs';
 export function trustedSender(event, contents, uiURL) { return event.sender === contents && event.senderFrame === contents.mainFrame && event.senderFrame.url === uiURL; }
 export function validateAction(action) {
+  if(action?.type==='setRunFileReviewed')return validateRunReview(action);
   if(['saveProjectAction','runProjectAction'].includes(action?.type))return validateProjectActionRequest(action);
   if(action?.type==='setActivityRead')return validateActivityRead(action);
   if (!action || typeof action !== 'object' || Array.isArray(action) || !actions.has(action.type) || JSON.stringify(action).length > 100000) throw Error('Invalid workspace action.');

@@ -16,6 +16,8 @@ import {ChatFind} from './ChatFind';
 import {CustomizeIcon} from './CustomizeIcon';
 import {NavigationButtons,NavigationHistoryContext,useNavigationHistory} from './NavigationHistory';
 import {ResponseActions} from './ResponseActions';
+import {RunChanges} from './RunChanges';
+import {appendReviewFeedback} from '../shared/run-changes.mjs';
 import {copyReply} from './copy-reply';
 import {ChatSidebar} from './ChatSidebar';
 import {CompactNavigation,codeDestinations,type CodeDestination} from './CompactNavigation';
@@ -129,7 +131,7 @@ export default function App() {
   const workModeTransition=useRef<WorkModeTransition|undefined>(undefined);
   useLayoutEffect(()=>{workModeTransition.current=undefined;},[personalMode]);
   const workModeSwitch=<WorkModeSwitch mode={personalMode} origin={workModeTransition.current} onChange={(mode,fraction)=>{workModeTransition.current={mode,fraction};if(mode==='chat')navigatePersonal('chat');else setPersonalMode('work');}}/>;
-  const [modal, setModal] = useState<'workflows' | 'handoff' | 'session' | 'worktrees' | 'updates' | 'create-project' | 'runtime' | 'settings' | 'search' | 'history' | 'command' | 'extensions' | 'context' | null>(null);
+  const [modal, setModal] = useState<'run-changes' | 'workflows' | 'handoff' | 'session' | 'worktrees' | 'updates' | 'create-project' | 'runtime' | 'settings' | 'search' | 'history' | 'command' | 'extensions' | 'context' | null>(null);
   const [nativeDestination,setNativeDestination]=useState({category:'general' as SettingsCategory,revision:0});
   const [commandView,setCommandView]=useState<CommandView>({id:'help'});
   const [skills,setSkills]=useState<MuseSkill[]>([]),[skillsStatus,setSkillsStatus]=useState('idle');
@@ -196,6 +198,8 @@ export default function App() {
     catch (error) { setLocalError(error instanceof Error ? error.message : String(error)); return null; }
     finally { if(!inspection)setPending(false); }
   }, [bridge]);
+  const [reviewCapture,setReviewCapture]=useState<{taskId:string;runId:string}|null>(null);
+  const openRunChanges=useCallback((runId:string)=>{if(task?.id){setReviewCapture({taskId:task.id,runId});setModal('run-changes');}},[task?.id]);
   const branchResponse = useCallback(async (messageId: string) => {
     const next = await act({ type: 'forkTask', messageId });
     if (next && !next.error) { setCreating(false); setView('chat'); setReviewOpen(false); }
@@ -465,7 +469,7 @@ export default function App() {
         <main className={`conversation ${!showTask ? 'new-conversation' : ''}`}>
           {showTask && task ? <div className="conversation-transcript" ref={transcript} onScroll={e => { const target = e.currentTarget; setScrolledUp(target.scrollHeight - target.scrollTop - target.clientHeight > 100); }}><div className="transcript-inner"><article className="message user-message" data-timeline-prompt=""><p>{task.request}</p>{initialPrompt?.images?.length&&project?<CodeImages images={initialPrompt.images} projectId={project.id}/>:null}</article>{initialPrompt?.text===task.request&&runActivity(initialPrompt.id)}
             {systemMessages.length > 0 && <details className="activity-details"><summary><Terminal size={14} /><span>Workspace activity</span><small>{systemMessages.length} updates</small><ChevronDown size={13} /></summary><div>{systemMessages.map(item => <p key={item.id}>{item.text}</p>)}</div></details>}
-            {visibleMessages.map(item => <div key={`${task.id}:${item.id}`} id={`turn-${item.id}`}><article data-timeline-prompt={item.role==='user'?'':undefined} data-timeline-answer={item.role==='assistant'?'':undefined} className={`message ${item.role}-message`}>{item.role === 'user' ? <><p>{item.text}</p>{!!item.images?.length&&project&&<CodeImages images={item.images} projectId={project.id}/>} {!!item.files?.length&&<small>{item.files.length} source files attached</small>}</> : <MarkdownText text={item.text} />}{item.role === 'assistant' && <ResponseActions messageId={item.id} text={item.text} at={item.at} chatId={task.id} branchDisabled={busy||runtimeActive} onBranch={branchResponse}/>}</article>{item.role==='user'&&runActivity(item.id)}</div>)}
+            {visibleMessages.map(item => <div key={`${task.id}:${item.id}`} id={`turn-${item.id}`}><article data-timeline-prompt={item.role==='user'?'':undefined} data-timeline-answer={item.role==='assistant'?'':undefined} className={`message ${item.role}-message`}>{item.role === 'user' ? <><p>{item.text}</p>{!!item.images?.length&&project&&<CodeImages images={item.images} projectId={project.id}/>} {!!item.files?.length&&<small>{item.files.length} source files attached</small>}</> : <MarkdownText text={item.text} />}{item.role === 'assistant' && <ResponseActions messageId={item.id} text={item.text} at={item.at} chatId={task.id} branchDisabled={busy||runtimeActive} onBranch={branchResponse} runId={item.turnId} onChanges={openRunChanges}/>}</article>{item.role==='user'&&runActivity(item.id)}</div>)}
             {!task.runs?.length&&<ShellCommands results={task.shellResults ?? []} />}{Boolean(state.runtime.pending) && <button className="permission-banner" onClick={() => setModal('runtime')}><ShieldCheck size={17} /><span>{(state.runtime.pending as {kind?:string})?.kind==='input'?'Muse has a question. Answer to continue.':'Muse needs your decision. Review the permission request.'}</span><ChevronRight size={15} /></button>}
             {runtimeActive && !task.runs?.some(run=>run.status==='working') && <div className="working-indicator" role="status"><LoaderCircle size={15} className="spin" />Muse is working in your project…<button className="text-link" onClick={() => void act({ type: 'disconnectMuse' })}>Stop</button></div>}
             {!runtimeActive&&!!task.changes.length&&<ChangedFiles key={task.id} files={task.changes} onOpenFile={openFile} onOpenAll={()=>openFile()}/>}
@@ -505,6 +509,7 @@ export default function App() {
     <SpacesWorkspace active={codeSpaces||(product==='personal'&&personalMode==='work'&&spacesVisible&&!sitesVisible)} state={spacesState} command={spacesCommand} workItems={workState?.items??[]} workBusy={Boolean(workState?.busy)} onOpenWork={()=>{setProduct('personal');setPersonalMode('work');setSitesVisible(false);setSpacesVisible(false);setWorkHome(false);}} modeSwitch={codeSpaces?null:workModeSwitch} onNavigationOpen={revealSidebar} preferences={preferences} home={spacesHome} onHomeChange={setSpacesHome}/>
     <SitesWorkspace active={codeSites||(product==='personal'&&personalMode==='work'&&sitesVisible)} state={sitesState} command={sitesCommand} importFolder={importFolder} connect={connectHosting} pollAuth={pollAuth} workItems={workState?.items??[]} workBusy={Boolean(workState?.busy)} modeSwitch={codeSites?null:workModeSwitch} onNavigationOpen={revealSidebar} preferences={preferences} home={sitesHome} onHomeChange={setSitesHome}/>
     {modal==='extensions'&&<CustomizeDialog key={nativeDestination.revision} initialTab={customizeTab} initialQuery={customizeQuery} close={closeModal} running={customizeBlocked(state,workState,sitesState,sitesState?.generation)} onConnection={()=>setModal('runtime')} onChanged={()=>{setShortcutRevision(value=>value+1);skillsKey.current='';loadSkills();}} onPersonal={action=>{closeModal();setProduct('personal');setPersonalMode('chat');void personalCommand({type:'serviceAction',action});}}/>}
+    {modal==='run-changes'&&task&&reviewCapture?.taskId===task.id&&<Modal title="Reply changes" className="run-changes-modal" close={closeModal}><RunChanges key={task.id+reviewCapture.runId} taskId={task.id} runId={reviewCapture.runId} act={act} onDraft={text=>{setMessage(before=>appendReviewFeedback(before,text));closeModal();requestAnimationFrame(()=>composer.current?.focus());}}/></Modal>}
     {modal==='workflows'&&<WorkflowLibrary state={state} busy={busy} act={act} close={closeModal}/>}
     {modal==='handoff'&&task&&<ContextHandoff source={task} tasks={state.tasks} initialText={message} files={contextFiles} busy={busy} act={act} close={closeModal}/>}
     {modal==='session'&&task&&<SessionDialog runtime={state.runtime} task={task} projects={state.projects} busy={busy} act={act} onClose={closeModal}/> }

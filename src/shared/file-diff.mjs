@@ -4,9 +4,14 @@ const MAX_TRACE_CELLS = 1_000_000;
 const MAX_COMPARISON_WORK = 8_000_000;
 const MAX_ROWS = 10_000;
 
-function indexLines(text) {
+export function sourceLineCount(text) {
   let count = text.length && text.charCodeAt(text.length - 1) !== 10 ? 1 : 0;
   for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) count++;
+  return count;
+}
+
+function indexLines(text) {
+  const count = sourceLineCount(text);
   const offsets = new Uint32Array(count + 1);
   let line = 1;
   for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) offsets[line++] = i + 1;

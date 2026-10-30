@@ -28,7 +28,7 @@ export interface ChildInspection {
  worktree?:{worktreeRoot?:string;baseCommit?:string;headCommit?:string;ownership?:string;cleanupPolicy?:string;cleanupState?:string;parentDirtyExcluded?:boolean}};
 }
 export interface RuntimeState {connectionEpoch?:number;childInspections?:ChildInspection[];}
-export type Action = import('./project-actions.mjs').ProjectActionRequest | {type:'setActivityRead';ids:string[];read:boolean} | {type:'stopWork';taskId:string;id:string;controlId:string} | {type:'inspectChild';taskId:string;sessionId:string;itemId:string;revision:number} | {type:'saveValidationProfile';projectId:string;scripts:string[]} | {type:'runValidation'} | {type:'refreshModels'}
+export type Action = import('./run-changes.mjs').RunFileReview | import('./project-actions.mjs').ProjectActionRequest | {type:'setActivityRead';ids:string[];read:boolean} | {type:'stopWork';taskId:string;id:string;controlId:string} | {type:'inspectChild';taskId:string;sessionId:string;itemId:string;revision:number} | {type:'saveValidationProfile';projectId:string;scripts:string[]} | {type:'runValidation'} | {type:'refreshModels'}
   | {type:'createReviewer';parentTaskId:string;projectId:string;role:string;question:string} | {type:'integrateReview';taskId:string} | {type:'cancelReviewers'}
   | {type:'continueGoal';maxRounds:number;minutes:number} | {type:'pauseGoalContinuation'}
   | {type:'proposeLesson';projectId:string;taskId:string;messageId:string;title:string;text:string;applicability:string}
@@ -162,3 +162,5 @@ export interface MuseBenchBridge {onboarding(command:OnboardingCommand):Promise<
 export interface CodeBillingState {mode:'cli'|'account'|'api';source?:'account'|'api'|'unknown';status:'ready'|'error';hasApiKey:boolean;billingAccountId:string|null;busy:boolean;accountState?:string;message?:string;simulation?:boolean}
 export type CodeBillingCommand={type:'status'}|{type:'select';source:'account'|'api'}|{type:'saveApiKey';key:string}|{type:'linkBilling';accountId:string}|{type:'checkout';destination:'subscriptions'|'apiBilling'|'apiKeys'|'planDetails';external?:boolean};
 export interface MuseBenchBridge {codeBilling(command:CodeBillingCommand):Promise<{state?:CodeBillingState;opened?:boolean;external?:boolean;simulation?:boolean}>;onBillingChanged(callback:()=>void):()=>void;}
+
+export interface MuseBenchBridge {inspectRunChanges(input:import('./run-changes.mjs').RunInspection):Promise<import('./run-changes.mjs').RunChangeView>;prepareRunFeedback(input:import('./run-changes.mjs').RunFeedback):Promise<{text:string}>;}

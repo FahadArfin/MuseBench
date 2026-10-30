@@ -38,7 +38,7 @@ export function Modal({ title, children, close, className = '' }: { title: strin
   return <div className="modal-scrim" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}><div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className={`modal ${className}`}><div className="modal-heading"><h2>{title}</h2><button className="icon-button" aria-label="Close dialog" onClick={close}><X size={18} /></button></div>{children}</div></div>;
 }
 
-function Diff({ file, taskId }: { file: FileChange; taskId: string }) {
+export function Diff({ file, taskId }: { file: FileChange; taskId: string }) {
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
   const [opening, setOpening] = useState(false);

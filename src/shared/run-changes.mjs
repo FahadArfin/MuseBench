@@ -1,0 +1,9 @@
+const plain=value=>value&&typeof value==='object'&&!Array.isArray(value);
+const id=value=>typeof value==='string'&&value.length>0&&value.length<=200&&!/[\x00-\x1f]/.test(value);
+function fields(value,keys){if(!plain(value)||Object.keys(value).some(key=>!keys.includes(key)))throw Error('Invalid run review request.');}
+function binding(value){if(!id(value.taskId)||!id(value.runId))throw Error('Invalid chat or run.');}
+function source(value){binding(value);if(!/^[a-f0-9]{64}$/.test(value.revision??'')||typeof value.path!=='string'||!value.path||value.path.length>1024||/[\x00-\x1f\\:]/.test(value.path)||value.path.startsWith('/')||value.path.split('/').some(part=>!part||part==='.'||part==='..'))throw Error('Invalid captured file or revision.');}
+export function validateRunInspection(value){fields(value,['taskId','runId']);binding(value);return{taskId:value.taskId,runId:value.runId};}
+export function validateRunReview(value){fields(value,['type','taskId','runId','revision','path','reviewed']);source(value);if(value.type!=='setRunFileReviewed'||typeof value.reviewed!=='boolean')throw Error('Invalid file review.');return{...value};}
+export function validateRunFeedback(value){fields(value,['taskId','runId','revision','path','side','start','end','note']);source(value);if(!['before','after'].includes(value.side)||!Number.isSafeInteger(value.start)||!Number.isSafeInteger(value.end)||value.start<1||value.end<value.start||value.end-value.start>500||typeof value.note!=='string'||!value.note.trim()||value.note.length>4000||value.note.includes('\0'))throw Error('Use a captured side, a valid line range and a note up to 4,000 characters.');return{...value,note:value.note.trim()};}
+export function appendReviewFeedback(draft,feedback){const value=[draft,feedback].filter(Boolean).join('\n\n');if(value.length>16000)throw Error('This would exceed the 16,000-character draft limit. Shorten the draft first.');return value;}

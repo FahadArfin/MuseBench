@@ -25,3 +25,5 @@ export interface FileDiff {
  * Terminators participate in matching; binary files must be handled by callers.
  */
 export function computeFileDiff(before: string, after: string): FileDiff;
+
+export function sourceLineCount(text:string):number;

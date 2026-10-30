@@ -145,6 +145,8 @@ else {
     handler('musebench:code-image-read',input=>controller.readImage(input));
     handler('musebench:worktrees',input=>controller.inspectWorktrees(input));
     handler('musebench:project-actions',input=>controller.inspectProjectActions(input));
+    handler('musebench:run-changes',input=>controller.inspectRunChanges(input));
+    handler('musebench:run-feedback',input=>controller.prepareRunFeedback(input));
     handler('musebench:code-context',input=>controller.inspectContext(input));
     handler('musebench:checkpoint',input=>controller.inspectCheckpoint(input));
     handler('musebench:semantic-navigation',input=>controller.semanticNavigate(input));
