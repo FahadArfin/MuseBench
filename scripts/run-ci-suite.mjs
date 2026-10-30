@@ -9,7 +9,7 @@ const npm=(...names)=>names.map(name=>['npm','run',`test:${name}`]);
 export const CI_SUITES={
  unit:[['npm','test']],
  appearance:npm('startup-animation','motion','typography'),
- navigation:npm('preview-parity','browser-preview','onboarding-preview','navigation-cache'),
+ navigation:npm('preview-parity','browser-preview','onboarding-preview','navigation-cache','preview-annotations'),
  extensions:npm('catalog-preview','catalog-desktop','plugin-tools','billing-preview','billing-desktop','conversation-import','code-schedules'),
  chats:npm('chat-organization','code-responsiveness','chat-navigation','profile-identity','session-recovery','update-details'),
  native:[

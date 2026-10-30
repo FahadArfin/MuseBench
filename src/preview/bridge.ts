@@ -1,4 +1,5 @@
 import {applyPreviewSchedule} from './code-schedules';
+import {createBrowserPreviewAnnotations} from './preview-annotations';
 import {createPreviewConversationImports} from './conversation-imports';
 import {sourceLineCount} from '../shared/file-diff.mjs';
 import {validateRunInspection,validateRunReview,validateRunFeedback} from '../shared/run-changes.mjs';
@@ -56,7 +57,7 @@ function channel<T>(get:()=>T){
 
 export function createPreviewBridge():MuseBenchBridge {
  const usageObservedAt=Date.now(),sampleResetAt=new Date(usageObservedAt+3*60*60*1000).toISOString(),sampleWeeklyResetAt=new Date(usageObservedAt+4*24*60*60*1000).toISOString();
- const project={id:'preview-project',name:'MuseBench sample',root:'Sample workspace / MuseBench',demo:false,scripts:{test:'Example tests',build:'Example build'},instructions:'Keep the interface clear and accessible.'};
+ const project={id:'preview-project',name:'MuseBench sample',root:'Sample workspace / MuseBench',demo:false,scripts:{dev:'Sample preview · no command runs',test:'Example tests',build:'Example build'},instructions:'Keep the interface clear and accessible.'};
  const initial=task('Build a clearer project overview','preview-overview');
  initial.messages.push({id:id(),role:'assistant',at:stamp,text:'The project overview now keeps your recent threads together, with a clear place to start a new chat.\n\nYou can open the changed file below, explore the composer controls, or switch to Muse AI. This is fictional sample content for visual feedback.'});
  initial.changes=[{path:'src/ProjectOverview.tsx',status:'modified',additions:3,deletions:1,before:'<h1>Project</h1>\n',after:'<h1>Your project</h1>\n<p>Pick up where you left off.</p>\n<button>New chat</button>\n'}];
@@ -155,6 +156,8 @@ export function createPreviewBridge():MuseBenchBridge {
    case 'forkTask':if(current){const index=current.messages.findIndex(m=>m.id===action.messageId&&m.role!=='system');if(index<0)throw Error('Select a sample message first.');const selected=current.messages[index],fork=copy(current);fork.id=id();fork.title=`Branch: ${current.title}`;fork.pinned=false;fork.archived=false;fork.archivedAt=null;fork.messages=fork.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({...m,id:id()}));fork.runs=[];fork.changes=[];if(selected.role==='user')(state.drafts??={})[`${fork.projectId}:${fork.id}`]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:new Date().toISOString()};tasks.set(fork.id,fork);state.task=fork;}break;
    case 'clearError':state.error=null;break;
    case 'refresh':break;
+   case 'startPreview':state.preview={status:'running',url:location.origin+'/preview-project.html',log:'Browser sample preview. No package script or model request ran.',script:action.script};break;
+   case 'stopPreview':state.preview={status:'stopped',url:null,log:'',script:null};break;
    default:return desktop();
   }
   if(state.task?.id!==current?.id){if(current)runtimeOwners.set(current.id,previousRuntime);state.runtime=copy(runtimeOwners.get(state.task?.id??'')??runtime);}
@@ -209,6 +212,7 @@ export function createPreviewBridge():MuseBenchBridge {
   windowControlsOverlay:true,
   inspectWorktrees:async input=>({root:state.projects.find(p=>p.id===input.projectId)?.root??project.root,branch:'main',head:'sample-base',dirty:true,items:copy(sampleWorktrees)}),
   inspectProjectActions:async input=>copy(projectActionView(input)),
+  ...createBrowserPreviewAnnotations({getState:()=>state}),
   inspectRunChanges:async input=>copy(runChangeView(input)),
   prepareRunFeedback:async input=>{input=validateRunFeedback(input);const view=runChangeView(input),file=view.files.find(file=>file.path===input.path);if(!file||input.revision!==view.revision||input.end>sourceLineCount(file[input.side]))throw Error('Choose captured lines in this sample.');return{text:'Sample review feedback for '+JSON.stringify(input.path)+' · '+input.side+' lines '+input.start+'–'+input.end+'\n\n'+input.note};},
   importCodeImage:async input=>{const match=/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(input.dataUrl);if(!match||input.dataUrl.length>11200000)throw Error('Choose an image up to 8 MB.');const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));const id=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');imageData.set(input.projectId+id,input.dataUrl);return{id,name:input.name,mime:match[1],bytes:bytes.length};},

@@ -176,3 +176,10 @@ export interface MuseBenchBridge {codeBilling(command:CodeBillingCommand):Promis
 export interface MuseBenchBridge {inspectRunChanges(input:import('./run-changes.mjs').RunInspection):Promise<import('./run-changes.mjs').RunChangeView>;prepareRunFeedback(input:import('./run-changes.mjs').RunFeedback):Promise<{text:string}>;}
 
 export interface AppState {codeSchedules?:import('./code-schedules.mjs').CodeSchedule[];codeSchedulesAvailable?:boolean;codeSchedulesSimulation?:boolean;}
+
+export interface MuseBenchBridge {
+ inspectPreviewTarget(input:import('./preview-annotations.mjs').PreviewPoint):Promise<import('./preview-annotations.mjs').PreviewSelection>;
+ preparePreviewFeedback(input:{token:string;note:string}):Promise<{text:string}>;
+ discardPreviewTarget(token:string):Promise<void>;
+ onPreviewInvalidated(callback:()=>void):()=>void;
+}
