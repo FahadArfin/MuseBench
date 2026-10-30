@@ -1,7 +1,8 @@
 const MAX_FRAME_BYTES=131072,MAX_PREVIEW_CODE_POINTS=16000;
-// Match discovery-mcp's nested text result and emitted JSONL delimiter. The
-// existing 128-character request-ID reserve remains conservative for normal IDs.
-export const discoveryResultWireBytes=value=>Buffer.byteLength(JSON.stringify({jsonrpc:'2.0',id:'x'.repeat(128),result:{content:[{type:'text',text:JSON.stringify(value)}]}})+'\n');
+// The protocol admits IDs up to 128 UTF-16 code units. Each unit can require
+// six JSON bytes (e.g. NUL or an unpaired surrogate); reserve that maximum,
+// including the ID quotes, nested text result and emitted JSONL delimiter.
+export const discoveryResultWireBytes=value=>Buffer.byteLength(JSON.stringify({jsonrpc:'2.0',id:'\u0000'.repeat(128),result:{content:[{type:'text',text:JSON.stringify(value)}]}})+'\n');
 
 export function boundDiscoveryResult(receipt,result){
  const outcome=result.isError?'failed':'completed',complete={...receipt,outcome,result},originalWireBytes=discoveryResultWireBytes(complete);
@@ -10,7 +11,7 @@ export function boundDiscoveryResult(receipt,result){
  for(const block of result.content){if(block.type==='text'){for(const point of block.text)points.push(point);}else omittedNonTextBlocks++;}
  const notice='Lossy gateway preview of a validated tool result. Only text content is retained; media, structured output and metadata are omitted. '+
   (points.length?'Text is concatenated in source order; omission counts are Unicode code points. ':'No text content is available to preview. ')+
-  'originalWireBytes measures the complete original encoded JSON-RPC frame in bytes. '+
+  'originalWireBytes measures the complete original encoded JSON-RPC frame in bytes with the maximum admitted request-ID reserve. '+
   (result.truncated===true?'The source also marked its result truncated. ':'')+
   'The operation was not retried; inspect its effects before another request.';
  function preview(limit){

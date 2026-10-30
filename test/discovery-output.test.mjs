@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 const output=await import('../src/runtime/discovery-output.mjs').catch(()=>({}));
 const receipt={sourceId:'global:fixture',sourceName:'fixture',catalogRevision:'a'.repeat(64),tool:'allowed'};
-const wireBytes=value=>Buffer.byteLength(JSON.stringify({jsonrpc:'2.0',id:'x'.repeat(128),result:{content:[{type:'text',text:JSON.stringify(value)}]}})+'\n');
+const wireBytes=(value,id='\u0000'.repeat(128))=>Buffer.byteLength(JSON.stringify({jsonrpc:'2.0',id,result:{content:[{type:'text',text:JSON.stringify(value)}]}})+'\n');
 function bound(result,identity=receipt){assert.equal(typeof output.boundDiscoveryResult,'function','bounded output helper exists');return output.boundDiscoveryResult(identity,result);}
 for(const result of [{content:[{type:'text',text:'small'}],_meta:{source:'kept'},truncated:true},{content:[],isError:true,structuredContent:{reason:'small'}}])test('small validated results retain their complete source shape',()=>{
  assert.deepEqual(bound(result),{...receipt,outcome:result.isError?'failed':'completed',result});
@@ -49,8 +49,21 @@ test('emitted MCP frames admit both the exact limit and a bounded escaped previe
  for(const result of results){
   const input=new PassThrough(),stream=new PassThrough(),frames=[];let calls=0;stream.on('data',chunk=>frames.push(String(chunk)));
   const server=await createDiscoveryMcpServer({input,output:stream,service:{call:async()=>{calls++;return bound(result);},dispose:async()=>{}}});
-  try{input.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25'}})+'\n');await new Promise(resolve=>setImmediate(resolve));input.write(JSON.stringify({jsonrpc:'2.0',id:'x'.repeat(128),method:'tools/call',params:{name:'discovery_call',arguments:{}}})+'\n');await new Promise(resolve=>setImmediate(resolve));
+  try{input.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25'}})+'\n');await new Promise(resolve=>setImmediate(resolve));input.write(JSON.stringify({jsonrpc:'2.0',id:'\u0000'.repeat(128),method:'tools/call',params:{name:'discovery_call',arguments:{}}})+'\n');await new Promise(resolve=>setImmediate(resolve));
    const frame=frames[1];assert.ok(Buffer.byteLength(frame)<=131072);const parsed=JSON.parse(JSON.parse(frame).result.content[0].text);assert.equal(parsed.outcome,'completed');assert.equal(parsed.sourceId,receipt.sourceId);assert.equal(calls,1);if(result===results[1])assert.ok(parsed.preview.text.length>0);else assert.equal(Buffer.byteLength(frame),131072);
   }finally{await server.close();}
  }
+});
+
+for(const [kind,id] of [['backslash','\\'.repeat(128)],['quote','"'.repeat(128)],['control','\u0000'.repeat(128)],['multibyte','漢'.repeat(128)],['lone-surrogate','\ud800'.repeat(128)],['astral','😀'.repeat(64)]])test(`near-limit result retains receipt and preview for an admitted ${kind} request ID`,async()=>{
+ const {PassThrough}=await import('node:stream'),{createDiscoveryMcpServer}=await import('../src/runtime/discovery-mcp.mjs');
+ const empty={...receipt,outcome:'completed',result:{content:[{type:'text',text:''}]}},capacity=131072-wireBytes(empty,'x'.repeat(128)),result={content:[{type:'text',text:'x'.repeat(capacity)}]};
+ const input=new PassThrough(),stream=new PassThrough(),frames=[];let calls=0;stream.on('data',chunk=>frames.push(String(chunk)));
+ const server=await createDiscoveryMcpServer({input,output:stream,service:{call:async()=>{calls++;return bound(result);},dispose:async()=>{}}});
+ try{
+  input.write(JSON.stringify({jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25'}})+'\n');await new Promise(resolve=>setImmediate(resolve));
+  input.write(JSON.stringify({jsonrpc:'2.0',id,method:'tools/call',params:{name:'discovery_call',arguments:{}}})+'\n');await new Promise(resolve=>setImmediate(resolve));
+  const frame=frames[1],reply=JSON.parse(frame);assert.equal(reply.id,id);assert.ok(Buffer.byteLength(frame)<=131072);assert.equal(reply.result.isError,undefined,'must not use the generic overflow fallback');
+  const value=JSON.parse(reply.result.content[0].text);assert.equal(value.outcome,'completed');assert.equal(value.sourceId,receipt.sourceId);assert.equal(value.catalogRevision,receipt.catalogRevision);assert.equal(value.truncated,true);assert.ok(value.preview.text.length>0);assert.equal(value.preview.originalWireBytes,131712);assert.equal(calls,1);
+ }finally{await server.close();}
 });

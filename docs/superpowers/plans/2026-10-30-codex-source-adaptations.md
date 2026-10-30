@@ -45,7 +45,9 @@
 
 **Files:** `src/runtime/discovery-gateway.mjs`; create `src/runtime/discovery-output.mjs` and `test/discovery-output.test.mjs`; extend `test/discovery-mcp-gateway.test.mjs` and relevant remote fixtures. Update `docs/TOOL-DISCOVERY.md`, validation and roadmap.
 
-**Interfaces:** `boundDiscoveryResult(receipt,result)` returns the current `{...receipt,outcome,result}` unchanged when the complete wrapped frame fits; otherwise returns `{...receipt,outcome,truncated:true,preview:{text,originalWireBytes,omittedTextCodePoints,omittedNonTextBlocks},notice}`. Preview is not `result.structuredContent`. Export the frame-size measurement for focused tests, using the existing conservative 128-character request ID framing.
+**Interfaces:** `boundDiscoveryResult(receipt,result)` returns the current `{...receipt,outcome,result}` unchanged when the complete wrapped frame fits; otherwise returns `{...receipt,outcome,truncated:true,preview:{text,originalWireBytes,omittedTextCodePoints,omittedNonTextBlocks},notice}`. Preview is not `result.structuredContent`. Export the frame-size measurement for focused tests, reserving the worst-case JSON encoding of any admitted request ID: 128 UTF-16 code units at up to six encoded bytes per unit, plus quotes and the emitted JSONL delimiter. The prior ASCII placeholder is superseded by the review ruling below.
+
+**CS02 review ruling, 30 October 2026:** Whole-frame safety takes precedence over preserving the earlier ASCII placeholder. The protocol admits escaped, control and multibyte string IDs, so an ASCII 128-character reserve is insufficient. Use the maximum admitted encoded ID size without increasing any receive limit, and exercise actual emitted frames for these IDs. `preview.originalWireBytes` is the original nested frame size with that conservative reserved ID, not an observed network byte count.
 
 - [ ] Add failing behavior tests for valid large success/failure, invalid original output schema, quotes/backslashes, astral Unicode and combining marks, multiple text blocks, structured/media-only results, limit boundaries and unchanged downstream call count.
 - [ ] Run focused red tests and retain output.
