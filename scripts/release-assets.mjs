@@ -6,6 +6,11 @@ import yaml from 'js-yaml';
 
 export const DESKTOP_TARGETS=['win32-x64','win32-arm64','linux-x64','linux-arm64','darwin-x64','darwin-arm64'];
 export const RELEASE_TARGETS=[...DESKTOP_TARGETS,'android-universal'];
+export function releaseTargets(profile='windows-x64'){
+ if(profile==='windows-x64')return ['win32-x64'];
+ if(profile==='all')return [...RELEASE_TARGETS];
+ throw Error('Unknown release profile. Use windows-x64 or all.');
+}
 const digest=(bytes,algorithm='sha256')=>createHash(algorithm).update(bytes).digest(algorithm==='sha512'?'base64':'hex');
 const safe=name=>typeof name==='string'&&/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}$/.test(name);
 function identity(version,commit){if(!/^\d+\.\d+\.\d+$/.test(version)||! /^[a-f0-9]{40}$/.test(commit))throw Error('Invalid release version or source commit.');}
@@ -37,7 +42,7 @@ export async function stageRelease({releaseDir,outDir,platform,arch,version,comm
  await writeFile(path.join(outDir,'asset-manifest.json'),JSON.stringify({version,commit,platform,arch,files},null,2)+'\n');
 }
 
-export async function collectRelease({inputDir,outputDir,expectedTargets=RELEASE_TARGETS,version,commit}){
+export async function collectRelease({inputDir,outputDir,expectedTargets=releaseTargets(),version,commit}){
  identity(version,commit);const targets=new Map(),files=new Map(),metadata=new Map();
  for(const entry of await readdir(inputDir,{withFileTypes:true})){
   if(!entry.isDirectory())continue;
@@ -80,6 +85,6 @@ if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.ur
  const packageInfo=JSON.parse(await readFile('package.json','utf8'));
  const common={version:process.env.VERSION||packageInfo.version,commit:process.env.SOURCE_SHA||packageInfo.releaseCommit};
  if(process.argv[2]==='stage')await stageRelease({...common,releaseDir:'release',outDir:'release-assets',platform:process.argv.includes('--android')?'android':process.platform,arch:process.argv.includes('--android')?'universal':process.arch});
- else if(process.argv[2]==='collect')console.log(await collectRelease({...common,inputDir:'incoming',outputDir:'release'}));
+ else if(process.argv[2]==='collect')console.log(await collectRelease({...common,inputDir:'incoming',outputDir:'release',expectedTargets:releaseTargets(process.env.RELEASE_PROFILE)}));
  else throw Error('Use stage or collect.');
 }

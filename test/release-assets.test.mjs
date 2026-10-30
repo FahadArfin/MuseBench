@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,writeFile,readFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,rm,rename} from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import {createHash} from 'node:crypto';
@@ -8,9 +8,39 @@ import yaml from 'js-yaml';
 import {createRequire} from 'node:module';
 const {findFile}=createRequire(import.meta.url)('electron-updater/out/providers/Provider.js');
 import {stageRelease,collectRelease} from '../scripts/release-assets.mjs';
+import * as releaseAssets from '../scripts/release-assets.mjs';
+import {execFileSync} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
 const sha=value=>createHash('sha512').update(value).digest('base64'),version='0.2.999',commit='a'.repeat(40);
 async function fixture(t){const root=await mkdtemp(path.join(os.tmpdir(),'muse-assets-'));t.after(()=>rm(root,{recursive:true,force:true}));return root;}
 async function windows(root,arch){const releaseDir=path.join(root,'raw-'+arch);await mkdir(releaseDir);const name=`MuseBench-Setup-${version}${arch==='arm64'?'-arm64':''}.exe`,bytes=Buffer.from('installer-'+arch);await writeFile(path.join(releaseDir,name),bytes);await writeFile(path.join(releaseDir,name+'.blockmap'),'blockmap');await writeFile(path.join(releaseDir,'latest.yml'),yaml.dump({version,files:[{url:name,sha512:sha(bytes),size:bytes.length}],path:name,sha512:sha(bytes),releaseDate:'2026-10-28T00:00:00Z'}));await stageRelease({releaseDir,outDir:path.join(root,'input',`win32-${arch}`),platform:'win32',arch,version,commit});return name;}
+test('normal releases publish only the verified Windows x64 package and preserve updater metadata',async t=>{
+ const root=await fixture(t),name=await windows(root,'x64');
+ const options={inputDir:path.join(root,'input'),outputDir:path.join(root,'out'),version,commit};
+ const result=await collectRelease(options);assert.deepEqual(result.targets,['win32-x64']);
+ const manifest=JSON.parse(await readFile(path.join(root,'out','release-manifest.json'),'utf8'));
+ assert.equal(manifest.commit,commit);assert.equal(manifest.version,version);assert.equal(manifest.targets.length,1);
+ const metadata=yaml.load(await readFile(path.join(root,'out','latest.yml'),'utf8'));
+ assert.equal(metadata.path,name);assert.deepEqual(metadata.files,[{url:name,sha512:sha(Buffer.from('installer-x64')),size:13}]);
+ assert.match(await readFile(path.join(root,'out','SHA256SUMS'),'utf8'),new RegExp(name.replaceAll('.','\\.')));
+ await windows(root,'arm64');await assert.rejects(collectRelease(options),/Unexpected.*arm64/);
+});
+test('all platforms require explicit selection and still reject an incomplete release',async t=>{
+ assert.deepEqual(releaseAssets.releaseTargets(),['win32-x64']);
+ assert.deepEqual(releaseAssets.releaseTargets('all'),releaseAssets.RELEASE_TARGETS);
+ assert.throws(()=>releaseAssets.releaseTargets('windows'),/profile/i);
+ const root=await fixture(t);await windows(root,'x64');
+ await assert.rejects(collectRelease({inputDir:path.join(root,'input'),outputDir:path.join(root,'out'),expectedTargets:releaseAssets.releaseTargets('all'),version,commit}),/Missing target/);
+});
+test('the release CLI carries its selected profile through to asset validation',async t=>{
+ const root=await fixture(t);await windows(root,'x64');await rename(path.join(root,'input'),path.join(root,'incoming'));
+ await writeFile(path.join(root,'package.json'),JSON.stringify({version,releaseCommit:commit}));
+ const script=fileURLToPath(new URL('../scripts/release-assets.mjs',import.meta.url));
+ const run=profile=>execFileSync(process.execPath,[script,'collect'],{cwd:root,env:{...process.env,VERSION:version,SOURCE_SHA:commit,RELEASE_PROFILE:profile},stdio:'pipe'});
+ run('windows-x64');assert.equal(JSON.parse(await readFile(path.join(root,'release','release-manifest.json'),'utf8')).targets.length,1);
+ assert.throws(()=>run('all'),error=>/Missing target win32-arm64/.test(error.stderr.toString()));
+ assert.throws(()=>run('typo'),error=>/Unknown release profile/.test(error.stderr.toString()));
+});
 test('one release retains both Windows architectures and the existing x64 updater fallback',async t=>{
  const root=await fixture(t),x64=await windows(root,'x64'),arm=await windows(root,'arm64');
  await collectRelease({inputDir:path.join(root,'input'),outputDir:path.join(root,'out'),expectedTargets:['win32-x64','win32-arm64'],version,commit});

@@ -9,7 +9,9 @@ async function fixture(t,definition=makeDefinition('node -e "console.log(123)"')
  const act=async input=>{const state=await c.dispatch(input);assert.equal(state.error,null);return state;};await act({type:'openProject',path:project});const state=await act({type:'newTask',mode:'manual',request:'Action fixture'}),binding={projectId:state.task.projectId,taskId:state.task.id};
  const inspect=()=>c.inspectProjectActions(binding),request=async()=>({...binding,type:'runProjectAction',actionId:definition.id,revision:(await inspect()).revision});return{root,project,dataDir,c,act,binding,inspect,request};
 }
-async function waitFor(fn){const deadline=Date.now()+15000;while(!fn()){if(Date.now()>deadline)throw Error('Timed out waiting for owned action');await new Promise(resolve=>setTimeout(resolve,30));}}
+// Cold PowerShell startup under concurrent Windows CI can exceed 15 seconds.
+// Keep the real completion/output/exit assertions and a bounded fixture deadline.
+async function waitFor(fn){const deadline=Date.now()+60000;while(!fn()){if(Date.now()>deadline)throw Error('Timed out waiting for owned action');await new Promise(resolve=>setTimeout(resolve,30));}}
 
 test('import and inspection never execute; save changes only the portable definition',async t=>{
  const f=await fixture(t,makeDefinition('node -e "require(\'fs\').writeFileSync(\'ran.txt\',\'bad\')"'));const before=await f.inspect();assert.equal(before.actions[0].supported,true);assert.equal(f.c.getState().task.check,null);await assert.rejects(readFile(path.join(f.project,'ran.txt')),e=>e.code==='ENOENT');

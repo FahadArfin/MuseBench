@@ -1,6 +1,10 @@
 # Release platforms
 
-MuseBench desktop releases support **x64 and ARM64 only**. There is no Windows x86/ia32 build. `scripts/package-desktop.mjs` rejects any other desktop architecture.
+Normal MuseBench releases now build **Windows 11 x64 only** (Intel/AMD 64-bit), so every main push no longer starts seven platform builds. Windows ARM64, Linux, macOS and Android are deferred. Their packaging configuration and existing published downloads are retained for later use.
+
+To deliberately test every configured target, manually run **Release MuseBench** on `main` and select **Test all platforms (artifacts only; do not publish a release)**. This option defaults to off and retains the downloads as workflow artifacts without publishing or replacing a release. Public releases for other platforms are deferred until we deliberately restore their release policy. An existing draft is left untouched and blocks automatic publication until reviewed; published versions remain immutable.
+
+The retained desktop configurations support **x64 and ARM64 only**. There is no Windows x86/ia32 build. `scripts/package-desktop.mjs` rejects any other desktop architecture.
 
 | Visible build | CPU | Build machine |
 | --- | --- | --- |

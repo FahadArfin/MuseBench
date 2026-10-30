@@ -3,6 +3,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      include_other_platforms:
+        description: Test all platforms (artifacts only; do not publish a release)
+        type: boolean
+        default: false
+        required: false
 permissions:
   contents: read
 concurrency:
@@ -96,7 +102,7 @@ jobs:
           path: release-assets/*
   native:
     name: ${{ matrix.label }}
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.include_other_platforms == true
     strategy:
       fail-fast: false
       matrix:
@@ -175,7 +181,7 @@ jobs:
           path: release-assets/*
   android:
     name: Android phones and tablets
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && inputs.include_other_platforms == true
     runs-on: ubuntu-24.04
     timeout-minutes: 35
     steps:
@@ -251,6 +257,7 @@ jobs:
   publish:
     name: Publish verified downloads
     needs: [build, native, android]
+    if: ${{ !cancelled() && inputs.include_other_platforms != true && needs.build.result == 'success' && (needs.native.result == 'success' || needs.native.result == 'skipped') && (needs.android.result == 'success' || needs.android.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -266,6 +273,7 @@ jobs:
           pattern: desktop-*
           path: incoming
       - uses: actions/download-artifact@v4
+        if: inputs.include_other_platforms == true
         with:
           name: android-universal
           path: incoming/android-universal
@@ -274,12 +282,14 @@ jobs:
         env:
           VERSION: ${{ needs.build.outputs.version }}
           SOURCE_SHA: ${{ github.sha }}
+          RELEASE_PROFILE: ${{ inputs.include_other_platforms && 'all' || 'windows-x64' }}
       - name: Publish validated platform downloads
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.build.outputs.version }}
           SOURCE_SHA: ${{ github.sha }}
+          RELEASE_PROFILE: ${{ inputs.include_other_platforms && 'all' || 'windows-x64' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -297,9 +307,13 @@ jobs:
             fi
             target=$(gh release view "$tag" --json targetCommitish --jq .targetCommitish)
             test "$target" = "$SOURCE_SHA"
-            gh release upload "$tag" release/* --clobber
-            gh release edit "$tag" --draft=false --latest
-            exit 0
+            echo "An existing draft requires review. Its assets and notes were left unchanged."
+            exit 1
           fi
-          printf 'Built from commit %s after validation and native package launch checks.\n\nWindows x64/ARM64 installers, Linux x64/ARM64 AppImage/deb, macOS Intel/Apple silicon dmg/zip, and a signed Android phone/tablet APK. Android chat works independently; Code pairs with your desktop under Settings → Mobile devices. macOS downloads are ad-hoc signed, not notarized; update manually. iOS distribution awaits Apple provisioning. Existing app data is retained. SHA256SUMS and release-manifest.json record integrity and source provenance.\n' "$SOURCE_SHA" > release-notes.txt
+          if [ "$RELEASE_PROFILE" = "all" ]; then
+            downloads='Windows x64/ARM64 installers, Linux x64/ARM64 AppImage/deb, macOS Intel/Apple silicon dmg/zip, and a signed Android phone/tablet APK. macOS downloads are ad-hoc signed, not notarized; update manually.'
+          else
+            downloads='Windows 11 x64 installer (Intel/AMD 64-bit). Other platforms are deferred while we focus on faster Windows updates.'
+          fi
+          printf 'Built from commit %s after validation and native package launch checks.\n\n%s\n\nExisting app data is retained. SHA256SUMS and release-manifest.json record integrity and source provenance.\n' "$SOURCE_SHA" "$downloads" > release-notes.txt
           gh release create "$tag" release/* --target "$SOURCE_SHA" --title "MuseBench $VERSION" --notes-file release-notes.txt --latest
