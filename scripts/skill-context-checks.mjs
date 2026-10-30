@@ -28,7 +28,7 @@ export async function checkSkillContext({page,dialog,pass,screenshot,desktopApp}
  try{
   await dialog.getByRole('button',{name:'Refresh extensions',exact:true}).click();
   await dialog.getByRole('button',{name:'Installed',exact:true}).click();
-  const tools=dialog.locator('.extensions-tools > summary');await tools.click();
+  const tools=dialog.getByText('Skill tools',{exact:true});await tools.click();
   const summary=dialog.locator('.skill-context-summary'),toggle=summary.locator(':scope > button');
   await summary.getByText('~100 tokens at startup · partial',{exact:true}).waitFor();
   assert.equal(await toggle.getAttribute('aria-expanded'),'false');
@@ -87,7 +87,7 @@ export async function checkSkillContext({page,dialog,pass,screenshot,desktopApp}
   if(desktopApp)await desktopApp.evaluate(()=>{const f=globalThis.__catalogFixture;Object.assign(f.state,f.skillContextOriginal);delete f.skillContextOriginal;delete f.skillContextActive;});
   else await page.evaluate(()=>{window.musebench.customize=window.__skillContextOriginal;delete window.__skillContextOriginal;delete window.__skillContextFixture;delete window.__skillContextUnavailable;});
   await dialog.getByRole('button',{name:'Refresh extensions',exact:true}).click();
-  const openTools=dialog.locator('.extensions-tools[open] > summary');if(await openTools.count())await openTools.click();
+  const openTools=dialog.locator('.extensions-tools[open] > summary').filter({hasText:/^Skill tools$/});if(await openTools.count())await openTools.click();
   await dialog.getByRole('button',{name:'Curated',exact:true}).click();
  }
 }
