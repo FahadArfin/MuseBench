@@ -7,3 +7,4 @@ export interface RecentContextState {count:number;autoPrepare:boolean;prepared:R
 export function recentSourceRecord(message:Message,runs?:WorkRun[]):RecentEntry;
 export function selectRecentContext(messages:Message[],count?:number,runs?:WorkRun[]):{version:number;entries:RecentEntry[];section:string;sourceIds:string[]};
 export function validRecentSection(section:unknown):boolean;
+export function readRecentSection(section:unknown):RecentEntry[]|null;

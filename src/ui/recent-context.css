@@ -7,6 +7,13 @@
 .worktree-dialog .recent-context-preference{display:flex;flex-direction:row;align-items:center;gap:8px;justify-content:flex-start;margin:8px 0}
 .worktree-dialog .recent-context-preference input{width:auto;margin:0;flex:none}
 .recent-context pre{max-width:100%;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-word;font:12px/1.5 var(--font-mono,monospace);padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--panel);}
+.recent-context-messages{list-style:none;max-height:260px;overflow:auto;padding:0;margin:12px 0;border:1px solid var(--border);border-radius:8px}
+.recent-context-messages li{padding:10px 12px}
+.recent-context-messages li+li{border-top:1px solid var(--border)}
+.recent-context-message-label{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:baseline}
+.recent-context-message-label span{font-size:11px;color:var(--muted)}
+.worktree-dialog .recent-context-messages p{white-space:pre-wrap;overflow-wrap:anywhere;margin:6px 0 0;color:var(--text);font-size:13px}
+.recent-context-raw summary{font-size:12px;font-weight:400;color:var(--muted)}
 .recent-context-included{display:flex;align-items:center;gap:8px;max-width:100%;padding:4px 8px;font-size:12px;overflow-wrap:anywhere}
 .recent-context-included .text-link{font:inherit}
 .recent-context :focus-visible{outline:2px solid var(--accent);outline-offset:3px}

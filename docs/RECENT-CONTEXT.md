@@ -1,6 +1,6 @@
 # Recent local excerpts
 
-After MuseBench has observed completed native compaction in a chat's current native session, open **Session → Recent excerpts**. Choose two, four (the default), or eight recent messages, then select **Prepare excerpts**. Review the saved local text and select **Include with next message**. A removable indicator appears above the composer. The excerpts are separate from your draft and accompany only a later message you explicitly send or queue.
+After MuseBench has observed completed native compaction in a chat's current native session, open **Session → Recent excerpts**. Choose two, four (the default), or eight recent messages, then select **Prepare excerpts**. Review the saved local text as readable **You** and **Muse** messages, with known outcomes and shortened-excerpt labels, then select **Include with next message**. The optional **View prepared context** disclosure contains the exact bounded text that will accompany your request. A removable indicator appears above the composer. The excerpts are separate from your draft and accompany only a later message you explicitly send or queue.
 
 The optional **Prepare locally after completed turns** setting belongs to this chat and defaults off. When enabled, confirmed terminal turns refresh one local preparation while no selection is staged. It never starts a turn, sends a message, runs inference, compacts context, or changes native session retention. Review and explicit inclusion are still required.
 

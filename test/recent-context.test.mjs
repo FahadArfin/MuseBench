@@ -22,3 +22,10 @@ test('escaped Unicode text fits the entire formatted section and marks truncatio
  assert.ok(prepared.prompt.includes(result.section));assert.ok(prepared.prompt.endsWith('Current request:\nCurrent user intent'));assert.ok(prepared.prompt.length<=64000);
  assert.match(result.section,/untrusted|reference/i);assert.match(result.section,/permission|authoriz/i);
 });
+
+test('review parser exposes only bounded validated message entries and rejects damaged serialization',()=>{
+ assert.equal(typeof api.readRecentSection,'function');
+ const section=api.selectRecentContext([{id:'quoted',role:'user',text:'Literal <script> and \"quoted\" text',outcome:'completed',contextTruncated:true}],2).section;
+ assert.deepEqual(api.readRecentSection(section),[{id:'quoted',role:'user',text:'Literal <script> and \"quoted\" text',outcome:'completed',truncated:true}]);
+ for(const damaged of [null,'[]',section.slice(0,-1),section.replace('\"role\":\"user\"','\"role\":\"system\"'),section.replace('\"truncated\":true','\"truncated\":\"true\"'),section+' '.repeat(8000)]){assert.equal(api.readRecentSection(damaged),null);assert.equal(api.validRecentSection(damaged),false);}
+});

@@ -20,7 +20,8 @@ export function selectRecentContext(messages,count=4,runs=[]){
  if(section.length>RECENT_CONTEXT_LIMIT)throw Error('Recent excerpts exceed the local context limit.');
  return{version:1,entries,section,sourceIds:records.map(r=>r.id)};
 }
-export function validRecentSection(section){
- if(typeof section!=='string'||section.length>RECENT_CONTEXT_LIMIT||!section.startsWith(heading))return false;
- try{const entries=JSON.parse(section.slice(heading.length));return Array.isArray(entries)&&entries.length>0&&entries.length<=8&&entries.every(e=>e&&typeof e.id==='string'&&e.id.length>0&&e.id.length<=200&&['user','assistant'].includes(e.role)&&typeof e.text==='string'&&typeof e.truncated==='boolean'&&(outcomes.has(e.outcome)||e.outcome==='unknown')&&Object.keys(e).every(k=>['id','role','text','outcome','truncated'].includes(k)));}catch{return false;}
+export function readRecentSection(section){
+ if(typeof section!=='string'||section.length>RECENT_CONTEXT_LIMIT||!section.startsWith(heading))return null;
+ try{const entries=JSON.parse(section.slice(heading.length));return Array.isArray(entries)&&entries.length>0&&entries.length<=8&&entries.every(e=>e&&typeof e.id==='string'&&e.id.length>0&&e.id.length<=200&&['user','assistant'].includes(e.role)&&typeof e.text==='string'&&typeof e.truncated==='boolean'&&(outcomes.has(e.outcome)||e.outcome==='unknown')&&Object.keys(e).every(k=>['id','role','text','outcome','truncated'].includes(k)))?entries:null;}catch{return null;}
 }
+export function validRecentSection(section){return readRecentSection(section)!==null;}
