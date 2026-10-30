@@ -1,0 +1,1450 @@
+TAP version 13
+# (node:55704) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: task navigation keeps journals and original baselines across two projects and selects the newest project task
+ok 1 - task navigation keeps journals and original baselines across two projects and selects the newest project task
+  ---
+  duration_ms: 485.7421
+  ...
+# Subtest: all task associations and journals survive restart and selecting the current task is a no-op
+ok 2 - all task associations and journals survive restart and selecting the current task is a no-op
+  ---
+  duration_ms: 258.0286
+  ...
+# Subtest: restoring an inactive task rehashes source and invalidates revision-bound evidence before displaying it
+ok 3 - restoring an inactive task rehashes source and invalidates revision-bound evidence before displaying it
+  ---
+  duration_ms: 873.6666
+  ...
+# Subtest: startup rehashes the active task rather than reviving stale checks and checkpoints
+ok 4 - startup rehashes the active task rather than reviving stale checks and checkpoints
+  ---
+  duration_ms: 720.8691
+  ...
+# Subtest: legacy migration associates only the known current task and preserves unrelated unassociated records
+ok 5 - legacy migration associates only the known current task and preserves unrelated unassociated records
+  ---
+  duration_ms: 125.1561
+  ...
+# Subtest: invalid task association fails before replacing the current project or task
+ok 6 - invalid task association fails before replacing the current project or task
+  ---
+  duration_ms: 122.6523
+  ...
+# Subtest: navigation cannot detach a running Muse turn and restored tasks reject late runtime output
+ok 7 - navigation cannot detach a running Muse turn and restored tasks reject late runtime output
+  ---
+  duration_ms: 257.5377
+  ...
+# Subtest: restored task journals bound saved shell output and message text
+ok 8 - restored task journals bound saved shell output and message text
+  ---
+  duration_ms: 472.7864
+  ...
+# Subtest: durable evidence search survives display eviction and restart, then permanent deletion
+ok 9 - durable evidence search survives display eviction and restart, then permanent deletion
+  ---
+  duration_ms: 664.9311
+  ...
+# (node:51748) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fresh sides isolate context and preserve the explicit parent draft, queues and goals
+ok 10 - fresh sides isolate context and preserve the explicit parent draft, queues and goals
+  ---
+  duration_ms: 225.4105
+  ...
+# Subtest: relations survive restart and parent deletion without cascading or hiding a side
+ok 11 - relations survive restart and parent deletion without cascading or hiding a side
+  ---
+  duration_ms: 111.7704
+  ...
+# Subtest: invalid and archived explicit sources preserve selection and create nothing
+ok 12 - invalid and archived explicit sources preserve selection and create nothing
+  ---
+  duration_ms: 107.5524
+  ...
+# Subtest: chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+ok 13 - chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+  ---
+  duration_ms: 144.4334
+  ...
+# Subtest: manual forks preserve independent initial-request provenance for "Actual initial request outside messages"
+ok 14 - manual forks preserve independent initial-request provenance for "Actual initial request outside messages"
+  ---
+  duration_ms: 142.7892
+  ...
+# Subtest: manual forks preserve independent initial-request provenance for "Side chat"
+ok 15 - manual forks preserve independent initial-request provenance for "Side chat"
+  ---
+  duration_ms: 139.4042
+  ...
+# Subtest: demo forks preserve independent initial-request provenance for "Actual initial request outside messages"
+ok 16 - demo forks preserve independent initial-request provenance for "Actual initial request outside messages"
+  ---
+  duration_ms: 146.8166
+  ...
+# Subtest: demo forks preserve independent initial-request provenance for "Side chat"
+ok 17 - demo forks preserve independent initial-request provenance for "Side chat"
+  ---
+  duration_ms: 132.5909
+  ...
+# Subtest: selected initial user forks retain an empty history and an unsent draft without an initial-request header
+ok 18 - selected initial user forks retain an empty history and an unsent draft without an initial-request header
+  ---
+  duration_ms: 108.6751
+  ...
+# Subtest: request-origin restoration bounds malformed metadata and preserves legacy rendering defaults
+ok 19 - request-origin restoration bounds malformed metadata and preserves legacy rendering defaults
+  ---
+  duration_ms: 304.1433
+  ...
+# Subtest: relationship validation and projection never nest cycles, malformed or cross-project parents
+ok 20 - relationship validation and projection never nest cycles, malformed or cross-project parents
+  ---
+  duration_ms: 0.2471
+  ...
+# Subtest: indexed ancestry preserves every direct-parent/main result across malformed, cyclic and unavailable graphs
+ok 21 - indexed ancestry preserves every direct-parent/main result across malformed, cyclic and unavailable graphs
+  ---
+  duration_ms: 14.2417
+  ...
+# Subtest: indexed graphs are owned by their snapshot and terminate side ancestry at fork boundaries
+ok 22 - indexed graphs are owned by their snapshot and terminate side ancestry at fork boundaries
+  ---
+  duration_ms: 0.2955
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is deleted
+ok 23 - side ancestry stops at its independent fork main when the original source is deleted
+  ---
+  duration_ms: 0.1577
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is deleted
+ok 24 - controller creates sibling sides under the surviving fork after its original source is deleted
+  ---
+  duration_ms: 129.8783
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is archived
+ok 25 - side ancestry stops at its independent fork main when the original source is archived
+  ---
+  duration_ms: 0.1478
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is archived
+ok 26 - controller creates sibling sides under the surviving fork after its original source is archived
+  ---
+  duration_ms: 116.8422
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is moved
+ok 27 - side ancestry stops at its independent fork main when the original source is moved
+  ---
+  duration_ms: 0.1494
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is moved
+ok 28 - controller creates sibling sides under the surviving fork after its original source is moved
+  ---
+  duration_ms: 202.6743
+  ...
+# Subtest: side-cycle checks stop at the fork boundary while fork backlinks remain independently navigable
+ok 29 - side-cycle checks stop at the fork boundary while fork backlinks remain independently navigable
+  ---
+  duration_ms: 0.181
+  ...
+# Subtest: desktop accepts exact-source side and chat-level fork actions with bounded text
+ok 30 - desktop accepts exact-source side and chat-level fork actions with bounded text
+  ---
+  duration_ms: 0.6332
+  ...
+# Subtest: native fork restores independently without copying usage, goals or access leases
+ok 31 - native fork restores independently without copying usage, goals or access leases
+  ---
+  duration_ms: 97.2096
+  ...
+# Subtest: unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+ok 32 - unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+  ---
+  duration_ms: 111.8637
+  ...
+# Subtest: known native rejection creates no copied child and allows a later deliberate fork
+ok 33 - known native rejection creates no copied child and allows a later deliberate fork
+  ---
+  duration_ms: 89.0172
+  ...
+# Subtest: durable fork receipt wins over a stale app selection snapshot after crash
+ok 34 - durable fork receipt wins over a stale app selection snapshot after crash
+  ---
+  duration_ms: 120.299
+  ...
+# Subtest: late acquired fork identity merges into the canonical selected organized source and survives restart
+ok 35 - late acquired fork identity merges into the canonical selected organized source and survives restart
+  ---
+  duration_ms: 114.0848
+  ...
+# Subtest: late acquired fork identity merges into the canonical background organized source and survives restart
+ok 36 - late acquired fork identity merges into the canonical background organized source and survives restart
+  ---
+  duration_ms: 178.1598
+  ...
+# Subtest: a late native identity never resurrects a deleted source or its durable history
+ok 37 - a late native identity never resurrects a deleted source or its durable history
+  ---
+  duration_ms: 92.8428
+  ...
+# (node:60780) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: history survives bounded windows and streaming replacement
+ok 38 - history survives bounded windows and streaming replacement
+  ---
+  duration_ms: 7.7785
+  ...
+# Subtest: pages scope cursors and deletion purges indexes
+ok 39 - pages scope cursors and deletion purges indexes
+  ---
+  duration_ms: 2.0704
+  ...
+# Subtest: literal and Unicode search, excluded system text and request bounds
+ok 40 - literal and Unicode search, excluded system text and request bounds
+  ---
+  duration_ms: 2.3788
+  ...
+# Subtest: unchanged retained window uses bounded SQL and does not read canonical message bodies
+ok 41 - unchanged retained window uses bounded SQL and does not read canonical message bodies
+  ---
+  duration_ms: 5.4243
+  ...
+# Subtest: metadata sync preserves long canonical text and keeps search role visibility consistent
+ok 42 - metadata sync preserves long canonical text and keeps search role visibility consistent
+  ---
+  duration_ms: 2.2173
+  ...
+# Subtest: streaming replacements update only changed terms and rollback with canonical text
+ok 43 - streaming replacements update only changed terms and rollback with canonical text
+  ---
+  duration_ms: 1.8663
+  ...
+# Subtest: failed retained window synchronization leaves no partial messages or coverage
+ok 44 - failed retained window synchronization leaves no partial messages or coverage
+  ---
+  duration_ms: 1.4377
+  ...
+# Subtest: snapshot duplicates retain first canonical text but apply latest metadata and survive outer rollback
+ok 45 - snapshot duplicates retain first canonical text but apply latest metadata and survive outer rollback
+  ---
+  duration_ms: 1.6738
+  ...
+# Subtest: newest literal substring match outranks an older whole-token hit
+ok 46 - newest literal substring match outranks an older whole-token hit
+  ---
+  duration_ms: 1.4529
+  ...
+# Subtest: history paging and receipt lists use task-scoped ordered indexes
+ok 47 - history paging and receipt lists use task-scoped ordered indexes
+  ---
+  duration_ms: 5.2358
+  ...
+# Subtest: populated pre-index schema upgrades idempotently and large legacy windows retain canonical text
+ok 48 - populated pre-index schema upgrades idempotently and large legacy windows retain canonical text
+  ---
+  duration_ms: 21.2688
+  ...
+# Subtest: term insertion failure rolls back the text and removed terms and can be retried
+ok 49 - term insertion failure rolls back the text and removed terms and can be retried
+  ---
+  duration_ms: 1.5893
+  ...
+# (node:50896) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: screenshot follows draft, queue and native image argument without embedding bytes in chat JSON
+ok 50 - screenshot follows draft, queue and native image argument without embedding bytes in chat JSON
+  ---
+  duration_ms: 218.3644
+  ...
+# Subtest: durable Code chat reuses its native session without replaying history and requires recovery after stop
+ok 51 - durable Code chat reuses its native session without replaying history and requires recovery after stop
+  ---
+  duration_ms: 198.0658
+  ...
+# Subtest: exec/controller accepts completion attribution only after the authoritative terminal and exit zero
+ok 52 - exec/controller accepts completion attribution only after the authoritative terminal and exit zero
+  ---
+  duration_ms: 164.4158
+  ...
+# Subtest: native activity belongs to its prompt, persists after completion and stops on cancellation
+ok 53 - native activity belongs to its prompt, persists after completion and stops on cancellation
+  ---
+  duration_ms: 198.4605
+  ...
+# Subtest: native approval stop does not leave a false waiting thread after its process is stopped
+ok 54 - native approval stop does not leave a false waiting thread after its process is stopped
+  ---
+  duration_ms: 142.4498
+  ...
+# Subtest: background workflow continuation stays attributed to one prompt until process exit
+ok 55 - background workflow continuation stays attributed to one prompt until process exit
+  ---
+  duration_ms: 145.0515
+  ...
+# Subtest: chat run settings persist, reach native execution, and cannot change during a run
+ok 56 - chat run settings persist, reach native execution, and cannot change during a run
+  ---
+  duration_ms: 158.324
+  ...
+# Subtest: exec/controller billing failure cannot authorize a local checkpoint
+ok 57 - exec/controller billing failure cannot authorize a local checkpoint
+  ---
+  duration_ms: 154.5725
+  ...
+# Subtest: exec/controller missing terminal despite successful exit and assistant claims cannot authorize a local checkpoint
+ok 58 - exec/controller missing terminal despite successful exit and assistant claims cannot authorize a local checkpoint
+  ---
+  duration_ms: 165.4168
+  ...
+# Subtest: exec/controller completed terminal with failed process exit cannot authorize a local checkpoint
+ok 59 - exec/controller completed terminal with failed process exit cannot authorize a local checkpoint
+  ---
+  duration_ms: 158.2486
+  ...
+# Subtest: exec/controller failed terminal with successful process exit cannot authorize a local checkpoint
+ok 60 - exec/controller failed terminal with successful process exit cannot authorize a local checkpoint
+  ---
+  duration_ms: 140.2111
+  ...
+# Subtest: exec/controller conflicting terminal records cannot authorize a local checkpoint
+ok 61 - exec/controller conflicting terminal records cannot authorize a local checkpoint
+  ---
+  duration_ms: 133.6255
+  ...
+# Subtest: exec/controller dispatch remains available to disconnect a pending process and ignores its late completion
+ok 62 - exec/controller dispatch remains available to disconnect a pending process and ignores its late completion
+  ---
+  duration_ms: 135.1232
+  ...
+# Subtest: exec/controller replaces streamed assistant claims with an empty failed terminal response
+ok 63 - exec/controller replaces streamed assistant claims with an empty failed terminal response
+  ---
+  duration_ms: 142.8235
+  ...
+# Subtest: first-turn input receipt survives restart and stop before terminal, and resumes with offset
+ok 64 - first-turn input receipt survives restart and stop before terminal, and resumes with offset
+  ---
+  duration_ms: 195.3495
+  ...
+# Subtest: unacknowledged first-turn interruption requires a fresh session
+ok 65 - unacknowledged first-turn interruption requires a fresh session
+  ---
+  duration_ms: 142.585
+  ...
+# Subtest: missing retained native log blocks resume without launching another model
+ok 66 - missing retained native log blocks resume without launching another model
+  ---
+  duration_ms: 159.5622
+  ...
+# Subtest: branching a durable chat creates an independent native session
+ok 67 - branching a durable chat creates an independent native session
+  ---
+  duration_ms: 158.1736
+  ...
+# Subtest: native output from another session never completes the bound chat
+ok 68 - native output from another session never completes the bound chat
+  ---
+  duration_ms: 113.2028
+  ...
+# Subtest: two native exec owners keep session events and cancellation isolated
+ok 69 - two native exec owners keep session events and cancellation isolated
+  ---
+  duration_ms: 235.3698
+  ...
+# (node:42852) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: context reading uses the durable task row after an interrupted app snapshot write
+ok 70 - context reading uses the durable task row after an interrupted app snapshot write
+  ---
+  duration_ms: 150.4514
+  ...
+# Subtest: missing, foreign or disconnected context facts never promote a saved reading
+ok 71 - missing, foreign or disconnected context facts never promote a saved reading
+  ---
+  duration_ms: 100.4938
+  ...
+# Subtest: context readings follow their chat and restart as saved, never as live
+ok 72 - context readings follow their chat and restart as saved, never as live
+  ---
+  duration_ms: 225.0325
+  ...
+# Subtest: context reading cannot leak into a deleted chat successor (false)
+ok 73 - context reading cannot leak into a deleted chat successor (false)
+  ---
+  duration_ms: 118.4792
+  ...
+# Subtest: context reading cannot leak into a deleted chat successor (true)
+ok 74 - context reading cannot leak into a deleted chat successor (true)
+  ---
+  duration_ms: 128.569
+  ...
+# Subtest: update restart guard covers inactive chats and releases only after native work settles
+ok 75 - update restart guard covers inactive chats and releases only after native work settles
+  ---
+  duration_ms: 125.822
+  ...
+# Subtest: any source folder can be opened without package.json
+ok 76 - any source folder can be opened without package.json
+  ---
+  duration_ms: 99.3927
+  ...
+# Subtest: new workspace actions reject malformed data and internal queue flags
+ok 77 - new workspace actions reject malformed data and internal queue flags
+  ---
+  duration_ms: 0.9784
+  ...
+# Subtest: context inspection refuses stale bindings and credentials even when files are explicitly requested
+ok 78 - context inspection refuses stale bindings and credentials even when files are explicitly requested
+  ---
+  duration_ms: 106.7291
+  ...
+# Subtest: follow-ups replay prior exchanges and project guidance without trusting project configuration
+ok 79 - follow-ups replay prior exchanges and project guidance without trusting project configuration
+  ---
+  duration_ms: 130.4092
+  ...
+# Subtest: file context excludes secrets, pins reviewed contents and rejects changed files before dispatch
+ok 80 - file context excludes secrets, pins reviewed contents and rejects changed files before dispatch
+  ---
+  duration_ms: 102.2762
+  ...
+# Subtest: context budget is explicit and the newest request is never truncated
+ok 81 - context budget is explicit and the newest request is never truncated
+  ---
+  duration_ms: 270.0337
+  ...
+# Subtest: follow-up context retains earlier selected source snapshots even when the assistant only acknowledged them
+ok 82 - follow-up context retains earlier selected source snapshots even when the assistant only acknowledged them
+  ---
+  duration_ms: 158.9579
+  ...
+# Subtest: queue advances only on verified success and captures its own options
+ok 83 - queue advances only on verified success and captures its own options
+  ---
+  duration_ms: 201.3173
+  ...
+# Subtest: stop and unconfirmed completion cannot launch queued requests
+ok 84 - stop and unconfirmed completion cannot launch queued requests
+  ---
+  duration_ms: 154.727
+  ...
+# Subtest: adding another prompt does not resume an explicitly paused queue
+ok 85 - adding another prompt does not resume an explicitly paused queue
+  ---
+  duration_ms: 166.7687
+  ...
+# Subtest: drafts and paused queues survive restart without sending work
+ok 86 - drafts and paused queues survive restart without sending work
+  ---
+  duration_ms: 125.5707
+  ...
+# Subtest: branching keeps earlier context, restores the selected prompt as draft and never reverts files
+ok 87 - branching keeps earlier context, restores the selected prompt as draft and never reverts files
+  ---
+  duration_ms: 147.5651
+  ...
+# Subtest: archived chats remain searchable and can be restored without retaining a pin
+ok 88 - archived chats remain searchable and can be restored without retaining a pin
+  ---
+  duration_ms: 127.6473
+  ...
+# Subtest: branches retain failed-turn outcome markers in replayed context
+ok 89 - branches retain failed-turn outcome markers in replayed context
+  ---
+  duration_ms: 148.0939
+  ...
+# Subtest: failed outcomes survive eviction from the bounded activity journal
+ok 90 - failed outcomes survive eviction from the bounded activity journal
+  ---
+  duration_ms: 1164.3503
+  ...
+# Subtest: stopped turns keep cancelled outcomes after branching
+ok 91 - stopped turns keep cancelled outcomes after branching
+  ---
+  duration_ms: 135.2217
+  ...
+# Subtest: closing with a pending enqueue never starts queued work and persists a hold
+ok 92 - closing with a pending enqueue never starts queued work and persists a hold
+  ---
+  duration_ms: 172.5609
+  ...
+# Subtest: queued attachment validation failure stays paused when later prompts are added
+ok 93 - queued attachment validation failure stays paused when later prompts are added
+  ---
+  duration_ms: 190.4224
+  ...
+# Subtest: closing during an already scheduled queue preflight retains the unsent entry
+ok 94 - closing during an already scheduled queue preflight retains the unsent entry
+  ---
+  duration_ms: 138.916
+  ...
+# Subtest: closing while connection preparation is pending never sends the prompt
+ok 95 - closing while connection preparation is pending never sends the prompt
+  ---
+  duration_ms: 104.8351
+  ...
+# Subtest: close cancels runtime preflight before waiting for controller operations
+ok 96 - close cancels runtime preflight before waiting for controller operations
+  ---
+  duration_ms: 145.5182
+  ...
+# Subtest: branch from an assistant response includes that output, excludes later turns and preserves the original
+ok 97 - branch from an assistant response includes that output, excludes later turns and preserves the original
+  ---
+  duration_ms: 164.6478
+  ...
+# Subtest: queued prompts can move during a run and execute in the chosen order
+ok 98 - queued prompts can move during a run and execute in the chosen order
+  ---
+  duration_ms: 116.6561
+  ...
+# Subtest: queue reordering persists and does not resume paused work
+ok 99 - queue reordering persists and does not resume paused work
+  ---
+  duration_ms: 92.2884
+  ...
+# Subtest: full received responses remain searchable past the renderer limit
+ok 100 - full received responses remain searchable past the renderer limit
+  ---
+  duration_ms: 91.5064
+  ...
+# Subtest: definitive asynchronous rejection restores draft and removes unaccepted history
+ok 101 - definitive asynchronous rejection restores draft and removes unaccepted history
+  ---
+  duration_ms: 82.3884
+  ...
+# Subtest: workflow phase gates hold both manual dequeue and automatic continuation
+ok 102 - workflow phase gates hold both manual dequeue and automatic continuation
+  ---
+  duration_ms: 82.0987
+  ...
+# Subtest: stored context receipt matches the exact prompt delivered to the runtime
+ok 103 - stored context receipt matches the exact prompt delivered to the runtime
+  ---
+  duration_ms: 88.8085
+  ...
+# Subtest: checkpoint restoration binds review revision, refuses active writers and preserves redo
+ok 104 - checkpoint restoration binds review revision, refuses active writers and preserves redo
+  ---
+  duration_ms: 132.9981
+  ...
+# Subtest: project lessons retain actual source provenance and reject stale acceptance
+ok 105 - project lessons retain actual source provenance and reject stale acceptance
+  ---
+  duration_ms: 93.561
+  ...
+# Subtest: execution receipts survive restart and notification updates never dispatch a new run
+ok 106 - execution receipts survive restart and notification updates never dispatch a new run
+  ---
+  duration_ms: 99.5392
+  ...
+# Subtest: bounded continuation runs validation, stops on passing evidence and yields to queued user input
+ok 107 - bounded continuation runs validation, stops on passing evidence and yields to queued user input
+  ---
+  duration_ms: 1439.1554
+  ...
+# Subtest: restart disarms a pending goal and untrusted dispatch cannot claim controller origin
+ok 108 - restart disarms a pending goal and untrusted dispatch cannot claim controller origin
+  ---
+  duration_ms: 435.754
+  ...
+# Subtest: goal continuation rejects passing checks when a later edit changes the reviewed revision
+ok 109 - goal continuation rejects passing checks when a later edit changes the reviewed revision
+  ---
+  duration_ms: 1199.179
+  ...
+# Subtest: independent review pins a source revision, refuses recursion and integrates only explicitly
+ok 110 - independent review pins a source revision, refuses recursion and integrates only explicitly
+  ---
+  duration_ms: 171.4872
+  ...
+# Subtest: stream snapshots coalesce while terminal state and source history stay immediate and complete
+ok 111 - stream snapshots coalesce while terminal state and source history stay immediate and complete
+  ---
+  duration_ms: 138.8748
+  ...
+# Subtest: pending approval bypasses stream batching and periodic progress eventually publishes
+ok 112 - pending approval bypasses stream batching and periodic progress eventually publishes
+  ---
+  duration_ms: 172.3973
+  ...
+# Subtest: goal expiry during connection preparation never dispatches its prompt
+ok 113 - goal expiry during connection preparation never dispatches its prompt
+  ---
+  duration_ms: 404.0397
+  ...
+# Subtest: disconnect settles an owned receipt with confirmed cleanup
+ok 114 - disconnect settles an owned receipt with confirmed cleanup
+  ---
+  duration_ms: 98.376
+  ...
+# Subtest: disconnect settles an owned receipt with unknown cleanup
+ok 115 - disconnect settles an owned receipt with unknown cleanup
+  ---
+  duration_ms: 104.7662
+  ...
+# Subtest: disconnect without a terminal callback settles as unknown
+ok 116 - disconnect without a terminal callback settles as unknown
+  ---
+  duration_ms: 95.8027
+  ...
+# Subtest: review integration preserves a files-only parent draft
+ok 117 - review integration preserves a files-only parent draft
+  ---
+  duration_ms: 115.5604
+  ...
+# Subtest: review integration preserves a images-only parent draft
+ok 118 - review integration preserves a images-only parent draft
+  ---
+  duration_ms: 113.9698
+  ...
+# Subtest: branching and restart retain shortened response provenance in context receipts
+ok 119 - branching and restart retain shortened response provenance in context receipts
+  ---
+  duration_ms: 115.3453
+  ...
+# Subtest: steering preserves the active run and draft on rejection, then records admitted correction
+ok 120 - steering preserves the active run and draft on rejection, then records admitted correction
+  ---
+  duration_ms: 97.6702
+  ...
+# Subtest: legacy non-durable interactive connection seeds app history once
+ok 121 - legacy non-durable interactive connection seeds app history once
+  ---
+  duration_ms: 135.924
+  ...
+# Subtest: uncertain steering preserves a durable receipt and draft without inventing a user turn
+ok 122 - uncertain steering preserves a durable receipt and draft without inventing a user turn
+  ---
+  duration_ms: 112.7724
+  ...
+# Subtest: restart reconciles unfinished native compaction as unknown without deleting history
+ok 123 - restart reconciles unfinished native compaction as unknown without deleting history
+  ---
+  duration_ms: 88.4122
+  ...
+# Subtest: context observation history belongs to its emitting chat and persists safely across restart
+ok 124 - context observation history belongs to its emitting chat and persists safely across restart
+  ---
+  duration_ms: 190.4897
+  ...
+# Subtest: deleted chat context observations cannot enter its successor (background=true)
+ok 125 - deleted chat context observations cannot enter its successor (background=true)
+  ---
+  duration_ms: 89.2339
+  ...
+# Subtest: deleted chat context observations cannot enter its successor (background=false)
+ok 126 - deleted chat context observations cannot enter its successor (background=false)
+  ---
+  duration_ms: 85.4207
+  ...
+# Subtest: restart keeps the newest context observation across an interrupted task snapshot write
+ok 127 - restart keeps the newest context observation across an interrupted task snapshot write
+  ---
+  duration_ms: 95.3361
+  ...
+# Subtest: restart keeps the newest context observation across an interrupted app snapshot write
+ok 128 - restart keeps the newest context observation across an interrupted app snapshot write
+  ---
+  duration_ms: 102.8427
+  ...
+# Subtest: a rejected second correction never relabels the first unknown steering receipt
+ok 129 - a rejected second correction never relabels the first unknown steering receipt
+  ---
+  duration_ms: 102.5613
+  ...
+# Subtest: native child work reserves its checkout and refuses followups while another chat owns it
+ok 130 - native child work reserves its checkout and refuses followups while another chat owns it
+  ---
+  duration_ms: 172.3812
+  ...
+# Subtest: native reporting and later child followup stay attached to the original app prompt
+ok 131 - native reporting and later child followup stay attached to the original app prompt
+  ---
+  duration_ms: 117.3291
+  ...
+# Subtest: composer access switches an idle connection and refuses active or stale targets
+ok 132 - composer access switches an idle connection and refuses active or stale targets
+  ---
+  duration_ms: 111.4706
+  ...
+# Subtest: execution access accepts only an explicit boolean and task identity
+ok 133 - execution access accepts only an explicit boolean and task identity
+  ---
+  duration_ms: 0.2137
+  ...
+# Subtest: composer access keeps the selected executable across fresh chat runtimes
+ok 134 - composer access keeps the selected executable across fresh chat runtimes
+  ---
+  duration_ms: 97.5359
+  ...
+# Subtest: native question pauses retain run attribution through the answer and completion
+ok 135 - native question pauses retain run attribution through the answer and completion
+  ---
+  duration_ms: 114.5681
+  ...
+# Subtest: confirmed native answers survive restart and unknown answers never enter replay
+ok 136 - confirmed native answers survive restart and unknown answers never enter replay
+  ---
+  duration_ms: 133.8402
+  ...
+# Subtest: fork sends once, validates cut provenance, and waits for confirmed matching release
+ok 137 - fork sends once, validates cut provenance, and waits for confirmed matching release
+  ---
+  duration_ms: 3.2643
+  ...
+# Subtest: unusable source rejects before fork dispatch {"source":{"status":"running","activeTurnId":"t"}}
+ok 138 - unusable source rejects before fork dispatch {"source":{"status":"running","activeTurnId":"t"}}
+  ---
+  duration_ms: 0.3347
+  ...
+# Subtest: unusable source rejects before fork dispatch {"read":{"queuedInputs":[{"turnId":"q"}]}}
+ok 139 - unusable source rejects before fork dispatch {"read":{"queuedInputs":[{"turnId":"q"}]}}
+  ---
+  duration_ms: 0.135
+  ...
+# Subtest: unusable source rejects before fork dispatch {"source":{"permissionState":null}}
+ok 140 - unusable source rejects before fork dispatch {"source":{"permissionState":null}}
+  ---
+  duration_ms: 0.0866
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"sessionId":"source"}
+ok 141 - invalid native fork metadata is unknown with child identity retained {"sessionId":"source"}
+  ---
+  duration_ms: 0.6507
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"workspaceRoot":"/other"}
+ok 142 - invalid native fork metadata is unknown with child identity retained {"workspaceRoot":"/other"}
+  ---
+  duration_ms: 0.3821
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"modelId":"other"}
+ok 143 - invalid native fork metadata is unknown with child identity retained {"modelId":"other"}
+  ---
+  duration_ms: 0.2837
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"permissionState":null}
+ok 144 - invalid native fork metadata is unknown with child identity retained {"permissionState":null}
+  ---
+  duration_ms: 0.2422
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"forkedFrom":{"sessionId":"foreign"}}
+ok 145 - invalid native fork metadata is unknown with child identity retained {"forkedFrom":{"sessionId":"foreign"}}
+  ---
+  duration_ms: 1.0375
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"activeTurnId":"busy"}
+ok 146 - invalid native fork metadata is unknown with child identity retained {"activeTurnId":"busy"}
+  ---
+  duration_ms: 0.6176
+  ...
+# Subtest: ack alone cannot admit a fork and timeout retains release recovery
+ok 147 - ack alone cannot admit a fork and timeout retains release recovery
+  ---
+  duration_ms: 36.9617
+  ...
+# Subtest: known rejection differs from ambiguous command outcome, no command is retried
+ok 148 - known rejection differs from ambiguous command outcome, no command is retried
+  ---
+  duration_ms: 0.6303
+  ...
+# Subtest: unknown completed cut rejects before submission
+ok 149 - unknown completed cut rejects before submission
+  ---
+  duration_ms: 0.1668
+  ...
+# Subtest: native cut rejects returned history extending beyond its requested completed turn
+ok 150 - native cut rejects returned history extending beyond its requested completed turn
+  ---
+  duration_ms: 0.2466
+  ...
+# Subtest: a late fork result preserves its acquired child ID without repeating or releasing uncertain work
+ok 151 - a late fork result preserves its acquired child ID without repeating or releasing uncertain work
+  ---
+  duration_ms: 45.3461
+  ...
+# Subtest: remote internal errors remain uncertain rather than licensing another fork
+ok 152 - remote internal errors remain uncertain rather than licensing another fork
+  ---
+  duration_ms: 0.4836
+  ...
+# Subtest: OAuth enrollment identity survives restart; unknown marker keeps native ID and requires recovery
+ok 153 - OAuth enrollment identity survives restart; unknown marker keeps native ID and requires recovery
+  ---
+  duration_ms: 1.4583
+  ...
+# Subtest: native session migration seeds history once and never crosses roots or interrupted runs
+ok 154 - native session migration seeds history once and never crosses roots or interrupted runs
+  ---
+  duration_ms: 0.9213
+  ...
+# Subtest: MSP identity and access survive restore and cannot migrate to a different root, transport or host session
+ok 155 - MSP identity and access survive restore and cannot migrate to a different root, transport or host session
+  ---
+  duration_ms: 0.2721
+  ...
+# Subtest: explicit analysis toolset survives restore while old saved sessions never upgrade
+ok 156 - explicit analysis toolset survives restore while old saved sessions never upgrade
+  ---
+  duration_ms: 0.5397
+  ...
+# Subtest: malformed saved tool selections keep identity and require explicit recovery
+ok 157 - malformed saved tool selections keep identity and require explicit recovery
+  ---
+  duration_ms: 0.5138
+  ...
+# Subtest: compact status follows the current adapter without cloning full snapshots
+ok 158 - compact status follows the current adapter without cloning full snapshots
+  ---
+  duration_ms: 0.867
+  ...
+# Subtest: compact selector remains compatible with legacy adapters
+ok 159 - compact selector remains compatible with legacy adapters
+  ---
+  duration_ms: 0.3262
+  ...
+# Subtest: exec stays default and an active connection cannot be switched to interactive
+ok 160 - exec stays default and an active connection cannot be switched to interactive
+  ---
+  duration_ms: 0.9512
+  ...
+# Subtest: ephemeral native hosts never advertise or dispatch a persistent fork
+ok 161 - ephemeral native hosts never advertise or dispatch a persistent fork
+  ---
+  duration_ms: 22.3492
+  ...
+# Subtest: fork verifies current configuration and blocks concurrent native work before command admission
+ok 162 - fork verifies current configuration and blocks concurrent native work before command admission
+  ---
+  duration_ms: 5.1952
+  ...
+# Subtest: fork holds runtime operation ownership through matching release without submitting a turn
+ok 163 - fork holds runtime operation ownership through matching release without submitting a turn
+  ---
+  duration_ms: 15.1671
+  ...
+# Subtest: lazy OAuth gateway binds verified actual native session before the first turn
+ok 164 - lazy OAuth gateway binds verified actual native session before the first turn
+  ---
+  duration_ms: 14.0907
+  ...
+# Subtest: native child restart prepares the same OAuth enrollment and never discards its saved marker
+ok 165 - native child restart prepares the same OAuth enrollment and never discards its saved marker
+  ---
+  duration_ms: 17.1868
+  ...
+# Subtest: failed native session read or permission proof cannot bind OAuth or start a turn
+ok 166 - failed native session read or permission proof cannot bind OAuth or start a turn
+  ---
+  duration_ms: 13.5773
+  ...
+# Subtest: epoch change while verified native binding awaits rejects connection before turn readiness
+ok 167 - epoch change while verified native binding awaits rejects connection before turn readiness
+  ---
+  duration_ms: 9.1357
+  ...
+# Subtest: OAuth pre-turn admission rechecks native epoch after await and never submits after disconnect
+ok 168 - OAuth pre-turn admission rechecks native epoch after await and never submits after disconnect
+  ---
+  duration_ms: 10.2701
+  ...
+# Subtest: OAuth pre-turn failure reports not sent and leaves native effects at zero
+ok 169 - OAuth pre-turn failure reports not sent and leaves native effects at zero
+  ---
+  duration_ms: 11.4891
+  ...
+# Subtest: unconfirmed discovery worker cleanup blocks a replacement native owner
+ok 170 - unconfirmed discovery worker cleanup blocks a replacement native owner
+  ---
+  duration_ms: 7.4904
+  ...
+# Subtest: discovery requires native grant and trusted lease; stale review blocks sends and shutdown closes lease
+ok 171 - discovery requires native grant and trusted lease; stale review blocks sends and shutdown closes lease
+  ---
+  duration_ms: 13.5315
+  ...
+# Subtest: native context freshness follows the owned connection and reconnect never revives a saved reading
+ok 172 - native context freshness follows the owned connection and reconnect never revives a saved reading
+  ---
+  duration_ms: 11.338
+  ...
+# Subtest: conflicting context evidence keeps native cleanup unresolved until explicit disconnect
+ok 173 - conflicting context evidence keeps native cleanup unresolved until explicit disconnect
+  ---
+  duration_ms: 10.1575
+  ...
+# Subtest: interactive compact status follows native lifecycle without transcript clones
+ok 174 - interactive compact status follows native lifecycle without transcript clones
+  ---
+  duration_ms: 11.2948
+  ...
+# Subtest: an approved execution configuration change needs a fresh host before another turn
+ok 175 - an approved execution configuration change needs a fresh host before another turn
+  ---
+  duration_ms: 5.0755
+  ...
+# Subtest: session MCP inspection reads the owned running session without publishing lifecycle changes
+ok 176 - session MCP inspection reads the owned running session without publishing lifecycle changes
+  ---
+  duration_ms: 13.9195
+  ...
+# Subtest: session MCP inspection bounds rows and treats unknown metadata as unknown
+ok 177 - session MCP inspection bounds rows and treats unknown metadata as unknown
+  ---
+  duration_ms: 7.3494
+  ...
+# Subtest: session MCP inspection refuses duplicate and late reads after disconnect
+ok 178 - session MCP inspection refuses duplicate and late reads after disconnect
+  ---
+  duration_ms: 6.2816
+  ...
+# Subtest: session MCP inspection keeps a timed-out native read guarded until it settles
+ok 179 - session MCP inspection keeps a timed-out native read guarded until it settles
+  ---
+  duration_ms: 106.2554
+  ...
+# Subtest: a late MCP read cannot clear a replacement connection read guard
+ok 180 - a late MCP read cannot clear a replacement connection read guard
+  ---
+  duration_ms: 12.7321
+  ...
+# Subtest: session MCP inspection distinguishes unsupported and malformed replies without exposing native errors
+ok 181 - session MCP inspection distinguishes unsupported and malformed replies without exposing native errors
+  ---
+  duration_ms: 6.2271
+  ...
+# Subtest: child inspection uses only session/read during running work and leaves parent ownership untouched
+ok 182 - child inspection uses only session/read during running work and leaves parent ownership untouched
+  ---
+  duration_ms: 9.1637
+  ...
+# Subtest: child read accepts ordinary revision progress but rejects retargeting and clears failed refreshes
+ok 183 - child read accepts ordinary revision progress but rejects retargeting and clears failed refreshes
+  ---
+  duration_ms: 7.3225
+  ...
+# Subtest: late child reads cannot populate a disconnected or replacement connection
+ok 184 - late child reads cannot populate a disconnected or replacement connection
+  ---
+  duration_ms: 8.8315
+  ...
+# Subtest: protocol invalidation clears pending child reads instead of leaving a permanent loader
+ok 185 - protocol invalidation clears pending child reads instead of leaving a permanent loader
+  ---
+  duration_ms: 8.565
+  ...
+# Subtest: interactive credentials are private and verified before a turn can start
+ok 186 - interactive credentials are private and verified before a turn can start
+  ---
+  duration_ms: 8.5291
+  ...
+# Subtest: native question answers bind to the observed request and wait for settlement
+ok 187 - native question answers bind to the observed request and wait for settlement
+  ---
+  duration_ms: 17.7413
+  ...
+# Subtest: ambiguous native question response is not replayed
+ok 188 - ambiguous native question response is not replayed
+  ---
+  duration_ms: 8.6168
+  ...
+# Subtest: native question arriving before turn acknowledgement is retained
+ok 189 - native question arriving before turn acknowledgement is retained
+  ---
+  duration_ms: 9.2856
+  ...
+# Subtest: native settlement before request prevents stale question resurrection
+ok 190 - native settlement before request prevents stale question resurrection
+  ---
+  duration_ms: 9.6539
+  ...
+# Subtest: interactive send distinguishes preflight rejection from lost native admission
+ok 191 - interactive send distinguishes preflight rejection from lost native admission
+  ---
+  duration_ms: 12.3663
+  ...
+# Subtest: win32: direct interactive startup rejects unreviewed project MCP even with Full access
+ok 192 - win32: direct interactive startup rejects unreviewed project MCP even with Full access
+  ---
+  duration_ms: 4.8624
+  ...
+# Subtest: linux: direct interactive startup rejects unreviewed project MCP even with Full access
+ok 193 - linux: direct interactive startup rejects unreviewed project MCP even with Full access
+  ---
+  duration_ms: 5.4998
+  ...
+# Subtest: darwin: direct interactive startup rejects unreviewed project MCP even with Full access
+ok 194 - darwin: direct interactive startup rejects unreviewed project MCP even with Full access
+  ---
+  duration_ms: 4.8925
+  ...
+# Subtest: interactive request checks reviewed configuration again before sending a turn
+ok 195 - interactive request checks reviewed configuration again before sending a turn
+  ---
+  duration_ms: 61.3773
+  ...
+# Subtest: interactive project MCP changes need a new host even after reapproval
+ok 196 - interactive project MCP changes need a new host even after reapproval
+  ---
+  duration_ms: 57.6083
+  ...
+# Subtest: project MCP revoke blocks steer before native admission
+ok 197 - project MCP revoke blocks steer before native admission
+  ---
+  duration_ms: 50.031
+  ...
+# Subtest: project MCP revoke blocks followupTask before native admission
+ok 198 - project MCP revoke blocks followupTask before native admission
+  ---
+  duration_ms: 50.2508
+  ...
+# Subtest: project MCP revoke blocks reopen before native admission
+ok 199 - project MCP revoke blocks reopen before native admission
+  ---
+  duration_ms: 49.0176
+  ...
+# Subtest: project MCP revoke blocks retry before native admission
+ok 200 - project MCP revoke blocks retry before native admission
+  ---
+  duration_ms: 39.1668
+  ...
+# Subtest: project MCP revoke blocks sendMessage before native admission
+ok 201 - project MCP revoke blocks sendMessage before native admission
+  ---
+  duration_ms: 47.518
+  ...
+# Subtest: project MCP revoke blocks compact before native admission
+ok 202 - project MCP revoke blocks compact before native admission
+  ---
+  duration_ms: 44.5312
+  ...
+# Subtest: project MCP revoke blocks answer before native admission
+ok 203 - project MCP revoke blocks answer before native admission
+  ---
+  duration_ms: 51.9877
+  ...
+# Subtest: project MCP revoke blocks approve before native admission
+ok 204 - project MCP revoke blocks approve before native admission
+  ---
+  duration_ms: 49.0828
+  ...
+# Subtest: project MCP edit-and-review blocks steer before native admission
+ok 205 - project MCP edit-and-review blocks steer before native admission
+  ---
+  duration_ms: 59.6445
+  ...
+# Subtest: project MCP edit-and-review blocks followupTask before native admission
+ok 206 - project MCP edit-and-review blocks followupTask before native admission
+  ---
+  duration_ms: 58.5126
+  ...
+# Subtest: project MCP edit-and-review blocks reopen before native admission
+ok 207 - project MCP edit-and-review blocks reopen before native admission
+  ---
+  duration_ms: 55.6854
+  ...
+# Subtest: project MCP edit-and-review blocks retry before native admission
+ok 208 - project MCP edit-and-review blocks retry before native admission
+  ---
+  duration_ms: 59.9271
+  ...
+# Subtest: project MCP edit-and-review blocks sendMessage before native admission
+ok 209 - project MCP edit-and-review blocks sendMessage before native admission
+  ---
+  duration_ms: 52.2327
+  ...
+# Subtest: project MCP edit-and-review blocks compact before native admission
+ok 210 - project MCP edit-and-review blocks compact before native admission
+  ---
+  duration_ms: 53.1284
+  ...
+# Subtest: project MCP edit-and-review blocks answer before native admission
+ok 211 - project MCP edit-and-review blocks answer before native admission
+  ---
+  duration_ms: 67.7443
+  ...
+# Subtest: project MCP edit-and-review blocks approve before native admission
+ok 212 - project MCP edit-and-review blocks approve before native admission
+  ---
+  duration_ms: 55.6692
+  ...
+# Subtest: delayed interactive configuration review cannot cross disconnect and reconnect
+ok 213 - delayed interactive configuration review cannot cross disconnect and reconnect
+  ---
+  duration_ms: 5.3981
+  ...
+# Subtest: interactive Full access retains schema and Ask me verification while relaxing only sandbox availability
+ok 214 - interactive Full access retains schema and Ask me verification while relaxing only sandbox availability
+  ---
+  duration_ms: 7.2447
+  ...
+# Subtest: live steering uses exact turn identity once and verifies the acknowledgement
+ok 215 - live steering uses exact turn identity once and verifies the acknowledgement
+  ---
+  duration_ms: 15.6403
+  ...
+# Subtest: ambiguous steering acknowledgement remains unknown and is never resent
+ok 216 - ambiguous steering acknowledgement remains unknown and is never resent
+  ---
+  duration_ms: 18.8507
+  ...
+# Subtest: missing binary is actionable and never loads or starts an SDK
+ok 217 - missing binary is actionable and never loads or starts an SDK
+  ---
+  duration_ms: 0.5353
+  ...
+# Subtest: PATH discovery only reports existing native files and curated env excludes credentials
+ok 218 - PATH discovery only reports existing native files and curated env excludes credentials
+  ---
+  duration_ms: 3.7277
+  ...
+# Subtest: curated Windows environment resolves a bare native shell command without inheriting secrets
+ok 219 - curated Windows environment resolves a bare native shell command without inheriting secrets
+  ---
+  duration_ms: 270.7409
+  ...
+# Subtest: Windows discovery finds the official default install when process PATH is stale
+ok 220 - Windows discovery finds the official default install when process PATH is stale
+  ---
+  duration_ms: 8.0244
+  ...
+# Subtest: Windows discovery resolves the versioned layout on PATH and deduplicates the default install
+ok 221 - Windows discovery resolves the versioned layout on PATH and deduplicates the default install
+  ---
+  duration_ms: 8.6979
+  ...
+# Subtest: Windows discovery refuses missing, malformed and oversized version markers
+ok 222 - Windows discovery refuses missing, malformed and oversized version markers
+  ---
+  duration_ms: 21.3388
+  ...
+# Subtest: Windows discovery requires both its marker and versioned target to be regular files
+ok 223 - Windows discovery requires both its marker and versioned target to be regular files
+  ---
+  duration_ms: 10.3736
+  ...
+# Subtest: a selected host version mismatch cannot start the host
+ok 224 - a selected host version mismatch cannot start the host
+  ---
+  duration_ms: 3.8949
+  ...
+# Subtest: SDK fingerprint mismatch is refused before spawning
+ok 225 - SDK fingerprint mismatch is refused before spawning
+  ---
+  duration_ms: 3.9521
+  ...
+# Subtest: a mismatched handshake is closed and cannot create a session
+ok 226 - a mismatched handshake is closed and cannot create a session
+  ---
+  duration_ms: 7.3905
+  ...
+# Subtest: a unavailable host sandbox report is actionable and closes before sessions or turns
+ok 227 - a unavailable host sandbox report is actionable and closes before sessions or turns
+  ---
+  duration_ms: 6.4903
+  ...
+# Subtest: a missing host sandbox report is actionable and closes before sessions or turns
+ok 228 - a missing host sandbox report is actionable and closes before sessions or turns
+  ---
+  duration_ms: 5.2864
+  ...
+# Subtest: sandbox diagnostics report only a reason actually supplied by the host
+ok 229 - sandbox diagnostics report only a reason actually supplied by the host
+  ---
+  duration_ms: 5.4824
+  ...
+# Subtest: a host without negotiated permission evidence stays blocked before a session or model call
+ok 230 - a host without negotiated permission evidence stays blocked before a session or model call
+  ---
+  duration_ms: 6.0891
+  ...
+# Subtest: unavailable or automatic-review catalog entries cannot enable a session
+ok 231 - unavailable or automatic-review catalog entries cannot enable a session
+  ---
+  duration_ms: 5.3822
+  ...
+# Subtest: explicit connect verifies Ask me and explicit send streams the authoritative completion
+ok 232 - explicit connect verifies Ask me and explicit send streams the authoritative completion
+  ---
+  duration_ms: 9.1669
+  ...
+# Subtest: changed or missing permission proof prevents the next model turn
+ok 233 - changed or missing permission proof prevents the next model turn
+  ---
+  duration_ms: 11.0418
+  ...
+# Subtest: approval receipt never approves and denial uses the latest offered choice and requirement
+ok 234 - approval receipt never approves and denial uses the latest offered choice and requirement
+  ---
+  duration_ms: 11.6456
+  ...
+# Subtest: host exit invalidates readiness and later sends
+ok 235 - host exit invalidates readiness and later sends
+  ---
+  duration_ms: 6.0354
+  ...
+# Subtest: disconnect while version probing prevents a late host startup
+ok 236 - disconnect while version probing prevents a late host startup
+  ---
+  duration_ms: 2.5311
+  ...
+# Subtest: reconnect cannot overlap a host still draining
+ok 237 - reconnect cannot overlap a host still draining
+  ---
+  duration_ms: 5.5206
+  ...
+# Subtest: a permission change stops a turn even while an approval is blocking it
+ok 238 - a permission change stops a turn even while an approval is blocking it
+  ---
+  duration_ms: 7.8144
+  ...
+# Subtest: one-time approval binds the displayed requirement and stays blocked until resolution
+ok 239 - one-time approval binds the displayed requirement and stays blocked until resolution
+  ---
+  duration_ms: 11.5549
+  ...
+# Subtest: deny alias cannot write a persistent permission rule
+ok 240 - deny alias cannot write a persistent permission rule
+  ---
+  duration_ms: 9.8333
+  ...
+# Subtest: a late approval cannot revive an uncertain turn or authorize work
+ok 241 - a late approval cannot revive an uncertain turn or authorize work
+  ---
+  duration_ms: 21.19
+  ...
+# Subtest: concurrent questions and approvals retain independent revisions and settle out of order
+ok 242 - concurrent questions and approvals retain independent revisions and settle out of order
+  ---
+  duration_ms: 17.6785
+  ...
+# Subtest: answer uncertainty remains per request even after another answer settles
+ok 243 - answer uncertainty remains per request even after another answer settles
+  ---
+  duration_ms: 9.6655
+  ...
+# Subtest: repeated disconnect cannot turn unconfirmed shutdown into permission to reconnect
+ok 244 - repeated disconnect cannot turn unconfirmed shutdown into permission to reconnect
+  ---
+  duration_ms: 7.9354
+  ...
+# Subtest: interactive request accepts the same bounded prepared context as exec
+ok 245 - interactive request accepts the same bounded prepared context as exec
+  ---
+  duration_ms: 9.869
+  ...
+# Subtest: native compaction waits for terminal evidence and blocks sends until it arrives
+ok 246 - native compaction waits for terminal evidence and blocks sends until it arrives
+  ---
+  duration_ms: 19.2844
+  ...
+# Subtest: disconnect during compaction ack never updates a new owner
+ok 247 - disconnect during compaction ack never updates a new owner
+  ---
+  duration_ms: 13.8185
+  ...
+# Subtest: native child controls bind current session and revision and send at most once on uncertain ack
+ok 248 - native child controls bind current session and revision and send at most once on uncertain ack
+  ---
+  duration_ms: 8.6324
+  ...
+# Subtest: workflow restart waits for a later attempt before releasing its pending command guard
+ok 249 - workflow restart waits for a later attempt before releasing its pending command guard
+  ---
+  duration_ms: 12.1777
+  ...
+# Subtest: foreground completion cannot settle an unknown workflow restart: unknown-before-terminal
+ok 250 - foreground completion cannot settle an unknown workflow restart: unknown-before-terminal
+  ---
+  duration_ms: 11.4041
+  ...
+# Subtest: foreground completion cannot settle an unknown workflow restart: terminal-before-unknown
+ok 251 - foreground completion cannot settle an unknown workflow restart: terminal-before-unknown
+  ---
+  duration_ms: 16.1302
+  ...
+# Subtest: uncertain workflow restart is never replayed after a later attempt arrives
+ok 252 - uncertain workflow restart is never replayed after a later attempt arrives
+  ---
+  duration_ms: 15.0963
+  ...
+# Subtest: child control receipt is admission only, parent item supplies independently observed result
+ok 253 - child control receipt is admission only, parent item supplies independently observed result
+  ---
+  duration_ms: 7.1567
+  ...
+# Subtest: child uncertainty survives bounded receipt eviction
+ok 254 - child uncertainty survives bounded receipt eviction
+  ---
+  duration_ms: 149.0498
+  ...
+# Subtest: native child completion keeps ownership through the host reporting turn
+ok 255 - native child completion keeps ownership through the host reporting turn
+  ---
+  duration_ms: 8.984
+  ...
+# Subtest: unobserved or overlapping native turns still fail closed
+ok 256 - unobserved or overlapping native turns still fail closed
+  ---
+  duration_ms: 18.3067
+  ...
+# Subtest: a fresh explicit request clears prior root identity before its admission
+ok 257 - a fresh explicit request clears prior root identity before its admission
+  ---
+  duration_ms: 11.7328
+  ...
+# Subtest: idle child followup reserves reporting and refuses launches from an older root
+ok 258 - idle child followup reserves reporting and refuses launches from an older root
+  ---
+  duration_ms: 15.5805
+  ...
+# Subtest: known child admission rejection releases a pending launch without inventing report work
+ok 259 - known child admission rejection releases a pending launch without inventing report work
+  ---
+  duration_ms: 17.1693
+  ...
+# Subtest: pending request collection bounds resource use without deciding requests
+ok 260 - pending request collection bounds resource use without deciding requests
+  ---
+  duration_ms: 12.119
+  ...
+# Subtest: runtime observes automatic context history only from its session and interrupts pending observations
+ok 261 - runtime observes automatic context history only from its session and interrupts pending observations
+  ---
+  duration_ms: 11.4457
+  ...
+# Subtest: invalid frames and old connection notifications cannot add context observations
+ok 262 - invalid frames and old connection notifications cannot add context observations
+  ---
+  duration_ms: 11.1138
+  ...
+# Subtest: old notifications buffered during reconnect cannot become current context history
+ok 263 - old notifications buffered during reconnect cannot become current context history
+  ---
+  duration_ms: 11.136
+  ...
+# Subtest: conflicting native event cursors cannot fabricate completed compaction history
+ok 264 - conflicting native event cursors cannot fabricate completed compaction history
+  ---
+  duration_ms: 9.8082
+  ...
+# Subtest: runtime restores compaction observations after native identity and permission verification
+ok 265 - runtime restores compaction observations after native identity and permission verification
+  ---
+  duration_ms: 9.3038
+  ...
+# Subtest: runtime restores a native session with no fresh start or history replay
+ok 266 - runtime restores a native session with no fresh start or history replay
+  ---
+  duration_ms: 6.7087
+  ...
+# Subtest: runtime buffers independent resume requests until identity and permission verification
+ok 267 - runtime buffers independent resume requests until identity and permission verification
+  ---
+  duration_ms: 9.965
+  ...
+# Subtest: restored question settlement before payload clears its pointer without resurrecting the request
+ok 268 - restored question settlement before payload clears its pointer without resurrecting the request
+  ---
+  duration_ms: 6.8612
+  ...
+# Subtest: pending native restore exposes an explicit request reissue wait until settlement
+ok 269 - pending native restore exposes an explicit request reissue wait until settlement
+  ---
+  duration_ms: 6.1835
+  ...
+# Subtest: runtime rejects a restored session with missing model routing or wrong workspace
+ok 270 - runtime rejects a restored session with missing model routing or wrong workspace
+  ---
+  duration_ms: 10.5681
+  ...
+# Subtest: runtime reads screenshot bytes into native image input without trusting extensions
+ok 271 - runtime reads screenshot bytes into native image input without trusting extensions
+  ---
+  duration_ms: 12.0055
+  ...
+# Subtest: runtime rejects malformed and aggregate oversized images before a native turn
+ok 272 - runtime rejects malformed and aggregate oversized images before a native turn
+  ---
+  duration_ms: 26.0613
+  ...
+# Subtest: runtime selects only a current native Meta model and verifies it before sending
+ok 273 - runtime selects only a current native Meta model and verifies it before sending
+  ---
+  duration_ms: 8.0623
+  ...
+# Subtest: runtime refuses unlisted model or unconfirmed model change without a turn
+ok 274 - runtime refuses unlisted model or unconfirmed model change without a turn
+  ---
+  duration_ms: 16.1259
+  ...
+# Subtest: unconfirmed native model changes clear stale read-back evidence
+ok 275 - unconfirmed native model changes clear stale read-back evidence
+  ---
+  duration_ms: 10.6876
+  ...
+# Subtest: Provider default resets an earlier model selection using the current native catalog
+ok 276 - Provider default resets an earlier model selection using the current native catalog
+  ---
+  duration_ms: 13.5878
+  ...
+# Subtest: Provider default resolves the native catalog again after reconnect clears it
+ok 277 - Provider default resolves the native catalog again after reconnect clears it
+  ---
+  duration_ms: 15.0115
+  ...
+# Subtest: workspace MCP is supplied by trusted factory only after the sessionMcp grant
+ok 278 - workspace MCP is supplied by trusted factory only after the sessionMcp grant
+  ---
+  duration_ms: 14.4178
+  ...
+# Subtest: workspace analysis uses the explicitly selected toolset and rejects unknown selection before host startup
+ok 279 - workspace analysis uses the explicitly selected toolset and rejects unknown selection before host startup
+  ---
+  duration_ms: 7.4951
+  ...
+# Subtest: interactive workspace tool receipts are observed only for the owning session and turn
+ok 280 - interactive workspace tool receipts are observed only for the owning session and turn
+  ---
+  duration_ms: 10.566
+  ...
+# Subtest: interactive required-server failure remains readable and does not hold the chat busy or resend
+ok 281 - interactive required-server failure remains readable and does not hold the chat busy or resend
+  ---
+  duration_ms: 17.2974
+  ...
+# Subtest: startup permission projection is reconciled by read-back without treating it as a later policy change
+ok 282 - startup permission projection is reconciled by read-back without treating it as a later policy change
+  ---
+  duration_ms: 7.6139
+  ...
+# Subtest: interactive host receives only the project-bound reviewed hooks and trust decision
+ok 283 - interactive host receives only the project-bound reviewed hooks and trust decision
+  ---
+  duration_ms: 6.366
+  ...
+# Subtest: workspace receipts emitted before turn acknowledgement replay only after ownership is established
+ok 284 - workspace receipts emitted before turn acknowledgement replay only after ownership is established
+  ---
+  duration_ms: 11.5281
+  ...
+# Subtest: active native restoration reconciles completed workspace receipts without submitting a turn
+ok 285 - active native restoration reconciles completed workspace receipts without submitting a turn
+  ---
+  duration_ms: 8.5455
+  ...
+# Subtest: missing cursors and old connection notifications cannot project workspace receipts
+ok 286 - missing cursors and old connection notifications cannot project workspace receipts
+  ---
+  duration_ms: 21.3044
+  ...
+1..286
+# tests 286
+# suites 0
+# pass 286
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12488.4553

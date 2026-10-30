@@ -1,0 +1,15 @@
+(node:19276) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS Current menu creates a fresh linked side without sending or inheriting parent state; parent draft survives
+PASS Backlink and nesting navigate independent drafts; accessible disclosure collapses and reopens
+locator.getAttribute: Timeout 10000ms exceeded.
+Call log:
+  - waiting for locator('.sidebar:not([hidden])').getByRole('region', { name: 'MuseBench sample active chats', exact: true }).getByRole('button', { name: 'Expand side chats of Build a clearer project overview', exact: true })
+
+    at C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\scripts\code-chat-relations-smoke.mjs:49:316 {
+  log: [
+    "  - waiting for locator('.sidebar:not([hidden])').getByRole('region', { name: 'MuseBench sample active chats', exact: true }).getByRole('button', { name: 'Expand side chats of Build a clearer project overview', exact: true })"
+  ],
+  name: 'TimeoutError'
+}
+Report: C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\code-chat-relations\ui-preview-BmAWTq

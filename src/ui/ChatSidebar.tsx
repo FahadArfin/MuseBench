@@ -27,7 +27,8 @@ function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,bu
  const {open,isOpen,overlay}=useChatActions({tasks,busy,active,act});
  const selected=tasks.find(t=>t.id===selectedId);
  const relationIndex=useMemo(()=>createChatRelationIndex(tasks),[tasks]);
- useEffect(()=>{if(!selected||selected.chatRelation?.kind!=='side')return;const main=relationIndex.main(selected);setClosedSides(before=>{if(!before.has(main.id))return before;const next=new Set(before);next.delete(main.id);return next;});},[selectedId,selected?.chatRelation?.parentTaskId,relationIndex]);
+ const selectedMainId=selected?.chatRelation?.kind==='side'?relationIndex.main(selected).id:null;
+ useEffect(()=>{if(!selectedMainId)return;setClosedSides(before=>{if(!before.has(selectedMainId))return before;const next=new Set(before);next.delete(selectedMainId);return next;});},[selectedId,selectedMainId]);
  useEffect(()=>{const id=selected?.projectId??projectId;if(id)setClosed(before=>{if(!before.has(id))return before;const next=new Set(before);next.delete(id);return next;});},[selectedId,projectId,selected?.projectId]);
  const dragging=useRef<{kind:'project'|'chat';id:string}|null>(null),suppressClick=useRef(false);
  const [dropTarget,setDropTarget]=useState(''),[dragKind,setDragKind]=useState<'project'|'chat'|null>(null),[announcement,setAnnouncement]=useState('');

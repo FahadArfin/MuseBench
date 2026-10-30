@@ -1,0 +1,60 @@
+{
+  "variant": "preview",
+  "checks": [
+    "Current menu creates a fresh linked side without sending or inheriting parent state; parent draft survives",
+    "Backlink and nesting navigate independent drafts; accessible disclosure collapses and reopens",
+    "Selected-side disclosure preserves user collapse across organization snapshots and reveals a newly selected side",
+    "A side chat creates a sibling under the same main chat",
+    "/side text creates an unsent fresh linked draft",
+    "/branch forks saved conversation context into an independent top-level chat",
+    "Fork from here binds the rendered source and copies only the chosen prefix",
+    "A stale sidebar menu still creates against its exact source after selection switches",
+    "Creating from project overview opens the new chat",
+    "Narrow reduced-motion controls fit; keyboard menu navigation and Escape restore focus",
+    "Archiving the main chat promotes surviving sides without losing their drafts",
+    "A later sample side prompt renders without a synthetic parent/request message",
+    "chat-level fork of a side renders only its stored actual prompt",
+    "reply-level fork of a side renders only its stored actual prompt",
+    "Manual initial request survives fork, missing parent and fork of fork: Manual initial objective",
+    "Manual initial request survives fork, missing parent and fork of fork: Side chat",
+    "A simulated native error surfaces with exact recovery command/child identities and no fallback child"
+  ],
+  "errors": [],
+  "providerCalls": 0,
+  "initialLayout": {
+    "scrollWidth": 279,
+    "clientWidth": 279,
+    "scrollLeft": 0
+  },
+  "layout": [
+    {
+      "className": "sidebar-scroll",
+      "left": 0,
+      "width": 279,
+      "scrollLeft": 0,
+      "scrollWidth": 279
+    },
+    {
+      "className": "project-row  current ",
+      "left": 12,
+      "width": 255,
+      "scrollLeft": 0,
+      "scrollWidth": 255
+    },
+    {
+      "className": "project-chats",
+      "left": 32,
+      "width": 235,
+      "scrollLeft": 0,
+      "scrollWidth": 234
+    },
+    {
+      "className": "side-chats",
+      "left": 55,
+      "width": 212,
+      "scrollLeft": 0,
+      "scrollWidth": 211
+    }
+  ],
+  "status": "passed"
+}

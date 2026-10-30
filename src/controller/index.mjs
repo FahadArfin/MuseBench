@@ -1080,7 +1080,12 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           let live=owner.runtime?.snapshot?.();
           if(!live?.permissionVerified){if(source.nativeSession.toolDiscovery)throw Error('Open the source chat and review its saved on-demand sources before forking.');await connectNative(owner,source,project);live=owner.runtime.snapshot();}
           if(live.transport!=='msp'||!live.permissionVerified||live.nativeSessionId!==original.nativeSession.id||!live.forkSupported||typeof owner.runtime.forkSession!=='function')throw Error('Restore and verify the exact source native session before forking.');
-          forkReceipt=await owner.runtime.forkSession({sessionId:original.nativeSession.id,...(cut?{lastTurnId:cut}:{}),onReceipt:receipt=>{source.forkReceipts=[...(source.forkReceipts??[]).filter(r=>r.commandId!==receipt.commandId),receipt].slice(-20);saveRecord(source);persist();}});
+          forkReceipt=await owner.runtime.forkSession({sessionId:original.nativeSession.id,...(cut?{lastTurnId:cut}:{}),onReceipt:receipt=>{
+            // Late native results can outlive organization changes or deletion.
+            if(closed||!taskRecords.has(sourceId))return;
+            const current=state.task?.id===sourceId?state.task:contexts.get(sourceId)?.task??taskRecords.get(sourceId);
+            current.forkReceipts=[...(current.forkReceipts??[]).filter(r=>r.commandId!==receipt.commandId),receipt].slice(-20);saveRecord(current);persist();
+          }});
           if(forkReceipt.status!=='released'||!forkReceipt.childSessionId)throw Error('The native fork has no confirmed independent release.');
         }
         if(state.activeProject?.id!==project.id)await selectProject(project,null);
