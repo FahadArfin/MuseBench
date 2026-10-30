@@ -11,6 +11,7 @@ mobile/android/local.properties
 *.keystore
 .musebench/
 artifacts/
+.superpowers/
 output/
 native/bin/
 reference/patchlight/artifacts/

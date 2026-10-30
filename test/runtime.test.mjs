@@ -231,7 +231,7 @@ for(const change of ['revoke','edit-and-review'])for(const action of ['steer','f
  const approve=async()=>{const shown=await review.projectMcpState(h.root,{environment});await review.approveProjectMcp(h.root,shown.revision,{environment});};
  await put(['before.mjs']);await approve();await h.connect();await h.runtime.send({text:'Start'});
  const child={itemId:'child',kind:'subagent',subagentId:'native-child',turnId:'turn-one',revision:1,status:'inProgress',controlStatus:action==='reopen'?'closed':action==='sendMessage'?'running':'resultReady'};
- if(action==='retry')Object.assign(child,{kind:'workflow',workflowRunId:'workflow-one',children:[{childId:'task',attempt:1,status:'failed',terminal:'failed'}],status:'failed'});
+ if(action==='retry')Object.assign(child,{kind:'workflow',workflowRunId:'workflow-one',children:[{childId:'task',attempt:1,status:'started'}],status:'inProgress'});
  if(['followupTask','reopen','retry','sendMessage'].includes(action))h.emit({method:'item/updated',params:{sessionId:'session-one',item:child}});
  if(action==='compact'||['followupTask','reopen','retry'].includes(action))h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',terminal:'completed',viewCursor:'done'}});
  if(action==='answer')await h.request({method:'userInput/request',params:inputRequest()});
@@ -561,6 +561,33 @@ test('disconnect during compaction ack never updates a new owner',async t=>{
 
 test('native child controls bind current session and revision and send at most once on uncertain ack',async t=>{
  const h=await harness(t);await h.connect();h.emit({method:'item/updated',params:{sessionId:'session-one',item:{itemId:'child-item',kind:'subagent',subagentId:'native-child',revision:2,status:'inProgress',controlStatus:'running'}}});let calls=0;h.host.connection.command=async(method,params,opts)=>{calls++;assert.equal(method,'subagent/sendMessage');assert.equal(params.subagentId,'native-child');assert.equal(opts.maxAttempts,1);return {commandId:'wrong',status:'accepted'};};const input={sessionId:'session-one',itemId:'child-item',revision:2,action:'sendMessage',body:'Correction'};await assert.rejects(h.runtime.childControl({...input,sessionId:'other'}));await assert.rejects(h.runtime.childControl({...input,revision:1}));assert.equal(calls,0);await assert.rejects(h.runtime.childControl(input));assert.equal(h.runtime.snapshot().childReceipts[0].status,'unknown');await assert.rejects(h.runtime.childControl(input),/uncertain/);assert.equal(calls,1);
+});
+
+test('workflow restart waits for a later attempt before releasing its pending command guard',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Delegate'});
+ const item={itemId:'workflow',kind:'workflow',workflowRunId:'native-run',turnId:'turn-one',revision:1,status:'inProgress',children:[{childId:'a',attempt:1,status:'started'},{childId:'b',attempt:1,status:'started'}]};
+ const emit=i=>h.emit({method:'item/updated',params:{sessionId:'session-one',item:i}});emit(item);
+ let calls=0;h.host.connection.command=async(method,params,opts)=>{calls++;assert.equal(method,'workflow/childControl');assert.deepEqual(params,{sessionId:'session-one',workflowRunId:'native-run',childId:'a',attempt:1,action:'retry'});assert.equal(opts.maxAttempts,1);return {commandId:opts.commandId,status:'accepted'};};
+ const input={sessionId:'session-one',itemId:'workflow',revision:1,action:'retry',childId:'a',attempt:1,workflowRunId:'forged'};
+ await h.runtime.childControl(input);assert.equal(h.runtime.snapshot().childReceipts[0].status,'accepted');assert.equal(h.runtime.snapshot().childWorkPending,1);
+ await assert.rejects(h.runtime.childControl(input),/pending/);assert.equal(calls,1);
+ emit({...item,revision:2});assert.equal(h.runtime.snapshot().childWorkPending,1,'Same attempt revision is not restart progression');
+ await assert.rejects(h.runtime.childControl({...input,revision:2}),/pending/);assert.equal(calls,1);
+ emit({...item,revision:3,status:'futureState'});assert.equal(h.runtime.snapshot().childWorkPending,1,'Unknown parent state is not authoritative settlement');
+ emit({...item,revision:4,children:[{childId:'a',attempt:2,status:'started'},item.children[1]]});
+ assert.equal(h.runtime.snapshot().childWorkPending,0);assert.equal(h.runtime.snapshot().childrenBusy,true);
+ await assert.rejects(h.runtime.childControl({...input,revision:4}),/attempt changed/);assert.equal(calls,1);
+});
+
+test('uncertain workflow restart is never replayed after a later attempt arrives',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Delegate'});
+ const item={itemId:'workflow',kind:'workflow',workflowRunId:'native-run',turnId:'turn-one',revision:1,status:'inProgress',children:[{childId:'a',attempt:1,status:'started'}]};
+ const emit=i=>h.emit({method:'item/updated',params:{sessionId:'session-one',item:i}});emit(item);
+ let calls=0;h.host.connection.command=async()=>{calls++;return {commandId:'wrong',status:'accepted'};};
+ const input={sessionId:'session-one',itemId:'workflow',revision:1,action:'retry',childId:'a',attempt:1};
+ await assert.rejects(h.runtime.childControl(input),/acknowledgement/);assert.equal(h.runtime.snapshot().childReceipts[0].status,'unknown');
+ emit({...item,revision:2,children:[{childId:'a',attempt:2,status:'started'}]});
+ await assert.rejects(h.runtime.childControl({...input,revision:2,attempt:2}),/uncertain/);assert.equal(calls,1);assert.equal(h.runtime.snapshot().childrenBusy,true);
 });
 test('child control receipt is admission only, parent item supplies independently observed result',async t=>{
  const h=await harness(t);await h.connect();const item={itemId:'child-item',kind:'subagent',subagentId:'native-child',revision:2,status:'inProgress',controlStatus:'running'};h.emit({method:'item/updated',params:{sessionId:'session-one',item}});h.host.connection.command=async(m,p,o)=>({commandId:o.commandId,status:'accepted'});await h.runtime.childControl({sessionId:'session-one',itemId:'child-item',revision:2,action:'interrupt'});assert.equal(h.runtime.snapshot().childReceipts[0].status,'accepted');assert.equal(h.runtime.snapshot().children.items[0].controlStatus,'running');h.emit({method:'item/updated',params:{sessionId:'session-one',item:{...item,revision:3,status:'cancelled',controlStatus:'resultReady'}}});assert.equal(h.runtime.snapshot().children.items[0].status,'cancelled');assert.equal(h.runtime.snapshot().childReceipts[0].status,'accepted');

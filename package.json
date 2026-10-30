@@ -40,6 +40,7 @@
     "test:motion": "node scripts/motion-smoke.mjs && node scripts/motion-smoke.mjs --desktop",
     "test:activity": "node scripts/activity-smoke.mjs",
     "test:child-inspection": "node scripts/child-inspection-smoke.mjs && node scripts/child-inspection-smoke.mjs --desktop",
+    "test:child-restart": "node scripts/child-restart-smoke.mjs && node scripts/child-restart-smoke.mjs --desktop",
     "test:native-failure": "node scripts/native-failure-smoke.mjs && node scripts/native-failure-smoke.mjs --desktop",
     "test:native-question": "node scripts/native-question-smoke.mjs && node scripts/native-question-smoke.mjs --desktop",
     "test:reply-copy": "node scripts/reply-copy-smoke.mjs && node scripts/response-actions-smoke.mjs",

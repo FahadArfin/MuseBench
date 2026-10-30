@@ -6,9 +6,9 @@ import './native-controls.css';
 type Act=(a:Action)=>Promise<AppState|null>;
 function Controls({item,child,task,runtime,busy,act}:{item:NativeChild;child?:NonNullable<NativeChild['children']>[number];task:Task;runtime:RuntimeState;busy:boolean;act:Act}){
  const earlier=runtime.ownedTurnIds&&!runtime.ownedTurnIds.includes(item.turnId??'');
- const choices=childActions(child?{...child,kind:'workflowChild'}:item).filter(a=>!earlier||!['followupTask','resume','reopen','retry'].includes(a)),[action,setAction]=useState(choices[0]??''),[body,setBody]=useState(''),[error,setError]=useState('');
+ const choices=childActions(child?{...child,kind:'workflowChild',parentStatus:item.status,controlsUnavailable:item.controlsUnavailable}:item).filter(a=>!earlier||!['followupTask','resume','reopen','retry'].includes(a)),[action,setAction]=useState(choices[0]??''),[body,setBody]=useState(''),[error,setError]=useState('');
  const choiceKey=choices.join(',');useEffect(()=>{setAction(a=>choices.includes(a)?a:choices[0]??'');},[choiceKey]);
- const pending=(runtime.childReceipts??[]).some(r=>r.itemId===item.itemId&&r.childId===child?.childId&&['submitting','unknown'].includes(r.status));
+ const pending=(runtime.childReceipts??[]).some(r=>r.itemId===item.itemId&&r.childId===child?.childId&&(['submitting','unknown'].includes(r.status)||r.status==='accepted'&&r.action==='retry'&&r.attempt===child?.attempt));
  const enabled=runtime.childControlsSupported&&runtime.permissionVerified&&runtime.sessionId&&!runtime.operationBusy&&!runtime.pending&&!busy&&!pending;
  const needsText=['sendMessage','followupTask'].includes(action);
  const send=async()=>{setError('');const result=await act({type:'childControl',taskId:task.id,sessionId:runtime.sessionId!,itemId:item.itemId,revision:item.revision,action,...(needsText?{body}:{}),...(child?{childId:child.childId,attempt:child.attempt}:{})});if(result?.error)setError(result.error);else if(result){setBody('');}};

@@ -170,7 +170,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const snapshot=()=>structuredClone({...state,connectionEpoch:epoch});
  const emit=()=>{for(const fn of listeners){try{fn(snapshot());}catch{/* A renderer observer is never a protocol authority. */}}};
  const update=patch=>{state={...state,...patch,pendingRequests:pendingView()};if(state.contextUsage&&(!state.permissionVerified||state.sessionId!==state.contextUsage.sessionId))state.contextUsage={...state.contextUsage,connected:false};emit();};
- const syncChildren=()=>{const view=children.snapshot();if(usable.has(adapter?.snapshot().status)&&view.items.some(childWorking))awaitingChildReport=true;for(const [key,target] of childWork){const i=view.items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&childWorking(i))childWork.delete(key);}update({children:view,childrenBusy:view.items.some(childWorking)||childWork.size>0||awaitingChildReport,childWorkPending:childWork.size});if(adapter)syncAdapter(adapter.snapshot());};
+ const syncChildren=()=>{const view=children.snapshot();if(usable.has(adapter?.snapshot().status)&&view.items.some(childWorking))awaitingChildReport=true;for(const [key,target] of childWork){const i=view.items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&(target.action==='retry'?(['completed','failed','cancelled'].includes(i.status)||i.children?.some(c=>c.childId===target.childId&&c.attempt>target.attempt)):childWorking(i)))childWork.delete(key);}update({children:view,childrenBusy:view.items.some(childWorking)||childWork.size>0||awaitingChildReport,childWorkPending:childWork.size});if(adapter)syncAdapter(adapter.snapshot());};
  const interruptChildCommands=()=>update({childReceipts:(state.childReceipts??[]).map(r=>r.status==='submitting'?{...r,status:'unknown',reason:'Connection lost before command admission was confirmed.'}:r)});
  const syncCompaction=()=>{const receipt=compaction.snapshot();if(!compaction.pending())clearTimeout(compactionTimer);update({compaction:receipt,contextCompactions:compaction.history(),operationBusy:compaction.pending()});};
  const block=(reason,invalidatePermissions=true)=>{blockedReason=reason;update({status:'blocked',reason,...(invalidatePermissions?{permissionVerified:false}:{}),pending:displayPending(pending,pendingRevision)});};
@@ -529,14 +529,14 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const child=children.snapshot().items.find(i=>i.itemId===input.itemId);
   if(startsWork&&!state.ownedTurnIds?.includes(child?.turnId))throw Error('This child belongs to an earlier request. Start a new task from the current conversation instead.');
   children.prepare(input);const key=input.itemId+':'+(input.childId??'');
-  if(childCommands.has(key)||uncertainChildren.has(key))throw Error('The previous child command is pending or uncertain. Inspect its state before reconnecting.');
+  if(childCommands.has(key)||uncertainChildren.has(key)||childWork.get(key)?.action==='retry')throw Error('The previous child command is pending or uncertain. Inspect its state before reconnecting.');
   const token=epoch,sessionId=state.sessionId,commandId=owner.connection.mintCommandId(),receipt={key,commandId,sessionId,itemId:input.itemId,revision:input.revision,action:input.action,...(input.body?{body:input.body}:{}),...(input.childId?{childId:input.childId,attempt:input.attempt}:{}),status:'submitting',at:new Date().toISOString()};
   const publish=r=>update({childReceipts:[...(state.childReceipts??[]).filter(x=>x.commandId!==commandId),r].slice(-40)});let submitted=false;childCommands.add(key);
   try{
    if(!stopping&&input.action!=='readResult')await verifyWorkConfiguration(token);
    assertCurrent(token);const target=children.prepare(input);
    if(!stopping&&(pending||compaction.pending()||sending||!state.permissionVerified))throw Error('The child connection changed while its configuration was checked.');
-   if(startsWork){childWork.set(key,{itemId:input.itemId,revision:input.revision});syncChildren();}publish(receipt);submitted=true;
+   if(startsWork){childWork.set(key,{itemId:input.itemId,revision:input.revision,action:input.action,childId:input.childId,attempt:input.attempt});syncChildren();}publish(receipt);submitted=true;
    const ack=await bounded(owner.connection.command(target.method,{sessionId,...target.params},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack.status!=='accepted')throw Error('Child command acknowledgement could not be verified.');publish({...receipt,status:'accepted'});return snapshot();
   }catch(error){if(submitted&&token===epoch){if(error.code===-32030)childWork.delete(key);else uncertainChildren.add(key);publish({...receipt,status:error.code===-32030?'rejected':'unknown',reason:String(error.message).slice(0,1000)});syncChildren();}throw error;}finally{if(token===epoch)childCommands.delete(key);}
  }

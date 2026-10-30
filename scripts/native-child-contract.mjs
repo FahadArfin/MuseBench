@@ -91,7 +91,7 @@ async function scenario(name){
    stream(res,{type:'message',id:`msg_${id}`,role:'assistant',status:'completed',content:[{type:'output_text',text:`LOCAL_CHILD_${name.toUpperCase()}_DONE`,annotations:[]}]},id);
   }catch(error){fail(error);if(!res.headersSent)res.writeHead(400,{'Content-Type':'application/json'});res.end(JSON.stringify({error:{message:'Local child contract rejected request.'}}));}
  }
- async function control(target,action,expectRejection=false){
+ async function control(target,action){
   check();assert.equal(target.turnId,turnId,'Child belongs to a foreign turn.');
   const input={sessionId,itemId:target.itemId,revision:target.revision,action};
   if(target.kind==='workflow')Object.assign(input,{childId:target.childId,attempt:target.attempt});
@@ -100,11 +100,10 @@ async function scenario(name){
    await bounded(runtime.childControl(input));entry.admission='accepted';
   }catch(error){
    entry.admission=error.code===-32030?'rejected':'unknown';entry.error=String(error.message).slice(0,1000);entry.code=error.code;entry.reason=error.data?.reason;
-   if(!expectRejection)throw error;
-   assert.equal(error.code,-32030);assert.equal(error.data?.reason,'invalid_target');assert.equal(error.data?.retryable,false);
+   throw error; // Unknown outcomes are never retried; confirmed rejection fails the required case.
   }
   const own=runtime.snapshot().childReceipts.at(-1);assert.equal(own.action,action);entry.commandId=own.commandId;
-  if(entry.admission==='accepted'){assert.equal(expectRejection,false,`${action} unexpectedly accepted; reassess supported behavior.`);assert.equal(own.status,'accepted');}
+  if(entry.admission==='accepted')assert.equal(own.status,'accepted');
   else assert.equal(own.status,'rejected');
   return entry;
  }
@@ -146,22 +145,30 @@ async function scenario(name){
   stage='start';await bounded(runtime.send({text:`Run the isolated ${name} child contract.`,runOptions:{model,reasoning:'high',approval:'ask'}}));turnId=runtime.snapshot().turnId;assert.ok(turnId);
   receipt.sessionId=sessionId;receipt.turnId=turnId;
   if(name==='controls'){
-   stage='skip';await wait(s=>held.size===2&&s.children.items.find(i=>i.kind==='workflow')?.children?.length===2);
+   stage='restart';await wait(s=>held.size===2&&s.children.items.find(i=>i.kind==='workflow')?.children?.length===2);
    const initial=workflow();assert.equal(initial.status,'inProgress');const [first,second]=initial.children;receipt.initialWorkflow=selected(initial);
    for(const target of [first,second])assert.equal(currentChild(target.childId)?.controlStatus,'running');
    const capturedSecond=selected(currentChild(second.childId));
-   receipt.skip=await control(workflowTarget(first.childId,first.attempt),'skip');
-   await wait(()=>workflow()?.children?.some(c=>c.childId===first.childId&&c.attempt===first.attempt&&c.terminal==='cancelled')&&currentChild(first.childId)?.result?.errorKind==='workflow_child_skipped');
+   assert.equal(first.attempt,1);assert.equal(first.status,'started');
+   receipt.restart=await control(workflowTarget(first.childId,first.attempt),'retry');
+   stage='attempt2';const next=await wait(()=>workflow()?.children?.find(c=>c.childId===first.childId&&c.attempt===2&&c.status==='started'));
+   await wait(()=>held.size===2&&currentChild(first.childId)?.controlStatus==='running');
+   receipt.restart.settled=true;receipt.restart.workflow=selected(workflow());receipt.restart.child=selected(currentChild(first.childId));
+   const stillSecond=currentChild(second.childId);assert.equal(stillSecond.controlStatus,'running');
+   for(const key of ['itemId','childSessionId','workflowRunId'])assert.equal(stillSecond[key],capturedSecond[key],'Restart changed the unrelated child identity.');
+   const beforeCommands=receipt.commands.length,stale={sessionId,itemId:initial.itemId,revision:workflow().revision,childId:first.childId,attempt:1,action:'retry'};
+   await assert.rejects(runtime.childControl(stale),/attempt changed/);
+   assert.equal(receipt.commands.length,beforeCommands);assert.equal(runtime.snapshot().childReceipts.length,1);
+   receipt.staleAttempt={...stale,dispatched:false,reason:'Latest observed native attempt is 2; product rejected attempt 1 locally.'};
+   stage='skip';receipt.skip=await control(workflowTarget(first.childId,next.attempt),'skip');
+   await wait(()=>workflow()?.children?.some(c=>c.childId===first.childId&&c.attempt===next.attempt&&c.terminal==='cancelled')&&currentChild(first.childId)?.result?.errorKind==='workflow_child_skipped');
    receipt.skip.settled=true;receipt.skip.child=selected(currentChild(first.childId));
-   stage='retry';assert.equal(workflow().status,'inProgress');assert.equal(currentChild(second.childId).controlStatus,'running');
-   receipt.retry=await control(workflowTarget(first.childId,first.attempt),'retry',true);receipt.retry.settled=false;
    stage='stop';const stopTarget=currentChild(second.childId);assert.equal(stopTarget.controlStatus,'running');
    for(const key of ['itemId','childSessionId','workflowRunId'])assert.equal(stopTarget[key],capturedSecond[key],'Captured Stop child identity changed.');
    receipt.stop=await control(stopTarget,'stop');
    await wait(()=>workflow()?.children?.some(c=>c.childId===second.childId&&c.attempt===second.attempt&&c.terminal==='cancelled')&&currentChild(second.childId)?.result?.errorKind==='generated_child_cancelled');
    receipt.stop.settled=true;receipt.stop.child=selected(currentChild(second.childId));
-   assert.equal(workflow().children.filter(c=>c.childId===first.childId).length,1,'Unexpected later attempt.');
-   receipt.staleAttempt='Not dispatched: no later native attempt exists.';
+   assert.equal(Math.max(...workflow().children.filter(c=>c.childId===first.childId).map(c=>c.attempt)),2,'Unexpected later attempt.');
   }else{
    stage='result';const child=await wait(s=>s.children.items.find(i=>i.kind==='subagent'&&i.controlStatus==='resultReady'&&i.result?.text==='CHILD_READY'));
    assert.ok(child.workflowRunId);receipt.result={text:child.result.text,child:selected(child)};
@@ -203,6 +210,8 @@ async function scenario(name){
 try{
  for(const name of ['controls','completed']){const receipt=await scenario(name);if(receipt.status!=='passed')break;}
  const cases=report.cases;
+ assert.equal(cases.find(c=>c.name==='controls')?.restart?.settled,true,'Required native Restart attempt progression missing');
+ assert.equal(cases.find(c=>c.name==='controls')?.staleAttempt?.dispatched,false,'Required local stale-attempt rejection missing');
  assert.equal(cases.find(c=>c.name==='controls')?.skip?.settled,true,'Required native Skip settlement missing');
  assert.equal(cases.find(c=>c.name==='controls')?.stop?.settled,true,'Required native Stop settlement missing');
  assert.equal(cases.find(c=>c.name==='completed')?.result?.text,'CHILD_READY','Required native child result missing');

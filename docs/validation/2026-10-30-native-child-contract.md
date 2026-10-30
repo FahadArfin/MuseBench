@@ -1,5 +1,7 @@
 # Native child contract: isolated Windows acceptance
 
+**Later 30 October correction:** This is the initial terminal-target result. The [active restart validation](2026-10-30-child-restart.md) supersedes its Retry limitation: real Muse 1.4.14 accepted one restart of a running/`started` attempt and reported attempt 2 for the same workflow and child. The current runner requires that progression, local stale-attempt refusal, Skip of attempt 2, and independent Stop. The original terminal `invalid_target` below remains historical evidence for the tested terminal target; it is not a conclusion about running-child restart.
+
 Validated 30 October 2026 with the installed Muse **1.4.14** host, SDK **1.4.14**, schema 1 fingerprint `sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6`.
 
 The opt-in runner is [scripts/native-child-contract.mjs](../../scripts/native-child-contract.mjs):

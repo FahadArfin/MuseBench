@@ -1,8 +1,25 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {createChildTracker} from '../src/runtime/children.mjs';
-import {childActions,childWorking} from '../src/shared/child-actions.mjs';
+import {childActions,childWorking,CHILD_ACTION_LABELS} from '../src/shared/child-actions.mjs';
 const child=(patch={})=>({itemId:'i',kind:'subagent',subagentId:'a',revision:1,status:'inProgress',controlStatus:'running',...patch});
 test('child commands require observed identity and current revision',()=>{const t=createChildTracker();assert.throws(()=>t.prepare({itemId:'i',revision:1,action:'stop'}));t.observe(child());assert.equal(t.prepare({itemId:'i',revision:1,action:'sendMessage',body:'  Correction  '}).params.body,'Correction');t.observe(child({revision:2,controlStatus:'resultReady',status:'completed'}));assert.throws(()=>t.prepare({itemId:'i',revision:1,action:'stop'}),/changed/);assert.throws(()=>t.prepare({itemId:'i',revision:2,action:'sendMessage',body:'x'}),/available/);assert.equal(t.prepare({itemId:'i',revision:2,action:'followupTask',body:'Next'}).method,'subagent/followupTask');t.observe(child({revision:1}));assert.equal(t.snapshot().items[0].revision,2);});
-test('workflow control uses the current observed child attempt, never a renderer supplied run id',()=>{const t=createChildTracker();t.observe({itemId:'w',kind:'workflow',workflowRunId:'native-run',revision:3,status:'inProgress',children:[{childId:'c',attempt:2,status:'terminal',terminal:'failed'}]});assert.throws(()=>t.prepare({itemId:'w',revision:3,action:'retry',childId:'c',attempt:1}),/attempt/);const command=t.prepare({itemId:'w',revision:3,action:'retry',childId:'c',attempt:2,workflowRunId:'forged'});assert.equal(command.params.workflowRunId,'native-run');assert.equal(command.params.attempt,2);assert.throws(()=>t.prepare({itemId:'w',revision:3,action:'close',childId:'c',attempt:2}));});
+test('workflow control uses the current observed child attempt, never a renderer supplied run id',()=>{const t=createChildTracker();t.observe({itemId:'w',kind:'workflow',workflowRunId:'native-run',revision:3,status:'inProgress',children:[{childId:'c',attempt:2,status:'started'}]});assert.throws(()=>t.prepare({itemId:'w',revision:3,action:'retry',childId:'c',attempt:1}),/attempt/);const command=t.prepare({itemId:'w',revision:3,action:'retry',childId:'c',attempt:2,workflowRunId:'forged'});assert.equal(command.params.workflowRunId,'native-run');assert.equal(command.params.attempt,2);assert.throws(()=>t.prepare({itemId:'w',revision:3,action:'close',childId:'c',attempt:2}));});
+
+test('workflow Restart attempt is available only for a running or started current child',()=>{
+ assert.equal(CHILD_ACTION_LABELS.retry,'Restart attempt');
+ for(const status of ['started','running'])assert.deepEqual(childActions({kind:'workflowChild',status,parentStatus:'inProgress'}),['retry','skip']);
+ for(const status of ['terminal','completed','failed','cancelled','futureState'])assert.deepEqual(childActions({kind:'workflowChild',status,parentStatus:'inProgress'}),[]);
+ assert.deepEqual(childActions({kind:'workflowChild',status:'running',terminal:'cancelled',parentStatus:'inProgress'}),[]);
+ assert.deepEqual(childActions({kind:'workflowChild',status:'running',controlsUnavailable:true,parentStatus:'inProgress'}),[]);
+ for(const status of ['scheduled','starting','pending'])assert.deepEqual(childActions({kind:'workflowChild',status,parentStatus:'inProgress'}),['skip']);
+});
+
+test('terminal or unknown parent cannot authorize a stale active workflow child',()=>{
+ for(const status of ['completed','failed','cancelled','futureState',undefined]){
+  assert.deepEqual(childActions({kind:'workflowChild',status:'running',parentStatus:status}),[]);
+  const t=createChildTracker();t.observe({itemId:'w',kind:'workflow',workflowRunId:'run',revision:1,status:status??'unknown',children:[{childId:'c',attempt:1,status:'running'}]});
+  for(const action of ['retry','skip'])assert.throws(()=>t.prepare({itemId:'w',revision:1,childId:'c',attempt:1,action}),/available/);
+ }
+});
 test('unknown kinds and states do not acquire controls and retained output is bounded',()=>{const t=createChildTracker();t.observe(child({controlStatus:'futureState',objective:'x'.repeat(9000),result:{summary:'x'.repeat(9000)}}));assert.throws(()=>t.prepare({itemId:'i',revision:1,action:'stop'}));assert.ok(t.snapshot().items[0].objective.length<=2000);assert.ok(t.snapshot().items[0].result.summary.length<=8000);for(let i=0;i<150;i++)t.observe(child({itemId:'id'+i}));assert.ok(t.snapshot().items.length<=128);assert.equal(t.snapshot().truncated,true);});
 
 test('workflow controls select the latest observed attempt even with retained history',()=>{const t=createChildTracker();t.observe({itemId:'w',kind:'workflow',workflowRunId:'run',revision:3,status:'inProgress',children:[{childId:'c',attempt:1,status:'terminal',terminal:'failed'},{childId:'c',attempt:2,status:'running'}]});assert.throws(()=>t.prepare({itemId:'w',revision:3,childId:'c',attempt:1,action:'retry'}),/attempt/);assert.equal(t.prepare({itemId:'w',revision:3,childId:'c',attempt:2,action:'skip'}).params.attempt,2);});
