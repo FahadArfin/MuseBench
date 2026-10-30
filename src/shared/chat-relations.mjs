@@ -4,6 +4,12 @@ export function restoreChatRelation(value,taskId){
  if(!value||!['side','fork'].includes(value.kind)||!text(value.parentTaskId,200)||value.parentTaskId===taskId||!text(value.parentTitle,100)||!text(value.createdAt,80)||!Number.isFinite(Date.parse(value.createdAt))||!(value.kind==='side'?value.context==='fresh':['native','retained'].includes(value.context))||value.messageId!==undefined&&!text(value.messageId,200))return null;
  return{kind:value.kind,parentTaskId:value.parentTaskId,parentTitle:value.parentTitle,context:value.context,createdAt:value.createdAt,...(value.messageId?{messageId:value.messageId}:{})};
 }
+/** Display provenance is independent of request text and the parent's availability. */
+export function resolveRequestOrigin(task){
+ if(['initial','history','placeholder'].includes(task?.requestOrigin))return task.requestOrigin;
+ const relation=restoreChatRelation(task?.chatRelation,task?.id);
+ return relation?relation.kind==='side'?'placeholder':'history':'initial';
+}
 /** Side ancestry stops at its independent main; fork provenance is a direct backlink. */
 export function relationParent(task,tasks){
  const relation=restoreChatRelation(task.chatRelation,task.id);if(!relation)return null;

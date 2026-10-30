@@ -1,0 +1,217 @@
+TAP version 13
+# (node:52312) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fresh sides isolate context and preserve the explicit parent draft, queues and goals
+ok 1 - fresh sides isolate context and preserve the explicit parent draft, queues and goals
+  ---
+  duration_ms: 158.6573
+  ...
+# Subtest: relations survive restart and parent deletion without cascading or hiding a side
+ok 2 - relations survive restart and parent deletion without cascading or hiding a side
+  ---
+  duration_ms: 87.7472
+  ...
+# Subtest: invalid and archived explicit sources preserve selection and create nothing
+ok 3 - invalid and archived explicit sources preserve selection and create nothing
+  ---
+  duration_ms: 75.1049
+  ...
+# Subtest: chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+ok 4 - chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+  ---
+  duration_ms: 92.4797
+  ...
+# Subtest: manual forks preserve independent initial-request provenance for "Actual initial request outside messages"
+not ok 5 - manual forks preserve independent initial-request provenance for "Actual initial request outside messages"
+  ---
+  duration_ms: 73.3752
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:21:114'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - 'initial'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'initial'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:23:146)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: manual forks preserve independent initial-request provenance for "Side chat"
+not ok 6 - manual forks preserve independent initial-request provenance for "Side chat"
+  ---
+  duration_ms: 76.7863
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:21:114'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - 'initial'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'initial'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:23:146)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: demo forks preserve independent initial-request provenance for "Actual initial request outside messages"
+not ok 7 - demo forks preserve independent initial-request provenance for "Actual initial request outside messages"
+  ---
+  duration_ms: 74.9796
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:21:114'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - 'initial'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'initial'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:23:146)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: demo forks preserve independent initial-request provenance for "Side chat"
+not ok 8 - demo forks preserve independent initial-request provenance for "Side chat"
+  ---
+  duration_ms: 75.7303
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:21:114'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - 'initial'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'initial'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:23:146)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: selected initial user forks retain an empty history and an unsent draft without an initial-request header
+not ok 9 - selected initial user forks retain an empty history and an unsent draft without an initial-request header
+  ---
+  duration_ms: 98.8347
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:26:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - 'history'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'history'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:27:329)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: relationship validation and projection never nest cycles, malformed or cross-project parents
+ok 10 - relationship validation and projection never nest cycles, malformed or cross-project parents
+  ---
+  duration_ms: 0.4305
+  ...
+# Subtest: indexed ancestry preserves every direct-parent/main result across malformed, cyclic and unavailable graphs
+ok 11 - indexed ancestry preserves every direct-parent/main result across malformed, cyclic and unavailable graphs
+  ---
+  duration_ms: 9.7683
+  ...
+# Subtest: indexed graphs are owned by their snapshot and terminate side ancestry at fork boundaries
+ok 12 - indexed graphs are owned by their snapshot and terminate side ancestry at fork boundaries
+  ---
+  duration_ms: 0.4075
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is deleted
+ok 13 - side ancestry stops at its independent fork main when the original source is deleted
+  ---
+  duration_ms: 0.0911
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is deleted
+ok 14 - controller creates sibling sides under the surviving fork after its original source is deleted
+  ---
+  duration_ms: 88.8528
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is archived
+ok 15 - side ancestry stops at its independent fork main when the original source is archived
+  ---
+  duration_ms: 0.094
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is archived
+ok 16 - controller creates sibling sides under the surviving fork after its original source is archived
+  ---
+  duration_ms: 92.2957
+  ...
+# Subtest: side ancestry stops at its independent fork main when the original source is moved
+ok 17 - side ancestry stops at its independent fork main when the original source is moved
+  ---
+  duration_ms: 0.0965
+  ...
+# Subtest: controller creates sibling sides under the surviving fork after its original source is moved
+ok 18 - controller creates sibling sides under the surviving fork after its original source is moved
+  ---
+  duration_ms: 162.4554
+  ...
+# Subtest: side-cycle checks stop at the fork boundary while fork backlinks remain independently navigable
+ok 19 - side-cycle checks stop at the fork boundary while fork backlinks remain independently navigable
+  ---
+  duration_ms: 0.2005
+  ...
+# Subtest: desktop accepts exact-source side and chat-level fork actions with bounded text
+ok 20 - desktop accepts exact-source side and chat-level fork actions with bounded text
+  ---
+  duration_ms: 0.6917
+  ...
+# Subtest: native fork restores independently without copying usage, goals or access leases
+ok 21 - native fork restores independently without copying usage, goals or access leases
+  ---
+  duration_ms: 76.6386
+  ...
+# Subtest: unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+ok 22 - unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+  ---
+  duration_ms: 92.4504
+  ...
+# Subtest: known native rejection creates no copied child and allows a later deliberate fork
+ok 23 - known native rejection creates no copied child and allows a later deliberate fork
+  ---
+  duration_ms: 80.7767
+  ...
+# Subtest: durable fork receipt wins over a stale app selection snapshot after crash
+ok 24 - durable fork receipt wins over a stale app selection snapshot after crash
+  ---
+  duration_ms: 84.333
+  ...
+1..24
+# tests 24
+# suites 0
+# pass 19
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1595.9601

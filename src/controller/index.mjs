@@ -1,4 +1,4 @@
-import {restoreChatRelation,mainChat} from '../shared/chat-relations.mjs';
+import {restoreChatRelation,mainChat,resolveRequestOrigin} from '../shared/chat-relations.mjs';
 import {mergeCompactionHistory,interruptCompactionHistory} from '../shared/compaction-history.mjs';
 import {restoreRecentContext,restoreRecentCapsule,prepareRecentContext,validateRecentContext,stagedRecentContext,recentSessionId,latestRecentCompaction,consumeRecentContext,restageRecentContext} from './recent-context.mjs';
 import {restoreContextUsage} from '../shared/native-context-usage.mjs';
@@ -75,7 +75,7 @@ function mergeShellResults(previous,incoming,runId){
   return recent.reverse();
 }
 function restoreTask(record,knownProjectId){
-  const task=structuredClone(record);task.chatRelation=restoreChatRelation(task.chatRelation,task.id);task.forkReceipts=(Array.isArray(task.forkReceipts)?task.forkReceipts:[]).filter(r=>r&&typeof r.commandId==='string'&&typeof r.sessionId==='string').slice(-20).map(r=>({...r,...(['submitting','verifying','releasing'].includes(r.status)?{status:'unknown',reason:'Restart interrupted fork confirmation. Inspect the native command and child session before retrying; this fork will not be repeated.'}:{})}));task.contextCompactions=interruptCompactionHistory(task.contextCompactions);task.nativeContextUsage=restoreContextUsage(task.nativeContextUsage);
+  const task=structuredClone(record);task.chatRelation=restoreChatRelation(task.chatRelation,task.id);task.requestOrigin=resolveRequestOrigin(task);task.forkReceipts=(Array.isArray(task.forkReceipts)?task.forkReceipts:[]).filter(r=>r&&typeof r.commandId==='string'&&typeof r.sessionId==='string').slice(-20).map(r=>({...r,...(['submitting','verifying','releasing'].includes(r.status)?{status:'unknown',reason:'Restart interrupted fork confirmation. Inspect the native command and child session before retrying; this fork will not be repeated.'}:{})}));task.contextCompactions=interruptCompactionHistory(task.contextCompactions);task.nativeContextUsage=restoreContextUsage(task.nativeContextUsage);
   if(!task.projectId&&knownProjectId)task.projectId=knownProjectId;
   const validDate=value=>typeof value==='string'&&Number.isFinite(Date.parse(value));
   task.steeringReceipts=(Array.isArray(task.steeringReceipts)?task.steeringReceipts:[]).filter(r=>r&&['commandId','turnId','status','text','at'].every(k=>typeof r[k]==='string')).slice(-20).map(r=>({...r,text:r.text.slice(0,16000)}));
@@ -221,7 +221,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     }
     if(persistedQueue){state.task.promptQueue=structuredClone(persistedQueue);state.task.queueHold=persistedQueue.length>0;}
     state.task.contextCompactions=mergeCompactionHistory(state.task.contextCompactions,persistedTask?.contextCompactions);
-    if(persistedTask){state.task.forkReceipts=structuredClone(persistedTask.forkReceipts);state.task.chatRelation=restoreChatRelation(persistedTask.chatRelation,state.task.id);}
+    if(persistedTask){state.task.forkReceipts=structuredClone(persistedTask.forkReceipts);state.task.chatRelation=restoreChatRelation(persistedTask.chatRelation,state.task.id);state.task.requestOrigin=resolveRequestOrigin(persistedTask);}
     if(persistedTask)state.task.nativeContextUsage=restoreContextUsage(persistedTask.nativeContextUsage);
     if(persistedTask)state.task.recentContext=restoreRecentContext(persistedTask.recentContext);
     if(!persistedTask||!knownProject||state.task.projectId!==knownProject.id){state.task=null;state.error='The saved task has no valid project association. Select a project to continue.';}
@@ -440,7 +440,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const snap=await snapshot(state.activeProject.root);baseline=snap.files;if(runtimeFactory)bindContext(null);context.pending=false;
     context.messageBaseline=runtimeMessageIds(state.runtime);context.turn=null;
     const demo=mode==='demo',plan=demo?'Demo plan: add a caffeine preference filter to the tea collection. Offer All teas and Caffeine free choices, preserve the storefront, and keep product counts clear.':'Review the request and local project. Describe the intended change, then approve this plan before accepting work.';
-    const createdAt=now();state.task={runOptions:options,id:randomUUID(),projectId:state.activeProject.id,createdAt,updatedAt:createdAt,title:request.trim().slice(0,100),request:request.trim().slice(0,12000),mode,plan,criteria:demo?['Caffeine free shows only herbal teas.','All teas restores the full collection.','The storefront works at narrow widths.']:['The requested change works in the preview.','The selected project check passes.'],planApproved:false,baselineRevision:snap.revision,revision:snap.revision,changes:[],messages:[],shellResults:[],runs:[],promptQueue:[],queuePaused:true,check:null,previewRevision:null,acceptedRevision:null,runtimeComplete:false};
+    const createdAt=now();state.task={runOptions:options,id:randomUUID(),projectId:state.activeProject.id,createdAt,updatedAt:createdAt,title:request.trim().slice(0,100),request:request.trim().slice(0,12000),requestOrigin:'initial',mode,plan,criteria:demo?['Caffeine free shows only herbal teas.','All teas restores the full collection.','The storefront works at narrow widths.']:['The requested change works in the preview.','The selected project check passes.'],planApproved:false,baselineRevision:snap.revision,revision:snap.revision,changes:[],messages:[],shellResults:[],runs:[],promptQueue:[],queuePaused:true,check:null,previewRevision:null,acceptedRevision:null,runtimeComplete:false};
     bindContext(state.task);
     db.prepare('INSERT INTO baselines(task_id,revision,json) VALUES(?,?,?)').run(state.task.id,snap.revision,JSON.stringify(baseline));
     message('system',demo?'Deterministic tutorial. Only this copied sample is edited; diffs, preview, checks and checkpoints use real local files.':mode==='muse'?'Muse chat started. Send a request to connect with your selected approval access. Planning is optional; execution access is set in your connection settings.':'Local task started. Approving a manual plan explicitly confirms user-directed manual work.');message(demo?'assistant':'system',plan);
@@ -1085,7 +1085,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         }
         if(state.activeProject?.id!==project.id)await selectProject(project,null);
         await startTask(side?'Side chat':original.request,original.mode==='demo'?'manual':original.mode,original.runOptions);
-        const child=state.task;child.title=`${side?'Side chat':'Fork'} - ${original.title}`.slice(0,100);child.chatRelation={kind:side?'side':'fork',parentTaskId:parent.id,parentTitle:parent.title,context:side?'fresh':native?'native':'retained',createdAt:now(),...(!side&&selected?{messageId:selected.id}:{})};
+        const child=state.task;child.requestOrigin=side?'placeholder':!native&&original.mode!=='muse'&&resolveRequestOrigin(original)==='initial'?'initial':'history';child.title=`${side?'Side chat':'Fork'} - ${original.title}`.slice(0,100);child.chatRelation={kind:side?'side':'fork',parentTaskId:parent.id,parentTitle:parent.title,context:side?'fresh':native?'native':'retained',createdAt:now(),...(!side&&selected?{messageId:selected.id}:{})};
         if(side){child.messages=[];if(action.text)state.drafts[draftKey(child.projectId,child.id)]={text:action.text,files:[],images:[],mode:'chat',updatedAt:now()};}
         else{
           child.forkedFrom=original.id;
