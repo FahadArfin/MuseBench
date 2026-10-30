@@ -82,7 +82,7 @@ createDiscoveryOAuthStore({dataDir,protection,fsAdapter?,now?}) -> Promise<Store
 Store.inspect() -> {status:'ready'|'unavailable'|'unsupported',generation:number}
 Store.listBindings(sourceId) -> Array<{binding:AuthBinding;phase:Grant['phase']}> // private main only
 Store.get(authSourceRef,bindingRevision?) -> private Grant|null
-Store.commitGrant(grant,{expectedGeneration}) -> Promise<Grant>
+Store.commitGrant(grant,{expectedGeneration,authorityGuard?}) -> Promise<Grant>
 Store.beginRefresh(bindingRevision,{expectedTokenGeneration})
   -> Promise<{transactionId:string;grant:Grant}>
 Store.completeRefresh(transactionId,tokens) -> Promise<Grant>
@@ -134,11 +134,12 @@ Dedicated trusted main opener uses shell.openExternal only for the SDK-produced 
 ## Service and safe UI interfaces
 
 ```ts
-createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,ownerSnapshot,
-  stopSourceLeases,openBrowser,onSafeUpdate,now}) -> OAuth
+createDiscoveryOAuth({store,flow,callbackFactory,resolveSource,getSourceSnapshot,ownerSnapshot,
+  stopSourceLeases,withIdleLease,openBrowser,onSafeUpdate,now}) -> OAuth
 OAuth.command(input:DiscoveryAuthCommand) -> Promise<SafeAuthState>
 OAuth.inspectSource(sourceRef) -> SafeAuthSummary // local-only
 OAuth.prepareConnection({owner,selection}) -> Promise<AuthLease>
+OAuth.bindSession({leaseId,sessionId}) -> Promise<void> // trusted bootstrap only
 OAuth.prepareTurn({owner,leaseId}) -> Promise<void>
 OAuth.readAccessToken({leaseId,sessionId,sourceId,sourceRevision,authBindingRevision})
   -> Promise<{token:string;expiresAt:number|null}> // private, no network
@@ -147,6 +148,12 @@ OAuth.closeLease(leaseId) -> Promise<void>
 OAuth.isBusy() -> boolean
 OAuth.close() -> Promise<void>
 ```
+
+Task2 parent-approved private interface clarifications (30 October): `selection` is `{sources: Array<{id,revision,authBindingRevision}>,sessionId?:string}`. PrepareConnection creates an unbound lease before native session creation; the optional known resume ID constrains the later trusted `bindSession`. Token reads fail until the actual native session is bound, and conflicting rebinding fails. `withIdleLease({leaseId,owner},operation)` is a required trusted atomic admission guard for bound-lease pre-turn checks: block new dispatch before verifying zero active requests, hold through refresh/save, release finally, fail busy without interrupt/replay. `stopSourceLeases` remains account-mutation/Forget invalidation only.
+
+`getSourceSnapshot(SourceRef)` is a required synchronous trusted source-authority snapshot for enrollment's final commit guard. The awaited resolver refreshes source facts before save; the final synchronous guard checks exact source revision/identity/eligibility and owner/attempt/deadline. Absent/stale/throwing/thenable snapshots fail closed. Store guarded enrollment prepares/encrypts/writes/fsyncs/CAS-checks asynchronously, then calls `authorityGuard` (strict synchronous `true`) and performs final atomic rename plus memory publication without await/event-loop interleaving. Production uses `node:fs.renameSync`; custom filesystem adapters must explicitly inject synchronous `finalizeRename` for guarded writes and cannot accidentally bypass their adapter with the production finalizer. Invalidation before this point saves no enrollment; cancellation after it suppresses stale attempt UI/leases but preserves the completed enrollment. No compensating deletion is an authority boundary. Unobserved disk edits cannot be detected atomically by an in-memory snapshot; later selections and token reads independently re-resolve both identities, preventing an old grant from authorizing a changed source.
+
+Flow's main-only metadata continuation additionally accepts `reviewedDestinations` (exact URL strings) and `discoveryContext` (shared deadline/read/byte counters), with a retained private challenge. A pending ResourceReview contains one opaque `pendingDestination:{id,url,purpose:'metadata'}`. ReviewDestination binds that exact URL/purpose to the existing source/owner/attempt/review; resuming never resets the metadata budget. The renderer sees only the existing safe opaque choice/origin. `networkFactory({purpose,url,limits})` returns a separately owned reviewed network; only disposable fixtures set the trusted function's `allowInsecureLoopback=true` property and still restrict all requests to explicitly created 127.0.0.1 origins. This property is not an IPC option. These clarifications add no renderer command, secret surface or external provider prerequisite.
 
 DiscoveryAuthCommand is the following exact discriminated union; unknown fields are rejected, identifiers are bounded, source/binding/review digests are64lowercasehex, attempt/choice IDs are unguessable opaque main values:
 

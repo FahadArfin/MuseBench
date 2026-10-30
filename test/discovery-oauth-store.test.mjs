@@ -2,7 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
+import {renameSync} from 'node:fs';
 import {storeFixture,sourceInput} from './fixtures/discovery-oauth-store.mjs';
+
+test('guarded enrollment cancels during awaited encryption temp sync or final CAS without publishing a grant',async t=>{
+ const {createDiscoveryOAuthStore}=await import('../electron/discovery-oauth-store.mjs');
+ for(const boundary of ['encrypt','sync','cas']){
+  const f=await storeFixture(t);await f.enroll();const before=await fs.readFile(f.file);await f.store.close();let valid=true,cas=0;
+  const protection={...f.protection,encrypt:async text=>{const result=await f.protection.encrypt(text);if(boundary==='encrypt')valid=false;return result;}};
+  const adapter={...f.fsAdapter,lstat:async(...args)=>{const result=await f.fsAdapter.lstat(...args);if(boundary==='cas'&&args[0]===f.file&&++cas===3)valid=false;return result;},open:async(...args)=>{const handle=await f.fsAdapter.open(...args);if(boundary==='sync'&&args[1]==='wx'){const sync=handle.sync.bind(handle);handle.sync=async()=>{await sync();valid=false;};}return handle;}};
+  f.store=await createDiscoveryOAuthStore({dataDir:f.dataDir,protection,fsAdapter:adapter,finalizeRename:renameSync});
+  // Two file lstats per CAS: invalidate at the final CAS after temp sync.
+  if(boundary==='cas')cas=0;
+  await assert.rejects(f.store.commitGrant(f.grant(),{expectedGeneration:f.store.inspect().generation,authorityGuard:()=>valid}),{code:'source-changed'});assert.deepEqual(await fs.readFile(f.file),before);await f.reopen();assert.equal(f.store.get(f.authSource).tokenGeneration,0);
+ }
+});
+test('guard is strictly synchronous and failing synchronous finalizer preserves the previous ledger',async t=>{
+ const {createDiscoveryOAuthStore}=await import('../electron/discovery-oauth-store.mjs');const f=await storeFixture(t);await f.enroll();const before=await fs.readFile(f.file);await f.store.close();f.store=await createDiscoveryOAuthStore({dataDir:f.dataDir,protection:f.protection,fsAdapter:f.fsAdapter,finalizeRename:()=>{throw Error('fixture finalizer failure');}});
+ for(const authorityGuard of [()=>false,()=>Promise.resolve(true),()=>{throw Error('PRIVATE_GUARD_FAILURE');}])await assert.rejects(f.store.commitGrant(f.grant(),{expectedGeneration:f.store.inspect().generation,authorityGuard}),{code:'source-changed'});
+ await assert.rejects(f.store.commitGrant(f.grant(),{expectedGeneration:f.store.inspect().generation,authorityGuard:()=>true}),{code:'storage-unavailable'});assert.deepEqual(await fs.readFile(f.file),before);await f.reopen();assert.equal(f.store.get(f.authSource).tokenGeneration,0);
+});
+test('guarded commit linearizes synchronous rename and memory publication before later cancellation',async t=>{
+ const {createDiscoveryOAuthStore}=await import('../electron/discovery-oauth-store.mjs');const f=await storeFixture(t);await f.store.close();let valid=true;f.store=await createDiscoveryOAuthStore({dataDir:f.dataDir,protection:f.protection,fsAdapter:f.fsAdapter,finalizeRename:(from,to)=>{renameSync(from,to);queueMicrotask(()=>valid=false);}});const saved=await f.store.commitGrant(f.grant(),{expectedGeneration:0,authorityGuard:()=>valid});assert.equal(valid,false);assert.equal(f.store.get(f.authSource).binding.bindingRevision,saved.binding.bindingRevision);await f.reopen();assert.equal(f.store.get(f.authSource).binding.bindingRevision,saved.binding.bindingRevision);
+});
 
 test('same-scope token rotation preserves auth binding and saved native identity',async t=>{
  const f=await storeFixture(t),initial=await f.enroll(),tx=await f.store.beginRefresh(initial.binding.bindingRevision,{expectedTokenGeneration:0});

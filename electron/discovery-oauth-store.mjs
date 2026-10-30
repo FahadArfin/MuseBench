@@ -1,5 +1,5 @@
 import * as filesystem from 'node:fs/promises';
-import {constants} from 'node:fs';
+import {constants,renameSync} from 'node:fs';
 import path from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {normalizeAuthBinding} from '../src/runtime/discovery-auth-identity.mjs';
@@ -46,7 +46,7 @@ function envelope(value){
 }
 
 /** Main owns one instance under the app's single-instance lock. No network here. */
-export async function createDiscoveryOAuthStore({dataDir,protection,fsAdapter=filesystem,now=Date.now}){
+export async function createDiscoveryOAuthStore({dataDir,protection,fsAdapter=filesystem,finalizeRename=fsAdapter===filesystem?renameSync:undefined,now=Date.now}){
  const fs=fsAdapter;
  if(typeof dataDir!=='string'||!path.isAbsolute(dataDir))throw failure();
  const dir=path.resolve(dataDir),file=path.join(dir,'discovery-oauth.bin');
@@ -88,7 +88,7 @@ export async function createDiscoveryOAuthStore({dataDir,protection,fsAdapter=fi
   try{const current=await readCurrent();if((current===null?null:hash(current))!==fileDigest)throw failure('storage-conflict');}
   catch{status='unavailable';throw failure('storage-conflict');}
  }
- async function save(next){
+ async function save(next,{authorityGuard}={}){
   if(status!=='ready')throw failure();
   next=envelope(next);const plaintext=JSON.stringify(next);let tmp,handle;
   try{
@@ -96,10 +96,19 @@ export async function createDiscoveryOAuthStore({dataDir,protection,fsAdapter=fi
    const bytes=await protection.encrypt(plaintext);if(!Buffer.isBuffer(bytes)||bytes.length<1||bytes.length>MAX_BYTES)throw failure('storage-full');
    await fs.mkdir(dir,{recursive:true,mode:0o700});await validateDirectory();
    tmp=path.join(dir,`.discovery-oauth-${randomUUID()}.tmp`);handle=await fs.open(tmp,'wx',0o600);await handle.writeFile(bytes);await handle.sync();await handle.close();handle=null;
-   await compareFile();await fs.rename(tmp,file);tmp=null;
-   // No fallible operation may follow the durable rename before publishing memory.
-   record=next;fileDigest=hash(bytes);
-  }catch(error){if(error?.code==='storage-full'||error?.code==='storage-conflict')throw error;throw failure();}
+   await compareFile();
+   if(authorityGuard!==undefined){
+    // Guard + atomic replace + memory publication form one synchronous commit point.
+    // A custom async fs adapter must supply its own explicit synchronous finalizer.
+    if(typeof authorityGuard!=='function')throw failure('source-changed');if(typeof finalizeRename!=='function')throw failure();
+    let approved=false;try{const result=authorityGuard();if(result&&typeof result.then==='function')Promise.resolve(result).catch(()=>{});approved=result===true;}catch{}if(!approved)throw failure('source-changed');
+    const committedDigest=hash(bytes);finalizeRename(tmp,file);tmp=null;record=next;fileDigest=committedDigest;
+   }else{
+    await fs.rename(tmp,file);tmp=null;
+    // No fallible operation may follow the durable rename before publishing memory.
+    record=next;fileDigest=hash(bytes);
+   }
+  }catch(error){if(['storage-full','storage-conflict','source-changed'].includes(error?.code))throw error;throw failure();}
   finally{if(handle)await handle.close().catch(()=>{});if(tmp)await fs.unlink(tmp).catch(()=>{});}
  }
  function queue(action){
@@ -137,10 +146,10 @@ export async function createDiscoveryOAuthStore({dataDir,protection,fsAdapter=fi
    if(closed||status!=='ready'||!object(authSourceRef))return null;
    const g=record.grants.findLast(g=>g.binding.sourceId===authSourceRef.sourceId&&g.binding.authSourceIdentity===authSourceRef.authSourceIdentity&&(bindingRevision===undefined||g.binding.bindingRevision===bindingRevision));return g?publicPrivateRead(g):null;
   },
-  commitGrant(value,{expectedGeneration}={}){return queue(async()=>{
+  commitGrant(value,{expectedGeneration,authorityGuard}={}){return queue(async()=>{
    expected(expectedGeneration);const g=grant(value);if(g.phase!=='ready')throw failure('invalid-grant');
    const existing=record.grants.find(v=>v.binding.grantId===g.binding.grantId);if(existing&&(existing.phase==='refresh-in-flight'||existing.binding.bindingRevision!==g.binding.bindingRevision))throw failure('invalid-grant');
-   const grants=record.grants.filter(v=>v.binding.grantId!==g.binding.grantId);grants.push(g);await save(next(grants));return clone(g);
+   const grants=record.grants.filter(v=>v.binding.grantId!==g.binding.grantId);grants.push(g);await save(next(grants),{authorityGuard});return clone(g);
   });},
   beginRefresh(bindingRevision,{expectedTokenGeneration}={}){return queue(async()=>{
    const g=findBinding(bindingRevision);if(g.phase!=='ready'||g.tokenGeneration!==expectedTokenGeneration||!g.tokens.refreshToken)throw failure('invalid-grant');
