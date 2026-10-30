@@ -1,4 +1,5 @@
 import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
+import {restoreContextUsage} from '../shared/native-context-usage.mjs';
 import {normalizeWorkspaceToolset} from '../shared/workspace-analysis.mjs';
 import {createWorkspaceToolActivity} from '../shared/workspace-tool-activity.mjs';
 import {projectRuntimeStatus} from './status.mjs';
@@ -166,7 +167,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const listeners=new Set();
  const snapshot=()=>structuredClone({...state,connectionEpoch:epoch});
  const emit=()=>{for(const fn of listeners){try{fn(snapshot());}catch{/* A renderer observer is never a protocol authority. */}}};
- const update=patch=>{state={...state,...patch,pendingRequests:pendingView()};emit();};
+ const update=patch=>{state={...state,...patch,pendingRequests:pendingView()};if(state.contextUsage&&(!state.permissionVerified||state.sessionId!==state.contextUsage.sessionId))state.contextUsage={...state.contextUsage,connected:false};emit();};
  const syncChildren=()=>{const view=children.snapshot();if(usable.has(adapter?.snapshot().status)&&view.items.some(childWorking))awaitingChildReport=true;for(const [key,target] of childWork){const i=view.items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&childWorking(i))childWork.delete(key);}update({children:view,childrenBusy:view.items.some(childWorking)||childWork.size>0||awaitingChildReport,childWorkPending:childWork.size});if(adapter)syncAdapter(adapter.snapshot());};
  const interruptChildCommands=()=>update({childReceipts:(state.childReceipts??[]).map(r=>r.status==='submitting'?{...r,status:'unknown',reason:'Connection lost before command admission was confirmed.'}:r)});
  const syncCompaction=()=>{const receipt=compaction.snapshot();if(!compaction.pending())clearTimeout(compactionTimer);update({compaction:receipt,contextCompactions:compaction.history(),operationBusy:compaction.pending()});};
@@ -183,6 +184,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const childrenActive=children.snapshot().items.some(childWorking)||childWork.size>0;
   const childrenBusy=childrenActive||awaitingChildReport;
   const status=terminalUnavailable?s.status:blockedReason?'blocked':connecting&&s.status==='idle'?'checking-permissions':terminal&&childrenBusy?'running':s.status;
+  const contextUsage=restoreContextUsage(s.contextUsage);if(contextUsage)contextUsage.connected=!terminalUnavailable&&state.permissionVerified&&s.sessionId===contextUsage.sessionId;
+  state={...state,contextUsage};
   update({status,activity:workspaceActivity.snapshot(),childrenBusy,childWorkPending:childWork.size,foregroundActive:s.status==='running',rootTurnId:s.rootTurnId,ownedTurnIds:s.ownedTurnIds,ownedRunIds:s.ownedTurnIds,reason:terminalUnavailable?s.reason:blockedReason??s.reason,sessionId:s.sessionId,turnId:s.turnId,runId:s.turnId,nativeSessionId:s.sessionId,inputAccepted:!!s.turnId,sessionSeeded:state.sessionSeeded||!!s.turnId||s.restoration?.status==='restored',restoration:s.restoration??null,restoringRequests:restoreAwaiting.size,restoredMessages:s.restoredMessages??[],viewCursor:s.viewCursor,cleanup:['completed','failed','cancelled'].includes(status)?'confirmed':undefined,liveVerified:state.liveVerified||status==='completed',messages:s.messages,pending:displayPending(pending,pendingRevision),permissionVerified:terminalUnavailable?false:state.permissionVerified});
  };
  const release=async()=>{

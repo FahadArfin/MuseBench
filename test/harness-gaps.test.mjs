@@ -20,6 +20,33 @@ async function fixture(t,{node=true,background=false}={}){
 }
 const start=async c=>{const result=await c.dispatch({type:'newTask',request:'Build a helpful tool',mode:'muse'});assert.equal(result.error,null);return result.task.id;};
 const wait=async predicate=>{for(let i=0;i<50;i++){if(predicate())return;await new Promise(r=>setTimeout(r,10));}assert.fail('Timed out waiting for queue');};
+const contextReading=(usedTokens=40)=>({sessionId:'context-session',viewCursor:'usage-'+usedTokens,source:'live',observedAt:'2026-10-30T12:00:00.000Z',usedTokens,windowTokens:100,pressure:'normal',connected:true});
+test('context reading uses the durable task row after an interrupted app snapshot write',async t=>{
+ const {c,dataDir}=await fixture(t),taskId=await start(c);await c.close();
+ const db=new DatabaseSync(join(dataDir,'musebench.sqlite'));try{
+  const app=JSON.parse(db.prepare('SELECT json FROM app WHERE id=1').get().json),task=JSON.parse(db.prepare('SELECT json FROM tasks WHERE id=?').get(taskId).json);
+  app.task.nativeContextUsage=contextReading(80);task.nativeContextUsage=contextReading(10);
+  db.prepare('UPDATE app SET json=? WHERE id=1').run(JSON.stringify(app));db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(task),taskId);
+ }finally{db.close();}
+ const reopened=await createController({dataDir,runtime:fakeRuntime()});try{assert.equal(reopened.getState().task.nativeContextUsage.usedTokens,10);assert.equal(reopened.getState().task.nativeContextUsage.connected,false);}finally{await reopened.close();}
+});
+test('missing, foreign or disconnected context facts never promote a saved reading',async t=>{
+ const {c,runtime}=await fixture(t);await start(c);
+ runtime.emit({status:'idle',transport:'msp',sessionId:'context-session',permissionVerified:true,contextUsage:contextReading()});assert.equal(c.getState().task.nativeContextUsage.connected,true);
+ for(const patch of [{contextUsage:null},{contextUsage:{...contextReading(90),sessionId:'foreign'}},{contextUsage:contextReading(90),permissionVerified:false}]){runtime.emit(patch);assert.equal(c.getState().task.nativeContextUsage.usedTokens,40);assert.equal(c.getState().task.nativeContextUsage.connected,false);}
+});
+test('context readings follow their chat and restart as saved, never as live',async t=>{
+ const {c,runtime,dataDir}=await fixture(t,{background:true}),first=await start(c);
+ runtime.emit({status:'idle',transport:'msp',sessionId:'context-session',permissionVerified:true,contextUsage:contextReading()});assert.equal(c.getState().task.nativeContextUsage.usedTokens,40);
+ const second=await start(c);runtime.emit({contextUsage:contextReading(20)});assert.equal(c.getState().task.nativeContextUsage??null,null);
+ await c.dispatch({type:'selectTask',id:first});assert.equal(c.getState().task.nativeContextUsage.usedTokens,20);await c.close();
+ const reopened=await createController({dataDir,runtime:fakeRuntime()});try{assert.equal(reopened.getState().task.nativeContextUsage.usedTokens,20);assert.equal(reopened.getState().task.nativeContextUsage.connected,false);await reopened.dispatch({type:'selectTask',id:second});assert.equal(reopened.getState().task.nativeContextUsage??null,null);}finally{await reopened.close();}
+});
+for(const background of [false,true])test(`context reading cannot leak into a deleted chat successor (${background})`,async t=>{
+ const {c,runtime,runtimes}=await fixture(t,{background}),first=await start(c);
+ runtime.emit({status:'idle',transport:'msp',sessionId:'context-session',permissionVerified:true,contextUsage:contextReading()});assert.equal(c.getState().task.nativeContextUsage.usedTokens,40);
+ assert.equal((await c.dispatch({type:'deleteTask',id:first,allowUnarchived:true})).error,null);await start(c);runtime.emit({status:'idle',permissionVerified:true,contextUsage:contextReading(50)});assert.equal(c.getState().task.nativeContextUsage??null,null);
+});
 
 test('update restart guard covers inactive chats and releases only after native work settles',async t=>{
  const {c,runtime}=await fixture(t,{background:true});await start(c);assert.equal(c.canRestartForUpdate(),true);await c.dispatch({type:'sendMessage',text:'Work'});assert.equal(c.canRestartForUpdate(),false);await start(c);assert.equal(c.canRestartForUpdate(),false);runtime.finish();assert.equal(c.canRestartForUpdate(),true);

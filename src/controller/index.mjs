@@ -1,4 +1,5 @@
 import {mergeCompactionHistory,interruptCompactionHistory} from '../shared/compaction-history.mjs';
+import {restoreContextUsage} from '../shared/native-context-usage.mjs';
 import {createAnalyticsStore} from './analytics.mjs';
 import {normalizeWorkspaceToolset} from '../shared/workspace-analysis.mjs';
 import {createSemanticNavigation} from './semantic-navigation.mjs';
@@ -71,7 +72,7 @@ function mergeShellResults(previous,incoming,runId){
   return recent.reverse();
 }
 function restoreTask(record,knownProjectId){
-  const task=structuredClone(record);task.contextCompactions=interruptCompactionHistory(task.contextCompactions);
+  const task=structuredClone(record);task.contextCompactions=interruptCompactionHistory(task.contextCompactions);task.nativeContextUsage=restoreContextUsage(task.nativeContextUsage);
   if(!task.projectId&&knownProjectId)task.projectId=knownProjectId;
   const validDate=value=>typeof value==='string'&&Number.isFinite(Date.parse(value));
   task.steeringReceipts=(Array.isArray(task.steeringReceipts)?task.steeringReceipts:[]).filter(r=>r&&['commandId','turnId','status','text','at'].every(k=>typeof r[k]==='string')).slice(-20).map(r=>({...r,text:r.text.slice(0,16000)}));
@@ -210,6 +211,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const persistedTask=taskRecords.get(state.task.id),persistedQueue=persistedTask?.promptQueue;
     if(persistedQueue){state.task.promptQueue=structuredClone(persistedQueue);state.task.queueHold=persistedQueue.length>0;}
     state.task.contextCompactions=mergeCompactionHistory(state.task.contextCompactions,persistedTask?.contextCompactions);
+    if(persistedTask)state.task.nativeContextUsage=restoreContextUsage(persistedTask.nativeContextUsage);
     if(!knownProject||state.task.projectId!==knownProject.id){state.task=null;state.error='The saved task has no valid project association. Select a project to continue.';}
     else taskRecords.set(state.task.id,structuredClone(state.task));
   }
@@ -230,6 +232,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       // this chat's saved identities may reconcile across a later connection.
       const known=new Set(mergeCompactionHistory([],task?.contextCompactions).map(compactionKey));
       owner.compactionExcluded=new Set(mergeCompactionHistory([],owner.runtime?.snapshot?.().contextCompactions).map(compactionKey).filter(key=>!known.has(key)));
+      const prior=owner.runtime?.snapshot?.().contextUsage;
+      owner.contextExcludedSession=prior?.sessionId!==task?.nativeContextUsage?.sessionId?prior?.sessionId:null;
     }
     owner.task=task;owner.compactionTaskId=task?.id??null;if(task)owner.everOwned=true;
   };
@@ -736,6 +740,12 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;owner.workIdentity=workIdentity(next);if(selected)state.runtime=structuredClone(next);const inboxEvents=[];
     if(task&&next.childReceipts?.length){for(const receipt of next.childReceipts)task.childControlReceipts=[...(task.childControlReceipts??[]).filter(r=>r.commandId!==receipt.commandId),structuredClone(receipt)].slice(-40);saveRecord(task);}
     if(task&&owner.compactionTaskId===task.id&&contexts.get(task.id)===owner&&next.contextCompactions?.length){const admitted=mergeCompactionHistory([],next.contextCompactions).filter(row=>!owner.compactionExcluded.has(compactionKey(row))),history=mergeCompactionHistory(task.contextCompactions,admitted);if(JSON.stringify(history)!==JSON.stringify(task.contextCompactions)){task.contextCompactions=history;saveRecord(task);}}
+    if(task&&owner.compactionTaskId===task.id&&contexts.get(task.id)===owner){
+      const admitted=restoreContextUsage(next.contextUsage),saved=restoreContextUsage(task.nativeContextUsage);
+      const live=admitted&&next.transport==='msp'&&next.permissionVerified&&next.contextUsage.connected===true&&next.sessionId===admitted.sessionId&&admitted.sessionId!==owner.contextExcludedSession&&!['unavailable','uncertain','closed'].includes(next.status);
+      const reading=live?{...admitted,connected:true}:saved;
+      if(JSON.stringify(reading)!==JSON.stringify(task.nativeContextUsage??null)){task.nativeContextUsage=reading;saveRecord(task);}
+    }
     if(task&&next.compaction?.commandId){task.compactionReceipts=[...(task.compactionReceipts??[]).filter(r=>r.commandId!==next.compaction.commandId),structuredClone(next.compaction)].slice(-20);saveRecord(task);}
     if(task&&next.inputResponse?.userInputId){
       const receipt=next.inputResponse,key=`input:${receipt.sessionId}:${receipt.userInputId}`;

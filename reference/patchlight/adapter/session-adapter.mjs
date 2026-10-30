@@ -1,6 +1,7 @@
 import {isAbsolute} from 'node:path';
 import {compatibility} from './compatibility.mjs';
 import {terminalReason} from './diagnostics.mjs';
+import {normalizeContextUsage,validContextSourceRange} from '../../../src/shared/native-context-usage.mjs';
 
 const usable = new Set(['idle','completed','failed','cancelled']);
 const halted = new Set(['unavailable','uncertain','closed','blocked']);
@@ -13,7 +14,7 @@ const str = v => typeof v==='string' && v.length>0;
  * The controller must render strings as text, not trusted HTML.
  */
 export class MuseSessionAdapter {
- #connection; #state; #messages=new Map(); #seen=new Map(); #buffer=[];
+ #connection; #state; #messages=new Map(); #seen=new Map(); #contextSeen=new Map(); #buffer=[];
  #epoch=0; #timeout; #listeners=new Set(); #maxEvents; #maxText; #allowContinuation; #durable; #queuedTurns=new Set(); #observeToolItem; #observeContextItem;
  constructor({connection,sdkVersion,initializeResult,fullAccess=false,allowContinuation=()=>false,observeToolItem=null,observeContextItem=null,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
   this.#allowContinuation=allowContinuation;
@@ -22,7 +23,7 @@ export class MuseSessionAdapter {
   this.#durable=initializeResult?.sessionDurability===undefined||initializeResult.sessionDurability==='durable';
   this.#connection=connection;this.#timeout=timeoutMs;this.#maxEvents=maxEvents;this.#maxText=maxText;
   const gate=compatibility({sdkVersion,initializeResult,fullAccess});
-  this.#state={status:gate.available&&connection?'ready':'unavailable',reason:connection?gate.reason:'runtime-unavailable',sessionId:null,turnId:null,mode:null,planReadOnlyEnforced:false,tests:'not-run',outcome:null,liveVerified:false};
+  this.#state={status:gate.available&&connection?'ready':'unavailable',reason:connection?gate.reason:'runtime-unavailable',sessionId:null,turnId:null,mode:null,planReadOnlyEnforced:false,tests:'not-run',outcome:null,liveVerified:false,contextUsage:null};
   if(this.#state.status==='unavailable')return;
   if(!['command','mintCommandId','onNotification','onServerRequest','onProtocolError'].every(k=>typeof connection[k]==='function')){this.disconnect('invalid-sdk-connection');return;}
   connection.onNotification(frame=>this.#receive(frame));
@@ -92,6 +93,7 @@ export class MuseSessionAdapter {
   for(const turn of queued){if(!str(turn.turnId))throw Error('Invalid restored queued turn');this.#queuedTurns.add(turn.turnId);}
   this.#state.status=s.status;this.#state.turnId=s.activeTurnId;this.#state.rootTurnId=s.activeTurnId;this.#state.ownedTurnIds=s.activeTurnId?[s.activeTurnId]:[];
   this.#state.restoredMessages=messages;this.#state.restoredChildren=children;this.#state.restoredCompactions=compactions;
+  this.#state.contextUsage=['snapshot','anchoredSnapshot'].includes(h.mode)?normalizeContextUsage(h.snapshot.state.contextUsage,{sessionId:s.sessionId,viewCursor:result.viewCursor,source:'restored',observedAt:new Date().toISOString()}):null;
   this.#state.restoration={status:'restored',sessionId:s.sessionId,viewCursor:result.viewCursor,historyMode:h.mode,pendingRequests:pointers,activeTurnId:s.activeTurnId,queuedTurnIds:[...this.#queuedTurns],turnCount:s.turnCount};
   for(const item of tools)this.#projectTool(item);
  }
@@ -141,15 +143,24 @@ export class MuseSessionAdapter {
   if(method==='approval/requested'||method==='userInput/requested'){
    this.#state.pending=structuredClone(p);this.#halt('blocked',method==='approval/requested'?'approval-ui-unavailable':'input-ui-unavailable');return;
   }
-  const recognized=['turn/started','turn/completed','item/started','item/updated','item/delta','item/completed'];
+  const recognized=['session/contextUsage','turn/started','turn/completed','item/started','item/updated','item/delta','item/completed'];
   if(!recognized.includes(method))return;
   if(method==='item/updated'&&!messageKinds.has(p.item?.kind)&&!(this.#observeToolItem&&p.item?.kind==='toolCall')&&!(this.#observeContextItem&&p.item?.kind==='compaction'))return;
   if(!str(p.viewCursor)){this.disconnect('missing-event-cursor');return;}
   const payload=JSON.stringify(frame);
+  // Context facts are session scoped: turn submission must not erase their
+  // replay/conflict guard. Cursors are opaque and are never sorted as strings.
+  if(this.#contextSeen.has(p.viewCursor)){if(this.#contextSeen.get(p.viewCursor)!==payload)this.disconnect('conflicting-event-cursor');return;}
   if(this.#seen.has(p.viewCursor)){if(this.#seen.get(p.viewCursor)!==payload)this.disconnect('conflicting-event-cursor');return;}
   if(this.#seen.size>=this.#maxEvents){this.disconnect('event-limit');return;}
   this.#seen.set(p.viewCursor,payload);
   this.#state.viewCursor=p.viewCursor;
+  if(method==='session/contextUsage'){
+   if(this.#contextSeen.size>=this.#maxEvents){this.disconnect('event-limit');return;}
+   this.#contextSeen.set(p.viewCursor,payload);
+   this.#state.contextUsage=validContextSourceRange(p.sourceRange)?normalizeContextUsage(p,{sessionId:p.sessionId,viewCursor:p.viewCursor,source:'live',observedAt:new Date().toISOString()}):null;
+   this.#emit();return;
+  }
   if(method.startsWith('turn/')){
    if(p.turnId!==this.#state.turnId){
     // Only the owner of this exclusive session can opt into native child-reporting

@@ -9,6 +9,13 @@ import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/run
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
+test('native context freshness follows the owned connection and reconnect never revives a saved reading',async t=>{
+ const h=await harness(t),frame={method:'session/contextUsage',params:{sessionId:'session-one',viewCursor:'context-1',usedTokens:42,windowTokens:100,pressure:'normal',sourceRange:{stream:{id:'stream',kind:'session'},first:{id:'r',sequence:1},last:{id:'r',sequence:1}}}};
+ let oldNotify;const register=h.host.connection.onNotification;h.host.connection.onNotification=fn=>{oldNotify=fn;register(fn);};
+ await h.connect();const obsoleteNotify=oldNotify;h.emit(frame);assert.equal(h.runtime.snapshot().contextUsage.usedTokens,42);assert.equal(h.runtime.snapshot().contextUsage.connected,true);
+ await h.runtime.disconnect();assert.equal(h.runtime.snapshot().contextUsage.connected,false);h.emit({...frame,params:{...frame.params,viewCursor:'late',usedTokens:99}});assert.equal(h.runtime.snapshot().contextUsage.usedTokens,42);
+ await h.connect();assert.equal(h.runtime.snapshot().contextUsage,null);obsoleteNotify({...frame,params:{...frame.params,viewCursor:'old-connection',usedTokens:99}});assert.equal(h.runtime.snapshot().contextUsage,null);
+});
 test('interactive compact status follows native lifecycle without transcript clones',async t=>{
  const h=await harness(t);assert.equal(typeof h.runtime.statusSnapshot,'function');
  const check=()=>{const s=h.runtime.snapshot();let copies=0;const clone=globalThis.structuredClone;const mocked=t.mock.method(globalThis,'structuredClone',value=>{copies++;return clone(value);});let actual;try{actual=h.runtime.statusSnapshot();}finally{mocked.mock.restore();}assert.equal(copies,0);assert.deepEqual(actual,{status:s.status??null,cleanup:s.cleanup??null,pending:!!s.pending,operationBusy:!!s.operationBusy,childrenBusy:!!s.childrenBusy});return actual;};

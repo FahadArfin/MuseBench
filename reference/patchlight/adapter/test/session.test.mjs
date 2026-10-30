@@ -5,6 +5,29 @@ const root=sessionResult.session.workspaceRoot;
 async function setup(options={}){const port=new FixturePort();const adapter=new MuseSessionAdapter({connection:port,...descriptor(),timeoutMs:50,...options});await adapter.open(root);return {adapter,port};}
 const event=(method)=>structuredClone(events.find(e=>e.method===method));
 const mcpFailure='invalid run configuration: Required MCP server `musebench_workspace` failed during startup: the configured command is unavailable.';
+const usageFrame=(viewCursor='usage-1',extra={})=>({method:'session/contextUsage',params:{sessionId:sessionResult.session.sessionId,viewCursor,usedTokens:40,windowTokens:100,pressure:'normal',sourceRange:{stream:{id:'stream',kind:'session'},first:{id:'record',sequence:1},last:{id:'record',sequence:1}},...extra}});
+
+test('native context readings are session owned, cursor checked and bounded across turns',async()=>{
+ const {adapter:a,port:p}=await setup();p.emit(usageFrame('foreign',{sessionId:'foreign'}));assert.equal(a.snapshot().contextUsage,null);
+ const first=usageFrame();p.emit(first);const reading=a.snapshot().contextUsage;assert.equal(reading.usedTokens,40);assert.equal(reading.source,'live');p.emit(first);assert.deepEqual(a.snapshot().contextUsage,reading);
+ await a.send({text:'Fixture'});p.emit(first);assert.deepEqual(a.snapshot().contextUsage,reading);
+ p.emit(usageFrame('usage-2',{usedTokens:10,windowTokens:undefined}));assert.equal(a.snapshot().contextUsage.usedTokens,10);assert.equal(a.snapshot().contextUsage.windowTokens,null);
+ p.emit(usageFrame('usage-1',{usedTokens:80}));assert.equal(a.snapshot().status,'unavailable');assert.equal(a.snapshot().contextUsage.usedTokens,10);
+});
+test('buffered native context and malformed occupancy never create a guessed reading',async()=>{
+ const p=new FixturePort(),a=new MuseSessionAdapter({connection:p,...descriptor()}),cmd=p.command.bind(p);
+ p.command=async(...args)=>{p.emit(usageFrame());return cmd(...args);};await a.open(root);assert.equal(a.snapshot().contextUsage.usedTokens,40);
+ p.emit(usageFrame('bad',{usedTokens:'forty'}));assert.equal(a.snapshot().contextUsage,null);
+ p.emit(usageFrame('no-provenance',{sourceRange:null}));assert.equal(a.snapshot().contextUsage,null);
+});
+test('only supported anchored restore supplies native context readings',async()=>{
+ for(const contextUsage of [{usedTokens:20,windowTokens:100,pressure:'normal'},undefined,{usedTokens:-1}]){
+  const p=new FixturePort(),a=new MuseSessionAdapter({connection:p,...descriptor()});
+  p.command=async()=>restoreResult({history:{mode:'snapshot',snapshot:{schemaVersion:1,viewCursor:'',state:{items:[],queuedTurns:[],activeTurn:null,contextUsage}}}});
+  await a.open(root,{sessionId:sessionResult.session.sessionId});assert.equal(a.snapshot().contextUsage?.usedTokens??null,contextUsage?.usedTokens===20?20:null);
+  if(a.snapshot().contextUsage)assert.equal(a.snapshot().contextUsage.source,'restored');
+ }
+});
 
 test('send reports the admission boundary without retrying unknown outcomes',async()=>{
  const {adapter,port}=await setup();
