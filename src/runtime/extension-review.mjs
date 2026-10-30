@@ -86,7 +86,7 @@ export function createExtensionReview({dataDir,profile,platform=process.platform
    }));
  }
  return {
-  async approveMcp(name,config){const value=await load();value.mcp[name]=configurationDigest(config);await atomicJson(file,value);},
+  async approveMcp(name,config,{beforeCommit}={}){const value=await load();value.mcp[name]=configurationDigest(config);await atomicJson(file,value,beforeCommit);},
   async allowMcp(name,config){try{return(await load()).mcp[name]===configurationDigest(config);}catch{return false;}},
   async projectMcpState(root,options={}){const snapshot=await projectMcpSnapshot(root,{environment,platform,...options});return{...snapshot,reviewed:snapshot.present&&(await load()).projectMcp?.[snapshot.root]===snapshot.revision};},
   async approveProjectMcp(root,revision,options={}){const snapshot=await this.projectMcpState(root,options);if(snapshot.revision!==revision)throw Error('Project MCP configuration changed after review. Refresh and review again.');if(!snapshot.present)throw Error('No project MCP configuration found.');const value=await load();value.projectMcp={...value.projectMcp,[snapshot.root]:revision};await atomicJson(file,value,options.beforeCommit);},

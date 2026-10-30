@@ -15,6 +15,7 @@ import {customizeBlocked} from '../src/shared/customize-policy.mjs';
 import {atomicJson,optionalText,treeDigest,createExtensionReview,configurationDigest} from '../src/runtime/extension-review.mjs';
 import {settingsMcp,mcpSettingsPath,mcpTransport,canonicalMcpEntry} from '../src/runtime/project-mcp.mjs';
 import {createPluginCapabilities} from './plugin-capabilities.mjs';
+import {createIntegrationPanels} from './integration-panels.mjs';
 
 const clean=(value,max=500)=>typeof value==='string'?value.replace(/[\u0000-\u001f\u007f]/g,' ').slice(0,max):'';
 const idOK=value=>typeof value==='string'&&/^[a-zA-Z0-9][\w:./-]{0,199}$/.test(value)&&!value.includes('..');
@@ -53,6 +54,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  const importsFile=path.join(dataDir,'skill-imports.json');
  const imports=async()=>{try{const value=JSON.parse(await optionalText(importsFile)??'[]');return Array.isArray(value)?value.slice(-100):[];}catch{return[];}};
  const pending=new Map(),processes=new Map();let busy=false,closed=false,lastSkillCatalog;
+ const integrationPanels=createIntegrationPanels({settings,writeSettings,review,getState,isActive,isClosed:()=>closed});
  async function catalogService(){return catalog??= (await import('./extension-catalog.mjs')).createExtensionCatalog({dataDir});}
  async function removeStage(folder){await(await import('./extension-staging.mjs')).removeCatalogStage(folder,{dataDir});}
  async function clearPending(){const items=[...pending.values()];pending.clear();await Promise.all(items.filter(item=>item.catalog).map(item=>removeStage(item.folder)));}
@@ -67,7 +69,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  }
  async function settings(){const source=await optionalText(settingsPath);let config;try{config=source===null?{}:JSON.parse(source);}catch{throw Error('Muse settings are invalid. Correct settings.json before changing extensions.');}const {key,servers}=settingsMcp(config);return{source,config,key,servers};}
  function addServer(config,name,entry){const {key,servers}=settingsMcp(config);config[key]={...servers,[name]:key==='mcpServers'?canonicalMcpEntry(entry):entry};return config[key][name];}
- async function writeSettings(original,config){
+ async function writeSettings(original,config,beforeCommit=()=>{}){
   if(await optionalText(settingsPath)!==original)throw Error('Muse settings changed elsewhere. Refresh and try again.');
   // Follow an existing symlink, like Muse itself, without replacing the link.
   let target=settingsPath;try{if((await lstat(target)).isSymbolicLink())target=await realpath(target);}catch(error){if(error.code!=='ENOENT')throw error;}
@@ -76,7 +78,7 @@ export function createCustomize({getState,environment=process.env,dataDir,review
   // Muse requires this marker even in a file containing only MCP servers.
   // Repair older app-created files only on a reviewed edit; preserve any
   // explicit version and all unrelated settings exactly as supplied.
-  await atomicJson(target,{schema_version:1,...config},async()=>{if(await optionalText(settingsPath)!==original)throw Error('Muse settings changed elsewhere. Refresh and try again.');if(original!==null&&await realpath(settingsPath)!==await realpath(target))throw Error('Muse settings path changed elsewhere. Refresh and try again.');});
+  await atomicJson(target,{schema_version:1,...config},async()=>{await beforeCommit();if(await optionalText(settingsPath)!==original)throw Error('Muse settings changed elsewhere. Refresh and try again.');if(original!==null&&await realpath(settingsPath)!==await realpath(target))throw Error('Muse settings path changed elsewhere. Refresh and try again.');});
  }
  function plugins(value){return(value.plugins??[]).filter(item=>idOK(item.record?.id)).slice(0,250).map(item=>({id:item.record.id,title:clean(item.record.display_name||item.record.id,200),description:clean(item.record.description,800),version:clean(item.record.version,60),enabled:item.record.enabled===true,valid:item.valid===true,capabilities:capabilities(item.plugin?.capabilities),reviewRequired:!item.active}));}
  function capabilities(value){return Object.entries(value??{}).filter(([,items])=>Array.isArray(items)&&items.length).map(([kind,items])=>({kind:clean(kind,60),count:items.length}));}
@@ -127,9 +129,10 @@ export function createCustomize({getState,environment=process.env,dataDir,review
  }
  async function dispatch(command){
   if(closed)throw Error('Customize is closed.');
-  const supported=['inspectPluginMcp','pluginMcpAction','inspectProjectMcp','approveProjectMcp','revokeProjectMcp','catalogSearch','prepareCatalog','catalogServer','saveHookPreset','deleteHookPreset','saveHooks','refresh','inspectProject','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
+  const supported=['inspectIntegrationPanel','prepareIntegrationPanel','applyIntegrationPanel','inspectPluginMcp','pluginMcpAction','inspectProjectMcp','approveProjectMcp','revokeProjectMcp','catalogSearch','prepareCatalog','catalogServer','saveHookPreset','deleteHookPreset','saveHooks','refresh','inspectProject','reviewProject','approveProject','revokeProject','preparePackSkill','prepareSkill','preparePlugin','install','skillActivation','createSkill','pluginAction','reviewPlugins','saveServer','serverAction'];
   if(!object(command)||!supported.includes(command.type)||JSON.stringify(command).length>40000)throw Error('Unsupported Customize action.');
   if(command.type==='refresh')return{state:await snapshot()};
+  if(command.type==='inspectIntegrationPanel')return{integrationPanel:await integrationPanels.inspect(command)};
   if(command.type==='inspectPluginMcp')return{pluginMcp:await pluginCapabilities.inspect(command.id)};
   if(command.type==='inspectProjectMcp'){
    const root=getState().activeProject?.root;if(!root)throw Error('Choose a project first.');
@@ -154,6 +157,8 @@ export function createCustomize({getState,environment=process.env,dataDir,review
   if(customizeBlocked(getState())||isActive())throw Error('Let the running task finish and confirm it has stopped before changing extensions.');
   busy=true;
   try{
+   if(command.type==='prepareIntegrationPanel')return{integrationReview:await integrationPanels.prepare(command)};
+   if(command.type==='applyIntegrationPanel'){const result=await integrationPanels.apply(command);return{...result,state:await snapshot()};}
    if(command.type==='pluginMcpAction')return{pluginMcp:await pluginCapabilities.decide(command),state:await snapshot(),message:command.action==='approve'?'Plugin access approved. Reconnect Muse to load it.':'Plugin access revoked. Reconnect Muse before continuing.'};
    if(command.type==='approveProjectMcp'||command.type==='revokeProjectMcp'){
     const root=getState().activeProject?.root;if(!root||command.root!==root)throw Error('The selected project changed. Inspect it again.');
@@ -243,5 +248,5 @@ export function createCustomize({getState,environment=process.env,dataDir,review
    return{state:await snapshot(),message:command.type==='serverAction'&&command.action==='login'?'Muse completed the OAuth sign-in.':'Saved. Changes apply to the next Muse run.'};
   }finally{busy=false;}
  }
- return{snapshot,dispatch,isBusy:()=>busy,async close(){closed=true;for(const abort of processes.keys())abort.abort();await Promise.allSettled([...processes.values()]);await clearPending();}};
+ return{snapshot,dispatch,isBusy:()=>busy,async close(){closed=true;integrationPanels.close();for(const abort of processes.keys())abort.abort();await Promise.allSettled([...processes.values()]);await clearPending();}};
 }
