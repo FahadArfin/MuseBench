@@ -1,6 +1,6 @@
 # On-demand tool discovery validation
 
-Production scope: explicitly reviewed disabled global stdio definitions, pinned Muse host/SDK 1.4.14. The earlier spike established the native session capability; this implementation owns its source review, protocol, process lifetime, controller, shared connection UI and restoration behavior.
+Production scope: explicitly reviewed disabled global stdio and configured-header/no-auth remote definitions, pinned Muse host/SDK 1.4.14. The earlier spike established the native session capability; this implementation owns its source review, protocol, process lifetime, controller, shared connection UI and restoration behavior.
 
 The production native scripted contract uses disposable settings, inert local MCP servers and a localhost Responses endpoint. It performs no model inference or external relay and copies no personal credentials. It verifies approved search and invocation, exact source cwd/environment and owning `MUSE_SESSION_ID`, one selected source process, one downstream call, no direct duplicate, and a native denied call with zero additional downstream invocations. Its required gateway has a separate broker-owned validation worker; that worker is an additional ownership process, not another downstream source.
 
@@ -15,7 +15,7 @@ Focused checks:
 - Build an isolated directory package, then run `node scripts/discovery-packaged-contract.mjs --local-fixture` to execute the gateway and worker from its exact ASAR under its packaged executable, using its packaged Windows helper. Reports are under ignored `artifacts/native-discovery-packaged-contract/`.
 - For exact installed renderer acceptance, set `MUSEBENCH_EXECUTABLE` to the installed executable and run `node scripts/discovery-tools-smoke.mjs --desktop`. The test serves that executable's exact ASAR renderer bytes with simulated bridge data, records their digest, uses an isolated profile and blocks external network access. It is labelled `installed`; source fixture evidence is labelled separately. The packaged native contract accepts the same override.
 
-Real model tool selection remains separate acceptance. This deliverable does not claim HTTP/OAuth support, enabled direct wrapping, shell-script command emulation, arbitrary plugin replacement, unsupported schema semantics or production release installation.
+Real model tool selection remains separate acceptance. This deliverable does not claim app-owned OAuth support, enabled direct wrapping, shell-script command emulation, arbitrary plugin replacement, unsupported schema semantics or production release installation.
 
 
 ## Integrated final verification
@@ -27,3 +27,10 @@ Final integrated source: `918b552ff17cb0043b7c327677827da78dc91854`; tree `c6a38
 Both source and exact-ASAR native contracts passed with 14 scripted loopback requests each, zero inference, one downstream invocation, no direct-original duplicate, native denial adding zero downstream invocations, stopped descendants and confirmed cleanup. The package verifier matched all 175 production code/build files, the packaged helper and renderer digests. The parent independently rechecked the 175 source/build hashes and both native receipt hashes against that immutable tree.
 
 Source native receipt SHA-256: `743941ae88aa5ef8eedab73a6e3d6778a4fade4f1db3b13fc4d33a098e394bb6`. Package native receipt SHA-256: `5d21c216abbce082bf45ea3b11a92bcbc38217483a64bbd448168db2e203028f`. Isolated package ASAR SHA-256: `948836b6ff61eebff8cda6f01556e370636a16b2382e79688b85e308c56f9b5d`. Logs, manifests and reviews are retained under ignored `artifacts/tool-discovery-fix-wave/` and `.superpowers/sdd/2026-10-30-tool-discovery/` in the integration checkout. These are package acceptance receipts, not a published or installed-release claim. Final delivery verifies the exact GitHub installer and installed executable separately.
+
+
+## Remote continuation, 30 October 2026
+
+See [remote transport evidence](validation/2026-10-30-remote-discovery.md) for current-only/older/historical actual HTTP fixtures, exact-source consent/privacy, pre-parse network bounds, once-only unknown receipts and shared mixed-source controls. The pinned native and exact-ASAR remote contract uses `MUSEBENCH_DISCOVERY_REMOTE=1` with the existing `--local-fixture` scripts. It verifies approved current-only search/call and native denial with one effect, zero direct-original connections, confirmed worker ownership cleanup and zero remaining fixture sockets. Reports gain the `-remote` suffix; package acceptance records its ASAR SHA-256.
+
+Remote tests are included in the ordinary full test glob. The existing tool-discovery UI CI entry now exercises mixed local/remote selection in the same production browser/Electron component. No personal provider or real-model selection proof is inferred from these fixtures. OAuth sign-in remains the next selected independent feature; installation, release and live-provider acceptance are separately owned.

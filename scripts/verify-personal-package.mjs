@@ -19,6 +19,17 @@ function visit(relative) {
 for (const dir of ['electron', 'dist', 'src/controller', 'src/runtime', 'src/work', 'src/spaces', 'src/sites', 'templates']) visit(dir);
 for (const name of readdirSync(path.join(root, 'reference/patchlight/adapter'))) if (name.endsWith('.mjs')) files.push(`reference/patchlight/adapter/${name}`);
 for (const name of readdirSync(path.join(root, 'src/shared'))) if (name.endsWith('.mjs')) files.push(`src/shared/${name}`);
+// Remote v2 is a separate pinned graph. Check its runtime bytes and package
+// exports too: a working local/native v1 path is not remote package proof.
+for(const name of ['client','core']){
+ const directory=`node_modules/@modelcontextprotocol/${name}`,metadataFile=`${directory}/package.json`;
+ const sourceMetadata=JSON.parse(readFileSync(path.join(root,metadataFile),'utf8'));
+ const packagedMetadata=JSON.parse(asar.extractFile(archive,path.normalize(metadataFile)).toString());
+ assert.equal(sourceMetadata.version,'2.4.0');
+ for(const key of ['name','version','type','exports','dependencies'])assert.deepEqual(packagedMetadata[key],sourceMetadata[key],`${metadataFile} changed ${key}`);
+ function runtime(relative){for(const entry of readdirSync(path.join(root,relative))){const file=`${relative}/${entry}`;if(statSync(path.join(root,file)).isDirectory())runtime(file);else if(/\.(mjs|cjs)$/.test(entry))files.push(file);}}
+ runtime(`${directory}/dist`);
+}
 // Embedded Muse views load fonts from production packages, while the local
 // renderer uses Vite's dist assets. Verify both paths survive packaging intact.
 for (const family of ['inter', 'jetbrains-mono']) {
@@ -52,5 +63,6 @@ for (const helper of process.platform==='win32'?['MuseBenchJob', 'MuseBenchSpeec
 }
 const report = { checkedAt: new Date().toISOString(), status: 'passed', platform:process.platform,arch:process.arch,packageDir,files: checked, executableSha256: sha(readFileSync(executable)), archiveSha256: sha(readFileSync(archive)), nativeHelpers };
 mkdirSync(path.join(root,'artifacts'),{recursive:true});
-writeFileSync(path.join(root, 'artifacts/personal-package-verification.json'), JSON.stringify(report, null, 2));
+const reportDirectory=process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR?path.resolve(process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR):path.join(root,'artifacts');mkdirSync(reportDirectory,{recursive:true});
+writeFileSync(path.join(reportDirectory,process.env.MUSEBENCH_DISCOVERY_EVIDENCE_DIR?'package-verification.json':'personal-package-verification.json'), JSON.stringify(report, null, 2));
 console.log(`PASS ${checked.length} packaged source/build files and ${Object.keys(nativeHelpers).length} native helpers match the validated source`);

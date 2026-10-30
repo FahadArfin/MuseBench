@@ -3,6 +3,7 @@ import {ResultSchema,ToolSchema,CallToolResultSchema} from '@modelcontextprotoco
 import {createHash} from 'node:crypto';
 import {DiscoveryTransport} from './discovery-transport.mjs';
 import {supportedSchema,validateDiscoveryArguments} from './discovery-schema.mjs';
+import {createRemoteDiscoveryClient} from './discovery-remote.mjs';
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>object(value)&&Object.keys(value).every(key=>keys.includes(key));
 const bytes=value=>Buffer.byteLength(JSON.stringify(value));
@@ -14,6 +15,10 @@ export function createDiscoveryGateway({sources,helperPath,sessionId,verify}={})
  async function operation(fn){if(closed)throw Error('Gateway closed; reconnect and review again.');if(busy)throw Error('Gateway is busy. Arbitrary-effect batching is unsupported.');busy=true;try{await verify();return await fn();}finally{busy=false;}}
  async function ready(state,signal){
   if(state.closed)throw Error('Source closed; reconnect and review again.');
+  if(state.source.transport==='streamable-http'){
+   if(state.client?.closed){state.closed=true;throw Error('Remote source closed; reconnect and review again.');}
+   if(!state.client){state.client=createRemoteDiscoveryClient(state.source);state.transport=state.client;try{await state.client.connect({signal});}catch(error){state.closed=true;await state.client.close();throw error;}}return;
+  }
   if(!state.client){const transport=new DiscoveryTransport(state.source,{helperPath,sessionId}),client=new Client({name:'musebench-discovery',version:'1.0.0'},{capabilities:{},jsonSchemaValidator:{getValidator(){throw Error('SDK schema compilation is not permitted for discovery sources.');}}});state.client=client;state.transport=transport;
    transport.onclose=()=>{state.closed=true;};
    try{await client.connect(transport,{timeout:state.source.startupMs,signal});}catch{state.closed=true;await transport.close();throw Error('Source startup failed; reconnect and review again.');}
@@ -22,10 +27,10 @@ export function createDiscoveryGateway({sources,helperPath,sessionId,verify}={})
  async function catalog(state,signal){
   // listTools() eagerly compiles every outputSchema before returning. Read the
   // raw result instead: encoded bounds and source filters precede schema work.
-  await ready(state,signal);let result;try{result=await state.client.request({method:'tools/list'},ResultSchema,{timeout:state.source.startupMs,signal});}catch{state.closed=true;await state.transport.close();throw Error('Source catalog unavailable; reconnect and review again.');}
+  await ready(state,signal);let result;try{result=state.source.transport==='streamable-http'?await state.client.catalog({signal}):await state.client.request({method:'tools/list'},ResultSchema,{timeout:state.source.startupMs,signal});}catch(error){state.closed=true;await state.transport.close();if(state.source.transport==='streamable-http')throw error;throw Error('Source catalog unavailable; reconnect and review again.');}
   if(result.nextCursor||!Array.isArray(result.tools)||result.tools.length>200||bytes(result)>524288){state.closed=true;await state.transport.close();throw Error('Catalog exceeds 200 tools or 512 KiB; pagination is unsupported.');}
   let unsupported=0;const names=new Set(),tools=[];for(const tool of result.tools){
-   if(!object(tool)||typeof tool.name!=='string'||!tool.name||tool.name.length>200||names.has(tool.name))throw Error('Invalid source tool identity.');names.add(tool.name);
+   if(!object(tool)||typeof tool.name!=='string'||!tool.name||tool.name.length>200||names.has(tool.name)){state.closed=true;await state.transport.close();throw Error('Invalid source tool identity.');}names.add(tool.name);
    if(state.source.enabledTools&&!state.source.enabledTools.includes(tool.name)||state.source.disabledTools.includes(tool.name))continue;
    try{supportedSchema(tool.inputSchema);if(tool.outputSchema!==undefined)supportedSchema(tool.outputSchema);ToolSchema.parse(tool);if(tool.execution?.taskSupport==='required'||tool.description!==undefined&&(typeof tool.description!=='string'||tool.description.length>8192))throw Error();tools.push({name:tool.name,...(tool.description?{description:tool.description}:{}),inputSchema:tool.inputSchema,...(tool.outputSchema!==undefined?{outputSchema:tool.outputSchema}:{})});}catch{unsupported++;}
   }
@@ -51,7 +56,7 @@ export function createDiscoveryGateway({sources,helperPath,sessionId,verify}={})
    await verify();if(signal?.aborted)throw Error('Discovery call cancelled before submission.');
    const receipt={sourceId:state.source.id,sourceName:state.source.name,catalogRevision:fresh.catalogRevision,tool:tool.name};
    // From this point failure is unknown: a submitted effect is never replayed.
-   try{const result=await state.client.request({method:'tools/call',params:{name:tool.name,arguments:args.arguments}},CallToolResultSchema,{timeout:state.source.callMs,signal});
+   try{const params={name:tool.name,arguments:args.arguments},result=state.source.transport==='streamable-http'?CallToolResultSchema.parse(await state.client.call(params,{signal})):await state.client.request({method:'tools/call',params},CallToolResultSchema,{timeout:state.source.callMs,signal});
     // Never enter SDK metadata caching/output validation, even on call dispatch.
     // A submitted call with an invalid final receipt remains unknown, unreplayed.
     if(tool.outputSchema!==undefined){if(result.structuredContent===undefined&&!result.isError)throw Error('Missing structured output.');if(result.structuredContent!==undefined)validateDiscoveryArguments(tool.outputSchema,result.structuredContent);}
