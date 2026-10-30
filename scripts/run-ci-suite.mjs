@@ -15,7 +15,7 @@ export const CI_SUITES={
  native:[
   ['node','scripts/mobile-settings-smoke.mjs'],['node','scripts/native-control-smoke.mjs'],
   ['node','scripts/session-mcp-smoke.mjs'],['node','scripts/session-mcp-smoke.mjs','--desktop'],
-  ...npm('activity','child-inspection','native-failure','native-question','reply-copy','model-settings','work-activity','project-actions','run-changes','connection-diagnostics','workspace-analysis','background-engine'),
+  ...npm('activity','child-inspection','native-failure','native-question','reply-copy','model-settings','work-activity','project-actions','run-changes','connection-diagnostics','workspace-analysis','tool-discovery','background-engine'),
  ],
 };
 

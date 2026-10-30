@@ -1,0 +1,18 @@
+# On-demand tool discovery validation
+
+Production scope: explicitly reviewed disabled global stdio definitions, pinned Muse host/SDK 1.4.14. The earlier spike established the native session capability; this implementation owns its source review, protocol, process lifetime, controller, shared connection UI and restoration behavior.
+
+The production native scripted contract uses disposable settings, inert local MCP servers and a localhost Responses endpoint. It performs no model inference or external relay and copies no personal credentials. It verifies approved search and invocation, exact source cwd/environment and owning `MUSE_SESSION_ID`, one selected source process, one downstream call, no direct duplicate, and a native denied call with zero additional downstream invocations. Its required gateway has a separate broker-owned validation worker; that worker is an additional ownership process, not another downstream source.
+
+An initial native shutdown test reproduced the host terminating its MCP wrapper before an asynchronous cleanup acknowledgement. The final architecture keeps worker ownership in the main-only broker. Killing the native wrapper, worker or owning parent is covered separately; the Windows Job lifetime kills descendants, and disconnect awaits the worker Job's cleanup receipt. A generic SDK transport `sessionId` field was also found to skip initialization: the owning native identity now uses a separate field, and the fixture rejects uninitialized operations.
+
+Focused checks:
+
+- `node --test test/discovery-mcp*.test.mjs` covers eligibility/consent, exact restore identity, source/config/catalog changes, plugin collision facts, PATH binding, unsupported schemas, encoded limits, real fixture calls, input validation before effects, timeout/unknown/no retry, forbidden reverse requests, protocol cancellation/queues/framing, broker auth and callback revocation, and child/grandchild cleanup after wrapper/worker/parent death.
+- Runtime/controller/native-session/security and existing Windows Job regressions cover native capability denial, source revocation before sends, stale owner inspection, consumed review, preserved session identity and unconfirmed cleanup refusing replacement ownership.
+- `npm run test:tool-discovery` exercises the full production renderer's shared controls in Chromium and Electron using disposable simulated data, no model calls, disabled source states, explicit review, refresh/reconnect revocation and narrow layout. It runs in the existing native CI group.
+- `node scripts/native-discovery-contract.mjs --local-fixture` runs the actual pinned native allow/deny contract. Reports are written under ignored `artifacts/native-discovery-contract/`.
+- Build an isolated directory package, then run `node scripts/discovery-packaged-contract.mjs --local-fixture` to execute the gateway and worker from its exact ASAR under its packaged executable, using its packaged Windows helper. Reports are under ignored `artifacts/native-discovery-packaged-contract/`.
+- For exact installed renderer acceptance, set `MUSEBENCH_EXECUTABLE` to the installed executable and run `node scripts/discovery-tools-smoke.mjs --desktop`. The test serves that executable's exact ASAR renderer bytes with simulated bridge data, records their digest, uses an isolated profile and blocks external network access. It is labelled `installed`; source fixture evidence is labelled separately. The packaged native contract accepts the same override.
+
+Real model tool selection remains separate acceptance. This deliverable does not claim HTTP/OAuth support, enabled direct wrapping, shell-script command emulation, arbitrary plugin replacement, unsupported schema semantics or production release installation.

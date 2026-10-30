@@ -54,6 +54,9 @@ internal static class WindowsJobProbe
         private uint rootExitCode;
         private bool rootExited;
         private bool launched;
+        private bool duplex;
+        private FileStream childInput;
+        private readonly BlockingCollection<byte[]> stdinQueue = new BlockingCollection<byte[]>(8);
         private volatile bool outputFailed;
 
         public Runner()
@@ -73,12 +76,13 @@ internal static class WindowsJobProbe
             {
                 int offset = 0;
                 int timeout = 180000;
-                if (args.Length > 0 && args[0] == "--timeout-ms")
+                if (args.Length > 0 && args[0] == "--duplex") { duplex = true; timeout = 0; offset++; }
+                if (args.Length > offset && args[offset] == "--timeout-ms")
                 {
-                    if (args.Length < 2 || !Int32.TryParse(args[1], NumberStyles.None,
-                        CultureInfo.InvariantCulture, out timeout) || timeout < 1 || timeout > 180000)
+                    if (args.Length < offset + 2 || !Int32.TryParse(args[offset + 1], NumberStyles.None,
+                        CultureInfo.InvariantCulture, out timeout) || timeout < 1 || timeout > (duplex ? 3600000 : 180000))
                         throw new ArgumentException("--timeout-ms must be between 1 and 180000.");
-                    offset = 2;
+                    offset += 2;
                 }
                 if (args.Length < offset + 4 || args[offset] != "--run" || args[offset + 3] != "--")
                     throw new ArgumentException("Usage: [--timeout-ms N] --run ABS_EXE ABS_CWD -- args...");
@@ -107,7 +111,7 @@ internal static class WindowsJobProbe
                 {
                     if (ObserveRootExit())
                         break;
-                    if (lifetime.ElapsedMilliseconds >= timeout)
+                    if (timeout > 0 && lifetime.ElapsedMilliseconds >= timeout)
                     {
                         RequestStop("timeout", 130);
                         break;
@@ -186,8 +190,25 @@ internal static class WindowsJobProbe
                 Check(Native.SetHandleInformation(stdoutRead, 1, 0), "SetHandleInformation(stdout)");
                 Check(Native.CreatePipe(out stderrRead, out stderrWrite, ref security, 0), "CreatePipe(stderr)");
                 Check(Native.SetHandleInformation(stderrRead, 1, 0), "SetHandleInformation(stderr)");
-                input = Native.CreateFileW("NUL", 0x80000000, 3, ref security, 3, 0, IntPtr.Zero);
-                CheckHandle(input, "CreateFileW(NUL)");
+                if (duplex)
+                {
+                    SafeFileHandle write;
+                    Check(Native.CreatePipe(out input, out write, ref security, 0), "CreatePipe(stdin)");
+                    Check(Native.SetHandleInformation(write, 1, 0), "SetHandleInformation(stdin)");
+                    childInput = new FileStream(write, FileAccess.Write, 8192, false);
+                    Thread stdinWriter = new Thread(delegate()
+                    {
+                        try { foreach (byte[] stdinBytes in stdinQueue.GetConsumingEnumerable()) { childInput.Write(stdinBytes, 0, stdinBytes.Length); childInput.Flush(); } }
+                        catch (Exception error) { if (!closing) ReportError(error); }
+                    });
+                    stdinWriter.IsBackground = true;
+                    stdinWriter.Start();
+                }
+                else
+                {
+                    input = Native.CreateFileW("NUL", 0x80000000, 3, ref security, 3, 0, IntPtr.Zero);
+                    CheckHandle(input, "CreateFileW(NUL)");
+                }
 
                 IntPtr bytes = IntPtr.Zero;
                 bool sizing = Native.InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref bytes);
@@ -414,7 +435,20 @@ internal static class WindowsJobProbe
                         string action = control["action"] as string;
                         object requestId = control.ContainsKey("requestId") ? control["requestId"] : null;
                         if (action == "stop") { RequestStop("stop", 130); continue; }
-                        if (action == "query")
+                        if (action == "stdin")
+                        {
+                            if (!duplex || childInput == null || closing || control.Count != 2 || !control.ContainsKey("data"))
+                                throw new InvalidOperationException("Unexpected stdin frame.");
+                            string encoded = control["data"] as string;
+                            if (encoded == null || encoded.Length == 0 || encoded.Length > 10924)
+                                throw new InvalidOperationException("Invalid stdin frame.");
+                            byte[] bytes = Convert.FromBase64String(encoded);
+                            if (bytes.Length > 8192 || Convert.ToBase64String(bytes) != encoded)
+                                throw new InvalidOperationException("Invalid stdin encoding.");
+                            if (!stdinQueue.TryAdd(bytes))
+                                throw new InvalidOperationException("Child stdin queue exceeded its limit.");
+                        }
+                        else if (action == "query")
                         {
                             uint pid;
                             if (!control.ContainsKey("pid") || !UInt32.TryParse(Convert.ToString(control["pid"],

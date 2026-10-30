@@ -1,6 +1,6 @@
 import {spawn} from 'node:child_process';
 import {EventEmitter} from 'node:events';
-import {PassThrough} from 'node:stream';
+import {PassThrough,Writable} from 'node:stream';
 import path from 'node:path';
 
 const MAX_FRAME_BYTES = 64 * 1024;
@@ -17,7 +17,7 @@ const exactKeys = (value, keys) => Object.keys(value).every(key => keys.includes
  * Windows Job before its first instruction. Native argv stays opaque; this
  * adapter never interprets or executes model-generated shell commands.
  * spawnHelper is a test seam, not a renderer-facing option. */
-export function createJobSpawner({helperPath, spawnHelper = spawn} = {}) {
+export function createJobSpawner({helperPath, spawnHelper = spawn,duplex=false} = {}) {
   if (!absolutePath(helperPath)) throw new TypeError('Windows Job helper requires an absolute executable path.');
   if (typeof spawnHelper !== 'function') throw new TypeError('Windows Job launcher must be a function.');
   return (executable, args = [], options = {}) => {
@@ -45,6 +45,9 @@ export function createJobSpawner({helperPath, spawnHelper = spawn} = {}) {
     let pending = '';
     let wireBytes = 0;
     let outputBytes = 0;
+    // Exec retains its total-run budget. A duplex owner's finite operations each
+    // get a fresh output budget; healthy idle sessions have no age-based kill.
+    if(duplex)child.beginOperation=()=>{wireBytes=0;outputBytes=0;};
     let sawReady = false;
     let sawRootExit = false;
     let notStarted = false;
@@ -53,6 +56,15 @@ export function createJobSpawner({helperPath, spawnHelper = spawn} = {}) {
     let stopPromise;
     let resolveStop;
     let stopTimer;
+    let readyResolve;
+    const ready=new Promise(resolve=>{readyResolve=resolve;});
+    if(duplex)child.stdin=new Writable({highWaterMark:16384,write(chunk,encoding,callback){
+      void ready.then(()=>{if(closed||stopPromise){callback(Error('Owned stdin is closed.'));return;}
+        const bytes=Buffer.from(chunk);if(bytes.length>1048576){callback(Error('Owned stdin write exceeds its bound.'));void child.stop();return;}
+        let offset=0;const next=()=>{if(offset>=bytes.length){callback();return;}const part=bytes.subarray(offset,offset+8192);offset+=part.length;
+          helper.stdin.write(JSON.stringify({action:'stdin',data:part.toString('base64')})+'\n',error=>error?callback(error):next());};next();
+      });
+    },final(callback){void child.stop().then(()=>callback());}});
     const decoder = new TextDecoder('utf-8', {fatal: true});
 
     const fail = message => {
@@ -81,6 +93,7 @@ export function createJobSpawner({helperPath, spawnHelper = spawn} = {}) {
               !validInteger(record.pid) || record.pid === 0 || record.jobAssigned !== true) throw new Error('invalid ready');
           sawReady = true;
           child.nativePid = record.pid;
+          readyResolve();
           break;
         case 'notStarted':
           // This is only a cancellation receipt. It cannot establish a model
@@ -145,6 +158,7 @@ export function createJobSpawner({helperPath, spawnHelper = spawn} = {}) {
     const finish = (code, signal = null) => {
       if (closed) return;
       closed = true;
+      readyResolve();
       clearTimeout(stopTimer);
       try {
         if (decoder.decode() || pending.length) throw new Error('truncated frame');
@@ -189,7 +203,7 @@ export function createJobSpawner({helperPath, spawnHelper = spawn} = {}) {
     };
 
     try {
-      helper = spawnHelper(helperPath, ['--run', executable, options.cwd, '--', ...args], {
+      helper = spawnHelper(helperPath, [...(duplex?['--duplex']:[]),'--run', executable, options.cwd, '--', ...args], {
         cwd: options.cwd,
         env: options.env,
         windowsHide: true,

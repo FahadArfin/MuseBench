@@ -7,6 +7,20 @@ import {createController} from '../src/controller/index.mjs';
 import {DatabaseSync} from 'node:sqlite';
 
 const nativeId='11111111-1111-4111-8111-111111111111';
+test('source inspection cannot follow a chat change or leave execution review for another owner',async t=>{
+ const {c,rt,project}=await fixture(t);let finish;rt.inspectDiscoverySources=()=>new Promise(resolve=>finish=resolve);const old=c.getState().task.id,pending=c.inspectDiscoverySources({taskId:old});await c.dispatch({type:'newTask',request:'Different owner',mode:'muse'});finish({root:project,rows:[]});await assert.rejects(pending,/changed/i);const result=await c.dispatch({type:'connectMuse',transport:'msp',toolDiscovery:{sources:[{id:'global:fixture',revision:'a'.repeat(64)}],reviewed:true}});assert.match(result.error,/review/i);assert.equal(rt.connections.length,0);
+});
+test('discovery review is consumed once and saved native identity cannot lose its tools on reconnect',async t=>{
+ const {c,rt,project}=await fixture(t);const source={id:'global:fixture',revision:'a'.repeat(64)};
+ rt.inspectDiscoverySources=async()=>({root:project,rows:[{...source,name:'Fixture',eligible:true,reason:'Reviewed',address:'fixture',cwd:project,environmentKeys:[]}]});
+ assert.equal(typeof c.inspectDiscoverySources,'function');const owner=c.getState().task.id;
+ await assert.rejects(c.inspectDiscoverySources({taskId:'other'}));
+ const snapshot=await c.inspectDiscoverySources({taskId:owner});assert.equal(snapshot.ownerId,owner);assert.equal(rt.connections.length,0);
+ const selected={sources:[source],reviewed:true};let s=await c.dispatch({type:'connectMuse',transport:'msp',fullAccess:true,toolDiscovery:selected});assert.equal(s.error,null);assert.deepEqual(s.task.nativeSession.toolDiscovery,{sources:[source]});
+ await c.dispatch({type:'disconnectMuse'});s=await c.dispatch({type:'connectMuse'});assert.match(s.error,/review/i);assert.equal(s.task.nativeSession.id,nativeId);assert.equal(rt.connections.length,1);
+ s=await c.dispatch({type:'connectMuse',transport:'msp',toolDiscovery:selected});assert.match(s.error,/review/i);assert.equal(rt.connections.length,1);
+ await c.inspectDiscoverySources({taskId:owner});s=await c.dispatch({type:'connectMuse',transport:'msp',toolDiscovery:selected});assert.equal(s.error,null);assert.equal(rt.connections[1].sessionId,nativeId);assert.equal(rt.connections.length,2);
+});
 test('native failure explanation survives chat reload without replaying the failed request',async t=>{
  const {c,rt,open}=await fixture(t);await c.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});await c.dispatch({type:'sendMessage',text:'Inspect the project'});
  const reason='Required MCP server `musebench_workspace` failed during startup: the configured command is unavailable.';

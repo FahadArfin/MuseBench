@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   semanticNavigate: input => ipcRenderer.invoke('musebench:semantic-navigation',input),
   readCapturedOutput: input => ipcRenderer.invoke('musebench:captured-output',input),
   readChatHistory: input => ipcRenderer.invoke('musebench:chat-history',input),
+  inspectDiscoverySources: input => ipcRenderer.invoke('musebench:discovery-sources',input),
   readMcpServers: input => ipcRenderer.invoke('musebench:session-mcp',input),
   searchChats: input => ipcRenderer.invoke('musebench:chat-search',input),
   previewConversationImport: () => ipcRenderer.invoke('musebench:conversation-import-pick'),

@@ -1,3 +1,4 @@
+import {createDiscoveryMcpConfig} from './discovery-mcp-config.mjs';
 import {createBackgroundEngine} from './background-engine.mjs';
 import {createNativeControlRouter} from './native-control-router.mjs';
 import {createBillingReader} from './billing-reader.mjs';
@@ -66,8 +67,9 @@ else {
     const dataDir = app.getPath('userData');
     const extensionReview=createExtensionReview({dataDir,profile:userProfile()});
     const workspaceMcp=createWorkspaceMcpConfig({appRoot:root});
+    const discoveryMcp=createDiscoveryMcpConfig({appRoot:root,helperPath,extensionReview});
     codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>!!ui?.onboarding?.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
-    const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp});
+    const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,discoveryMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp,discoveryMcp});
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.13 can stall before shell launch inside the user profile.
     // New working copies have their own location; saved originals stay put.
@@ -236,6 +238,7 @@ else {
     handler('musebench:semantic-navigation',input=>controller.semanticNavigate(input));
     handler('musebench:captured-output',input=>controller.readCapturedOutput(input));
     handler('musebench:chat-history',input=>controller.readChatHistory(input));
+    handler('musebench:discovery-sources',input=>controller.inspectDiscoverySources(input));
     handler('musebench:session-mcp',input=>controller.readMcpServers(input));
     handler('musebench:chat-search',input=>controller.searchChats(input));
     handler('musebench:conversation-import-pick',async()=>{

@@ -12,7 +12,7 @@ const digest=value=>hash(JSON.stringify(stable(value)));
 const badKeys=new Set(['__proto__','constructor','prototype']);
 const limit=1024*1024;
 async function info(file){try{return await lstat(file);}catch(error){if(error.code==='ENOENT')return null;throw Error('MCP configuration could not be inspected.');}}
-async function source(file){
+export async function readMcpSource(file){
  const before=await info(file);if(!before)return null;
  if(before.isSymbolicLink())throw Error('MCP review does not follow symbolic links.');
  if(!before.isFile()||before.size>limit)throw Error('MCP configuration exceeds the regular-file review limit.');
@@ -28,6 +28,7 @@ async function source(file){
   return{path:file,revision:hash(raw),bytes:size,doc};
  }finally{await handle.close();}
 }
+const source=readMcpSource;
 
 export function mcpSettingsPath(environment=process.env,platform=process.platform){
  const xdg=environment.XDG_CONFIG_HOME;

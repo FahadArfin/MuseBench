@@ -1,0 +1,27 @@
+# On-demand discovery for reviewed MCP sources
+
+Continue OC03 under the user's standing roadmap authorization. Preserve native Muse as the model/runtime. The pinned host cannot replace an existing global MCP definition through session config or process-only overrides. A real isolated spike did establish a separate native session gateway for explicitly selected, reviewed disabled global stdio definitions: one proxy, one downstream process, no direct duplicate, native search/call success and native denial without a downstream call. Build that tested restricted path into the product.
+
+## Product scope
+
+- Add a compact optional On-demand tools disclosure to the interactive connection dialog. List safe source names, executable/cwd summary, environment variable names and eligibility/reason. Never expose environment values or credentials. At most four sources per connection; default none.
+- Eligible sources are already-reviewed global stdio definitions whose native `enabled` flag is explicitly false. The user must explicitly review/select execution for this connection; a disabled definition's old provenance approval is not implicit permission to execute it. Keep that consent ephemeral and source-bound. No new persistent execution grant or automatic selection on reconnect.
+- Enabled direct definitions, project overlays, plugin sources, HTTP/OAuth, unsupported framing/settings and wrapper environment conflicts are ineligible with a concise reason. Do not silently edit/disable or replace user configuration. Existing direct native loading is unchanged. Guide users to existing Disable/Review controls when appropriate.
+- Persist only the selected source identities/revisions needed to explain a saved native session. Resuming such a session requires fresh matching source review; never silently drop its original tool configuration, start a replacement conversation or broaden a grant. Unsupported saved values preserve identity in a blocked recovery state.
+- Display an explicit source-bound review checkbox/confirmation before connection. Review becomes stale on selected project/chat/root/source change. No tool starts merely by opening the dialog, reading the source list or checking a row.
+
+## Execution contract
+
+- A trusted app-owned required session MCP gateway exposes fixed `discovery_search` and `discovery_call` functions. Search returns bounded tool schemas as data; this is not native deferred schema registration. No arbitrary-effect batching.
+- Immutable session selection controls allowed sources, workspace/cwd, commands, environment and reviewed hashes. Model arguments may select an admitted source/tool and provide tool arguments; they cannot supply executable/config/root/URL or permission overrides.
+- Recheck source/config review, project/plugin collision and schema identity before positive operations. A schema revision change requires a fresh search; source/grant changes require explicit reconnection/review. Preserve enabled/disabled tool filters in both search and invocation.
+- Validate tool inputs before dispatch using bounded local JSON Schema validation without remote references, coercion, defaults or unknown recursive expansion. Reject unsupported schemas explicitly. Untrusted schema validation must not block Electron's main loop. Protocol/process/read/queue/output bounds must cover the fully encoded frame, including escaping.
+- At most 200 tools and 512 KiB encoded catalog per source; each schema at most 32 KiB/depth16. Search returns at most eight matches and 64 KiB encoded response. Calls admit at most 64 KiB encoded arguments and return at most 128 KiB encoded response, with explicit truncation/error receipts. Use a safe error rather than disconnecting on large successful results. Source startup timeout at most30s, call timeout at most300s, all finite. Any tighter app cap is shown in the review.
+- Preserve exact effective cwd and explicitly reviewed environment, including the owning native MUSE_SESSION_ID. Protect the wrapper's Electron/Node startup environment; reject conflicts instead of silently changing downstream semantics.
+- Native tool approval remains authoritative. The generic arbitrary-effect call is never labelled read-only, idempotent or sandboxed. A denied native call results in zero downstream invocations. No forwarding of sampling, elicitation or task creation. Tool descriptions/results remain untrusted content.
+- A submitted downstream call is never retried automatically. Cancellation/timeout/EOF closes owned process trees; if a request might have executed without a final receipt, record unknown outcome. Do not claim rollback. Avoid duplicate connections and reuse at most one owned transport per selected source during a connection.
+- Do not write settings, copy personal credentials into fixtures or modify live app permissions during development. Test with isolated files, actual local fixture servers and a scripted localhost native response endpoint only; no model inference.
+
+## Acceptance
+
+Source eligibility/revocation/collision tests, saved-session identity/review behavior, real MCP protocol filtering/input validation/cancellation/limits/process-tree cleanup, source/schema-change rejection, no retry/unknown outcome, shared compact browser/Electron selection/error states, packaged ASAR launch, and actual pinned-native search/call/denial with one source process and no direct duplicate. Native real-model selection, HTTP/OAuth, enabled direct wrapping and arbitrary plugin replacement remain explicitly separate capabilities.

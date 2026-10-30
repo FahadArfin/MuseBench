@@ -3,6 +3,7 @@ import {restoreRecentContext,restoreRecentCapsule,prepareRecentContext,validateR
 import {restoreContextUsage} from '../shared/native-context-usage.mjs';
 import {createAnalyticsStore} from './analytics.mjs';
 import {normalizeWorkspaceToolset} from '../shared/workspace-analysis.mjs';
+import {discoverySelection,discoveryIdentity,sameDiscovery} from '../shared/tool-discovery.mjs';
 import {createSemanticNavigation} from './semantic-navigation.mjs';
 import {workspaceSourcePaths} from './workspace-sources.mjs';
 import {reviewPrompt,parseReview} from '../shared/reviewer-contracts.mjs';
@@ -318,6 +319,15 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const result=await readRuntime.readMcpServers({sessionId:connection.sessionId});
     if(!current())throw Error('The chat or connection changed while reading MCP configuration.');
     return result;
+  };
+  let discoveryReview=null,discoveryInspectEpoch=0;
+  const inspectDiscoverySources=async input=>{
+    if(!input||Object.keys(input).some(key=>key!=='taskId')||typeof input.taskId!=='string'||input.taskId!==state.task?.id)throw Error('Open the current chat to review on-demand tools.');
+    const inspectEpoch=++discoveryInspectEpoch;discoveryReview=null;const owner=context,task=state.task,root=state.activeProject?.root,reader=runtime;
+    if(!root||!reader?.inspectDiscoverySources)throw Error('On-demand source inspection is unavailable.');
+    const snapshot=await reader.inspectDiscoverySources(root);
+    if(closing||closed||inspectEpoch!==discoveryInspectEpoch||context!==owner||state.task?.id!==task.id||state.activeProject?.root!==root||runtime!==reader)throw Error('The selected chat or folder changed during source review.');
+    discoveryReview={owner,taskId:task.id,root,rows:snapshot.rows};return{ownerId:task.id,root,rows:snapshot.rows};
   };
   const inspectChild=async action=>{
     const readRuntime=runtime,taskId=state.task?.id,readConnection=readRuntime?.snapshot?.();
@@ -637,10 +647,19 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const connectNative=async(owner,task,project,options={})=>{
     for(const field of ['fullAccess','workspaceTools'])if(options[field]!==undefined&&typeof options[field]!=='boolean')throw Error(`${field} must be an explicit boolean.`);
     const saved=task?.nativeSession,transport=options.transport??saved?.transport??(saved?'exec':undefined);
+    if(saved?.unsupportedToolDiscovery)throw Error('This saved session uses unsupported on-demand tools. Update MuseBench or explicitly start a fresh session.');
+    let discovery;
+    if(options.toolDiscovery!==undefined){
+      discovery=discoverySelection(options.toolDiscovery);
+      const review=discoveryReview;discoveryReview=null;
+      if(transport!=='msp'||!review||review.owner!==owner||review.taskId!==task?.id||review.root!==project.root||discovery.sources.some(source=>!review.rows.some(row=>row.eligible&&row.id===source.id&&row.revision===source.revision)))throw Error('Refresh and review these on-demand sources for the current chat and folder before connecting.');
+    }
+    if(saved&&(saved.toolDiscovery?!sameDiscovery(saved.toolDiscovery,discovery):!!discovery))throw Error('Review the exact saved on-demand sources to resume this session. Start fresh explicitly to change its tools.');
     if(saved?.unsupportedWorkspaceToolset)throw Error('This saved session uses an unsupported workspace tool set. Update MuseBench or explicitly start a fresh session.');
     if(saved&&saved.root!==project.root)throw Error('This session belongs to another folder. Start a fresh session before continuing.');
     if(saved&&transport!==(saved.transport??'exec'))throw Error('This session belongs to another transport. Start a fresh session before continuing.');
     const request={binary:options.binary??preferredBinary??undefined,workspaceRoot:project.root,transport,fullAccess:options.fullAccess??saved?.fullAccess??false,workspaceTools:options.workspaceTools??saved?.workspaceTools??false,...(saved?.transport==='msp'?{sessionId:saved.id}:{})};
+    if(discovery)request.toolDiscovery=discovery;
     const selectedToolset=options.workspaceToolset??(request.workspaceTools?saved?.workspaceToolset:undefined);
     if(selectedToolset!==undefined){normalizeWorkspaceToolset(selectedToolset);if(!request.workspaceTools||transport!=='msp')throw Error('Workspace tools require an interactive connection.');request.workspaceToolset=selectedToolset;}
     await owner.runtime.connect(request);owner.root=project.root;
@@ -649,7 +668,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(task&&next.transport==='msp'&&next.permissionVerified&&next.nativeSessionId){
       if(saved&&saved.id!==next.nativeSessionId){await owner.runtime.disconnect();throw Error('Native session restoration returned a different session. Start fresh explicitly to replace it.');}
       const restored=next.restoration?.status==='restored',active=restored?next.restoration.activeTurnId:null;
-      task.nativeSession={id:next.nativeSessionId,root:project.root,transport:'msp',seeded:next.sessionSeeded===true||saved?.seeded===true,status:active?'needs-recovery':'ready',fullAccess:request.fullAccess,workspaceTools:request.workspaceTools,...(request.workspaceToolset?{workspaceToolset:request.workspaceToolset}:{})};
+      task.nativeSession={id:next.nativeSessionId,root:project.root,transport:'msp',seeded:next.sessionSeeded===true||saved?.seeded===true,status:active?'needs-recovery':'ready',fullAccess:request.fullAccess,workspaceTools:request.workspaceTools,...(request.workspaceToolset?{workspaceToolset:request.workspaceToolset}:{}),...(discovery?{toolDiscovery:discoveryIdentity({sources:discovery.sources})}:{})};
       if(active){
         const receipt=executions.list(task.id).find(r=>r.nativeSessionId===next.nativeSessionId&&r.runId===active),run=receipt&&(task.runs??[]).find(r=>r.id===receipt.id&&r.runId===active);
         if(receipt&&run){owner.turn={taskId:task.id,promptId:receipt.id,messageBaseline:runtimeMessageIds({messages:[]}),previousRunId:null,runId:active,started:true,resetSeen:false,restored:true};owner.pending=true;task.nativeSession.status='running';onRuntime(next,owner);}
@@ -1156,6 +1175,6 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     });queue=op.catch(()=>{});return op;
   };
   const archiveTimer=setInterval(()=>{queue=queue.then(async()=>{if(closed||closing)return;if(inbox.prune())emit();await purgeArchived();}).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
+  return{getState,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,readMcpServers,inspectDiscoverySources,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');if(['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse'].includes(action.type)){discoveryReview=null;discoveryInspectEpoch++;}await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';

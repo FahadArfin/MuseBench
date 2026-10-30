@@ -2,6 +2,8 @@ import {workspaceOperations} from './workspace-analysis.mjs';
 const names=new Set(workspaceOperations('analysis-v1').map(x=>x.name));
 const prefix='mcp__musebench_workspace__workspace_tool_';
 const tools=new Map([['search','Search workspace tools'],['call','Read workspace source'],['batch','Workspace analysis batch']].map(([name,title])=>[prefix+name,title]));
+tools.set('mcp__musebench_discovery__discovery_search','Search reviewed on-demand tools');
+tools.set('mcp__musebench_discovery__discovery_call','Invoke reviewed on-demand tool');
 const object=v=>v!==null&&typeof v==='object'&&!Array.isArray(v);
 const validId=v=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,40}$/.test(v);
 const errors=new Set(['SEMANTIC_INPUT','SEMANTIC_PATH','SEMANTIC_POSITION','SEMANTIC_BUSY','SEMANTIC_LIMIT','SEMANTIC_STALE','SEMANTIC_TIMEOUT','SEMANTIC_DISPOSED','SEMANTIC_WORKER','SEMANTIC_UNAVAILABLE','SEMANTIC_CANCELLED','SEMANTIC_OUTPUT_LIMIT']);
@@ -36,7 +38,9 @@ export function createWorkspaceToolActivity(){
    const statuses={inProgress:'working',completed:'completed',failed:'failed',cancelled:'cancelled',declined:'failed',rejected:'failed',interrupted:'interrupted'};
    const status=statuses[item.status]??'interrupted',output=typeof item.visibleOutput==='string'?item.visibleOutput:'';
    const workspaceBatch=status==='completed'?workspaceBatchSummary(item.tool,output,item.truncated===true):null;
-   rows.set(item.itemId,{revision:item.revision,id:item.itemId,kind:'tool',title:tools.get(item.tool),tool:item.tool,status,detail:item.status==='rejected'?'Tool request was not approved':status==='working'?'Reading workspace source':status==='completed'?'Native tool completed':'Native tool did not complete',output:output.slice(0,6000),truncated:item.truncated===true||output.length>6000,...(workspaceBatch?{workspaceBatch}:{})});return true;
+   let discoveryDetail;
+   if(status==='completed'&&item.tool==='mcp__musebench_discovery__discovery_call'&&output.length<=131072){try{let receipt=JSON.parse(output);if(receipt.content?.length===1&&receipt.content[0]?.type==='text')receipt=JSON.parse(receipt.content[0].text);if(['completed','failed','unknown'].includes(receipt.outcome)&&typeof receipt.sourceId==='string'&&receipt.sourceId.length<=110&&typeof receipt.tool==='string'&&receipt.tool.length<=200)discoveryDetail=receipt.sourceId+' · '+receipt.tool+' · '+receipt.outcome;}catch{}}
+   rows.set(item.itemId,{revision:item.revision,id:item.itemId,kind:'tool',title:tools.get(item.tool),tool:item.tool,status,detail:discoveryDetail??(item.status==='rejected'?'Tool request was not approved':status==='working'?'Native tool request in progress':status==='completed'?'Native tool completed':'Native tool did not complete'),output:output.slice(0,6000),truncated:item.truncated===true||output.length>6000,...(workspaceBatch?{workspaceBatch}:{})});return true;
   },
   finish(status){for(const row of rows.values())if(row.status==='working'){row.status=status==='cancelled'?'cancelled':'interrupted';row.detail='No final tool result was reported';}},
   snapshot(){return{scope:'workspace-tools',items:structuredClone([...rows.values()].map(({revision,...row})=>row)),truncated};},

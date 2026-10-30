@@ -1,3 +1,4 @@
+import {discoverySelection} from '../src/shared/tool-discovery.mjs';
 import {validateScheduleAction} from '../src/shared/code-schedules.mjs';
 import {normalizeWorkspaceToolset} from '../src/shared/workspace-analysis.mjs';
 import {validateInputAction} from '../src/shared/user-input.mjs';
@@ -51,6 +52,7 @@ export function validateAction(action) {
   if(action.type==='childControl'){for(const key of ['taskId','sessionId','itemId'])string(key,200);if(!Number.isInteger(action.revision)||action.revision<1||!['sendMessage','followupTask','interrupt','stop','resume','reopen','close','readResult','retry','skip'].includes(action.action))throw Error('Invalid child control.');if(['sendMessage','followupTask'].includes(action.action))string('body',8000);if(['retry','skip'].includes(action.action)){string('childId',200);if(!Number.isInteger(action.attempt)||action.attempt<1)throw Error('Invalid child attempt.');}}
   if(action.type==='compactSession'){string('taskId',200);string('sessionId',200);string('turnId',200);}
   if(action.type==='steerMessage'){string('taskId',200);string('expectedTurnId',200);string('text',16000);if(action.files?.length||action.images?.length)throw Error('Steering supports text only.');}
+  if(action.type==='connectMuse'&&action.toolDiscovery!==undefined){discoverySelection(action.toolDiscovery);if(action.transport==='exec')throw Error('On-demand tools require an interactive connection.');}
   if(action.type==='connectMuse'&&action.transport!==undefined&&!['exec','msp'].includes(action.transport))throw Error('Invalid transport.');
   if(action.type==='connectMuse'&&action.fullAccess!==undefined&&typeof action.fullAccess!=='boolean')throw Error('Full access must be a boolean.');
   if(action.type==='connectMuse'&&action.workspaceTools!==undefined&&typeof action.workspaceTools!=='boolean')throw Error('Workspace tools must be a boolean.');

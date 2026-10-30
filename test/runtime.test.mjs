@@ -9,6 +9,14 @@ import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/run
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
+test('unconfirmed discovery worker cleanup blocks a replacement native owner',async t=>{
+ const selection={sources:[{id:'global:docs',revision:'a'.repeat(64)}],reviewed:true};const h=await harness(t,{discoveryMcp:async()=>({config:{transport:'stdio',command:'trusted',args:[],mode:'required'},verify:async()=>{},close:async()=>{throw Error('Unconfirmed worker');}})});h.host.initializeResult.grantedCapabilities=['sessionMcp'];await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,toolDiscovery:selection});await h.runtime.disconnect();assert.equal(h.runtime.snapshot().cleanup,'unconfirmed');const owners=h.calls.filter(row=>row.method==='spawn').length;await assert.rejects(h.runtime.connect({binary:h.binary,workspaceRoot:h.root,toolDiscovery:selection}),/unconfirmed/i);assert.equal(h.calls.filter(row=>row.method==='spawn').length,owners);
+});
+test('discovery requires native grant and trusted lease; stale review blocks sends and shutdown closes lease',async t=>{
+ const selection={sources:[{id:'global:docs',revision:'a'.repeat(64)}],reviewed:true};
+ for(const granted of [false,true]){let created=0,closed=0,valid=true;const h=await harness(t,{discoveryMcp:async(root,value)=>{created++;assert.deepEqual(value,selection);return{identity:{sources:value.sources},config:{transport:'stdio',command:'trusted-app',args:['owned-gateway'],mode:'required'},verify:async()=>{if(!valid)throw Error('Source review changed');},close:async()=>{closed++;}};}});h.host.initializeResult.grantedCapabilities=granted?['sessionMcp']:[];
+ const operation=h.runtime.connect({binary:h.binary,workspaceRoot:h.root,toolDiscovery:selection});if(!granted){await assert.rejects(operation,/sessionMcp/i);assert.equal(created,0);}else{await operation;assert.equal(h.calls.find(c=>c.method==='session/start').params.config.mcpServers.musebench_discovery.mode,'required');assert.deepEqual(h.runtime.snapshot().toolDiscovery,{sources:selection.sources});valid=false;await assert.rejects(h.runtime.send({text:'Must not submit'}),/review changed/i);assert.equal(h.calls.some(c=>c.method==='turn/start'),false);await h.runtime.disconnect();assert.equal(closed,1);}}
+});
 test('native context freshness follows the owned connection and reconnect never revives a saved reading',async t=>{
  const h=await harness(t),frame={method:'session/contextUsage',params:{sessionId:'session-one',viewCursor:'context-1',usedTokens:42,windowTokens:100,pressure:'normal',sourceRange:{stream:{id:'stream',kind:'session'},first:{id:'r',sequence:1},last:{id:'r',sequence:1}}}};
  let oldNotify;const register=h.host.connection.onNotification;h.host.connection.onNotification=fn=>{oldNotify=fn;register(fn);};
