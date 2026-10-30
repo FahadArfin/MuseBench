@@ -4,11 +4,12 @@ import {createHash} from 'node:crypto';
 import {DiscoveryTransport} from './discovery-transport.mjs';
 import {supportedSchema,validateDiscoveryArguments} from './discovery-schema.mjs';
 import {createRemoteDiscoveryClient} from './discovery-remote.mjs';
+import {boundDiscoveryResult,discoveryResultWireBytes as wireBytes} from './discovery-output.mjs';
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>object(value)&&Object.keys(value).every(key=>keys.includes(key));
 const bytes=value=>Buffer.byteLength(JSON.stringify(value));
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
-const wireBytes=value=>bytes({jsonrpc:'2.0',id:'x'.repeat(128),result:{content:[{type:'text',text:JSON.stringify(value)}]}});
+
 export function createDiscoveryGateway({sources,helperPath,sessionId,verify,readAccessToken}={}){
  if(!Array.isArray(sources)||!sources.length||sources.length>4||typeof verify!=='function')throw Error('A trusted reviewed selection is required.');
  const states=new Map(sources.map(source=>[source.id,{source,client:null,transport:null,closed:false,catalog:null}]));let closed=false,busy=false;
@@ -60,8 +61,7 @@ export function createDiscoveryGateway({sources,helperPath,sessionId,verify,read
     // Never enter SDK metadata caching/output validation, even on call dispatch.
     // A submitted call with an invalid final receipt remains unknown, unreplayed.
     if(tool.outputSchema!==undefined){if(result.structuredContent===undefined&&!result.isError)throw Error('Missing structured output.');if(result.structuredContent!==undefined)validateDiscoveryArguments(tool.outputSchema,result.structuredContent);}
-    const value={...receipt,outcome:result.isError?'failed':'completed',result};
-    if(wireBytes(value)>131072)return{...receipt,outcome:result.isError?'failed':'completed',truncated:true,error:'Tool result exceeded the encoded 128 KiB response limit. The operation completed; inspect its effects before another request.'};return value;
+    return boundDiscoveryResult(receipt,result);
    }catch{state.closed=true;await state.transport.close().catch(()=>{});return{...receipt,outcome:'unknown',error:'No final receipt was received. The submitted operation may have executed. It was not retried. Reconnect and review before further calls.'};}
   });},
   async dispose(){closed=true;const results=await Promise.allSettled([...states.values()].map(async state=>{state.closed=true;await state.transport?.close();}));if(results.some(r=>r.status==='rejected'))throw Error('Source process cleanup is unconfirmed.');},

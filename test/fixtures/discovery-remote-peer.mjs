@@ -1,5 +1,5 @@
 import {createServer} from 'node:http';
-export async function peer({current=false,mode='json',call='ok',catalog,catalogStatus,session=false,contentEncoding,oauthAuthority,beforeCall}={}){
+export async function peer({current=false,mode='json',call='ok',result:callResult,catalog,catalogStatus,session=false,contentEncoding,oauthAuthority,beforeCall}={}){
  const requests=[],sockets=new Set();let effects=0;
  const server=createServer(async(req,res)=>{
   const raw=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>262144){req.destroy();return;}raw.push(chunk);}const body=Buffer.concat(raw).toString();let message;try{message=body?JSON.parse(body):null;}catch{}
@@ -32,7 +32,7 @@ export async function peer({current=false,mode='json',call='ok',catalog,catalogS
    if(call==='malformed'){res.writeHead(200,{'Content-Type':'application/json'});res.end('malformed secret');return;}
    if(call==='input'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({jsonrpc:'2.0',id:message.id,result:{resultType:'input_required',requestState:'opaque-secret-state',inputRequests:{}}}));return;}
    if(call==='task')result={task:{taskId:'unsupported',status:'working',createdAt:new Date().toISOString(),lastUpdatedAt:new Date().toISOString(),ttl:null}};
-   else result={content:[{type:'text',text:call==='large'?'x'.repeat(200000):call==='oversized'?'x'.repeat(2200000):'remote fixture receipt'}]};
+   else result=callResult??{content:[{type:'text',text:call==='large'?'x'.repeat(200000):call==='oversized'?'x'.repeat(2200000):'remote fixture receipt'}]};
   }else{res.writeHead(202);res.end();return;}
   if(current)res.setHeader('MCP-Protocol-Version','2026-07-28');
   const output=JSON.stringify({jsonrpc:'2.0',id:message.id,result:current?{resultType:'complete',ttlMs:0,cacheScope:'private',...result}:result});

@@ -52,3 +52,12 @@ test('remote session identity stays private and bounded DELETE accepts 405',asyn
 test('invalid remote catalog identity fails closed rather than silently rebuilding later',async()=>{
  const tool={name:'duplicate',inputSchema:{type:'object'}},f=await peer({catalog:[tool,tool]}),service=createDiscoveryGateway({sources:[source(f.url)],verify:async()=>{}});try{await assert.rejects(service.search({query:''}),/identity/);await assert.rejects(service.search({query:''}),/closed/);assert.equal(f.requests.filter(r=>r.message?.method==='tools/list').length,1);}finally{await service.dispose();await f.close();}
 });
+
+for(const isError of [false,true])test(`remote oversized ${isError?'failed':'completed'} receipt retains preview with one call`,async()=>{
+ const f=await peer({result:{isError,content:[{type:'text',text:'START'+ '😀'.repeat(50000)+'END'}]}}),service=createDiscoveryGateway({sources:[source(f.url)],verify:async()=>{}});
+ try{const row=(await service.search({query:''})).sources[0],value=await service.call({sourceId:row.sourceId,catalogRevision:row.catalogRevision,tool:'allowed',arguments:{value:7}});assert.equal(value.outcome,isError?'failed':'completed');assert.equal(value.sourceId,row.sourceId);assert.equal(value.catalogRevision,row.catalogRevision);assert.equal(value.truncated,true);assert.ok(value.preview?.text.startsWith('START'));assert.ok(value.preview.text.endsWith('END'));assert.ok(Array.from(value.preview.text).length<=16000);assert.equal(f.effects,1);}finally{await service.dispose();await f.close();}
+});
+for(const isError of [false,true])test(`remote invalid oversized structured ${isError?'error':'success'} stays unknown without a retry`,async()=>{
+ const f=await peer({catalog:[{name:'allowed',inputSchema:{type:'object'},outputSchema:{type:'object',properties:{value:{type:'integer'}},required:['value']}}],result:{isError,content:[{type:'text',text:'x'.repeat(180000)}],structuredContent:{value:'invalid'}}}),service=createDiscoveryGateway({sources:[source(f.url)],verify:async()=>{}});
+ try{const row=(await service.search({query:''})).sources[0],args={sourceId:row.sourceId,catalogRevision:row.catalogRevision,tool:'allowed',arguments:{}},value=await service.call(args);assert.equal(value.outcome,'unknown');assert.equal(value.preview,undefined);await assert.rejects(service.call(args),/closed/);assert.equal(f.effects,1);}finally{await service.dispose();await f.close();}
+});

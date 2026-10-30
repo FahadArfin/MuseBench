@@ -69,3 +69,21 @@ test('output schemas use the bounded policy and structured results use its local
  const f=await fixture(),service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),verify:async()=>{},sessionId:'owned'});f.source.enabledTools=null;
  try{let deep={type:'object'};for(let i=0;i<18;i++)deep={type:'object',properties:{nested:deep}};const inputSchema={type:'object'},outputSchema={type:'object',properties:{value:{type:'integer'}},required:['value'],additionalProperties:false};await writeFile(f.control,JSON.stringify({catalog:[{name:'allowed',inputSchema,outputSchema},{name:'pattern',inputSchema,outputSchema:{type:'object',pattern:'x'}},{name:'large',inputSchema,outputSchema:{type:'object',description:'x'.repeat(32768)}},{name:'deep',inputSchema,outputSchema:deep},{name:'task',inputSchema,execution:{taskSupport:'required'}}],result:{content:[],structuredContent:{value:7}}}));const result=await service.search({query:''}),row=result.sources[0];assert.deepEqual(row.tools.map(t=>t.name),['allowed']);assert.deepEqual(row.tools[0].outputSchema,outputSchema);assert.equal(row.unsupported,4);const args={sourceId:f.source.id,catalogRevision:row.catalogRevision,tool:'allowed',arguments:{}};assert.equal((await service.call(args)).outcome,'completed');const state=JSON.parse(await readFile(f.control,'utf8'));state.result.structuredContent.value='wrong';await writeFile(f.control,JSON.stringify(state));assert.equal((await service.call(args)).outcome,'unknown');await assert.rejects(service.call(args),/closed/);assert.equal((await f.records()).filter(r=>r.kind==='call').length,2);}finally{await service.dispose();await rm(f.root,{recursive:true,force:true});}
 });
+
+for(const isError of [false,true])test(`stdio large ${isError?'error':'success'} keeps a lossy preview with one effect`,async()=>{
+ const f=await fixture(),service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),verify:async()=>{},sessionId:'cs02-owned'});
+ try{
+  const text='START'+ 'x'.repeat(180000)+'END',result={content:[{type:'text',text}],structuredContent:{value:7},isError};
+  const catalog=[{name:'allowed',inputSchema:{type:'object'},outputSchema:{type:'object',properties:{value:{type:'integer'}},required:['value']}}];await writeFile(f.control,JSON.stringify({catalog,result}));
+  const row=(await service.search({query:''})).sources[0],value=await service.call({sourceId:row.sourceId,catalogRevision:row.catalogRevision,tool:'allowed',arguments:{}});
+  assert.equal(value.outcome,isError?'failed':'completed');assert.equal(value.sourceId,row.sourceId);assert.equal(value.catalogRevision,row.catalogRevision);assert.equal(value.truncated,true);assert.ok(value.preview?.text.startsWith('START'));assert.ok(value.preview.text.endsWith('END'));assert.equal(value.result,undefined);assert.equal((await f.records()).filter(row=>row.kind==='call').length,1);
+ }finally{await service.dispose();await rm(f.root,{recursive:true,force:true});}
+});
+for(const isError of [false,true])test(`stdio invalid oversized structured ${isError?'error':'success'} is unknown before preview and never replayed`,async()=>{
+ const f=await fixture(),service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),verify:async()=>{},sessionId:'cs02-invalid'});
+ try{
+  await writeFile(f.control,JSON.stringify({catalog:[{name:'allowed',inputSchema:{type:'object'},outputSchema:{type:'object',properties:{value:{type:'integer'}},required:['value']}}],result:{isError,content:[{type:'text',text:'x'.repeat(180000)}],structuredContent:{value:'invalid'}}}));
+  const row=(await service.search({query:''})).sources[0],args={sourceId:row.sourceId,catalogRevision:row.catalogRevision,tool:'allowed',arguments:{}},value=await service.call(args);
+  assert.equal(value.outcome,'unknown');assert.equal(value.preview,undefined);await assert.rejects(service.call(args),/closed/);assert.equal((await f.records()).filter(row=>row.kind==='call').length,1);
+ }finally{await service.dispose();await rm(f.root,{recursive:true,force:true});}
+});
