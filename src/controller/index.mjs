@@ -95,6 +95,11 @@ const stopped=()=>({status:'stopped',url:null,log:'',script:null});
 const missingRuntime=()=>({status:'unavailable',reason:'Muse is not connected. Select an installed Muse CLI in Setup. Tutorial and manual review work without Muse.',binary:null,sdkVersion:'unavailable',liveVerified:false});
 function inside(root,candidate){const rel=path.relative(root,candidate);return rel===''||(!path.isAbsolute(rel)&&rel!=='..'&&!rel.startsWith(`..${path.sep}`));}
 async function canonicalRoot(root){if(typeof root!=='string'||!path.isAbsolute(root))throw Error('Choose an absolute project folder.');const real=await fs.realpath(root);if(!(await fs.stat(real)).isDirectory())throw Error('The project path must be a folder.');return real;}
+async function scheduleRootIdentity(root){
+  if(await canonicalRoot(root)!==root)throw Error('The scheduled project folder changed. Save and review it again.');
+  const info=await fs.stat(root,{bigint:true});if(!info.isDirectory()||info.ino===0n||await fs.realpath(root)!==root)throw Error('The scheduled project folder changed or its identity cannot be verified.');
+  return hash(JSON.stringify([String(info.dev),String(info.ino),String(info.birthtimeNs)]));
+}
 async function safeFile(root,relative){
   const candidate=path.resolve(root,relative);if(!inside(root,candidate)||path.isAbsolute(relative))throw Error('Path is outside the selected project.');
   let current=root;
@@ -228,6 +233,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const other=[...contexts.values()].filter(c=>c.task?.id!==task.id&&contextBusy(c));
     if(other.length>=4)throw Error('Four chats are already running. Wait or stop one before starting another.');
     if(other.some(c=>{const root=state.projects.find(p=>p.id===c.task?.projectId)?.root;return root&&(inside(root,project.root)||inside(project.root,root));}))throw Error('Another chat is using this checkout. Wait for it to stop, or create an isolated worktree.');
+  };
+  const requireScheduledWritable=(task,project)=>{
+    requireWritable(task,project);
+    if((checkProcess||state.task?.validationRun?.status==='running')&&state.activeProject&&(inside(state.activeProject.root,project.root)||inside(project.root,state.activeProject.root)))throw Error('A project check or validation is using this checkout.');
   };
   const summaries=observations=>[...taskRecords.values()].reverse().filter(t=>state.projects.some(p=>p.id===t.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(t=>{
     const owner=contexts.get(t.id),status=observations?.get(owner)??readRuntimeStatus(owner?.runtime);
@@ -520,8 +529,9 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(!action.fromSchedule)return;const {id,runId}=action.fromSchedule,row=schedules.get(id);
     const current=()=>{const active=schedules.get(id).active;return !closing&&!closed&&!owner.scheduleStopping&&active?.id===runId&&active.taskId===task.id&&scheduleNow()<active.deadlineAt;};
     if(!current())throw Error('This scheduled occurrence is no longer authorized to start.');
-    if(row.root!==project.root||await canonicalRoot(project.root)!==row.root)throw Error('The scheduled project folder changed. Review the schedule again.');
+    if(row.root!==project.root||await scheduleRootIdentity(project.root)!==row.rootIdentity)throw Error('The scheduled project folder changed. Save and review the schedule again.');
     if(!current())throw Error('This scheduled occurrence is no longer authorized to start.');
+    requireScheduledWritable(task,project);
   };
   const observeScheduled=(owner,next)=>{
     if(!owner.schedule||owner.scheduleStopping||!owner.schedulePromptId)return;
@@ -549,9 +559,9 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     try{
       if(closing||closed||!runtimeFactory)throw Error('Scheduled work requires an open desktop with independent Muse connections.');
       const project=state.projects.find(item=>item.id===run.spec.projectId);
-      if(!project||project.root!==schedule.root||await canonicalRoot(project.root)!==schedule.root)throw Error('The scheduled project is missing or its folder changed.');
-      const taskId=randomUUID();requireWritable({id:taskId},project);const snap=await snapshot(project.root);
-      if(closing||await canonicalRoot(project.root)!==schedule.root)throw Error('The app is closing or the project folder changed.');
+      if(!project||project.root!==schedule.root||await scheduleRootIdentity(project.root)!==schedule.rootIdentity)throw Error('The scheduled project is missing or its folder changed. Save and review it again.');
+      const taskId=randomUUID();requireScheduledWritable({id:taskId},project);const snap=await snapshot(project.root);
+      if(closing||await scheduleRootIdentity(project.root)!==schedule.rootIdentity)throw Error('The app is closing or the project folder changed.');
       const createdAt=now(),task={id:taskId,projectId:project.id,title:run.spec.title,createdAt,updatedAt:createdAt,request:run.spec.prompt,mode:'muse',runOptions:run.spec.runOptions,plan:'Scheduled request explicitly enabled by the user.',criteria:[],planApproved:false,baselineRevision:snap.revision,revision:snap.revision,changes:[],messages:[],shellResults:[],runs:[],promptQueue:[],queuePaused:true,check:null,previewRevision:null,acceptedRevision:null,runtimeComplete:false,scheduleOrigin:{id,runId:run.id}};
       db.prepare('INSERT INTO baselines(task_id,revision,json) VALUES(?,?,?)').run(task.id,snap.revision,JSON.stringify(snap.files));
       owner=newContext(runtimeFactory(),task);owner.schedule={id,runId:run.id};contexts.set(task.id,owner);subscribeContext(owner);saveRecord(task);schedules.attach(id,run.id,task.id);
@@ -575,7 +585,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       for(const row of schedules.due()){
         if(closing||closed)break;changed=true;
         const project=state.projects.find(item=>item.id===row.spec.projectId);
-        if(!row.active&&scheduleNow()-Date.parse(row.nextAt)<=60000&&project){try{requireWritable({id:'scheduled-admission'},project);}catch(error){schedules.skip(row.id,error.message);continue;}}
+        if(!row.active&&scheduleNow()-Date.parse(row.nextAt)<=60000&&project){try{requireScheduledWritable({id:'scheduled-admission'},project);}catch(error){schedules.skip(row.id,error.message);continue;}}
         const claim=schedules.claim(row.id);if(claim)await launchScheduledRun(claim);
       }
       if(changed)emit();
@@ -587,8 +597,9 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(['save','enable'].includes(action.operation)){
       if(!runtimeFactory)throw Error('Scheduling requires independent desktop Muse connections.');
       const row=action.operation==='enable'?schedules.get(action.id):null,spec=action.spec??row.spec,project=state.projects.find(item=>item.id===spec.projectId);
-      if(!project||row&&row.root!==project.root||await canonicalRoot(project.root)!==project.root)throw Error('The scheduled project is missing or its folder changed.');
-      if(action.operation==='save')schedules.save(action,project.root);else schedules.enable(action.id,action.expectedRevision,action.confirmed);
+      let rootIdentity;try{if(!project||row&&row.root!==project.root)throw Error('The scheduled project is missing or its folder changed.');rootIdentity=await scheduleRootIdentity(project.root);if(row&&row.rootIdentity!==rootIdentity)throw Error('The scheduled project folder changed. Save and review it again.');}
+      catch(error){if(row?.enabled)schedules.pause(row.id,row.revision);throw error;}
+      if(action.operation==='save')schedules.save(action,project.root,rootIdentity);else schedules.enable(action.id,action.expectedRevision,action.confirmed);
     }else if(action.operation==='pause')schedules.pause(action.id,action.expectedRevision);
     else if(action.operation==='remove')schedules.remove(action.id,action.expectedRevision);
     else await stopScheduledRun(action.id,action.runId);

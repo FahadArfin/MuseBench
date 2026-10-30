@@ -45,5 +45,5 @@ Files: src/ui/CodeSchedules.tsx and CSS; src/ui/App.tsx; src/preview/bridge.ts; 
 - [x] Add a failing real-controller UI smoke for editor/review/enable/pause/history/stop and stale submissions, in Chromium and Electron.
 - [x] Implement compact list, editor, explicit enable review, history and errors; visibly simulated browser samples with no timer/provider claim.
 - [x] Run new UI checks, adjacent destination/navigation checks, full offline suite and production build. Expected: all required checks pass.
-- [ ] Independent fresh whole-feature review; reproduce and fix material findings in one pass. Record any external acceptance prerequisites.
+- [x] Independent fresh whole-feature review; reproduce and fix material findings in one pass. Record any external acceptance prerequisites.
 - [ ] Carry 0.2.187 installation evidence and prior import plan completion into tracked docs. Commit/push completed feature, verify exact release and idle work, install/reopen latest Windows artifact, retain profile and report installed versus fixture evidence accurately.

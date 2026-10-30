@@ -9,6 +9,7 @@ export function createCodeSchedules(db,{now=()=>Date.now()}={}){
  const read=id=>{const row=rows.get(id);if(!row)throw Error('Schedule is unavailable.');return structuredClone(row);};
  const checked=(id,revision)=>{const row=read(id);if(row.revision!==revision)throw Error('This schedule changed. Review it again.');return row;};
  const stamp=()=>new Date(now()).toISOString();
+ const bound=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value);
  const append=(row,run)=>{row.history=[run,...row.history].slice(0,30);row.outcomes++;row.historyTruncated=row.outcomes>30;};
  const advance=row=>{const next=nextOccurrence(Date.parse(row.nextAt),row.spec.intervalMinutes,now());row.nextAt=next===null?null:new Date(next).toISOString();if(next===null)row.enabled=false;};
  const view=row=>{const copy=structuredClone(row);if(copy.active)delete copy.active.spec;return copy;};
@@ -18,21 +19,24 @@ export function createCodeSchedules(db,{now=()=>Date.now()}={}){
    if(row.id!==record.id||typeof row.root!=='string'||!Number.isSafeInteger(row.revision)||row.revision<1||!Number.isSafeInteger(row.attempts)||row.attempts<0||row.attempts>100||!Array.isArray(row.history)||row.nextAt!==null&&!Number.isFinite(Date.parse(row.nextAt)))continue;
    row.enabled=row.enabled===true;row.history=row.history.slice(0,30);row.outcomes=Number.isSafeInteger(row.outcomes)?row.outcomes:row.history.length;
    if(row.active){const {spec,...interrupted}=row.active;append(row,{...interrupted,status:'uncertain',endedAt:stamp(),reason:'MuseBench restarted before the outcome was confirmed. This request will not be replayed.'});row.active=null;row.enabled=false;row.reason='Review the interrupted run before enabling future work.';row.revision++;}
+   if(!bound(row.rootIdentity)){row.enabled=false;row.rootIdentity=null;row.reason='Save and review the project folder again before enabling this schedule.';row.revision++;}
    write(row);
   }catch{/* Preserve invalid records on disk, but never execute them. */}
  }
  return{
   list:()=>[...rows.values()].map(view).sort((a,b)=>a.spec.title.localeCompare(b.spec.title)),get:id=>view(read(id)),has:id=>rows.has(id),
-  save(input,root){
+  save(input,root,rootIdentity){
    const spec=validateScheduleSpec(input.spec),old=input.id?checked(input.id,input.expectedRevision):null;
    if(old?.active)throw Error('Finish the active run before editing this schedule.');
    if(!old&&rows.size>=50)throw Error('Keep at most 50 schedules.');
    if(Date.parse(spec.startAt)<=now())throw Error('Choose a future start time.');
    if(typeof root!=='string'||!root||root.length>4096)throw Error('Choose a valid project folder.');
-   const row={id:old?.id??randomUUID(),revision:(old?.revision??0)+1,spec,root,enabled:false,nextAt:spec.startAt,attempts:old?.attempts??0,active:null,history:old?.history??[],outcomes:old?.outcomes??0,historyTruncated:old?.historyTruncated??false,reason:'Saved paused. Review and enable to authorize runs.',createdAt:old?.createdAt??stamp()};return view(write(row));
+   if(!bound(rootIdentity))throw Error('Save and review a verified project folder.');
+   const row={id:old?.id??randomUUID(),revision:(old?.revision??0)+1,spec,root,rootIdentity,enabled:false,nextAt:spec.startAt,attempts:old?.attempts??0,active:null,history:old?.history??[],outcomes:old?.outcomes??0,historyTruncated:old?.historyTruncated??false,reason:'Saved paused. Review and enable to authorize runs.',createdAt:old?.createdAt??stamp()};return view(write(row));
   },
   enable(id,revision,confirmed){
    if(confirmed!==true)throw Error('Confirm the schedule before enabling it.');const row=checked(id,revision);
+   if(!bound(row.rootIdentity))throw Error('Save and review the project folder again.');
    if(row.active)throw Error('Finish the active run before enabling future work.');
    if(row.attempts>=row.spec.maxRuns)throw Error('The attempt limit has been reached. Edit the schedule to approve a higher limit.');
    if(!row.nextAt)throw Error('Choose a new start time before enabling this schedule.');

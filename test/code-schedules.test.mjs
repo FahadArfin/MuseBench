@@ -6,12 +6,12 @@ import {validateScheduleSpec,validateScheduleAction,nextOccurrence} from '../src
 
 const origin=Date.parse('2026-11-01T12:00:00Z');
 const spec=overrides=>({title:'Weekly review',projectId:'project',prompt:'Review changes and report findings.',startAt:new Date(origin+60000).toISOString(),intervalMinutes:60,maxRuns:3,runOptions:{reasoning:'high',approval:'ask',budget:'standard'},fullAccess:false,...overrides});
-function fixture(t){const db=new DatabaseSync(':memory:');let time=origin;const options={now:()=>time};const store=createCodeSchedules(db,options);t.after(()=>db.close());return{db,store,options,set:value=>time=value,add:overrides=>store.save({spec:spec(overrides)},'/project')};}
+function fixture(t){const db=new DatabaseSync(':memory:');let time=origin;const options={now:()=>time};const store=createCodeSchedules(db,options);t.after(()=>db.close());return{db,store,options,set:value=>time=value,add:overrides=>store.save({spec:spec(overrides)},'/project','a'.repeat(64))};}
 test('schedules require explicit current review and save paused, without advancing user configuration silently',t=>{
  const {store,add}=fixture(t);let s=add();assert.equal(s.enabled,false);assert.equal(store.due().length,0);
  assert.throws(()=>store.enable(s.id,s.revision,false),/confirm/i);assert.throws(()=>store.enable(s.id,s.revision+1,true),/changed/i);
  s=store.enable(s.id,s.revision,true);assert.equal(s.enabled,true);const previous=s;
- s=store.save({id:s.id,expectedRevision:s.revision,spec:spec({prompt:'A changed request'})},'/project');assert.equal(s.enabled,false);assert.match(s.reason,/review/i);assert.throws(()=>store.enable(s.id,previous.revision,true),/changed/i);
+ s=store.save({id:s.id,expectedRevision:s.revision,spec:spec({prompt:'A changed request'})},'/project','a'.repeat(64));assert.equal(s.enabled,false);assert.match(s.reason,/review/i);assert.throws(()=>store.enable(s.id,previous.revision,true),/changed/i);
  assert.throws(()=>validateScheduleAction({type:'codeSchedule',operation:'tick'}),/command/i);
  for(const change of [{fullAccess:'yes'},{maxRuns:101},{intervalMinutes:1},{prompt:'x'.repeat(16001)},{runOptions:{reasoning:'high',approval:'ask',budget:'infinite'}},{startAt:'not a date'},{secret:'unexpected'}])assert.throws(()=>validateScheduleSpec(spec(change)));
 });
@@ -41,4 +41,9 @@ test('history is bounded without discarding the active claim; malformed saved co
  for(let n=1;n<45;n++){set(origin+60000+n*15*60000);assert.equal(store.claim(s.id),null);}
  s=store.get(s.id);assert.equal(s.active.id,c.run.id);assert.equal(s.history.length,30);assert.ok(s.historyTruncated);assert.equal(s.attempts,1);
  db.prepare('INSERT INTO code_schedules(id,json) VALUES(?,?)').run('broken',JSON.stringify({id:'broken',enabled:true,spec:{prompt:'unsafe'},nextAt:origin}));const restored=createCodeSchedules(db,options);assert.equal(restored.list().some(row=>row.id==='broken'),false);assert.equal(restored.due().length,0);
+});
+
+test('restored schedules without a project identity remain visible but require a new save and review',t=>{
+ const {store,add,db,options}=fixture(t);let row=add();store.enable(row.id,row.revision,true);row=JSON.parse(db.prepare('SELECT json FROM code_schedules WHERE id=?').get(row.id).json);delete row.rootIdentity;db.prepare('UPDATE code_schedules SET json=? WHERE id=?').run(JSON.stringify(row),row.id);
+ const restored=createCodeSchedules(db,options),paused=restored.get(row.id);assert.equal(paused.enabled,false);assert.match(paused.reason,/folder|review/i);assert.throws(()=>restored.enable(paused.id,paused.revision,true),/save|review/i);
 });

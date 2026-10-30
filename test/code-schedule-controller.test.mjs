@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,rm,rename} from 'node:fs/promises';
+import {mkdtemp,mkdir,rm,rename,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createController} from '../src/controller/index.mjs';
@@ -53,4 +53,29 @@ test('removing a completed schedule does not break retained chat events or shutd
 test('closing during scheduled connection cancels admission without sending or retrying',async t=>{
  let entered,release;const started=new Promise(r=>entered=r),gate=new Promise(r=>release=r);
  const f=await fixture(t,{decorate:(r,index)=>{if(index!==1)return;const connect=r.connect,disconnect=r.disconnect;r.connect=async options=>{entered();await gate;await connect(options);};r.disconnect=async()=>{release();await disconnect();};}}),s=await f.save();await f.enable(s);f.advance(60000);const tick=f.c.tickCodeSchedules();await started;await Promise.all([tick,f.c.close()]);assert.equal(f.runtimes.reduce((n,r)=>n+r.sent.length,0),0);
+});
+
+test('a replacement project at the same path requires saving and reviewing again',async t=>{
+ const f=await fixture(t),saved=await f.save();await rename(f.root,f.root+'-original');await mkdir(f.root);
+ const rejected=await f.c.dispatch({type:'codeSchedule',operation:'enable',id:saved.id,expectedRevision:saved.revision,confirmed:true});assert.match(rejected.error,/folder changed/i);assert.equal(rejected.codeSchedules[0].enabled,false);
+ const revised=await f.act({type:'codeSchedule',operation:'save',id:saved.id,expectedRevision:rejected.codeSchedules[0].revision,spec:saved.spec});await f.enable(revised.codeSchedules[0]);f.advance(60000);await f.c.tickCodeSchedules();assert.equal(f.runtimes.reduce((n,r)=>n+r.sent.length,0),1);
+});
+
+test('saved project identity survives restart and blocks replacement admission',async t=>{
+ const f=await fixture(t),saved=await f.save();await f.enable(saved);await f.restart();await rename(f.root,f.root+'-original');await mkdir(f.root);f.advance(60000);await f.c.tickCodeSchedules();const row=f.c.getState().codeSchedules[0];
+ assert.equal(f.runtimes.reduce((n,r)=>n+r.sent.length,0),0);assert.equal(row.enabled,false);assert.equal(row.history[0].status,'failed');assert.match(row.history[0].reason,/folder changed/i);
+});
+
+test('project replacement during native connection is rejected before sending',async t=>{
+ let root;const f=await fixture(t,{decorate:(r,index)=>{if(index!==1)return;const connect=r.connect;r.connect=async input=>{await rename(root,root+'-original');await mkdir(root);await connect(input);};}});root=f.root;const saved=await f.save();await f.enable(saved);f.advance(60000);await f.c.tickCodeSchedules();const row=f.c.getState().codeSchedules[0];
+ assert.equal(f.runtimes.reduce((n,r)=>n+r.sent.length,0),0);assert.equal(row.enabled,false);assert.equal(row.history[0].status,'failed');assert.match(row.history[0].reason,/folder changed/i);
+});
+
+for(const scenario of [{name:'same checkout check',relation:'same'},{name:'same checkout validation',relation:'same',validation:true},{name:'nested scheduled checkout',relation:'nested'},{name:'ancestor scheduled checkout',relation:'ancestor'},{name:'unrelated checkout',relation:'unrelated',allowed:true}])test(`scheduled admission respects ${scenario.name}`,async t=>{
+ const f=await fixture(t),checkRoot=scenario.relation==='ancestor'?path.join(f.root,'child'):f.root,scheduleRoot=scenario.relation==='nested'?path.join(f.root,'child'):scenario.relation==='unrelated'?f.root+'-other':f.root;
+ await mkdir(checkRoot,{recursive:true});await mkdir(scheduleRoot,{recursive:true});await writeFile(path.join(checkRoot,'package.json'),JSON.stringify({scripts:{test:'node hold.mjs'}}));await writeFile(path.join(checkRoot,'hold.mjs'),'setInterval(()=>{},1000);');
+ if(checkRoot!==f.root){await f.act({type:'openProject',path:checkRoot});await f.act({type:'newTask',mode:'manual',request:'Check this project'});}const checkTask=f.c.getState().task.id,checkProject=f.c.getState().activeProject.id;
+ if(scheduleRoot!==checkRoot)await f.act({type:'openProject',path:scheduleRoot});const saved=await f.save();await f.enable(saved);await f.act({type:'selectTask',id:checkTask});
+ if(scenario.validation)await f.act({type:'saveValidationProfile',projectId:checkProject,scripts:['test']});await f.act(scenario.validation?{type:'runValidation'}:{type:'runCheck',script:'test'});assert.equal(f.c.getState().task.check.status,'running');
+ f.advance(60000);await f.c.tickCodeSchedules();const row=f.c.getState().codeSchedules[0];assert.equal(f.runtimes.reduce((n,r)=>n+r.sent.length,0),scenario.allowed?1:0);assert.equal(row.attempts,scenario.allowed?1:0);assert.equal(f.c.getState().task.check.status,'running');if(!scenario.allowed){assert.equal(row.active,null);assert.equal(row.history[0].status,'skipped');assert.match(row.history[0].reason,/check|validation/i);}
 });
