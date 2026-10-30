@@ -1,4 +1,6 @@
 import {normalizeWorkspaceToolset} from '../shared/workspace-analysis.mjs';
+import {createPreviewIntegrationPanels} from './integration-panels';
+import {customizeBlocked} from '../shared/customize-policy.mjs';
 import {applyPreviewSchedule} from './code-schedules';
 import {createBrowserPreviewAnnotations} from './preview-annotations';
 import {createPreviewConversationImports} from './conversation-imports';
@@ -203,6 +205,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const dictation={id:null,status:'idle' as const,available:false,language:null,text:'',error:'Microphone input is available in the desktop app.'};
  let mobile:import('../shared/mobile-types').MobileDeviceState={running:false,port:null,name:'Preview desktop',addresses:[],devices:[],pairing:null,simulation:true};
  let nativeEnabled=false,backgroundEnabled=false;
+ const integrationPanels=createPreviewIntegrationPanels(customize,()=>JSON.stringify([state.activeProject?.id,state.activeProject?.root,state.task?.id]),()=>customizeBlocked(state));
  return {
   nativeControl:async command=>{if(command.type==='enable')nativeEnabled=true;if(command.type==='disable')nativeEnabled=false;return{enabled:nativeEnabled,running:nativeEnabled,transport:'stdio',scope:'Preview',simulation:true,connectionConfig:null};},
   backgroundEngine:async command=>{if(command.type==='set')backgroundEnabled=command.enabled;return{enabled:backgroundEnabled,running:true,windowOpen:true,simulation:true};},
@@ -286,6 +289,7 @@ export function createPreviewBridge():MuseBenchBridge {
    return siteChannel.emit();
   },
   customize:async command=>{
+   const panelResult=integrationPanels(command);if(panelResult)return panelResult;
    if(command.type==='inspectPluginMcp'||command.type==='pluginMcpAction'){
     const plugin=customize.plugins.find(item=>item.id===command.id);if(!plugin)throw Error('Sample plugin not found.');
     const stableId='plugin:'+plugin.id+':mcp_server:local-notes',hookId='plugin:'+plugin.id+':hook:on-stop',importedId='plugin:'+plugin.id+':hook:imported-check';
@@ -337,10 +341,12 @@ export function createPreviewBridge():MuseBenchBridge {
    }
    if(command.type==='serverAction'){
     const server=customize.servers.find(item=>item.name===command.name);if(!server)throw Error('Sample server not found.');
+    if(command.revision!==server.revision)throw Error('Server configuration changed after review.');
     if(command.action==='login')return{state:copy(customize),message:'Simulated sign-in handoff. No account authenticated; readiness remains unverified.'};
     if(command.action==='remove')customize.servers=customize.servers.filter(item=>item!==server);
     if(command.action==='enable'||command.action==='disable')server.enabled=command.action==='enable';
     if(command.action==='review')server.reviewed=true;
+    server.revision=id();
     return{state:copy(customize),message:'Preview only: server action simulated.'};
    }
    if(command.type==='pluginAction'){

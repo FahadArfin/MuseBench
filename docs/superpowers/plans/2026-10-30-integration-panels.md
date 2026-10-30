@@ -27,17 +27,17 @@
 ### Task 1: Finite panel contract and reviewed persistence
 **Files:** src/shared/integration-panel.mjs, src/shared/integration-panel.d.mts, electron/integration-panels.mjs, electron/customize.mjs, src/shared/customize-types.ts, test/integration-panels.test.mjs.
 **Interfaces:** `createIntegrationPanels({settings,writeSettings,review,getState,isActive,isClosed,now})` exposes `inspect({name,revision})`, `prepare({name,revision,values})`, `apply({token,reviewed:true})`, `close()`. Commands `inspectIntegrationPanel`, `prepareIntegrationPanel`, `applyIntegrationPanel` return `integrationPanel` / `integrationReview`; applied result returns fresh state and reconnect message.
-- [ ] Write failing tests for schema/defaults, exact approved source, private-field preservation, source/owner races, expiry/replay, busy transitions and failure handling.
-- [ ] Run `node --test test/integration-panels.test.mjs` — expect RED for missing implementation.
-- [ ] Implement the bounded schema/service and wire Customize with pre-commit checks.
-- [ ] Run focused panel, Customize, plugin and project MCP tests — expect PASS; commit.
+- [x] Write failing tests for schema/defaults, exact approved source, private-field preservation, source/owner races, expiry/replay, busy transitions and failure handling.
+- [x] Run `node --test test/integration-panels.test.mjs` — expect RED for missing implementation.
+- [x] Implement the bounded schema/service and wire Customize with pre-commit checks.
+- [x] Run focused panel, Customize, plugin and project MCP tests — expect PASS; commit.
 
 ### Task 2: Compact shared settings and verification
-**Files:** src/ui/IntegrationPanel.tsx, src/ui/CustomizeDialog.tsx, src/ui/customize.css, src/preview/bridge.ts, scripts/integration-panel-smoke.mjs, scripts/run-ci-suite.mjs, package.json, .github/workflows/windows-checks.yml, test/ci-workflow.test.mjs, docs/INTEGRATION-PANELS.md.
+**Files:** src/ui/IntegrationPanel.tsx, src/ui/CustomizeDialog.tsx, src/ui/customize.css, src/preview/bridge.ts, src/preview/integration-panels.ts, scripts/integration-panel-smoke.mjs, scripts/run-ci-suite.mjs, package.json, .github/workflows/windows-checks.yml, test/ci-suites.test.mjs, docs/INTEGRATION-PANELS.md.
 **Interfaces:** `IntegrationPanel({name,revision,disabled,onChanged})` consumes finite Customize commands; local draft/review state does not outlive the selected owner. Browser preview provides explicit simulation using the same shared field validation.
-- [ ] Write a browser and real isolated Electron smoke for disclosure, draft/cancel/review/apply, stale review rejection, item-switch isolation, narrow layout and reconnect status. Expect RED before the panel exists.
-- [ ] Implement the shared panel, preview adapter and installed detail placement; add the smoke to the existing extensions CI group and coverage contract.
-- [ ] Run `npm run test:integration-panels`, focused regressions, `npm test`, `npm run build` — expect PASS. Update roadmap and evidence, commit.
+- [x] Write a browser and real isolated Electron smoke for disclosure, draft/cancel/review/apply, stale review rejection, item-switch isolation, narrow layout and reconnect status. Expect RED before the panel exists.
+- [x] Implement the shared panel, preview adapter and installed detail placement; add the smoke to the existing extensions CI group and coverage contract.
+- [x] Run `npm run test:integration-panels`, focused regressions, `npm test`, `npm run build` — expect PASS. Update roadmap and evidence, commit.
 
 ### Task 3: Review and verified delivery
 **Files:** docs/validation/2026-10-30-integration-panels.md, docs/ROADMAP-2026-10-29.md and focused corrections.

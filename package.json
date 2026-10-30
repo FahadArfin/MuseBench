@@ -11,6 +11,7 @@
     "preview:ui": "vite --config vite.preview.config.mjs",
     "test:browser-preview": "node scripts/browser-preview-smoke.mjs",
     "test:background-engine": "node scripts/background-settings-smoke.mjs && node scripts/background-engine-smoke.mjs",
+    "test:integration-panels": "node scripts/integration-panel-smoke.mjs && node scripts/integration-panel-smoke.mjs --desktop",
     "test:chat-organization": "node scripts/chat-organization-smoke.mjs",
     "test:code-responsiveness": "node scripts/code-render-responsiveness-smoke.mjs && node scripts/dictation-subscription-smoke.mjs && node scripts/timeline-performance-regression.mjs",
     "test:navigation-cache": "node scripts/navigation-cache-smoke.mjs",
