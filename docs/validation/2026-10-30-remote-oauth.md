@@ -1,6 +1,58 @@
-# App-owned remote OAuth: local acceptance, 30 October 2026
+# App-owned remote OAuth: final local acceptance, 30 October 2026
 
-Correction round1 follows independent review of `dfdc1abb320fd836fdad5c9f52d73aaf04cd92f0`: a refused source-wide account mutation could temporarily gate or revoke busy background authorization. Trusted synchronous mutation reservation now precedes source lookup, source-blocking flags and revocation; accepted reservations block new factory/dispatch/idle admission and retain existing provisional/refresh race protections. The focused correction suite passes265/265 with0failures/skips. The full/build/native/protection/package receipts below remain historical evidence for the old immutable source, not acceptance of this correction. No broad suite/build/native/package rerun occurred in this scoped round; a refreshed final freeze/package is required after whole-feature review. All prior artifacts/packages remain intact.
+All 18 selected roadmap rows are implemented. This consolidated final OAuth correction passes source, actual pinned-native, real OS-protection and fresh exact-package acceptance. The code freeze is `1d05d9c0d7c406dd7f1b6d207643d6e7dcc0b8ae` (tree `baa5c1309aaa744b9117b7ab2f4e8838f73a6030`). The final documentation commit changes no frozen production/build/helper/harness input. Parent scoped independent rereview, latest CI/publication and exact installation remain separate gates. **0.2.241 is the last historical verified installed checkpoint**, not a claim that unpublished OAuth is installed; no speculative next release number is assigned.
+
+## Consolidated findings resolved
+
+- **P2 refresh save recovery:** a known returned result whose protected completion fails during provisional preconnection transfers to bounded local-save capability only while the exact selected main task/root/epoch matches. Ordinary failed connection cleanup revokes execution and preserves that exact epoch; no general adoption or dead-runtime authority exists. Source/revision/auth identity/latest enrollment/refresh transaction/account generation/review/deadline guard local saving, including synchronous durable publication. Connected recovery retains keyed live-lease authority. Explicit close/cancel/source/account/owner/expiry rejects stale saves; local Retry repeats no POST/browser/code exchange or native turn.
+- **P2 connected UI:** only local status/cancel/retry becomes reachable when connected and idle. Execution/account changes stay locked; active work disables recovery. Current idle projection is restored only for auth preparation failure before native submission. The real production RuntimeDialog/controller/runtime/factory/store tests demonstrate zero native turns through recovery, then one deliberately requested synthetic native turn.
+- **P3 presentation/scopes:** compact Ready has explicit details, reauthorization and local Forget disclosures. Discovery/details/Forget consent states are independent. Approved scopes come from the exact durable binding; unavailable information is omitted rather than displayed as None. No inner source scrollbar remains in the accepted Ready view.
+- **Documentation:** factory cases are correctly traced to `test/discovery-oauth-integration.test.mjs`, preserving existing config tests without duplicate filename-only changes. [Decision/cost history](2026-10-30-remote-oauth-decisions.md) retains original and superseded ledger rulings. Baseline warning disclosure includes missing author.
+
+## Current frozen checks
+
+| Check | Result | Evidence under `artifacts/remote-oauth/` |
+| --- | --- | --- |
+| Focused service/store/identity/flow/callback/factory/controller/runtime/session/CI |281 passed, 0 failed/skips|`task3-final-wave-freeze-focused.txt`|
+| One final `npm.cmd test` |1,924 passed, 0 failed, 1 existing optional skip; 1,925 total|`task3-final-freeze-full-test.txt`|
+| One final `npm.cmd run build` |TypeScript/native/Vite passed|`task3-final-freeze-build.txt`|
+| Source browser/Electron OAuth controls |8 checks each,390/1280 and independent consent/scopes|`ui/browser-ANEu5r/report.json`, `ui/desktop-XgWMZ8/report.json`|
+| Real production dialog/controller/runtime browser/Electron |4 checks each, idle connected local recovery and active locks|`recovery-ui/browser-798yme/report.json`, `recovery-ui/desktop-bWj88f/report.json`|
+| Existing full renderer discovery browser/Electron |8 checks each|`task3-final-freeze-existing-ui.txt`|
+| Actual source Electron45 async safeStorage |6 checks, two isolated fake-credential processes|`protection/source-ZpsJP6/report.json`|
+| Actual source pinned Muse current/legacy |5 scenarios / 14 scripted Responses each; approved effect1, denial0additional, marker/restart/Forget and cleanup|`native-source-current-6xEhP5/report.json`, `native-source-legacy-oCQIIt/report.json`|
+| Fresh directory package |Build passed, never installed|`task3-final-freeze-package-build.txt`|
+| Fresh exact-ASAR wrapper |All 5 children exit0; current+legacy actual native5 scenarios / 14 requests each, protection6, exact shared renderer8, verifier 312 files|`package/acceptance-b8gT3s/report.json`|
+| Immutable acceptance |564 source/build/helper/harness inputs and76 package files equal before/after|Same wrapper report, `immutableInputs:true`|
+
+The new wrapper passed directly; no failed-wrapper composition was needed for this freeze. Each native run retains60s/32request/1MiB/2000event maxima (script uses stricter24request cap), actual locally PKCE-minted bearer acceptance and seeded-bearer rejection, no inference/personal credentials, confirmed process/socket cleanup and exact owned disposable-root removal. Source and packaged safeStorage are actual Electron45 APIs; UI recovery uses the real product dialog/controller/runtime with only the external native process simulated. That separate fixture deliberately submits one native protocol turn only after explicit save and send; it makes no inference. The native current/legacy acceptance uses actual pinned Muse with scripted loopback Responses. Exact-ASAR visual UI uses a disposable bridge/local service, so it does not claim personal-provider or full production IPC/provider acceptance.
+
+Production-path regression proves expired-grant preconnection refresh, one injected completion-write failure, ordinary real runtime/factory owner cleanup with confirmed host close and no session/turn submission, explicit local retry preserving binding with1 refresh total/0 new browser or code exchanges, then a freshly reviewed usable connection. Held publication cancellation retains durable intent without publishing stale candidate. Additional source/account/latest-binding/owner/expiry/explicit-close and repeated-write-failure cases reject stale recovery. Existing busy-refusal, provisional generation, observed-authority, terminal status, no-replay and supersession regressions remain green.
+
+## Current immutable identities
+
+- Source freeze: `1d05d9c0d7c406dd7f1b6d207643d6e7dcc0b8ae`; source/build/helper/harness aggregate `ffd081e99c615559140353a9e4bd7ab5e3ba949ca07fc0fa4d6f056080b691dd` (564 entries).
+- Exact package: `artifacts/remote-oauth-package/win-unpacked/MuseBench.exe`; ASAR SHA-256 `866178fbe3cee60a0af012cfba479458ae6e00bb8416f2672a132caa6444790f`; EXE `f6e7efa85c1b6094a14ddc942d093de119d9997af183cdc057b0005634162606`.
+- Exact-ASAR renderer: `c61b16bb8866bad49d3108a6d8814dc1fbd2ba25fc58836393d2bf755ab86115`.
+- Wrapper receipt: `package/acceptance-b8gT3s/report.json`, SHA-256 `8a3137b5dac8e39eaacd6538876f88292b906c74aa0dc5778fdecf28c710328a`.
+- Focused/full/build/package-build log SHA-256 respectively: `6349fda4c1d6cd748910a9da942a51d134deccd974ae525c3d96ebbcb94be22e`, `dc0edb59bec78481679619c128bd453bcfb4e10c359a2750ad3c5302016ff7f0`, `7102b0761829d111c5941d57d46cb685fdd361434b8dfec5e5a2f579b7699b6a`, `e0732e59903ae5996536d8ae2dc184da6fa89653d836173b6a0747094b03c457`.
+- Complete source/build/package manifests, child commands/logs and before/after equality are in the wrapper report. Individual final report/log hashes are indexed in `task3-final-freeze-evidence.json`.
+- Pins unchanged: Muse SDK1.4.14, local MCP SDK1.32.2, remote client/core2.4.0, Electron45.0.0; lock SHA-256 `ae079d7bad104f4234771a5631b0396806919b1ec3897eba566835261afebbf0`; packaged Job helper `ded994433f6f9893aa533b0ee234f94708fee4eebc696b8ea40f04347e26d27e`, speech helper `b289d622b57928d7892e37f5999331c145b02470e6246ab9aa4b9ea8dfc6b7af`.
+
+Parent independently rehashed all564inputs / all76 package files and checked before/after equality, all 5 child exit0 and current/legacy/protection/UI receipts. Parent also inspected exact-ASAR390/1280 screenshots and confirmed selector +compact Ready/read scopes visible without inner source scrolling. No tests were rerun for that independent evidence check.
+
+## Preservation and limits
+
+The previous `artifacts/remote-oauth-package` was moved using checked canonical workspace paths to `artifacts/remote-oauth-package-pre-final-wave-20261030`; its ASAR stayed `14ae3aec17de91311992bc2adf7935edd465a82ddeb7435aa6ac6be5ed4badfe`. Receipt `package/final-wave-archive.json` records exact old/new paths and equality. Earlier `remote-oauth-package-pre-authority-20261030`, all historical successes/failures, reports and failed roots remain. Historical evidence below binds its prior source only.
+
+Warnings remain baseline/configuration debt: SQLite ExperimentalWarning; Vite large-chunk warning; missing package author; duplicate dependency references; executable signing deliberately skipped by current config. No pin/package metadata/signing/chunk policy change or warning-free claim is made.
+
+No provider/model inference, personal/native OAuth storage, grant/account/security changes, install, push, merge, other-tree writes or subagents occurred. Public-client registration/admin policy, entitlement/TLS/PKCE/CIMD compatibility, real-model selection, unsupported native source/schema/retention features and remote effect cancellation remain explicit prerequisites/limits. Parent owns scoped rereview and exact current release/install; [241](2026-10-30-desktop-0.2.241.md) remains historical.
+
+## Historical pre-correction acceptance and receipts
+
+
+Historical correction round1 checkpoint: independent review of `dfdc1abb320fd836fdad5c9f52d73aaf04cd92f0`: a refused source-wide account mutation could temporarily gate or revoke busy background authorization. Trusted synchronous mutation reservation now precedes source lookup, source-blocking flags and revocation; accepted reservations block new factory/dispatch/idle admission and retain existing provisional/refresh race protections. The focused correction suite passes265/265 with0failures/skips. The full/build/native/protection/package receipts below remain historical evidence for the old immutable source, not acceptance of this correction. No broad suite/build/native/package rerun occurred in this scoped round; a refreshed final freeze/package is required after whole-feature review. All prior artifacts/packages remain intact.
 
 Task3 completes the app-owned public-client sign-in path for reviewed disabled global remote MCP sources. This is local source, real native, OS-protection and exact-package evidence. Independent whole-feature review, publication, installation and personal-provider compatibility remain separately owned. Desktop **0.2.241** remains the installed release; its [separate receipt](2026-10-30-desktop-0.2.241.md) predates OAuth delivery.
 
@@ -43,7 +95,7 @@ Built once after final production verification using:
 npm.cmd exec electron-builder -- --win --dir --publish never --config.directories.output=artifacts/remote-oauth-package
 ```
 
-Retained package: `artifacts/remote-oauth-package/win-unpacked/MuseBench.exe`. It was never installed. Earlier pre-correction staging package is preserved separately at `artifacts/remote-oauth-package-pre-authority-20261030`.
+Historical retained package originally at `artifacts/remote-oauth-package/win-unpacked/MuseBench.exe`, now preserved at `artifacts/remote-oauth-package-pre-final-wave-20261030/win-unpacked/MuseBench.exe`. It was never installed. Earlier pre-correction staging package is preserved separately at `artifacts/remote-oauth-package-pre-authority-20261030`.
 
 - Source baseline: `3720b7bed09fcb979ca7b915d8798e015e7bd4db` plus the Task3 commit containing this document. Exact file manifest, rather than a mutable branch name, binds acceptance.
 - Final 562-input SHA-256 aggregate: `a4912f8b91ffd27cad9a13841cde26e6ba0944468bf79a1e3d1c3977242e8d16`.
@@ -64,4 +116,4 @@ RED receipts precede implementation: missing integration/private route/token beh
 
 The existing sequential native CI group now adds direct browser OAuth UI, Electron OAuth UI and real local Electron fake-credential protection commands, preserving all existing commands once. Exact required-check tests and sanitized UI/protection report upload globs were updated. Actual pinned Muse OAuth acceptance stays an explicit local command; CI does not install a provider/native binary for it. Existing parallel release topology is unchanged.
 
-Build output retains the existing Node SQLite experimental warning and Vite large-chunk warning. Packaging reports duplicate dependency references and deliberately skipped executable signing under the current configuration. These are disclosed warnings, not failed checks. No grants/accounts/security settings were changed; no personal/native OAuth store was read; no real provider or model request, install, push or merge occurred. Local fixture compatibility cannot prove provider entitlement, provider-specific registration/admin approval, public-client/PKCE support, real model selection or remote effect cancellation. Those remain explicit product/provider acceptance boundaries.
+Build output retains the existing Node SQLite experimental warning and Vite large-chunk warning. Packaging reports missing author, duplicate dependency references and deliberately skipped executable signing under the current configuration. These are disclosed warnings, not failed checks. No grants/accounts/security settings were changed; no personal/native OAuth store was read; no real provider or model request, install, push or merge occurred. Local fixture compatibility cannot prove provider entitlement, provider-specific registration/admin approval, public-client/PKCE support, real model selection or remote effect cancellation. Those remain explicit product/provider acceptance boundaries.

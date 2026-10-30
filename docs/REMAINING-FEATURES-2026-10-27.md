@@ -1,6 +1,6 @@
 # Remaining-feature implementation and evidence
 
-This audit supersedes the status table in [26 October's inventory](REMAINING-FEATURES-2026-10-26.md). Earlier reports remain historical evidence. The shared MuseBench renderer is used by desktop and browser preview; external Meta/Muse pages remain labeled read-only desktop snapshots, as requested.
+This audit supersedes the status table in [26 October's inventory](REMAINING-FEATURES-2026-10-26.md). Earlier reports remain historical evidence. The 30 October roadmap's 18 selected rows are implemented; [final OAuth source/package acceptance](validation/2026-10-30-remote-oauth.md) includes bounded local save recovery and compact sign-in controls. 0.2.241 is the last historical installed checkpoint; parent latest release/install gates remain separate. The shared MuseBench renderer is used by desktop and browser preview; external Meta/Muse pages remain labeled read-only desktop snapshots, as requested.
 
 ## Delivered in this pass
 
@@ -65,4 +65,4 @@ An initial local archive built while sources were changing failed byte verificat
 
 Fresh CI also exposed Electron 45's first-import binary download: parallel helper tests both initialized the same missing distribution, causing `spawn EBUSY` during extraction. The sequential `pretest` phase now resolves Electron before starting parallel tests. Real Electron subprocess checks remain enabled; no retry or skip masks a startup failure.
 
-**30 October remote continuation:** The same reviewed disabled-global gateway now covers configured-header/no-auth remote sources with current MCP negotiation, older JSON/POST SSE and bounded historical SSE fallback. [Remote validation](validation/2026-10-30-remote-discovery.md) records fixture/native/package evidence and limits. Explicit app-owned OAuth with protected persistent credentials is the next selected independent feature. Live personal-provider/model acceptance and release installation remain separate.
+**30 October remote continuation:** The same reviewed disabled-global gateway now covers configured-header/no-auth remote sources with current MCP negotiation, older JSON/POST SSE and bounded historical SSE fallback. [Remote validation](validation/2026-10-30-remote-discovery.md) records fixture/native/package evidence and limits. Explicit app-owned OAuth with protected persistent credentials is implemented and has final source/native/OS-protection/exact-package acceptance, including one-exchange local refresh-save recovery; see [OAuth evidence](validation/2026-10-30-remote-oauth.md) and [decision/cost history](validation/2026-10-30-remote-oauth-decisions.md). Live personal-provider/model acceptance and release installation remain separate.
