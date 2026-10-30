@@ -22,6 +22,12 @@ test('invalid and noncanonical paths cannot become launch configuration',async t
  const linked=path.join(root,'linked');await symlink(appRoot,linked,process.platform==='win32'?'junction':'dir');await assert.rejects(api.createWorkspaceMcpConfig({appRoot,executable:electron})(linked),/canonical/);
  await assert.rejects(api.createWorkspaceMcpConfig({appRoot:linked,executable:electron})(root),/canonical/);
 });
+test('analysis toolset is an exact explicit launch flag and unknown sets are rejected',async t=>{
+ const root=await fixture(t),factory=api.createWorkspaceMcpConfig({appRoot,executable:electron});
+ assert.deepEqual((await factory(root,{toolset:'analysis-v1'})).args.slice(-2),['--toolset','analysis-v1']);
+ assert.equal((await factory(root)).args.includes('--toolset'),false);
+ await assert.rejects(factory(root,{toolset:'all'}),/tool set/);
+});
 test('script substitution through a junction is rejected',async t=>{
  assert.equal(typeof api.createWorkspaceMcpConfig,'function');const root=await fixture(t),fake=path.join(root,'fake');await mkdir(path.join(fake,'src'),{recursive:true});
  await symlink(path.join(appRoot,'src','runtime'),path.join(fake,'src','runtime'),process.platform==='win32'?'junction':'dir');

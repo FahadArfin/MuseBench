@@ -1,5 +1,6 @@
 import path from 'node:path';
 import {realpath,lstat} from 'node:fs/promises';
+import {normalizeWorkspaceToolset} from '../src/shared/workspace-analysis.mjs';
 
 const key=value=>process.platform==='win32'?path.resolve(value).toLowerCase():path.resolve(value);
 async function checked(value,kind){
@@ -15,10 +16,11 @@ async function checked(value,kind){
 /** Main-process-only factory. appRoot and executable are supplied by the trusted
  * application, never renderer IPC. The caller still owns consent and host lifetime. */
 export function createWorkspaceMcpConfig({appRoot,executable=process.execPath}={}){
- return async workspaceRoot=>{
+ return async(workspaceRoot,{toolset='navigation-v1'}={})=>{
+  normalizeWorkspaceToolset(toolset);
   const root=await checked(workspaceRoot,'directory'),app=await checked(appRoot,'app'),command=await checked(executable,'file');
   const expected=path.join(app,'src','runtime','workspace-mcp.mjs'),script=await checked(expected,'file');
   if(key(script)!==key(expected))throw Error('Workspace tools script does not belong to the application.');
-  return Object.freeze({transport:'stdio',command,args:Object.freeze([script,'--root',root]),env:Object.freeze({ELECTRON_RUN_AS_NODE:'1',NODE_OPTIONS:'',NODE_PATH:''}),framing:'lineDelimitedJson',mode:'required'});
+  return Object.freeze({transport:'stdio',command,args:Object.freeze([script,'--root',root,...(toolset==='analysis-v1'?['--toolset',toolset]:[])]),env:Object.freeze({ELECTRON_RUN_AS_NODE:'1',NODE_OPTIONS:'',NODE_PATH:''}),framing:'lineDelimitedJson',mode:'required'});
  };
 }

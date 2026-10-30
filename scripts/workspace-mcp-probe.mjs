@@ -11,7 +11,7 @@ import {createRuntime,curateEnvironment,discoverMuseBinaries} from '../src/runti
 
 const require=createRequire(import.meta.url),options={appRoot:path.resolve(fileURLToPath(new URL('..',import.meta.url))),executable:process.versions.electron?process.execPath:require('electron'),native:false};
 for(let i=2;i<process.argv.length;i++){
- const arg=process.argv[i];if(arg==='--native'){options.native=true;continue;}
+ const arg=process.argv[i];if(arg==='--native'){options.native=true;continue;}if(arg==='--analysis'){options.toolset='analysis-v1';continue;}
  const name={'--app-root':'appRoot','--executable':'executable'}[arg];if(!name||!process.argv[i+1]||!path.isAbsolute(process.argv[i+1]))throw Error('Invalid probe options.');options[name]=process.argv[++i];
 }
 const temporary=await mkdtemp(path.join(tmpdir(),'muse-mcp-probe-')),workspace=path.join(temporary,'project'),profile=path.join(temporary,'profile');
@@ -19,7 +19,7 @@ await mkdir(workspace);await mkdir(profile);await writeFile(path.join(workspace,
 const report={at:new Date().toISOString(),modelCalls:0,direct:null,native:null,workspaceRemoved:false};let child,childClosed,runtime,stage='configuration';
 const bounded=async(promise,ms=15000)=>{let timer;try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Object.assign(Error('Probe deadline.'),{code:'PROBE_TIMEOUT'})),ms);})]);}finally{clearTimeout(timer);}};
 try{
- const factory=createWorkspaceMcpConfig(options),entry=await factory(workspace);stage='direct-start';
+ const trustedFactory=createWorkspaceMcpConfig(options),factory=root=>trustedFactory(root,{toolset:options.toolset}),entry=await factory(workspace);stage='direct-start';
  child=spawn(entry.command,entry.args,{cwd:workspace,env:{...curateEnvironment(),...entry.env},stdio:['pipe','pipe','pipe'],windowsHide:true});
  childClosed=new Promise(resolve=>{child.once('close',code=>resolve(code));child.once('error',()=>resolve(-1));});
  let buffer='',stderrBytes=0;const waiters=new Map();
@@ -32,10 +32,20 @@ try{
  if(searched.error||searched.result?.isError||JSON.parse(searched.result?.content?.[0]?.text??'null')?.operations?.[0]?.name!=='definition')throw Error('Gateway search contract failed.');
  stage='direct-navigation';
  const invoked=await request(4,'tools/call',{name:'workspace_tool_call',arguments:{operation:'definition',path:'main.ts',line:2,column:2},_meta:{callId:'call_probe_navigation',idempotencyKey:'probe-navigation'}});
- if(initialized.result?.serverInfo?.name!=='musebench-workspace'||listed.result?.tools?.map(x=>x.name).join(',')!=='workspace_tool_search,workspace_tool_call'||invoked.result?.isError)throw Error('Gateway contract failed.');
+ const expectedTools='workspace_tool_search,workspace_tool_call'+(options.toolset==='analysis-v1'?',workspace_tool_batch':'');
+ if(initialized.result?.serverInfo?.name!=='musebench-workspace'||listed.result?.tools?.map(x=>x.name).join(',')!==expectedTools||invoked.result?.isError)throw Error('Gateway contract failed.');
  const result=JSON.parse(invoked.result.content[0].text);if(result.items?.length!==1||result.items[0].path!=='lib.ts'||result.scope?.config!=='fixed-no-project-config')throw Error('Navigation contract failed.');
+ let batch;
+ if(options.toolset==='analysis-v1'){
+  stage='direct-batch';const discovery=await request(5,'tools/call',{name:'workspace_tool_search',arguments:{query:''}});
+  if(JSON.parse(discovery.result?.content?.[0]?.text??'{}').operations?.length!==7)throw Error('Analysis discovery failed.');
+  const answer=await request(6,'tools/call',{name:'workspace_tool_batch',arguments:{calls:[{id:'symbols',operation:'workspace_symbols',query:'value'},{id:'definition',operation:'definition',path:'main.ts',line:2,column:2},{id:'syntax',operation:'syntax_diagnostics',path:'lib.ts'}]},_meta:{callId:'call_probe_batch'}});
+  const receipt=JSON.parse(answer.result?.content?.[0]?.text??'{}');
+  if(receipt.kind!=='workspace-batch'||receipt.calls?.length!==3||receipt.calls.some(c=>c.status!=='completed'||c.result.snapshot!==receipt.snapshot)||receipt.calls[1].result.items[0]?.path!=='lib.ts')throw Error('Analysis batch failed.');
+  batch={operations:7,calls:receipt.calls.map(c=>({id:c.id,operation:c.operation,status:c.status})),sharedSnapshot:true,scope:receipt.scope,engine:receipt.engine,elapsedMs:receipt.elapsedMs};
+ }
  child.stdin.end();const exitCode=await bounded(childClosed);if(exitCode!==0||stderrBytes!==0)throw Error('Gateway cleanup failed.');
- report.direct={server:'musebench-workspace',tools:listed.result.tools.map(x=>x.name),requestMetadataVerified:true,definition:'lib.ts',engine:result.engine,exitCode,stderrBytes,nodeMode:true,packagedApp:options.appRoot.toLowerCase().endsWith('.asar')};
+ report.direct={server:'musebench-workspace',toolset:options.toolset??'navigation-v1',tools:listed.result.tools.map(x=>x.name),requestMetadataVerified:true,definition:'lib.ts',engine:result.engine,exitCode,stderrBytes,nodeMode:true,packagedApp:options.appRoot.toLowerCase().endsWith('.asar'),...(batch?{batch}:{})};
  if(options.native){
   stage='native-start';const binary=discoverMuseBinaries()[0];if(!binary)throw Error('Native binary unavailable.');
   const environment={...curateEnvironment(),USERPROFILE:profile,HOMEDRIVE:path.parse(profile).root,HOMEPATH:profile.slice(path.parse(profile).root.length-1),APPDATA:path.join(profile,'AppData','Roaming'),LOCALAPPDATA:path.join(profile,'AppData','Local')};

@@ -97,6 +97,61 @@ test('entry point rejects unknown flags and relative roots without printing them
   const child=spawn(process.execPath,['src/runtime/workspace-mcp.mjs',...args],{stdio:['ignore','pipe','pipe']});let out='',err='';child.stdout.on('data',x=>out+=x);child.stderr.on('data',x=>err+=x);const code=await new Promise(resolve=>child.on('close',resolve));assert.notEqual(code,0);assert.equal(out,'');assert.doesNotMatch(err,/private|relative/);
  }
 });
+
+test('analysis mode discovers seven operations and validates batches before starting work',async t=>{
+ const batches=[];const f=await fixture(t,{toolset:'analysis-v1',service:{query:async query=>({operation:query.operation,items:[]}),batch:async calls=>{batches.push(calls);return{kind:'workspace-batch',version:1,calls:calls.map(c=>({id:c.id,operation:c.operation,status:'completed',result:{items:[]}}))};},dispose:async()=>{}}});await f.init();
+ f.send('tools/list',{},1);await f.settle();assert.deepEqual(f.rows.at(-1).result.tools.map(x=>x.name),['workspace_tool_search','workspace_tool_call','workspace_tool_batch']);
+ f.send('tools/call',{name:'workspace_tool_search',arguments:{query:''}},2);await f.settle();assert.equal(JSON.parse(f.rows.at(-1).result.content[0].text).operations.length,7);
+ f.send('tools/call',{name:'workspace_tool_call',arguments:{operation:'workspace_symbols',query:'count'}},3);await f.settle();assert.equal(f.rows.at(-1).error,undefined);
+ const calls=[{id:'find',operation:'workspace_symbols',query:'count'},{id:'outline',operation:'document_symbols',path:'a.ts'}];
+ f.send('tools/call',{name:'workspace_tool_batch',arguments:{calls},_meta:{callId:'opaque'}},4);await f.settle();assert.deepEqual(batches,[calls]);assert.deepEqual(JSON.parse(f.rows.at(-1).result.content[0].text).calls.map(x=>x.id),['find','outline']);
+ for(const invalid of [[...calls,{id:'outside',operation:'document_symbols',path:'../private.ts'}],[calls[0],calls[0]],[],Array(9).fill(calls[0])]){f.send('tools/call',{name:'workspace_tool_batch',arguments:{calls:invalid}},5);await f.settle();assert.equal(f.rows.at(-1).error.code,-32602);}
+ assert.equal(batches.length,1);
+ const legacy=await fixture(t);await legacy.init();legacy.send('tools/call',{name:'workspace_tool_batch',arguments:{calls}},1);await legacy.settle();assert.equal(legacy.rows.at(-1).error.code,-32602);
+});
+
+test('batch output overflow becomes explicit bounded per-call receipts',async t=>{
+ const f=await fixture(t,{toolset:'analysis-v1',maxResultBytes:1024,service:{query:async()=>({}),batch:async calls=>({kind:'workspace-batch',version:1,calls:calls.map(c=>({id:c.id,operation:c.operation,status:'completed',result:{text:'private'.repeat(1000)}}))}),dispose:async()=>{}}});await f.init();
+ f.send('tools/call',{name:'workspace_tool_batch',arguments:{calls:[{id:'a',operation:'workspace_symbols',query:''},{id:'b',operation:'workspace_symbols',query:''}]}},1);await f.settle();
+ assert.equal(f.rows.at(-1).error,undefined);const result=JSON.parse(f.rows.at(-1).result.content[0].text);assert.deepEqual(result.calls.map(c=>[c.id,c.status,c.error]),[['a','failed','SEMANTIC_OUTPUT_LIMIT'],['b','failed','SEMANTIC_OUTPUT_LIMIT']]);assert.doesNotMatch(JSON.stringify(result),/private/);
+});
+
+test('cancellation is out of band and distinguishes queued, running and numeric/string request IDs',async t=>{
+ const invoked=[];let aborted=false;
+ const f=await fixture(t,{service:{query:(query,{signal}={})=>{invoked.push(query.path);if(query.path!=='slow.ts')return Promise.resolve({items:[]});return new Promise((resolve,reject)=>{signal?.addEventListener('abort',()=>{aborted=true;reject(Object.assign(Error('private reason'),{code:'SEMANTIC_CANCELLED'}));},{once:true});});},dispose:async()=>{}}});await f.init();
+ const call=path=>({name:'workspace_tool_call',arguments:{operation:'hover',path,line:1,column:1}});
+ const cancel=requestId=>f.input.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/cancelled',params:{requestId,reason:'not echoed'}})+'\n');
+ f.send('tools/call',call('slow.ts'),7);f.send('tools/call',call('queued.ts'),8);await f.settle();cancel('7');cancel(8);await f.settle();assert.equal(aborted,false);assert.deepEqual(invoked,['slow.ts']);
+ cancel(7);await f.settle();assert.equal(aborted,true);assert.deepEqual(invoked,['slow.ts']);assert.equal(f.rows.some(x=>[7,8].includes(x.id)),false);
+ f.send('tools/call',call('next.ts'),9);await f.settle();assert.equal(f.rows.at(-1).id,9);assert.equal(f.rows.at(-1).error,undefined);cancel(9);await f.settle();assert.equal(f.server.closed,false);
+});
+
+test('malformed cancellation and initialization cancellation cannot suppress ordinary requests',async t=>{
+ const f=await fixture(t);f.send('initialize',{protocolVersion:'2025-11-25'},0);
+ const notify=params=>f.input.write(JSON.stringify({jsonrpc:'2.0',method:'notifications/cancelled',params})+'\n');
+ notify({requestId:0});await f.settle();assert.equal(f.rows[0].id,0);
+ f.send('ping',{},1);notify({requestId:1,extra:'unknown'});notify({requestId:{id:1}});await f.settle();assert.ok(f.rows.some(x=>x.id===1));assert.equal(f.server.closed,false);
+});
+
+test('duplicate pending request IDs fail closed without invoking a second operation',async t=>{
+ let finish;const wait=new Promise(resolve=>finish=resolve);const f=await fixture(t,{service:{query:async()=>{await wait;return{};},dispose:async()=>finish()}});await f.init();
+ const params={name:'workspace_tool_call',arguments:{operation:'hover',path:'a.ts',line:1,column:1}};f.send('tools/call',params,1);f.send('tools/call',params,1);await f.settle();assert.equal(f.server.closed,true);
+});
+test('Node and Electron execute real analysis batches and close on EOF',{timeout:15000},async t=>{
+ const root=await mkdtemp(path.join(tmpdir(),'muse-analysis-batch-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ await writeFile(path.join(root,'a.ts'),'export const value = 1;\n');
+ for(const executable of [process.execPath,createRequire(import.meta.url)('electron')]){
+  const child=spawn(executable,['src/runtime/workspace-mcp.mjs','--root',root,'--toolset','analysis-v1'],{env:{...process.env,ELECTRON_RUN_AS_NODE:'1',NODE_OPTIONS:'',NODE_PATH:''},stdio:['pipe','pipe','pipe'],windowsHide:true});
+  const closed=new Promise(resolve=>child.once('close',resolve));t.after(async()=>{if(child.exitCode===null){child.kill();await closed;}});
+  let buffer='',stderr='';const waiters=new Map();child.stderr.on('data',chunk=>stderr+=chunk);child.stdout.on('data',chunk=>{buffer+=chunk;for(let i;(i=buffer.indexOf('\n'))>=0;){const row=JSON.parse(buffer.slice(0,i));buffer=buffer.slice(i+1);waiters.get(row.id)?.(row);}});
+  const request=(id,method,params)=>{const answer=new Promise(resolve=>waiters.set(id,resolve));child.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\n');return answer;};
+  await request(0,'initialize',{protocolVersion:'2025-11-25'});
+  const row=await request(1,'tools/call',{name:'workspace_tool_batch',arguments:{calls:[{id:'search',operation:'workspace_symbols',query:'value'},{id:'outline',operation:'document_symbols',path:'a.ts'},{id:'invalid-position',operation:'hover',path:'a.ts',line:999,column:1}]}});
+  assert.equal(row.error,undefined);const result=JSON.parse(row.result.content[0].text);
+  assert.deepEqual(result.calls.map(c=>c.status),['completed','completed','failed']);assert.equal(result.calls[0].result.snapshot,result.calls[1].result.snapshot);assert.equal(result.calls[0].result.items[0].name,'value');
+  child.stdin.end();assert.equal(await closed,0);assert.equal(stderr,'');
+ }
+});
 test('real JSONL subprocess resolves a definition and exits after stdin closes',{timeout:15000},async t=>{
  const root=await mkdtemp(path.join(tmpdir(),'muse-workspace-mcp-live-'));t.after(()=>rm(root,{recursive:true,force:true}));
  await writeFile(path.join(root,'lib.ts'),'export const count = 1;\n');await writeFile(path.join(root,'main.ts'),"import {count} from './lib';\ncount;\n");
