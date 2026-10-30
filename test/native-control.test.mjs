@@ -55,3 +55,10 @@ test('Windows revokes pre-existing explicit Everyone grants before publishing a 
 });
 
 test('native schedule navigation opens the page without permitting schedule execution',()=>{assert.doesNotThrow(()=>validateNativeCall('navigate',{target:'codeSchedules'}));assert.throws(()=>validateNativeCall('navigate',{target:'codeSchedules',operation:'enable'}));});
+
+test('configuration preparation is lazy, recoverable and cannot change the control grant',async t=>{
+ const dataDir=await mkdtemp(path.join(os.tmpdir(),'muse-native-config-'));let calls=0,fail=true;
+ const host=await createNativeControlHost({dataDir,service:{call:()=>({})},connectionConfig:async()=>{calls++;if(fail)throw Error('fixture disk failure');return{command:'verified-cache',args:[],env:{}};}});t.after(async()=>{await host.close();await rm(dataDir,{recursive:true,force:true});});
+ let state=await host.command({type:'status'});assert.equal(state.connectionConfig,null);assert.equal(calls,0);state=await host.command({type:'enable'});assert.equal(state.running,true);assert.equal(state.connectionConfig,null);assert.match(state.connectionError,/prepare|connection/i);
+ fail=false;state=await host.command({type:'status'});assert.equal(state.connectionConfig.command,'verified-cache');assert.equal(state.connectionError,null);state=await host.command({type:'disable'});assert.equal(state.running,false);assert.equal(state.connectionConfig,null);const before=calls;await host.command({type:'status'});assert.equal(calls,before);
+});

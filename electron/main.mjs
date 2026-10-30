@@ -6,6 +6,7 @@ import {userProfile} from '../src/shared/platform.mjs';
 import {createMobileHost} from './mobile-host.mjs';
 import {createMobileService} from './mobile-service.mjs';
 import {createNativeControlHost} from './native-control-host.mjs';
+import {prepareNativeMcpConfig} from './native-mcp-cache.mjs';
 import {createNativeControlService,createNativeRenderer} from './native-control-service.mjs';
 import {createFileEditor} from './file-editor.mjs';
 import {createWorkspaceMcpConfig} from './workspace-mcp-config.mjs';
@@ -165,7 +166,7 @@ else {
     handler('musebench:mobile-device',command=>mobileHost.command(command));
     const nativeRenderer=createNativeRenderer({window,ipcMain,trusted:event=>trustedSender(event,window.webContents,uiURL)});
     nativeService=createNativeControlService({app,window,controller,personal,renderer:nativeRenderer,isBlocked:()=>closing||updateInstalling||window.webContents.isLoading()||customize.isBusy()||codeBilling.isBusy()||!!onboarding?.isBusy()});
-    nativeControl=await createNativeControlHost({dataDir,service:nativeService,connectionConfig:{command:process.execPath,args:[path.join(root,'electron','native-mcp-server.mjs'),'--data-dir',dataDir],env:{ELECTRON_RUN_AS_NODE:'1',NODE_OPTIONS:'',NODE_PATH:''}}});
+    nativeControl=await createNativeControlHost({dataDir,service:nativeService,connectionConfig:()=>prepareNativeMcpConfig({dataDir,executable:process.execPath,appRoot:root})});
     handler('musebench:native-control',command=>nativeControl.command(command));
     const updateBusy=()=>pendingIpc>0||nativeControl.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation);
     const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['app-control','App control',nativeControl.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',onboarding?.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});

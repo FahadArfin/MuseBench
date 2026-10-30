@@ -20,7 +20,7 @@
     "test:billing-desktop": "node scripts/billing-smoke.mjs --desktop",
     "dev": "node scripts/dev.mjs",
     "start": "node scripts/start.mjs",
-    "build": "node scripts/build-native.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/build-native.mjs && tsc --noEmit && vite build && node scripts/build-native-mcp.mjs",
     "pretest": "node -e \"require('electron')\" && node scripts/build-native.mjs",
     "test": "node --test --test-concurrency=4 test/*.test.mjs reference/patchlight/adapter/test/*.test.mjs",
     "test:ui": "node scripts/smoke.mjs",

@@ -29,7 +29,8 @@ export async function startNativeMcp(dataDir){
  await server.connect(new StdioServerTransport());
  return server;
 }
-// The installed Electron binary supplies its own Node runtime; no system Node is needed.
+// Electron supplies Node. Windows clients use the verified cached runtime so
+// the desktop installation can be replaced without terminating idle clients.
 if(process.argv[1]&&path.resolve(process.argv[1])===fileURLToPath(import.meta.url)){
  if(process.argv.length!==4||process.argv[2]!=='--data-dir'||!path.isAbsolute(process.argv[3])){process.stderr.write('Expected --data-dir with an absolute MuseBench profile path.\n');process.exitCode=1;}
  else startNativeMcp(process.argv[3]).catch(()=>{process.stderr.write('MuseBench MCP could not start.\n');process.exitCode=1;});

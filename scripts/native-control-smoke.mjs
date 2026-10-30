@@ -7,6 +7,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {isolatedDesktopEnvironment} from './isolated-desktop-environment.mjs';
 import {callNativeApp} from '../electron/native-mcp-server.mjs';
+import {verifyNativeMcpLifecycle} from './native-mcp-lifecycle-smoke.mjs';
 await mkdir('artifacts/native-control',{recursive:true});
 const checks=[],profile=await mkdtemp(path.resolve('artifacts/native-control','profile-'));
 let app,client,preview,browser;
@@ -66,5 +67,6 @@ try{
  assert.equal(exitCode,0,'Closing the app window must finish native cleanup and exit normally');checks.push('Closing the actual desktop window finishes cleanup and exits without a shutdown exception');
  preview=await createServer({configFile:'vite.preview.config.mjs',server:{host:'127.0.0.1',port:43208,strictPort:true}});await preview.listen();browser=await chromium.launch();const web=await browser.newPage({viewport:{width:1400,height:1000}});await web.goto('http://127.0.0.1:43208/preview.html');
  await web.getByRole('button',{name:'Profile menu',exact:true}).click();await web.getByRole('menuitem',{name:/^Settings/}).click();await web.getByRole('button',{name:'App control',exact:true}).click();await web.getByText('Preview only. Connect from the installed desktop app.').waitFor();await web.getByRole('button',{name:'Turn on',exact:true}).click();await web.getByText('Native connection is on',{exact:true}).waitFor();await web.screenshot({path:'artifacts/native-control/preview.png'});checks.push('Preview uses the shared App control panel with explicit simulation');
+ const lifecycle=await verifyNativeMcpLifecycle();await writeFile('artifacts/native-control/lifecycle.json',JSON.stringify(lifecycle,null,2));if(lifecycle.status==='passed')checks.push(...lifecycle.checks);
  await writeFile('artifacts/native-control/report.json',JSON.stringify({status:'passed',checks},null,2));console.log(JSON.stringify({status:'passed',checks}));
 }finally{await client?.close();await app?.close();await browser?.close();await preview?.close();}

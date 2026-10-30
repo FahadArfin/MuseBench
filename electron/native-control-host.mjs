@@ -21,9 +21,13 @@ async function privateDirectory(directory){
 }
 export async function createNativeControlHost({dataDir,service,connectionConfig=null}){
  const directory=path.join(await realpath(dataDir),'native-control'),descriptor=path.join(directory,'connection.json'),settings=path.join(directory,'settings.json');
- let server=null,token='',running=false,enabled=false,active=0,closed=false,transition=Promise.resolve();
+ let server=null,token='',running=false,enabled=false,active=0,closed=false,transition=Promise.resolve(),configuration=null;
  const atomic=async(file,value)=>{const tmp=file+'.'+randomBytes(8).toString('hex');try{await writeFile(tmp,JSON.stringify(value),{mode:0o600,flag:'wx'});await rename(tmp,file);}finally{await rm(tmp,{force:true});}};
- const state=()=>({enabled,running,transport:'stdio',scope:'This desktop account',connectionConfig});
+ const state=async()=>{
+  let config=null,connectionError=null;
+  if(running&&!closed)try{configuration??=Promise.resolve().then(()=>typeof connectionConfig==='function'?connectionConfig():connectionConfig);config=await configuration;}catch{configuration=null;connectionError='Could not prepare the app-control connection. Close MCP clients and refresh App control to try again.';}
+  return{enabled,running,transport:'stdio',scope:'This desktop account',connectionConfig:running&&!closed?config:null,connectionError:running&&!closed?connectionError:null};
+ };
  const send=(res,status,body)=>{if(res.destroyed||res.writableEnded)return;res.writeHead(status,{'content-type':'application/json','cache-control':'no-store','connection':'close'});res.end(JSON.stringify(body));};
  async function handle(req,res){
   if(!running||closed)return send(res,503,{error:'App control is off.'});
