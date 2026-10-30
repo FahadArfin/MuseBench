@@ -57,3 +57,5 @@ node --test test/native-children.test.mjs test/child-inspection.test.mjs test/ru
 ```
 
 **127 focused tests passed, zero failures or skips.** The full `npm.cmd test` run also finished with **1,683 passed, zero failures, one skipped** (1,684 tests). The skipped test requires a retained historical native-workflow capture that is absent from this clean worktree. No production code changed. The parent delivery workflow owns whole-branch independent review, integration, full regression checks, release and installed-app verification; those outcomes are not implied here.
+
+Independent whole-branch review of `fd7f45d..e5fedbe` approved the feature with no actionable findings. The reviewer independently reran the 127 focused tests, checked syntax/diff hygiene, matched the native report to the committed script hash, and inspected the full-suite evidence. The documented wrong-result negative run was not independently reproduced in that review; no stronger coverage is claimed. The feature is integrated separately from later context/tool-discovery work.
