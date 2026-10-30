@@ -1,73 +1,14 @@
 name: Validate desktop and preview
 on:
   push:
+    # Main calls the same checks from release.yml, once per source revision.
+    branches-ignore: [main]
   pull_request:
 permissions:
   contents: read
+concurrency:
+  group: musebench-validation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   windows:
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.14.0
-          cache: npm
-      - name: Use canonical Windows temporary paths
-        run: node scripts/canonical-ci-temp.mjs
-      - run: npm ci
-      - run: npx playwright install chromium
-      - run: npm test
-      - run: npm run build
-      - run: npm run test:startup-animation
-      - run: npm run test:session-recovery
-      - run: npm run test:profile-identity
-      - run: npm run test:typography
-      - run: npm run test:motion
-      - run: npm run test:activity
-      - run: npm run test:child-inspection
-      - run: npm run test:native-failure
-      - run: npm run test:native-question
-      - run: npm run test:reply-copy
-      - run: npm run test:model-settings
-      - run: npm run test:work-activity
-      - run: npm run test:project-actions
-      - run: npm run test:run-changes
-      - run: npm run test:connection-diagnostics
-      - run: npm run test:update-details
-      - run: npm run test:plugin-tools
-      - run: npm run test:chat-organization
-      - run: npm run test:code-responsiveness
-      - run: npm run test:chat-navigation
-      - run: npm run test:browser-preview
-      - run: npm run test:onboarding-preview
-      - run: npm run test:catalog-preview
-      - run: npm run test:catalog-desktop
-      - run: npm run test:billing-preview
-      - run: npm run test:billing-desktop
-      - run: npm run test:preview-parity
-      # These runs use only clean fixtures. Never upload local account captures.
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: preview-check-reports
-          path: |
-            artifacts/browser-preview/report.json
-            artifacts/preview-parity/report.json
-            artifacts/startup-animation/**/report.json
-            artifacts/catalog-preview/**/report.json
-            artifacts/catalog-desktop/**/report.json
-            artifacts/billing-ui/**/report.json
-            artifacts/motion/**/report.json
-            artifacts/activity-ui/**/report.json
-            artifacts/child-inspection-ui/**/report.json
-            artifacts/native-failure-ui/**/report.json
-            artifacts/native-question-ui/**/report.json
-            artifacts/reply-copy/**/report.json
-            artifacts/response-actions/**/report.json
-            artifacts/plugin-tools-ui/**/report.json
-            artifacts/project-actions/**/report.json
-            artifacts/run-changes/**/report.json
-            artifacts/chat-navigation/**/report.json
-            artifacts/sidebar-drag/**/report.json
+    uses: ./.github/workflows/windows-checks.yml

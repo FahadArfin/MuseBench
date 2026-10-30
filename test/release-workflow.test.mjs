@@ -12,7 +12,7 @@ const workflow=yaml.load(readFileSync(new URL('../.github/workflows/release.yml'
 // These workflow expressions use only booleans, equality, property lookup and
 // cancelled(). Evaluate the checked-in conditions with representative Actions inputs.
 const evaluate=(expression,context)=>runInNewContext(expression.replace(/^\$\{\{\s*|\s*\}\}$/g,''),context,{timeout:100});
-const context=(include=false,event='push',results={})=>({github:{ref:'refs/heads/main',event_name:event},inputs:event==='workflow_dispatch'?{include_other_platforms:include}:{},needs:Object.fromEntries(['build','native','android'].map(name=>[name,{result:results[name]??(name==='build'||include?'success':'skipped')}])),cancelled:()=>false});
+const context=(include=false,event='push',results={})=>({github:{ref:'refs/heads/main',event_name:event},inputs:event==='workflow_dispatch'?{include_other_platforms:include}:{},needs:Object.fromEntries(['validation','build','native','android'].map(name=>[name,{result:results[name]??(['validation','build'].includes(name)||include?'success':'skipped')}])),cancelled:()=>false});
 const collection=workflow.jobs.publish.steps.find(step=>step.run==='node scripts/release-assets.mjs collect');
 
 test('main pushes and ordinary manual releases run Windows alone and can publish after optional jobs skip',()=>{
@@ -44,4 +44,14 @@ test('a prior draft is left untouched rather than publishing extra assets and ol
  const result=spawnSync(bash,['-c',stub+script],{cwd:root,encoding:'utf8',env:{...process.env,CALLS:calls,GH_REPO:'fixture/repository',VERSION:'0.2.999',SOURCE_SHA:sha,RELEASE_PROFILE:'windows-x64'}});
  assert.ifError(result.error);assert.notEqual(result.status,0,'an unvalidated existing draft must block publication');
  assert.doesNotMatch(await readFile(calls,'utf8'),/release (?:upload|edit|create)/);
+});
+
+test('publishing requires all parallel validation and packaging results, including on manual runs',()=>{
+ for(const event of ['push','workflow_dispatch']){
+  assert.equal(evaluate(workflow.jobs.publish.if,context(false,event)),true);
+  for(const job of ['validation','build'])for(const result of ['failure','cancelled','skipped']){
+   assert.equal(evaluate(workflow.jobs.publish.if,context(false,event,{[job]:result})),false,`${job}: ${result}`);
+  }
+  assert.equal(evaluate(workflow.jobs.publish.if,{...context(false,event),cancelled:()=>true}),false);
+ }
 });

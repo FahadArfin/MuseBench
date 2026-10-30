@@ -1,0 +1,68 @@
+name: Windows checks
+on:
+  workflow_call:
+    inputs:
+      release:
+        description: Stamp the exact release version before validation
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  check:
+    name: Windows / ${{ matrix.suite }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [unit, appearance, navigation, extensions, chats, native]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.14.0
+          cache: npm
+      - run: node scripts/canonical-ci-temp.mjs
+      - run: npm ci
+      - run: npx playwright install chromium
+      - if: inputs.release
+        run: node scripts/stamp-release.mjs
+      - if: matrix.suite != 'unit'
+        run: npm run build
+      - run: node scripts/run-ci-suite.mjs ${{ matrix.suite }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-timings-${{ matrix.suite }}
+          path: artifacts/ci-timings/${{ matrix.suite }}.json
+      # Only clean fixture reports; never upload account captures or profiles.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: windows-check-reports-${{ matrix.suite }}
+          path: |
+            artifacts/browser-preview/report.json
+            artifacts/preview-parity/report.json
+            artifacts/startup-animation/**/report.json
+            artifacts/catalog-preview/**/report.json
+            artifacts/catalog-desktop/**/report.json
+            artifacts/billing-ui/**/report.json
+            artifacts/motion/**/report.json
+            artifacts/activity-ui/**/report.json
+            artifacts/child-inspection-ui/**/report.json
+            artifacts/native-failure-ui/**/report.json
+            artifacts/native-question-ui/**/report.json
+            artifacts/reply-copy/**/report.json
+            artifacts/response-actions/**/report.json
+            artifacts/plugin-tools-ui/**/report.json
+            artifacts/project-actions/**/report.json
+            artifacts/run-changes/**/report.json
+            artifacts/chat-navigation/**/report.json
+            artifacts/sidebar-drag/**/report.json
+            artifacts/native-control/report.json
+            artifacts/navigation-cache/report.json
+            artifacts/session-mcp-ui/**/report.json
+            artifacts/mobile-settings/**/report.json
