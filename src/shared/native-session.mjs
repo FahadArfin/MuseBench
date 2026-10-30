@@ -17,6 +17,7 @@ export function restoreNativeSession(value){
 export function prepareNativeSession(value,root,connection={}){
  if(value?.unsupportedToolDiscovery)throw Error('This saved session uses unsupported on-demand tools. Update MuseBench or explicitly start a fresh session.');
  if(value?.toolDiscovery&&!sameDiscovery(value.toolDiscovery,connection.toolDiscovery))throw Error('Review the saved on-demand sources again before continuing this native session.');
+ if(value&&!value.toolDiscovery&&connection.toolDiscovery?.sources?.some(row=>row.authBindingRevision!==undefined))throw Error('Start a fresh session before adding signed-in on-demand sources.');
  if(value?.unsupportedWorkspaceToolset)throw Error('This saved session uses an unsupported workspace tool set. Update MuseBench or explicitly start a fresh session.');
  if(value&&value.root!==root)throw Error('This session belongs to another folder. Start a fresh session before continuing.');
  if(value&&(value.transport??'exec')!==(connection.transport??'exec'))throw Error('This session belongs to another transport. Start a fresh session before continuing.');

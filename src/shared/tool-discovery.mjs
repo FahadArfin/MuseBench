@@ -3,8 +3,8 @@ const exact=(value,keys)=>object(value)&&Object.keys(value).every(key=>keys.incl
 export function discoveryIdentity(value){
  if(!exact(value,['sources'])||!Array.isArray(value.sources)||value.sources.length<1||value.sources.length>4)throw Error('Review between one and four on-demand sources.');
  const seen=new Set(),sources=value.sources.map(row=>{
-  if(!exact(row,['id','revision'])||typeof row.id!=='string'||!/^global:[A-Za-z0-9_.-]{1,100}$/.test(row.id)||typeof row.revision!=='string'||! /^[a-f0-9]{64}$/.test(row.revision)||seen.has(row.id))throw Error('Invalid or duplicate on-demand source identity.');
-  seen.add(row.id);return{id:row.id,revision:row.revision};
+  if(!exact(row,['id','revision','authBindingRevision'])||typeof row.id!=='string'||!/^global:[A-Za-z0-9_.-]{1,100}$/.test(row.id)||typeof row.revision!=='string'||! /^[a-f0-9]{64}$/.test(row.revision)||Object.hasOwn(row,'authBindingRevision')&&(typeof row.authBindingRevision!=='string'||! /^[a-f0-9]{64}$/.test(row.authBindingRevision))||seen.has(row.id))throw Error('Invalid or duplicate on-demand source identity.');
+  seen.add(row.id);return{id:row.id,revision:row.revision,...(Object.hasOwn(row,'authBindingRevision')?{authBindingRevision:row.authBindingRevision}:{})};
  });return{sources};
 }
 export function discoverySelection(value){
