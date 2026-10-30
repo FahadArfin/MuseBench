@@ -6,6 +6,8 @@ import {newGoalDriver,goalDecision,pauseGoalDriver} from '../shared/goal-driver.
 import {createExecutionLedger} from './execution-ledger.mjs';
 import {createActivityInbox} from './activity-inbox.mjs';
 import {validateActivityRead} from '../shared/activity-inbox.mjs';
+import {validateProjectActionRequest} from '../shared/project-actions.mjs';
+import {inspectProjectActions as readProjectActions,saveProjectAction,resolveProjectAction} from './project-actions.mjs';
 import {proposeLesson,decideLesson} from '../shared/project-lessons.mjs';
 import {restoreSelected} from './checkpoint-restore.mjs';
 import {contextReceipt} from './context-receipts.mjs';
@@ -139,6 +141,11 @@ function launchScript(root,script,args=[]){
   if(process.platform==='win32')return spawn(process.env.ComSpec||'cmd.exe',['/d','/s','/c',`npm.cmd run --ignore-scripts ${script}${args.length?' -- '+args.join(' '):''}`],{cwd:root,env,windowsHide:true,stdio:['ignore','pipe','pipe']});
   return spawn('npm',['run','--ignore-scripts',script,...(args.length?['--',...args]:[])],{cwd:root,env,detached:true,stdio:['ignore','pipe','pipe']});
 }
+function launchProjectAction(action){
+  const env={...process.env,NO_COLOR:'1'},options={cwd:action.folder,env,windowsHide:true,stdio:['ignore','pipe','pipe']};
+  if(process.platform==='win32')return spawn(path.join(process.env.SystemRoot||'C:\\Windows','System32','WindowsPowerShell','v1.0','powershell.exe'),['-NoLogo','-NoProfile','-NonInteractive','-Command',action.command+'\nif (-not $?) { if ($LASTEXITCODE) { exit $LASTEXITCODE }; exit 1 }'],options);
+  return spawn('/bin/sh',['-c',action.command],{...options,detached:true});
+}
 async function killTree(child){
   if(!child?.pid)return;
   let timer;const exited=new Promise(resolve=>{child.once('close',resolve);timer=setTimeout(resolve,3000);});
@@ -210,6 +217,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const requireSwitchable=()=>{if(!runtimeFactory)requireNavigationIdle();};
   const requireWritable=(task,project)=>{
+    if(checkProcess&&state.task?.check?.action&&state.activeProject&&(inside(state.activeProject.root,project.root)||inside(project.root,state.activeProject.root)))throw Error('Stop the running project action before starting other work in this checkout.');
     const other=[...contexts.values()].filter(c=>c.task?.id!==task.id&&contextBusy(c));
     if(other.length>=4)throw Error('Four chats are already running. Wait or stop one before starting another.');
     if(other.some(c=>{const root=state.projects.find(p=>p.id===c.task?.projectId)?.root;return root&&(inside(root,project.root)||inside(project.root,root));}))throw Error('Another chat is using this checkout. Wait for it to stop, or create an isolated worktree.');
@@ -222,7 +230,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const task=owner.task;if(!task||!owner.pending&&!runtimeStatusBusy(status))return null;
     return{id:`run:${task.id}`,taskId:task.id,projectId:task.projectId,title:task.title,projectName:state.projects.find(p=>p.id===task.projectId)?.name??'Project',label:workLabel(status,identity),kind:'run',canStop:typeof owner.runtime?.disconnect==='function',controlId:hash(JSON.stringify([owner.id,task.id,owner.turn?.promptId??null,identity,status]))};
   };
-  const checkActivity=()=>checkProcess&&state.task?.check?.status==='running'?{id:`check:${state.task.check.id}`,taskId:state.task.id,projectId:state.task.projectId,title:state.task.title,projectName:state.activeProject?.name??'Project',label:`Checking ${state.task.check.script}`,kind:'check',canStop:true,controlId:hash(JSON.stringify([context.id,state.task.id,state.task.check.id]))}:null;
+  const checkActivity=()=>checkProcess&&state.task?.check?.status==='running'?{id:`check:${state.task.check.id}`,taskId:state.task.id,projectId:state.task.projectId,title:state.task.title,projectName:state.activeProject?.name??'Project',label:`${state.task.check.action?'Running':'Checking'} ${state.task.check.script}`,kind:'check',canStop:true,controlId:hash(JSON.stringify([context.id,state.task.id,state.task.check.id]))}:null;
   const workActivity=observations=>{const rows=[...contexts.values()].map(owner=>activityRow(owner,observations.get(owner))).filter(Boolean),check=checkActivity();if(check)rows.push(check);return rows;};
   const getUpdateBlockers=()=>{
     const rows=[],title=task=>`Code · ${String(task?.title||'Chat').replace(/[\x00-\x1f\x7f]/g,' ').slice(0,140)}`;
@@ -296,7 +304,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const stopPreview=async()=>{previewToken=null;const child=previewProcess;previewProcess=null;await killTree(child);state.preview=stopped();};
   const observeCheck=(task,check)=>{const kind={passed:'check_passed',failed:'check_failed',cancelled:'check_stopped',stale:'check_stale'}[check?.status];if(kind){retainActivity(task,[{source:'check',sourceId:check.id,kind}]);saveRecord(task);}};
-  const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';outputs.finish(state.task.id,state.task.check.id,'cancelled');state.task.check.endedAt=now();observeCheck(state.task,state.task.check);persist();}await killTree(child);};
+  const saveCheckReceipt=(task,check)=>{task.checkReceipts=[...(task.checkReceipts??[]).filter(item=>item.id!==check.id),{...check,log:check.log.slice(-8000)}].slice(-40);};
+  const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';outputs.finish(state.task.id,state.task.check.id,'cancelled');state.task.check.endedAt=now();saveCheckReceipt(state.task,state.task.check);observeCheck(state.task,state.task.check);persist();}await killTree(child);};
   const disconnectContext=async owner=>{
     const task=owner.task,turn=owner.turn;
     pauseGoalDriver(task?.goal?.driver,'Disconnected by you');if(task?.nativeSession?.status==='running')task.nativeSession.status='needs-recovery';if(task){task.queuePaused=true;task.queueHold=Boolean(task.promptQueue?.length);}
@@ -371,24 +380,25 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     message('system',demo?'Deterministic tutorial. Only this copied sample is edited; diffs, preview, checks and checkpoints use real local files.':mode==='muse'?'Muse chat started. Send a request to connect with your selected approval access. Planning is optional; execution access is set in your connection settings.':'Local task started. Approving a manual plan explicitly confirms user-directed manual work.');message(demo?'assistant':'system',plan);
   };
   const refreshScripts=async()=>{const p=state.activeProject;if(!p)throw Error('Open a project first.');p.scripts=(await scriptsFor(p.root)).scripts;Object.assign(p,await projectGit(p.root));return p;};
-  const runCheck=async script=>{
-    const task=requireTask();requireNavigationIdle();requireWritable(task,state.activeProject);if(checkProcess)throw Error('A check is running. Cancel it first.');const project=await refreshScripts();if(!Object.hasOwn(project.scripts,script))throw Error('Choose a script listed in package.json.');const snap=await current();
-    const check={id:randomUUID(),script,command:`npm run --ignore-scripts ${script} — ${project.scripts[script]}`,status:'running',revision:snap.revision,exitCode:null,log:'',startedAt:now()};task.check=check;outputs.start(task.id,check.id,check.command);checkInvalidated=false;const taskId=task.id,child=launchScript(project.root,script);checkProcess=child;
+  const runCheck=async (script,request=null)=>{
+    const task=requireTask();requireNavigationIdle();if(checkProcess)throw Error('A check or action is running. Cancel it first.');requireWritable(task,state.activeProject);const project=await refreshScripts();if(!request&&!Object.hasOwn(project.scripts,script))throw Error('Choose a script listed in package.json.');const snap=await current();
+    const action=request?await resolveProjectAction(project.root,request):null;
+    const check={id:randomUUID(),script:action?.name??script,command:action?.command??`npm run --ignore-scripts ${script} — ${project.scripts[script]}`,status:'running',revision:snap.revision,exitCode:null,log:'',startedAt:now(),...(action?{action:{id:action.id,name:action.name,definitionRevision:action.revision,cwd:action.folder,shell:action.shell,platform:action.platform,timeoutSeconds:action.timeoutSeconds}}:{})};task.check=check;outputs.start(task.id,check.id,check.command);checkInvalidated=false;const taskId=task.id,child=action?launchProjectAction(action):launchScript(project.root,script);checkProcess=child;
     const append=text=>{if(closed||state.task?.id!==taskId||state.task.check?.id!==check.id)return;outputs.append(taskId,check.id,text);check.log=(check.log+text).slice(-MAX_LOG);emit();};
     for(const stream of [child.stdout,child.stderr]){const decoder=new StringDecoder('utf8');stream.on('data',chunk=>append(decoder.write(chunk)));stream.on('end',()=>{const tail=decoder.end();if(tail)append(tail);});}
-    let done=false;const timeout=setTimeout(async()=>{append(`\n[MuseBench] Check stopped after ${checkTimeoutMs} ms timeout.`);await killTree(child);finish(null,Error('Project check timed out.'));},Math.max(100,Math.min(checkTimeoutMs,600000)));
+    const timeoutMs=action?action.timeoutSeconds*1000:Math.max(100,Math.min(checkTimeoutMs,600000));let done=false,timedOut=false;const timeout=setTimeout(async()=>{timedOut=true;append(`\n[MuseBench] ${action?'Action':'Check'} stopped after ${timeoutMs} ms timeout.`);await killTree(child);finish(null,Error('Project command timed out.'));},timeoutMs);
     const finish=(code,error)=>{if(done)return;done=true;clearTimeout(timeout);queue=queue.then(async()=>{
       if(closed||state.task?.id!==taskId||state.task.check?.id!==check.id)return;if(checkProcess===child)checkProcess=null;if(error){outputs.append(taskId,check.id,'\n[MuseBench] '+error.message);check.log=(check.log+'\n'+error.message).slice(-MAX_LOG);}check.exitCode=code;check.endedAt=now();
       if(check.status!=='cancelled')try{const latest=await current();check.status=checkInvalidated||latest.revision!==check.revision?'stale':code===0?'passed':'failed';}catch(e){check.status='stale';state.error=e.message;}
-      outputs.finish(task.id,check.id,check.status);task.checkReceipts=[...(task.checkReceipts??[]),{...check,log:check.log.slice(-8000)}].slice(-40);
+      outputs.finish(task.id,check.id,check.status);saveCheckReceipt(task,check);
       observeCheck(task,check);
       const validation=task.validationRun;
-      if(validation?.status==='running'){
+      if(!action&&validation?.status==='running'){
         if(check.status!=='passed'||check.revision!==validation.revision)validation.status=check.status==='passed'?'stale':check.status;
         else if(validation.index+1<validation.scripts.length){validation.index++;try{await runCheck(validation.scripts[validation.index]);}catch(error){validation.status='failed';state.error=error.message;}}
         else validation.status='passed';
       }emit();if(task.goal?.driver?.armed)scheduleGoal(context);
-    }).catch(e=>{if(!closed){state.error=e.message;emit();}});};child.once('error',e=>finish(null,e));child.once('close',code=>finish(code));
+    }).catch(e=>{if(!closed){state.error=e.message;emit();}});};child.once('error',e=>finish(null,e));child.once('close',code=>finish(timedOut?null:code,timedOut?Error('Project command timed out.'):null));
   };
   const startPreview=async script=>{
     requireTask();await stopPreview();const p=await refreshScripts(),command=p.scripts[script];if(!command)throw Error('Choose a preview script listed in package.json.');
@@ -424,6 +434,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(state.activeProject?.id!==projectId||taskId!=null&&state.task?.id!==taskId)throw Error('The selected project or chat changed. Open context again.');
   };
   const inspectWorktrees=async ({projectId})=>{const p=state.projects.find(p=>p.id===projectId);if(!p)throw Error('Project unavailable.');return worktrees.inspect(p.root);};
+  const inspectProjectActions=async({projectId,taskId}={})=>{if(typeof projectId!=='string'||typeof taskId!=='string')throw Error('Choose a project and chat first.');validateBinding(projectId,taskId);const root=state.activeProject.root,result=await readProjectActions(root);validateBinding(projectId,taskId);return{...result,projectId,taskId};};
   const importImage=async ({projectId,taskId=null,...input})=>{validateBinding(projectId,taskId);const ref=await imageStore.import(projectId,input);validateBinding(projectId,taskId);return ref;};
   const readImage=async ({projectId,image})=>{if(!state.projects.some(p=>p.id===projectId))throw Error('Project unavailable.');return imageStore.read(projectId,image);};
   const contextAllowed=name=>!name.split('/').some(part=>['.muse','.codex','.config','auth.json','.mcp.json'].includes(part.toLowerCase()));
@@ -854,14 +865,19 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'runValidation':{
         requireNavigationIdle();const t=requireTask(),p=await refreshScripts();if(checkProcess)throw Error('A check is already running.');const scripts=validateCheckScripts(p.validationScripts);if(scripts.some(name=>!Object.hasOwn(p.scripts,name)))throw Error('A profile script was removed. Update the profile.');const snap=await current();t.validationRun={scripts,revision:snap.revision,index:0,status:'running'};try{await runCheck(scripts[0]);}catch(error){t.validationRun.status='failed';throw error;}break;
       }
+      case 'saveProjectAction':case 'runProjectAction':{
+        const input=validateProjectActionRequest(action);validateBinding(input.projectId,input.taskId);const task=requireTask();requireNavigationIdle();if(task.archived||task.reviewContract)throw Error('Restore an editable chat before using project actions.');if(checkProcess||task.validationRun?.status==='running')throw Error('Finish the running check or action first.');requireWritable(task,state.activeProject);
+        if(input.type==='saveProjectAction')await saveProjectAction(state.activeProject.root,input);
+        else{pauseGoalDriver(task.goal?.driver,'Project action started');task.queuePaused=true;task.queueHold=Boolean(task.promptQueue?.length);await runCheck(null,input);}break;
+      }
       case 'runCheck':await runCheck(action.script);break;
       case 'cancelCheck':await cancelCheck();break;
       case 'startPreview':await startPreview(action.script);break;
       case 'stopPreview':await stopPreview();if(state.task)state.task.previewRevision=null;break;
       case 'inspectPreview':{const snap=await current();if(action.revision!==snap.revision)throw Error('Revision changed. Inspect the current files.');if(state.preview.status!=='running'||!previewProcess)throw Error('Start the local preview before marking it inspected.');state.task.previewRevision=snap.revision;break;}
       case 'accept':{
-        const snap=await current(),t=state.task;const missing=missingChecks(t,snap.revision,state.activeProject.validationScripts??[]);if(missing.length)throw Error('Validation profile needs passing checks for this revision: '+missing.join(', '));if(action.revision!==snap.revision)throw Error('Revision changed. Inspect and check the current files.');if(!t.planApproved)throw Error('Approve the plan first.');if(!t.runtimeComplete)throw Error('The Muse turn must complete, or explicitly approve a manual work plan.');if(t.previewRevision!==snap.revision||state.preview.status!=='running')throw Error('Inspect the running preview for this exact revision.');if(t.check?.status!=='passed'||t.check.revision!==snap.revision)throw Error('A passing check for this exact revision is required.');
-        const verified=await current();if(verified.revision!==snap.revision)throw Error('Files changed while accepting. Repeat preview and checks.');if(!t.runtimeComplete||state.preview.status!=='running'||t.previewRevision!==verified.revision||t.check?.status!=='passed'||t.check.revision!==verified.revision)throw Error('Review evidence changed while accepting. Repeat preview and checks.');if(t.acceptedRevision===snap.revision)break;
+        const snap=await current(),t=state.task;const missing=missingChecks(t,snap.revision,state.activeProject.validationScripts??[]);if(missing.length)throw Error('Validation profile needs passing checks for this revision: '+missing.join(', '));if(action.revision!==snap.revision)throw Error('Revision changed. Inspect and check the current files.');if(!t.planApproved)throw Error('Approve the plan first.');if(!t.runtimeComplete)throw Error('The Muse turn must complete, or explicitly approve a manual work plan.');if(t.previewRevision!==snap.revision||state.preview.status!=='running')throw Error('Inspect the running preview for this exact revision.');if(t.check?.action||t.check?.status!=='passed'||t.check.revision!==snap.revision)throw Error('A passing check for this exact revision is required.');
+        const verified=await current();if(verified.revision!==snap.revision)throw Error('Files changed while accepting. Repeat preview and checks.');if(!t.runtimeComplete||state.preview.status!=='running'||t.previewRevision!==verified.revision||t.check?.action||t.check?.status!=='passed'||t.check.revision!==verified.revision)throw Error('Review evidence changed while accepting. Repeat preview and checks.');if(t.acceptedRevision===snap.revision)break;
         const checkpoint={id:randomUUID(),taskId:t.id,title:t.title,revision:snap.revision,createdAt:now()};db.exec('BEGIN IMMEDIATE');try{db.prepare('INSERT INTO checkpoints(id,task_id,revision,json) VALUES(?,?,?,?)').run(checkpoint.id,t.id,snap.revision,JSON.stringify({...checkpoint,files:verified.files}));state.checkpoints.unshift(checkpoint);t.acceptedRevision=snap.revision;persist();db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}message('system',`Local checkpoint saved for revision ${snap.revision.slice(0,12)}.`);break;
       }
       case 'recoverSession':{
@@ -922,6 +938,6 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     });queue=op.catch(()=>{});return op;
   };
   const archiveTimer=setInterval(()=>{queue=queue.then(async()=>{if(closed||closing)return;if(inbox.prune())emit();await purgeArchived();}).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,getUpdateBlockers,saveCodeDraft,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
+  return{getState,getUpdateBlockers,saveCodeDraft,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';

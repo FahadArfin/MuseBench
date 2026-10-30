@@ -1,4 +1,6 @@
 import {validateActivityRead} from '../shared/activity-inbox.mjs';
+import {validateProjectActionRequest} from '../shared/project-actions.mjs';
+import type {ProjectActionDefinition} from '../shared/project-actions.mjs';
 import {projectRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
 import {workIdentity,workLabel} from '../shared/work-activity.mjs';
 import {sampleAnalytics} from './analytics';
@@ -75,11 +77,18 @@ export function createPreviewBridge():MuseBenchBridge {
   });return code.emit();
  }
  const sampleWorktrees:import('../shared/types').ManagedWorktree[]=[];
+ const projectActionDefinitions=new Map<string,ProjectActionDefinition[]>();let projectActionRevision=0;
+ const projectActionView=(input:{projectId:string;taskId:string})=>{
+  if(input.projectId!==state.activeProject?.id||input.taskId!==state.task?.id)throw Error('The selected project or chat changed.');
+  const definitions=projectActionDefinitions.get(input.projectId)??[{id:'sample-build',name:'Build site',cwd:'.',commands:{win32:'npm run build',linux:'npm run build',darwin:'npm run build'},timeoutSeconds:120}];
+  return{...input,root:state.activeProject.root,platform:'win32' as const,revision:projectActionRevision.toString(16).padStart(64,'0'),sample:true,actions:definitions.map(definition=>({...copy(definition),folder:state.activeProject!.root+(definition.cwd==='.'?'':'/'+definition.cwd),command:definition.commands.win32??null,shell:'Windows PowerShell',supported:!!definition.commands.win32}))};
+ };
  const imageData=new Map<string,string>();
  function reply(current:Task,text:string,images:import('../shared/types').CodeImage[]=[]){current.nativeSession??={id:id(),root:state.activeProject?.root??project.root,seeded:true,status:'ready'};current.messages.push({id:id(),role:'user',text,images,at:new Date().toISOString()},{id:id(),role:'assistant',text:'Preview reply — your message is shown here so you can review the conversation layout. No request was sent to Muse and no project files were changed.',at:new Date().toISOString()});current.updatedAt=new Date().toISOString();}
  async function dispatch(action:Action):Promise<AppState>{
   const current=state.task,previousRuntime=copy(state.runtime);
   switch(action.type){
+   case 'saveProjectAction':case 'runProjectAction':{const input=validateProjectActionRequest(action),view=projectActionView(input);if(view.revision!==input.revision)throw Error('Project actions changed. Review again.');if(input.type==='runProjectAction')throw Error('Preview only. Run project actions from the installed desktop app.');const definitions=view.actions.map(({id,name,cwd,commands,timeoutSeconds})=>({id,name,cwd,commands,timeoutSeconds}));projectActionDefinitions.set(input.projectId,[...definitions.filter(row=>row.id!==input.definition.id),copy(input.definition)]);projectActionRevision++;break;}
    case 'setActivityRead':{validateActivityRead(action);state.activityInbox=state.activityInbox?.map(event=>action.ids.includes(event.id)?{...event,readAt:action.read?new Date().toISOString():null}:event);break;}
    case 'createReviewer':if(current){const child=task('Review · '+action.question);child.reviewContract={parentTaskId:current.id,parentProjectId:current.projectId,sourceRevision:'sample-after',inputRevision:'sample-after',role:action.role,question:action.question,budget:'standard',createdAt:stamp};child.messages.push({id:id(),role:'assistant',text:JSON.stringify({findings:[],unresolved:['Preview only. No independent native review was executed.']}),at:stamp});child.runtimeComplete=true;current.reviewChildren=[...(current.reviewChildren??[]),child.id];tasks.set(child.id,child);state.task=child;}break;
    case 'integrateReview':if(current?.reviewContract){const parent=tasks.get(current.reviewContract.parentTaskId);if(parent){const draft=state.drafts?.[`${parent.projectId}:${parent.id}`];if(draft?.text||draft?.files?.length||draft?.images?.length)throw Error('The parent already has a draft. Save or send it before integrating this review.');(state.drafts??={})[`${parent.projectId}:${parent.id}`]={text:'Simulated review: no native execution. Review the example findings before sending.',files:[],images:[],mode:'chat',updatedAt:stamp};state.task=parent;}}break;
@@ -187,6 +196,7 @@ export function createPreviewBridge():MuseBenchBridge {
   onAppUpdate:fn=>{updateListeners.add(fn);return()=>{updateListeners.delete(fn);};},
   windowControlsOverlay:true,
   inspectWorktrees:async input=>({root:state.projects.find(p=>p.id===input.projectId)?.root??project.root,branch:'main',head:'sample-base',dirty:true,items:copy(sampleWorktrees)}),
+  inspectProjectActions:async input=>copy(projectActionView(input)),
   importCodeImage:async input=>{const match=/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(input.dataUrl);if(!match||input.dataUrl.length>11200000)throw Error('Choose an image up to 8 MB.');const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));const id=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');imageData.set(input.projectId+id,input.dataUrl);return{id,name:input.name,mime:match[1],bytes:bytes.length};},
   readCodeImage:async input=>{const data=imageData.get(input.projectId+input.image.id);if(!data)throw Error('Screenshot unavailable');return data;},
   getState:code.read,onState:code.on,dispatch,openProjectFile:desktop,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);const catalogLink=CURATED_EXTENSIONS.some(item=>item.homepage===u.href||item.provenance.url===u.href);if(u.protocol!=='https:'||u.username||u.password||(!catalogLink&&(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},

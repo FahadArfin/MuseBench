@@ -34,6 +34,7 @@ jobs:
       - run: npm run test:reply-copy
       - run: npm run test:model-settings
       - run: npm run test:work-activity
+      - run: npm run test:project-actions
       - run: npm run test:connection-diagnostics
       - run: npm run test:update-details
       - run: npm run test:plugin-tools
@@ -67,5 +68,6 @@ jobs:
             artifacts/reply-copy/**/report.json
             artifacts/response-actions/**/report.json
             artifacts/plugin-tools-ui/**/report.json
+            artifacts/project-actions/**/report.json
             artifacts/chat-navigation/**/report.json
             artifacts/sidebar-drag/**/report.json

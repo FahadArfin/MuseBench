@@ -3,7 +3,7 @@ export function validateCheckScripts(value){
  return [...value];
 }
 export function missingChecks(task,revision,scripts){
- return scripts.filter(script=>{const receipt=task.check?.script===script?task.check:[...(task.checkReceipts??[])].reverse().find(c=>c.script===script);return !receipt||receipt.status!=='passed'||receipt.revision!==revision;});
+ return scripts.filter(script=>{const receipt=!task.check?.action&&task.check?.script===script?task.check:[...(task.checkReceipts??[])].reverse().find(c=>!c.action&&c.script===script);return !receipt||receipt.status!=='passed'||receipt.revision!==revision;});
 }
 export function checkDiagnostics(log){
  return String(log).split('\n').flatMap(line=>{

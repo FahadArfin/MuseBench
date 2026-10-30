@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   },
   onAppUpdate: callback => {const listener=(_event,state)=>callback(state);ipcRenderer.on('musebench:app-update-state',listener);return()=>ipcRenderer.removeListener('musebench:app-update-state',listener);},
   inspectWorktrees: input => ipcRenderer.invoke('musebench:worktrees',input),
+  inspectProjectActions: input => ipcRenderer.invoke('musebench:project-actions',input),
   importCodeImage: input => ipcRenderer.invoke('musebench:code-image-import',input),
   readCodeImage: input => ipcRenderer.invoke('musebench:code-image-read',input),
   copyText: text => ipcRenderer.invoke('musebench:copy-text', text),

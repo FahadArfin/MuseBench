@@ -48,6 +48,7 @@
     "package:installer": "npm run build && electron-builder --win nsis --publish never",
     "package:desktop": "npm run build && node scripts/package-desktop.mjs",
     "build:mobile": "tsc -p mobile/tsconfig.json && vite build --config vite.mobile.config.ts",
+    "test:project-actions": "node scripts/project-actions-smoke.mjs && node scripts/project-actions-smoke.mjs --desktop",
     "test:work-activity": "node scripts/work-activity-smoke.mjs && node scripts/work-activity-smoke.mjs --desktop",
     "test:connection-diagnostics": "node scripts/connection-diagnostics-smoke.mjs && node scripts/connection-diagnostics-smoke.mjs --desktop",
     "test:update-details": "node scripts/update-details-smoke.mjs && node scripts/update-details-smoke.mjs --desktop",
