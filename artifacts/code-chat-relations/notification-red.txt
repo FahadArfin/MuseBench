@@ -1,0 +1,110 @@
+TAP version 13
+# Subtest: fork sends once, validates cut provenance, and waits for confirmed matching release
+not ok 1 - fork sends once, validates cut provenance, and waits for confirmed matching release
+  ---
+  duration_ms: 2.4134
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:6:1'
+  failureType: 'testCodeFailure'
+  error: 'SDK permits only one primary notification handler'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    Object.onNotification (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:5:453)
+    forkNativeSession (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/runtime/session-fork.mjs:21:20)
+    async TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:6:128)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: unusable source rejects before fork dispatch {"source":{"status":"running","activeTurnId":"t"}}
+ok 2 - unusable source rejects before fork dispatch {"source":{"status":"running","activeTurnId":"t"}}
+  ---
+  duration_ms: 0.2391
+  ...
+# Subtest: unusable source rejects before fork dispatch {"read":{"queuedInputs":[{"turnId":"q"}]}}
+ok 3 - unusable source rejects before fork dispatch {"read":{"queuedInputs":[{"turnId":"q"}]}}
+  ---
+  duration_ms: 0.1457
+  ...
+# Subtest: unusable source rejects before fork dispatch {"source":{"permissionState":null}}
+ok 4 - unusable source rejects before fork dispatch {"source":{"permissionState":null}}
+  ---
+  duration_ms: 0.0818
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"sessionId":"source"}
+ok 5 - invalid native fork metadata is unknown with child identity retained {"sessionId":"source"}
+  ---
+  duration_ms: 0.2051
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"workspaceRoot":"/other"}
+ok 6 - invalid native fork metadata is unknown with child identity retained {"workspaceRoot":"/other"}
+  ---
+  duration_ms: 0.199
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"modelId":"other"}
+ok 7 - invalid native fork metadata is unknown with child identity retained {"modelId":"other"}
+  ---
+  duration_ms: 0.1983
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"permissionState":null}
+ok 8 - invalid native fork metadata is unknown with child identity retained {"permissionState":null}
+  ---
+  duration_ms: 0.112
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"forkedFrom":{"sessionId":"foreign"}}
+ok 9 - invalid native fork metadata is unknown with child identity retained {"forkedFrom":{"sessionId":"foreign"}}
+  ---
+  duration_ms: 0.3021
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"activeTurnId":"busy"}
+ok 10 - invalid native fork metadata is unknown with child identity retained {"activeTurnId":"busy"}
+  ---
+  duration_ms: 0.7449
+  ...
+# Subtest: ack alone cannot admit a fork and timeout retains release recovery
+not ok 11 - ack alone cannot admit a fork and timeout retains release recovery
+  ---
+  duration_ms: 0.7803
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:9:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /release|timed/i. Input:
+    
+    'Error: SDK permits only one primary notification handler'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'SDK permits only one primary notification handler'
+  stack: |-
+    Object.onNotification (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:5:453)
+    forkNativeSession (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/runtime/session-fork.mjs:21:20)
+    async waitForActual (node:assert:875:5)
+    async Function.rejects (node:assert:996:25)
+    async TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:9:118)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:9:118)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: known rejection differs from ambiguous command outcome, no command is retried
+ok 12 - known rejection differs from ambiguous command outcome, no command is retried
+  ---
+  duration_ms: 0.2792
+  ...
+# Subtest: unknown completed cut rejects before submission
+ok 13 - unknown completed cut rejects before submission
+  ---
+  duration_ms: 0.1215
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 11
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 69.3848

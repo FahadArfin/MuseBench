@@ -1,3 +1,4 @@
+import {restoreChatRelation,mainChat} from '../shared/chat-relations.mjs';
 import {mergeCompactionHistory,interruptCompactionHistory} from '../shared/compaction-history.mjs';
 import {restoreRecentContext,restoreRecentCapsule,prepareRecentContext,validateRecentContext,stagedRecentContext,recentSessionId,latestRecentCompaction,consumeRecentContext,restageRecentContext} from './recent-context.mjs';
 import {restoreContextUsage} from '../shared/native-context-usage.mjs';
@@ -74,7 +75,7 @@ function mergeShellResults(previous,incoming,runId){
   return recent.reverse();
 }
 function restoreTask(record,knownProjectId){
-  const task=structuredClone(record);task.contextCompactions=interruptCompactionHistory(task.contextCompactions);task.nativeContextUsage=restoreContextUsage(task.nativeContextUsage);
+  const task=structuredClone(record);task.chatRelation=restoreChatRelation(task.chatRelation,task.id);task.forkReceipts=(Array.isArray(task.forkReceipts)?task.forkReceipts:[]).filter(r=>r&&typeof r.commandId==='string'&&typeof r.sessionId==='string').slice(-20).map(r=>({...r,...(['submitting','verifying','releasing'].includes(r.status)?{status:'unknown',reason:'Restart interrupted fork confirmation. Inspect the native command and child session before retrying; this fork will not be repeated.'}:{})}));task.contextCompactions=interruptCompactionHistory(task.contextCompactions);task.nativeContextUsage=restoreContextUsage(task.nativeContextUsage);
   if(!task.projectId&&knownProjectId)task.projectId=knownProjectId;
   const validDate=value=>typeof value==='string'&&Number.isFinite(Date.parse(value));
   task.steeringReceipts=(Array.isArray(task.steeringReceipts)?task.steeringReceipts:[]).filter(r=>r&&['commandId','turnId','status','text','at'].every(k=>typeof r[k]==='string')).slice(-20).map(r=>({...r,text:r.text.slice(0,16000)}));
@@ -216,10 +217,11 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(persistedTask&&(persistedTask.recentContext?.prepared||state.task.recentContext?.prepared||persistedQueue?.some(item=>item.recentContext))){
       // Reviewed source records and their owner must come from the same durable
       // row as the capsule. An older app selection cannot undo source changes.
-      for(const key of ['messages','runs','nativeSession','projectId'])state.task[key]=structuredClone(persistedTask[key]);
+      for(const key of ['messages','runs','nativeSession','projectId','chatRelation','forkReceipts'])state.task[key]=structuredClone(persistedTask[key]);
     }
     if(persistedQueue){state.task.promptQueue=structuredClone(persistedQueue);state.task.queueHold=persistedQueue.length>0;}
     state.task.contextCompactions=mergeCompactionHistory(state.task.contextCompactions,persistedTask?.contextCompactions);
+    if(persistedTask){state.task.forkReceipts=structuredClone(persistedTask.forkReceipts);state.task.chatRelation=restoreChatRelation(persistedTask.chatRelation,state.task.id);}
     if(persistedTask)state.task.nativeContextUsage=restoreContextUsage(persistedTask.nativeContextUsage);
     if(persistedTask)state.task.recentContext=restoreRecentContext(persistedTask.recentContext);
     if(!persistedTask||!knownProject||state.task.projectId!==knownProject.id){state.task=null;state.error='The saved task has no valid project association. Select a project to continue.';}
@@ -267,7 +269,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const summaries=observations=>[...taskRecords.values()].reverse().filter(t=>state.projects.some(p=>p.id===t.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(t=>{
     const owner=contexts.get(t.id),status=observations?.get(owner)??readRuntimeStatus(owner?.runtime);
-    return{id:t.id,projectId:t.projectId,title:t.title,mode:t.mode,createdAt:t.createdAt,updatedAt:t.updatedAt,acceptedRevision:t.acceptedRevision,runtimeBusy:!!owner&&(owner.pending||runtimeStatusBusy(status)),runtimeStatus:status.status,pinned:t.pinned===true,archived:t.archived===true,archivedAt:t.archivedAt??null};
+    return{id:t.id,projectId:t.projectId,title:t.title,chatRelation:restoreChatRelation(t.chatRelation,t.id),forkedFrom:t.forkedFrom,mode:t.mode,createdAt:t.createdAt,updatedAt:t.updatedAt,acceptedRevision:t.acceptedRevision,runtimeBusy:!!owner&&(owner.pending||runtimeStatusBusy(status)),runtimeStatus:status.status,pinned:t.pinned===true,archived:t.archived===true,archivedAt:t.archivedAt??null};
   });
   const activityRow=(owner,status,identity=owner.workIdentity)=>{
     const task=owner.task;if(!task||!owner.pending&&!runtimeStatusBusy(status))return null;
@@ -1050,11 +1052,49 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'resumeQueue':{
         const t=requireTask();if(t.archived)throw Error('Restore this archived chat first.');const item=t.promptQueue?.[0];if(!item)break;queuedPrompt(t,{taskId:t.id,id:item.id,expectedRevision:item.revision??0});requireNavigationIdle();await deliverQueued(t,item,context,{runQueue:true});break;
       }
+      case 'createSideChat':
       case 'forkTask':{
-        requireNavigationIdle();const original=structuredClone(requireTask()),index=original.messages.findIndex(m=>m.id===action.messageId&&['user','assistant'].includes(m.role));if(index<0)throw Error('Choose a prompt or response to branch from.');const selected=original.messages[index];
-        await startTask(original.request,original.mode==='demo'?'manual':original.mode,original.runOptions);const t=state.task;t.title=`Branch · ${original.title}`.slice(0,100);t.forkedFrom=original.id;t.goal=original.goal;
-        t.messages=original.messages.slice(0,index+(selected.role==='assistant'?1:0)).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,contextTruncated:m.contextTruncated===true,at:m.at,sources:m.sources,files:m.files,images:m.images,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));message('system',selected.role==='assistant'?'Branched conversation through the selected response. Current project files are unchanged.':'Branched conversation. Current project files are unchanged; the selected prompt is an unsent draft.');
-        if(selected.role==='user')state.drafts[draftKey(t.projectId,t.id)]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:now()};break;
+        const side=action.type==='createSideChat',sourceId=action.taskId??(!side?state.task?.id:null);
+        if(typeof sourceId!=='string'||!sourceId||sourceId.length>200)throw Error('Choose an exact source chat.');
+        const source=contexts.get(sourceId)?.task??taskRecords.get(sourceId),project=state.projects.find(p=>p.id===source?.projectId);
+        if(!source||source.archived||!project)throw Error('The source chat is unavailable or archived.');
+        if(side&&action.text!==undefined&&(typeof action.text!=='string'||action.text.length>16000))throw Error('Side chat draft exceeds the supported limit.');
+        const row=db.prepare('SELECT revision FROM baselines WHERE task_id=?').get(source.id);
+        if(!row||row.revision!==source.baselineRevision)throw Error('The source chat baseline is unavailable.');
+        if(await canonicalRoot(project.root)!==project.root)throw Error('The source workspace changed. Reopen the project.');
+        requireSwitchable();
+        const original=structuredClone(source),parent=side?mainChat(original,[...taskRecords.values()]):original;
+        let selected,index=original.messages.length,cut;
+        if(!side&&action.messageId!==undefined){index=original.messages.findIndex(m=>m.id===action.messageId&&['user','assistant'].includes(m.role));if(index<0)throw Error('Choose a source prompt or response to fork from.');selected=original.messages[index];if(selected.role==='assistant')index++;}
+        const native=!side&&original.nativeSession?.transport==='msp';let forkReceipt;
+        if(native){
+          if(contextBusy(contexts.get(source.id))||source.promptQueue?.length||source.goal?.driver?.armed||source.nativeSession.status!=='ready')throw Error('Finish or pause source work before forking its native session.');
+          if((source.forkReceipts??[]).some(r=>['unknown','submitting','verifying','releasing'].includes(r.status)))throw Error('A prior native fork is unresolved. Inspect its saved command and child session receipt before another fork; it will not be repeated.');
+          if(selected){
+            const last=selected.role==='assistant'?selected:original.messages.slice(0,index).findLast(m=>m.role==='assistant');
+            const run=last&&(original.runs??[]).find(r=>r.promptId===(last.turnId??last.id));
+            if(!run?.runId||run.status!=='completed')throw Error('The selected reply has no verified completed native turn.');cut=run.runId;
+          }
+          let owner=contexts.get(source.id);
+          if(!owner){if(!runtimeFactory)throw Error('Open and restore the source native chat before forking.');owner=newContext(runtimeFactory(),source);contexts.set(source.id,owner);subscribeContext(owner);}
+          let live=owner.runtime?.snapshot?.();
+          if(!live?.permissionVerified){if(source.nativeSession.toolDiscovery)throw Error('Open the source chat and review its saved on-demand sources before forking.');await connectNative(owner,source,project);live=owner.runtime.snapshot();}
+          if(live.transport!=='msp'||!live.permissionVerified||live.nativeSessionId!==original.nativeSession.id||!live.forkSupported||typeof owner.runtime.forkSession!=='function')throw Error('Restore and verify the exact source native session before forking.');
+          forkReceipt=await owner.runtime.forkSession({sessionId:original.nativeSession.id,...(cut?{lastTurnId:cut}:{}),onReceipt:receipt=>{source.forkReceipts=[...(source.forkReceipts??[]).filter(r=>r.commandId!==receipt.commandId),receipt].slice(-20);saveRecord(source);persist();}});
+          if(forkReceipt.status!=='released'||!forkReceipt.childSessionId)throw Error('The native fork has no confirmed independent release.');
+        }
+        if(state.activeProject?.id!==project.id)await selectProject(project,null);
+        await startTask(side?'Side chat':original.request,original.mode==='demo'?'manual':original.mode,original.runOptions);
+        const child=state.task;child.title=`${side?'Side chat':'Fork'} - ${original.title}`.slice(0,100);child.chatRelation={kind:side?'side':'fork',parentTaskId:parent.id,parentTitle:parent.title,context:side?'fresh':native?'native':'retained',createdAt:now(),...(!side&&selected?{messageId:selected.id}:{})};
+        if(side){child.messages=[];if(action.text)state.drafts[draftKey(child.projectId,child.id)]={text:action.text,files:[],images:[],mode:'chat',updatedAt:now()};}
+        else{
+          child.forkedFrom=original.id;
+          child.messages=original.messages.slice(0,index).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,contextTruncated:m.contextTruncated===true,at:m.at,sources:m.sources,files:m.files,images:m.images,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));
+          if(native){child.nativeSession={...original.nativeSession,id:forkReceipt.childSessionId,seeded:true,status:'ready'};child.forkReceipts=[forkReceipt];message('system','Native conversation fork. Its saved history resumes independently after normal connection and tool review.');}
+          else message('system','Saved conversation context copied through the selected point. Current project files are unchanged.');
+          if(selected?.role==='user')state.drafts[draftKey(child.projectId,child.id)]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:now()};
+        }
+        break;
       }
       case 'renameTask':{requireNavigationIdle();if(action.id!==undefined&&(typeof action.id!=='string'||!action.id.trim()||action.id.length>200))throw Error('Invalid chat identifier.');const t=action.id===undefined?requireTask():state.task?.id===action.id?state.task:taskRecords.get(action.id);if(!t)throw Error('Chat not found.');if(contextBusy(contexts.get(t.id)))throw Error('Stop this chat before editing its details.');if(typeof action.title!=='string'||!action.title.trim()||action.title.length>100)throw Error('Use a chat name up to 100 characters.');t.title=action.title.trim();saveRecord(t);break;}
       case 'setMemories':{requireNavigationIdle();if(typeof action.text!=='string'||action.text.length>1500)throw Error('Memory instructions must be at most 1,500 characters.');state.memories=action.text.trim();break;}

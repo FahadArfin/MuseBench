@@ -1,0 +1,564 @@
+{
+  "at": "2026-10-30T22:09:53.362Z",
+  "scriptSha256": "55f3a4edceb20543559606c3cc2e7f039847da52f5c94bed2d7143f66dc0d01e",
+  "modelInferenceRequests": 0,
+  "personalCredentials": false,
+  "provider": "scripted-loopback-fixture",
+  "requests": [
+    {
+      "id": 1,
+      "case": "source-one",
+      "role": "main",
+      "bytes": 119653,
+      "credentialPresent": false,
+      "markers": [
+        "SOURCE_USER_ONE_SENTINEL"
+      ],
+      "inputShape": [
+        {
+          "type": "message",
+          "role": "developer",
+          "markers": []
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "markers": [
+            "SOURCE_USER_ONE_SENTINEL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "case": "source-one",
+      "role": "observer",
+      "bytes": 72476,
+      "credentialPresent": false,
+      "markers": [
+        "SOURCE_USER_ONE_SENTINEL"
+      ],
+      "inputShape": [
+        {
+          "type": "message",
+          "role": "developer",
+          "markers": []
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "markers": [
+            "SOURCE_USER_ONE_SENTINEL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "case": "source-one",
+      "role": "observer",
+      "bytes": 16077,
+      "credentialPresent": false,
+      "markers": [
+        "SOURCE_USER_ONE_SENTINEL",
+        "SOURCE_REPLY_ONE_SENTINEL"
+      ],
+      "inputShape": [
+        {
+          "type": "message",
+          "role": "user",
+          "markers": [
+            "SOURCE_USER_ONE_SENTINEL",
+            "SOURCE_REPLY_ONE_SENTINEL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "case": "source-one",
+      "role": "observer",
+      "bytes": 14638,
+      "credentialPresent": false,
+      "markers": [
+        "SOURCE_USER_ONE_SENTINEL",
+        "SOURCE_REPLY_ONE_SENTINEL"
+      ],
+      "inputShape": [
+        {
+          "type": "message",
+          "role": "user",
+          "markers": [
+            "SOURCE_USER_ONE_SENTINEL",
+            "SOURCE_REPLY_ONE_SENTINEL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "case": "source-two",
+      "role": "main",
+      "bytes": 119835,
+      "credentialPresent": false,
+      "markers": [
+        "SOURCE_USER_ONE_SENTINEL",
+        "SOURCE_REPLY_ONE_SENTINEL",
+        "SOURCE_USER_TWO_SENTINEL"
+      ],
+      "inputShape": [
+        {
+          "type": "message",
+          "role": "developer",
+          "markers": []
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "markers": [
+            "SOURCE_USER_ONE_SENTINEL"
+          ]
+        },
+        {
+          "type": "message",
+          "role": "assistant",
+          "markers": [
+            "SOURCE_REPLY_ONE_SENTINEL"
+          ]
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "markers": [
+            "SOURCE_USER_TWO_SENTINEL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "case": "source-two",
+      "role": "observer",
+      "bytes": 72699,
+      "credentialPresent": false,
+      "markers": [
+        "SOURCE_USER_ONE_SENTINEL",
+        "SOURCE_REPLY_ONE_SENTINEL",
+        "SOURCE_USER_TWO_SENTINEL"
+      ],
+      "inputShape": [
+        {
+          "type": "message",
+          "role": "developer",
+          "markers": []
+        },
+        {
+          "type": "message",
+          "role": "user",
+          "markers": [
+            "SOURCE_USER_ONE_SENTINEL",
+            "SOURCE_REPLY_ONE_SENTINEL",
+            "SOURCE_USER_TWO_SENTINEL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "case": "source-two",
+      "role": "observer",
+      "bytes": 16300,
+      "credentialPresent": false,
+      "markers": [
+        "SOURCE_USER_ONE_SENTINEL",
+        "SOURCE_REPLY_ONE_SENTINEL",
+        "SOURCE_USER_TWO_SENTINEL",
+        "SOURCE_REPLY_TWO_SENTINEL"
+      ],
+      "inputShape": [
+        {
+          "type": "message",
+          "role": "user",
+          "markers": [
+            "SOURCE_USER_ONE_SENTINEL",
+            "SOURCE_REPLY_ONE_SENTINEL",
+            "SOURCE_USER_TWO_SENTINEL",
+            "SOURCE_REPLY_TWO_SENTINEL"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "case": "source-two",
+      "role": "observer",
+      "bytes": 14861,
+      "credentialPresent": false,
+      "markers": [
+        "SOURCE_USER_ONE_SENTINEL",
+        "SOURCE_REPLY_ONE_SENTINEL",
+        "SOURCE_USER_TWO_SENTINEL",
+        "SOURCE_REPLY_TWO_SENTINEL"
+      ],
+      "inputShape": [
+        {
+          "type": "message",
+          "role": "user",
+          "markers": [
+            "SOURCE_USER_ONE_SENTINEL",
+            "SOURCE_REPLY_ONE_SENTINEL",
+            "SOURCE_USER_TWO_SENTINEL",
+            "SOURCE_REPLY_TWO_SENTINEL"
+          ]
+        }
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "method": "session/start",
+      "commandId": "01a18edc-c081-7000-ad2d-6a79aab07a1f",
+      "status": "returned",
+      "returnSessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8"
+    },
+    {
+      "method": "turn/start",
+      "commandId": "01a18edc-c3c1-7000-a32e-632b6eefa4b0",
+      "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+      "status": "returned"
+    },
+    {
+      "method": "turn/start",
+      "commandId": "01a18edc-c4fd-7000-851b-6257464646f6",
+      "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+      "status": "returned"
+    },
+    {
+      "method": "session/resume",
+      "commandId": "01a18edc-ca84-7000-8e1f-6c7afe4d65e2",
+      "sessionId": "00000000-0000-7a01-a4e6-7350dda4195a",
+      "status": "returned",
+      "returnSessionId": "00000000-0000-7a01-a4e6-7350dda4195a"
+    }
+  ],
+  "cases": [
+    {
+      "name": "source-one",
+      "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+      "text": "SOURCE_USER_ONE_SENTINEL",
+      "reply": "SOURCE_REPLY_ONE_SENTINEL",
+      "mainRequests": 1,
+      "turnId": "01a18edc-c3c1-7000-a32e-632b6eefa4b0",
+      "requestMarkers": [
+        "SOURCE_USER_ONE_SENTINEL"
+      ],
+      "terminal": "completed",
+      "after": {
+        "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+        "turnCount": 1,
+        "forkedFrom": null,
+        "sideFrom": null,
+        "workspaceRoot": "C:\\Users\\fahad\\AppData\\Local\\Temp\\muse-relations-contract-nxb7Oo\\project",
+        "providerId": "meta",
+        "modelId": "musebench-relations-contract-fixture",
+        "approvalMode": {
+          "mode": "onRequest",
+          "source": "startup",
+          "lastCommandId": null
+        },
+        "permissionState": {
+          "profileId": ":ask-me",
+          "reviewerAuthority": "human",
+          "axes": {
+            "filesystem": "sandboxed",
+            "network": "off",
+            "approval": "onRequest",
+            "reviewer": "human"
+          },
+          "reviewerAttached": true
+        },
+        "historyMode": "inline",
+        "markers": [
+          "SOURCE_USER_ONE_SENTINEL",
+          "SOURCE_REPLY_ONE_SENTINEL"
+        ],
+        "itemKinds": [
+          "userMessage",
+          "reminderChild",
+          "agentMessage",
+          "reminderChild",
+          "reminderChild"
+        ]
+      }
+    },
+    {
+      "name": "source-two",
+      "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+      "text": "SOURCE_USER_TWO_SENTINEL",
+      "reply": "SOURCE_REPLY_TWO_SENTINEL",
+      "mainRequests": 1,
+      "turnId": "01a18edc-c4fd-7000-851b-6257464646f6",
+      "requestMarkers": [
+        "SOURCE_USER_ONE_SENTINEL",
+        "SOURCE_REPLY_ONE_SENTINEL",
+        "SOURCE_USER_TWO_SENTINEL"
+      ],
+      "terminal": "completed",
+      "after": {
+        "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+        "turnCount": 2,
+        "forkedFrom": null,
+        "sideFrom": null,
+        "workspaceRoot": "C:\\Users\\fahad\\AppData\\Local\\Temp\\muse-relations-contract-nxb7Oo\\project",
+        "providerId": "meta",
+        "modelId": "musebench-relations-contract-fixture",
+        "approvalMode": {
+          "mode": "onRequest",
+          "source": "startup",
+          "lastCommandId": null
+        },
+        "permissionState": {
+          "profileId": ":ask-me",
+          "reviewerAuthority": "human",
+          "axes": {
+            "filesystem": "sandboxed",
+            "network": "off",
+            "approval": "onRequest",
+            "reviewer": "human"
+          },
+          "reviewerAttached": true
+        },
+        "historyMode": "inline",
+        "markers": [
+          "SOURCE_USER_ONE_SENTINEL",
+          "SOURCE_REPLY_ONE_SENTINEL",
+          "SOURCE_USER_TWO_SENTINEL",
+          "SOURCE_REPLY_TWO_SENTINEL"
+        ],
+        "itemKinds": [
+          "userMessage",
+          "reminderChild",
+          "agentMessage",
+          "reminderChild",
+          "reminderChild",
+          "userMessage",
+          "reminderChild",
+          "agentMessage",
+          "reminderChild",
+          "reminderChild"
+        ]
+      }
+    }
+  ],
+  "limits": {
+    "scenarioMs": 90000,
+    "operationMs": 10000,
+    "requests": 24,
+    "notifications": 2000,
+    "requestBytes": 1048576
+  },
+  "binary": {
+    "path": "C:\\Users\\fahad\\AppData\\Local\\Programs\\muse\\muse-bin-1.4.14-R7309.1.exe",
+    "sha256": "20d18c426cc26e9e4b3cc07008ec07ec97e12e466a2be8cd2797b2e0e2018382"
+  },
+  "host": {
+    "version": "1.4.14",
+    "schema": {
+      "version": 1,
+      "fingerprint": "sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6"
+    },
+    "sessionDurability": "durable"
+  },
+  "sourceId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+  "parentBefore": {
+    "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+    "turnCount": 2,
+    "forkedFrom": null,
+    "sideFrom": null,
+    "workspaceRoot": "C:\\Users\\fahad\\AppData\\Local\\Temp\\muse-relations-contract-nxb7Oo\\project",
+    "providerId": "meta",
+    "modelId": "musebench-relations-contract-fixture",
+    "approvalMode": {
+      "mode": "onRequest",
+      "source": "startup",
+      "lastCommandId": null
+    },
+    "permissionState": {
+      "profileId": ":ask-me",
+      "reviewerAuthority": "human",
+      "axes": {
+        "filesystem": "sandboxed",
+        "network": "off",
+        "approval": "onRequest",
+        "reviewer": "human"
+      },
+      "reviewerAttached": true
+    },
+    "historyMode": "inline",
+    "markers": [
+      "SOURCE_USER_ONE_SENTINEL",
+      "SOURCE_REPLY_ONE_SENTINEL",
+      "SOURCE_USER_TWO_SENTINEL",
+      "SOURCE_REPLY_TWO_SENTINEL"
+    ],
+    "itemKinds": [
+      "userMessage",
+      "reminderChild",
+      "agentMessage",
+      "reminderChild",
+      "reminderChild",
+      "userMessage",
+      "reminderChild",
+      "agentMessage",
+      "reminderChild",
+      "reminderChild"
+    ]
+  },
+  "productFork": {
+    "receipt": {
+      "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+      "commandId": "01a18edc-c60b-7000-8ebc-aaa972e01dcf",
+      "status": "released",
+      "at": "2026-10-30T22:09:55.723Z",
+      "childSessionId": "00000000-0000-7a01-a4e6-7350dda4195a",
+      "leaveCommandId": "01a18edc-c920-7000-95b6-af6c3ea275a4",
+      "release": {
+        "outcome": "released",
+        "viewCursor": "v4:00000000-0000-7a01-a4e6-7350dda4195a:8"
+      }
+    },
+    "receipts": [
+      {
+        "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+        "commandId": "01a18edc-c60b-7000-8ebc-aaa972e01dcf",
+        "status": "submitting",
+        "at": "2026-10-30T22:09:55.723Z"
+      },
+      {
+        "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+        "commandId": "01a18edc-c60b-7000-8ebc-aaa972e01dcf",
+        "status": "verifying",
+        "at": "2026-10-30T22:09:55.723Z",
+        "childSessionId": "00000000-0000-7a01-a4e6-7350dda4195a"
+      },
+      {
+        "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+        "commandId": "01a18edc-c60b-7000-8ebc-aaa972e01dcf",
+        "status": "releasing",
+        "at": "2026-10-30T22:09:55.723Z",
+        "childSessionId": "00000000-0000-7a01-a4e6-7350dda4195a",
+        "leaveCommandId": "01a18edc-c920-7000-95b6-af6c3ea275a4"
+      },
+      {
+        "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+        "commandId": "01a18edc-c60b-7000-8ebc-aaa972e01dcf",
+        "status": "released",
+        "at": "2026-10-30T22:09:55.723Z",
+        "childSessionId": "00000000-0000-7a01-a4e6-7350dda4195a",
+        "leaveCommandId": "01a18edc-c920-7000-95b6-af6c3ea275a4",
+        "release": {
+          "outcome": "released",
+          "viewCursor": "v4:00000000-0000-7a01-a4e6-7350dda4195a:8"
+        }
+      }
+    ]
+  },
+  "forkAll": {
+    "sessionId": "00000000-0000-7a01-a4e6-7350dda4195a",
+    "turnCount": 2,
+    "forkedFrom": {
+      "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+      "cutCursor": "session:01a18edc-c109-7600-a136-43cf84b2c6c8:turn:2",
+      "cutExplicit": false,
+      "commandId": "01a18edc-c60b-7000-8ebc-aaa972e01dcf"
+    },
+    "sideFrom": null,
+    "workspaceRoot": "C:\\Users\\fahad\\AppData\\Local\\Temp\\muse-relations-contract-nxb7Oo\\project",
+    "providerId": "meta",
+    "modelId": "musebench-relations-contract-fixture",
+    "approvalMode": {
+      "mode": "onRequest",
+      "source": "startup",
+      "lastCommandId": null
+    },
+    "historyMode": "inline",
+    "markers": [
+      "SOURCE_USER_ONE_SENTINEL",
+      "SOURCE_REPLY_ONE_SENTINEL",
+      "SOURCE_USER_TWO_SENTINEL",
+      "SOURCE_REPLY_TWO_SENTINEL"
+    ],
+    "itemKinds": [
+      "userMessage",
+      "agentMessage",
+      "userMessage",
+      "agentMessage"
+    ]
+  },
+  "handoff": {
+    "forkId": "00000000-0000-7a01-a4e6-7350dda4195a",
+    "sourceId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+    "settlement": {
+      "outcome": "released",
+      "viewCursor": "v4:00000000-0000-7a01-a4e6-7350dda4195a:8"
+    },
+    "resumed": {
+      "sessionId": "00000000-0000-7a01-a4e6-7350dda4195a",
+      "turnCount": 2,
+      "forkedFrom": {
+        "sessionId": "01a18edc-c109-7600-a136-43cf84b2c6c8",
+        "cutCursor": "session:01a18edc-c109-7600-a136-43cf84b2c6c8:turn:2",
+        "cutExplicit": false,
+        "commandId": "01a18edc-c60b-7000-8ebc-aaa972e01dcf"
+      },
+      "sideFrom": null,
+      "workspaceRoot": "C:\\Users\\fahad\\AppData\\Local\\Temp\\muse-relations-contract-nxb7Oo\\project",
+      "providerId": "meta",
+      "modelId": "musebench-relations-contract-fixture",
+      "approvalMode": {
+        "mode": "onRequest",
+        "source": "startup",
+        "lastCommandId": null
+      },
+      "permissionState": {
+        "profileId": ":ask-me",
+        "reviewerAuthority": "human",
+        "axes": {
+          "filesystem": "sandboxed",
+          "network": "off",
+          "approval": "onRequest",
+          "reviewer": "human"
+        },
+        "reviewerAttached": true
+      },
+      "historyMode": "snapshot",
+      "markers": [
+        "SOURCE_USER_ONE_SENTINEL",
+        "SOURCE_REPLY_ONE_SENTINEL",
+        "SOURCE_USER_TWO_SENTINEL",
+        "SOURCE_REPLY_TWO_SENTINEL"
+      ],
+      "itemKinds": [
+        "userMessage",
+        "agentMessage",
+        "userMessage",
+        "agentMessage"
+      ]
+    }
+  },
+  "status": "failed",
+  "stage": "fork-resume-second-host",
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n+ {\n+   axes: {\n+     approval: 'onRequest',\n+     filesystem: 'sandboxed',\n+     network: 'off',\n+     reviewer: 'human'\n+   },\n+   profileId: ':ask-me',\n+   reviewerAttached: true,\n+   reviewerAuthority: 'human'\n+ }\n- undefined\n\n    at file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/scripts/native-session-fork-contract.mjs:67:373\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)",
+  "secondaryExit": {
+    "code": 0,
+    "signal": null
+  },
+  "secondaryCleanup": "confirmed",
+  "exit": {
+    "code": 0,
+    "signal": null
+  },
+  "cleanup": "confirmed",
+  "notificationCount": 38,
+  "workspaceRemoved": true
+}

@@ -1,0 +1,57 @@
+TAP version 13
+# (node:16812) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fresh sides isolate context and preserve the explicit parent draft, queues and goals
+ok 1 - fresh sides isolate context and preserve the explicit parent draft, queues and goals
+  ---
+  duration_ms: 175.2975
+  ...
+# Subtest: relations survive restart and parent deletion without cascading or hiding a side
+ok 2 - relations survive restart and parent deletion without cascading or hiding a side
+  ---
+  duration_ms: 91.3537
+  ...
+# Subtest: invalid and archived explicit sources preserve selection and create nothing
+ok 3 - invalid and archived explicit sources preserve selection and create nothing
+  ---
+  duration_ms: 86.2496
+  ...
+# Subtest: chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+ok 4 - chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+  ---
+  duration_ms: 99.4769
+  ...
+# Subtest: relationship validation and projection never nest cycles, malformed or cross-project parents
+ok 5 - relationship validation and projection never nest cycles, malformed or cross-project parents
+  ---
+  duration_ms: 0.3269
+  ...
+# Subtest: desktop accepts exact-source side and chat-level fork actions with bounded text
+ok 6 - desktop accepts exact-source side and chat-level fork actions with bounded text
+  ---
+  duration_ms: 1.2909
+  ...
+# Subtest: native fork restores independently without copying usage, goals or access leases
+ok 7 - native fork restores independently without copying usage, goals or access leases
+  ---
+  duration_ms: 82.0221
+  ...
+# Subtest: unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+ok 8 - unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+  ---
+  duration_ms: 101.7111
+  ...
+# Subtest: known native rejection creates no copied child and allows a later deliberate fork
+ok 9 - known native rejection creates no copied child and allows a later deliberate fork
+  ---
+  duration_ms: 77.141
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 9
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 802.5667

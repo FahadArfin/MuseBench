@@ -1,0 +1,304 @@
+TAP version 13
+# (node:64184) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fresh sides isolate context and preserve the explicit parent draft, queues and goals
+not ok 1 - fresh sides isolate context and preserve the explicit parent draft, queues and goals
+  ---
+  duration_ms: 100.4263
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:12:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'Unknown controller action.'
+    - null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  actual: 'Unknown controller action.'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:14:86)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: relations survive restart and parent deletion without cascading or hiding a side
+not ok 2 - relations survive restart and parent deletion without cascading or hiding a side
+  ---
+  duration_ms: 69.5765
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:17:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'chatRelation')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:17:477)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: invalid and archived explicit sources preserve selection and create nothing
+ok 3 - invalid and archived explicit sources preserve selection and create nothing
+  ---
+  duration_ms: 78.8236
+  ...
+# Subtest: chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+not ok 4 - chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+  ---
+  duration_ms: 79.6269
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:19:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'Choose a prompt or response to branch from.'
+    - null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  actual: 'Choose a prompt or response to branch from.'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:19:492)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: relationship validation and projection never nest cycles, malformed or cross-project parents
+not ok 5 - relationship validation and projection never nest cycles, malformed or cross-project parents
+  ---
+  duration_ms: 0.2664
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:20:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of null (reading 'id')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:20:757)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+    Test.postRun (node:internal/test_runner/test:1090:19)
+    Test.run (node:internal/test_runner/test:1018:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: desktop accepts exact-source side and chat-level fork actions with bounded text
+not ok 6 - desktop accepts exact-source side and chat-level fork actions with bounded text
+  ---
+  duration_ms: 0.6882
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\chat-relations.test.mjs:21:1'
+  failureType: 'testCodeFailure'
+  error: 'Invalid workspace action.'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    validateAction (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/electron/security.mjs:28:148)
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/chat-relations.test.mjs:21:241)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+    Test.postRun (node:internal/test_runner/test:1090:19)
+    Test.run (node:internal/test_runner/test:1018:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: fork sends once, validates cut provenance, and waits for confirmed matching release
+not ok 7 - fork sends once, validates cut provenance, and waits for confirmed matching release
+  ---
+  duration_ms: 1.1305
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:6:1'
+  failureType: 'testCodeFailure'
+  error: 'Native fork unavailable'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    forkNativeSession (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/runtime/session-fork.mjs:1:49)
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:6:134)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.start (node:internal/test_runner/test:877:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: unusable source rejects before fork dispatch {"source":{"status":"running","activeTurnId":"t"}}
+ok 8 - unusable source rejects before fork dispatch {"source":{"status":"running","activeTurnId":"t"}}
+  ---
+  duration_ms: 0.2245
+  ...
+# Subtest: unusable source rejects before fork dispatch {"read":{"queuedInputs":[{"turnId":"q"}]}}
+ok 9 - unusable source rejects before fork dispatch {"read":{"queuedInputs":[{"turnId":"q"}]}}
+  ---
+  duration_ms: 0.0661
+  ...
+# Subtest: unusable source rejects before fork dispatch {"source":{"permissionState":null}}
+ok 10 - unusable source rejects before fork dispatch {"source":{"permissionState":null}}
+  ---
+  duration_ms: 0.0553
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"sessionId":"source"}
+not ok 11 - invalid native fork metadata is unknown with child identity retained {"sessionId":"source"}
+  ---
+  duration_ms: 0.1696
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:8:166'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'status')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:8:405)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"workspaceRoot":"/other"}
+not ok 12 - invalid native fork metadata is unknown with child identity retained {"workspaceRoot":"/other"}
+  ---
+  duration_ms: 0.0706
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:8:166'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'status')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:8:405)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"modelId":"other"}
+not ok 13 - invalid native fork metadata is unknown with child identity retained {"modelId":"other"}
+  ---
+  duration_ms: 0.1455
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:8:166'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'status')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:8:405)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"permissionState":null}
+not ok 14 - invalid native fork metadata is unknown with child identity retained {"permissionState":null}
+  ---
+  duration_ms: 0.2983
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:8:166'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'status')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:8:405)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"forkedFrom":{"sessionId":"foreign"}}
+not ok 15 - invalid native fork metadata is unknown with child identity retained {"forkedFrom":{"sessionId":"foreign"}}
+  ---
+  duration_ms: 0.2514
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:8:166'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'status')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:8:405)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"activeTurnId":"busy"}
+not ok 16 - invalid native fork metadata is unknown with child identity retained {"activeTurnId":"busy"}
+  ---
+  duration_ms: 0.256
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:8:166'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'status')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:8:405)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: ack alone cannot admit a fork and timeout retains release recovery
+not ok 17 - ack alone cannot admit a fork and timeout retains release recovery
+  ---
+  duration_ms: 0.77
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:9:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /release|timed/i. Input:
+    
+    'Error: Native fork unavailable'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'Native fork unavailable'
+  stack: |-
+    forkNativeSession (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/runtime/session-fork.mjs:1:49)
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:9:139)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+    Test.postRun (node:internal/test_runner/test:1090:19)
+    Test.run (node:internal/test_runner/test:1018:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:9:118)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: known rejection differs from ambiguous command outcome, no command is retried
+not ok 18 - known rejection differs from ambiguous command outcome, no command is retried
+  ---
+  duration_ms: 0.2148
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:10:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'status')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:10:323)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Subtest: unknown completed cut rejects before submission
+not ok 19 - unknown completed cut rejects before submission
+  ---
+  duration_ms: 0.1995
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\native-session-fork.test.mjs:11:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /completed|cut/i. Input:
+    
+    'Error: Native fork unavailable'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'Native fork unavailable'
+  stack: |-
+    forkNativeSession (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/runtime/session-fork.mjs:1:49)
+    TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:11:105)
+    Test.runInAsyncScope (node:async_hooks:211:14)
+    Test.run (node:internal/test_runner/test:979:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:677:18)
+    Test.postRun (node:internal/test_runner/test:1090:19)
+    Test.run (node:internal/test_runner/test:1018:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/native-session-fork.test.mjs:11:84)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+1..19
+# tests 19
+# suites 0
+# pass 4
+# fail 15
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 415.8134

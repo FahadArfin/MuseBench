@@ -1,3 +1,4 @@
+import {forkNativeSession} from './session-fork.mjs';
 import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
 import {restoreContextUsage} from '../shared/native-context-usage.mjs';
 import {normalizeWorkspaceToolset} from '../shared/workspace-analysis.mjs';
@@ -146,7 +147,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const candidates=discoverMuseBinaries({environment,platform});
  const childEnvironment=curateEnvironment(environment);let credentialContext=null;
  let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
- let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
+ const forkObservers=new Set();
+ let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,forkPending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
  let projectMcpRevision=null,executionRevision=null;
  let discoveryLease=null;
  const deferredInputs=new Map(),settledInputs=new Set(),settledApprovals=new Set();
@@ -178,7 +180,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  };
  const syncChildren=()=>{const view=children.snapshot();if(usable.has(adapter?.snapshot().status)&&view.items.some(childWorking))awaitingChildReport=true;for(const [key,target] of childWork){const i=view.items.find(i=>i.itemId===target.itemId);if(childWorkSettled(i,target))childWork.delete(key);}update({children:view,childrenBusy:view.items.some(childWorking)||childWork.size>0||awaitingChildReport,childWorkPending:childWork.size});if(adapter)syncAdapter(adapter.snapshot());};
  const interruptChildCommands=()=>update({childReceipts:(state.childReceipts??[]).map(r=>r.status==='submitting'?{...r,status:'unknown',reason:'Connection lost before command admission was confirmed.'}:r)});
- const syncCompaction=()=>{const receipt=compaction.snapshot();if(!compaction.pending())clearTimeout(compactionTimer);update({compaction:receipt,contextCompactions:compaction.history(),operationBusy:compaction.pending()});};
+ const syncCompaction=()=>{const receipt=compaction.snapshot();if(!compaction.pending())clearTimeout(compactionTimer);update({compaction:receipt,contextCompactions:compaction.history(),operationBusy:forkPending||compaction.pending()});};
  const block=(reason,invalidatePermissions=true)=>{blockedReason=reason;update({status:'blocked',reason,...(invalidatePermissions?{permissionVerified:false}:{}),pending:displayPending(pending,pendingRevision)});};
  const assertCurrent=token=>{if(token!==epoch)throw Error('Muse connection was interrupted or disconnected.');};
  const syncAdapter=s=>{
@@ -207,7 +209,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   if(closing){await closing;return snapshot();}
   if(!owner&&!connecting&&state.cleanup==='unconfirmed')return snapshot();
   interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Disconnected before compaction was confirmed.');syncCompaction();
-  const token=++epoch;connecting=false;sending=false;deciding=false;blockedReason=null;clearPending();
+  const token=++epoch;connecting=false;sending=false;forkPending=false;deciding=false;blockedReason=null;clearPending();
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('disconnected');adapter=null;
   closing=Promise.resolve().then(release);
   childReads.clear();
@@ -340,7 +342,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    }
    const holdOpening=entry=>{if(openingEvents.length>=128)throw Error('Native startup event limit reached.');openingEvents.push(structuredClone(entry));};
    let notificationHandler;
-   const routeNotification=frame=>{if(token!==epoch||owner!==host)return;if(openingCommandId&&frame.params?.commandId===openingCommandId&&['session/approvalModeChanged','session/permissionProfileChanged'].includes(frame.method))return;observe(frame);if(!['approval/requested','approval/updated','approval/resolved','userInput/requested','userInput/settled'].includes(frame.method))notificationHandler(frame);};
+   const routeNotification=frame=>{if(token!==epoch||owner!==host)return;for(const fn of forkObservers)fn(frame);if(openingCommandId&&frame.params?.commandId===openingCommandId&&['session/approvalModeChanged','session/permissionProfileChanged'].includes(frame.method))return;observe(frame);if(!['approval/requested','approval/updated','approval/resolved','userInput/requested','userInput/settled'].includes(frame.method))notificationHandler(frame);};
    const routeRequest=request=>{
     if(request.params?.sessionId!==state.sessionId)throw Error('Foreign request during native restoration.');
     if(!receivePending({kind:request.method==='approval/request'?'approval':'input',...request.params}))return {};
@@ -393,7 +395,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    for(const item of adapter.snapshot().restoredChildren??[])children.observe(item);
    for(const item of adapter.snapshot().restoredCompactions??[])compaction.observe(item,adapter.snapshot().sessionId,'restored');syncCompaction();
    connecting=false;
-   update({questionsSupported:true,steeringSupported:true,compactionSupported:true,childControlsSupported:true,imagesSupported:true,modelsSupported:true,hooksSupported:true,durableSessions:host.initializeResult.sessionDurability===undefined||host.initializeResult.sessionDurability==='durable',modelId:openedSession?.modelId??null,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
+   update({forkSupported:host.initializeResult.sessionDurability===undefined||host.initializeResult.sessionDurability==='durable',questionsSupported:true,steeringSupported:true,compactionSupported:true,childControlsSupported:true,imagesSupported:true,modelsSupported:true,hooksSupported:true,durableSessions:host.initializeResult.sessionDurability===undefined||host.initializeResult.sessionDurability==='durable',modelId:openedSession?.modelId??null,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
    const held=openingEvents;openingEvents=[];for(const entry of held){assertCurrent(token);if(entry.kind==='request')routeRequest(entry.frame);else routeNotification(entry.frame);}assertCurrent(token);syncChildren();syncAdapter(adapter.snapshot());assertCurrent(token);
    return snapshot();
   }catch(error){
@@ -407,7 +409,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  }
 
  async function refreshModels(){
-  if(!owner||connecting||sending||modelReading||!usable.has(state.status)||!state.permissionVerified)throw Error('Connect an idle runtime before refreshing models.');
+  if(!owner||connecting||sending||forkPending||modelReading||!usable.has(state.status)||!state.permissionVerified)throw Error('Connect an idle runtime before refreshing models.');
   const token=epoch;modelReading=true;
   try{const value=await bounded(owner.connection.request('model/list',{sessionId:state.sessionId}),timeoutMs);assertCurrent(token);const catalog=normalizeModels(value);nativeCatalog=value;update({modelCatalog:catalog});return catalog;}finally{if(token===epoch)modelReading=false;}
  }
@@ -438,7 +440,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const options=validateRunOptions(runOptions);
   if(options.approval!=='ask'||options.budget)throw Error('Interactive mode requires Ask for approval and no exec budget preset.');
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a prepared request up to 64,000 characters and a supported chat or plan mode.');
-  if(!owner||!adapter||connecting||sending||childCommands.size||state.childrenBusy||compaction.pending()||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
+  if(!owner||!adapter||connecting||sending||forkPending||childCommands.size||state.childrenBusy||compaction.pending()||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');
   const credentialEpoch=epoch;if(credentialContext)await credentialContext.verify();assertCurrent(credentialEpoch);
   if(modelReading)throw Error('Wait for the native model catalog.');
   const token=epoch;const images=await readImages(imagePaths);assertCurrent(token);
@@ -532,7 +534,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  }
  async function childControl(input={}){
   const stopping=['interrupt','stop','close'].includes(input.action);
-  if(!owner||!adapter||input.sessionId!==state.sessionId||connecting||closing||!['idle','running','completed','failed','cancelled',...(stopping?['blocked']:[])].includes(state.status)||!stopping&&(!state.permissionVerified||pending||compaction.pending()||sending))throw Error('This child connection is unavailable or needs attention.');
+  if(!owner||!adapter||input.sessionId!==state.sessionId||connecting||closing||!['idle','running','completed','failed','cancelled',...(stopping?['blocked']:[])].includes(state.status)||!stopping&&(!state.permissionVerified||pending||compaction.pending()||sending||forkPending))throw Error('This child connection is unavailable or needs attention.');
   const startsWork=['followupTask','resume','reopen','retry'].includes(input.action);
   const child=children.snapshot().items.find(i=>i.itemId===input.itemId);
   if(startsWork&&!state.ownedTurnIds?.includes(child?.turnId))throw Error('This child belongs to an earlier request. Start a new task from the current conversation instead.');
@@ -544,7 +546,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    if(!stopping&&input.action!=='readResult')await verifyWorkConfiguration(token);
    if(startsWork){await discoveryLease?.prepareTurn?.();assertCurrent(token);}
    assertCurrent(token);const target=children.prepare(input);
-   if(!stopping&&(pending||compaction.pending()||sending||!state.permissionVerified))throw Error('The child connection changed while its configuration was checked.');
+   if(!stopping&&(pending||compaction.pending()||sending||forkPending||!state.permissionVerified))throw Error('The child connection changed while its configuration was checked.');
    if(startsWork){childWork.set(key,{itemId:input.itemId,revision:input.revision,action:input.action,childId:input.childId,attempt:input.attempt});syncChildren();}publish(receipt);submitted=true;
    const ack=await bounded(owner.connection.command(target.method,{sessionId,...target.params},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack.status!=='accepted')throw Error('Child command acknowledgement could not be verified.');publish({...receipt,status:'accepted'});return snapshot();
   }catch(error){if(submitted&&token===epoch){if(error.code===-32030)childWork.delete(key);else uncertainChildren.add(key);publish({...receipt,status:error.code===-32030?'rejected':'unknown',reason:String(error.message).slice(0,1000)});syncChildren();}throw error;}finally{if(token===epoch)childCommands.delete(key);}
@@ -591,7 +593,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   }
  }
  async function compact({sessionId,turnId}={}){
-  if(!owner||!adapter||!state.permissionVerified||connecting||sending||steering||pending||childCommands.size||state.childrenBusy||!usable.has(state.status)||sessionId!==state.sessionId||!turnId||turnId!==state.turnId)throw Error('Finish the current turn and use this connection’s latest session before compacting.');
+  if(!owner||!adapter||!state.permissionVerified||connecting||sending||forkPending||steering||pending||childCommands.size||state.childrenBusy||!usable.has(state.status)||sessionId!==state.sessionId||!turnId||turnId!==state.turnId)throw Error('Finish the current turn and use this connection’s latest session before compacting.');
   const token=epoch,commandId=owner.connection.mintCommandId();compaction.start({sessionId,turnId,commandId});syncCompaction();
   let submitted=false;
   try{
@@ -601,5 +603,12 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    const ack=await bounded(owner.connection.command('session/compact',{sessionId,turnId},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);compaction.ack(ack);syncCompaction();return snapshot();
   }catch(error){if(token===epoch){if(!submitted||error.code===-32030)compaction.reject(error.message);else compaction.interrupt(error.message);syncCompaction();}throw error;}
  }
- return {snapshot,discoveryEpoch:()=>epoch,inspectDiscoverySources:root=>{if(typeof discoveryMcp?.inspect!=='function')throw Error('On-demand source inspection is unavailable.');return discoveryMcp.inspect(root);},statusSnapshot:()=>projectRuntimeStatus(state),subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,childControl,inspectChild,readMcpServers,answerInput,decide,close:()=>disconnect()};
+ async function forkSession({sessionId,lastTurnId,onReceipt}={}){
+  if(!owner||!adapter||connecting||closing||sending||steering||modelReading||childCommands.size||forkPending||!state.forkSupported||!state.permissionVerified||sessionId!==state.sessionId||!usable.has(state.status)||pending||state.childrenBusy||state.operationBusy)throw Error('Fork requires this verified idle native session.');
+  if(state.forkReceipt&&['unknown','submitting','verifying','releasing'].includes(state.forkReceipt.status))throw Error('The previous native fork is unresolved; inspect its recovery receipt.');
+  const token=epoch,host=owner;forkPending=true;update({operationBusy:true});
+  try{await verifyWorkConfiguration(token);assertCurrent(token);if(!usable.has(state.status)||pending||state.childrenBusy)throw Error('The source changed during fork admission.');return await forkNativeSession({connection:host.connection,subscribeNotifications:fn=>{forkObservers.add(fn);return()=>forkObservers.delete(fn);},sessionId,lastTurnId,workspaceRoot:workspace,timeoutMs,permissionCheck:s=>provesAskMe(s,workspace,s.sessionId),isCurrent:()=>token===epoch&&owner===host&&state.permissionVerified,onReceipt:async receipt=>{if(token===epoch&&owner===host)update({forkReceipt:receipt,operationBusy:forkPending});await onReceipt?.(receipt);}});}
+  finally{if(token===epoch){forkPending=false;update({operationBusy:compaction.pending()});}}
+ }
+ return {snapshot,discoveryEpoch:()=>epoch,inspectDiscoverySources:root=>{if(typeof discoveryMcp?.inspect!=='function')throw Error('On-demand source inspection is unavailable.');return discoveryMcp.inspect(root);},statusSnapshot:()=>projectRuntimeStatus(state),subscribe:fn=>{if(typeof fn!=='function')throw Error('A listener function is required.');listeners.add(fn);return()=>listeners.delete(fn);},connect,disconnect:()=>disconnect(),send,refreshModels,steer,compact,forkSession,childControl,inspectChild,readMcpServers,answerInput,decide,close:()=>disconnect()};
 }

@@ -1,0 +1,20 @@
+TAP version 13
+# Subtest: fork verifies current configuration and blocks concurrent native work before command admission
+ok 1 - fork verifies current configuration and blocks concurrent native work before command admission
+  ---
+  duration_ms: 8.806
+  ...
+# Subtest: fork holds runtime operation ownership through matching release without submitting a turn
+ok 2 - fork holds runtime operation ownership through matching release without submitting a turn
+  ---
+  duration_ms: 10.9024
+  ...
+1..2
+# tests 2
+# suites 0
+# pass 2
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 94.895

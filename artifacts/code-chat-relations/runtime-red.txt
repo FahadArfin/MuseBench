@@ -1,0 +1,56 @@
+TAP version 13
+# Subtest: fork verifies current configuration and blocks concurrent native work before command admission
+not ok 1 - fork verifies current configuration and blocks concurrent native work before command admission
+  ---
+  duration_ms: 8.5194
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\runtime.test.mjs:12:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /Reconnect|configuration/. Input:
+    
+    'Error: Fork requires a verified idle source without pending work.'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+  error: 'Fork requires a verified idle source without pending work.'
+  stack: |-
+    forkNativeSession (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/runtime/session-fork.mjs:10:209)
+    async Object.forkSession (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/src/runtime/index.mjs:609:14)
+    async waitForActual (node:assert:875:5)
+    async Function.rejects (node:assert:996:25)
+    async TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/runtime.test.mjs:13:148)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/runtime.test.mjs:13:148)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: fork holds runtime operation ownership through matching release without submitting a turn
+not ok 2 - fork holds runtime operation ownership through matching release without submitting a turn
+  ---
+  duration_ms: 10.3538
+  location: 'C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\test\\runtime.test.mjs:15:1'
+  failureType: 'testCodeFailure'
+  error: 'Missing expected rejection.'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  operator: 'rejects'
+  stack: |-
+    async TestContext.<anonymous> (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/test/runtime.test.mjs:20:139)
+    async Test.run (node:internal/test_runner/test:980:9)
+    async Test.processPendingSubtests (node:internal/test_runner/test:677:7)
+  ...
+# Error: Test "fork holds runtime operation ownership through matching release without submitting a turn" at test\\runtime.test.mjs:15:1 generated asynchronous activity after the test ended. This activity created the error "Error: Native fork ownership changed." and would have caused the test to fail, but instead triggered an unhandledRejection event.
+1..2
+# tests 2
+# suites 0
+# pass 0
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 98.9635

@@ -1,0 +1,122 @@
+TAP version 13
+# (node:56648) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+# (Use `node --trace-warnings ...` to show where the warning was created)
+# Subtest: fresh sides isolate context and preserve the explicit parent draft, queues and goals
+ok 1 - fresh sides isolate context and preserve the explicit parent draft, queues and goals
+  ---
+  duration_ms: 178.9216
+  ...
+# Subtest: relations survive restart and parent deletion without cascading or hiding a side
+ok 2 - relations survive restart and parent deletion without cascading or hiding a side
+  ---
+  duration_ms: 91.9835
+  ...
+# Subtest: invalid and archived explicit sources preserve selection and create nothing
+ok 3 - invalid and archived explicit sources preserve selection and create nothing
+  ---
+  duration_ms: 79.9994
+  ...
+# Subtest: chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+ok 4 - chat-level retained forks bind explicit source, keep prefix metadata and clear drivers
+  ---
+  duration_ms: 102.9533
+  ...
+# Subtest: relationship validation and projection never nest cycles, malformed or cross-project parents
+ok 5 - relationship validation and projection never nest cycles, malformed or cross-project parents
+  ---
+  duration_ms: 0.385
+  ...
+# Subtest: desktop accepts exact-source side and chat-level fork actions with bounded text
+ok 6 - desktop accepts exact-source side and chat-level fork actions with bounded text
+  ---
+  duration_ms: 0.9099
+  ...
+# Subtest: native fork restores independently without copying usage, goals or access leases
+ok 7 - native fork restores independently without copying usage, goals or access leases
+  ---
+  duration_ms: 83.2067
+  ...
+# Subtest: unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+ok 8 - unknown native fork persists child recovery identity and blocks repeats across restart without fallback
+  ---
+  duration_ms: 97.5808
+  ...
+# Subtest: known native rejection creates no copied child and allows a later deliberate fork
+ok 9 - known native rejection creates no copied child and allows a later deliberate fork
+  ---
+  duration_ms: 76.177
+  ...
+# Subtest: fork sends once, validates cut provenance, and waits for confirmed matching release
+ok 10 - fork sends once, validates cut provenance, and waits for confirmed matching release
+  ---
+  duration_ms: 2.9132
+  ...
+# Subtest: unusable source rejects before fork dispatch {"source":{"status":"running","activeTurnId":"t"}}
+ok 11 - unusable source rejects before fork dispatch {"source":{"status":"running","activeTurnId":"t"}}
+  ---
+  duration_ms: 0.2779
+  ...
+# Subtest: unusable source rejects before fork dispatch {"read":{"queuedInputs":[{"turnId":"q"}]}}
+ok 12 - unusable source rejects before fork dispatch {"read":{"queuedInputs":[{"turnId":"q"}]}}
+  ---
+  duration_ms: 0.0846
+  ...
+# Subtest: unusable source rejects before fork dispatch {"source":{"permissionState":null}}
+ok 13 - unusable source rejects before fork dispatch {"source":{"permissionState":null}}
+  ---
+  duration_ms: 0.072
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"sessionId":"source"}
+ok 14 - invalid native fork metadata is unknown with child identity retained {"sessionId":"source"}
+  ---
+  duration_ms: 0.5695
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"workspaceRoot":"/other"}
+ok 15 - invalid native fork metadata is unknown with child identity retained {"workspaceRoot":"/other"}
+  ---
+  duration_ms: 0.224
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"modelId":"other"}
+ok 16 - invalid native fork metadata is unknown with child identity retained {"modelId":"other"}
+  ---
+  duration_ms: 0.1293
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"permissionState":null}
+ok 17 - invalid native fork metadata is unknown with child identity retained {"permissionState":null}
+  ---
+  duration_ms: 0.1079
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"forkedFrom":{"sessionId":"foreign"}}
+ok 18 - invalid native fork metadata is unknown with child identity retained {"forkedFrom":{"sessionId":"foreign"}}
+  ---
+  duration_ms: 0.2979
+  ...
+# Subtest: invalid native fork metadata is unknown with child identity retained {"activeTurnId":"busy"}
+ok 19 - invalid native fork metadata is unknown with child identity retained {"activeTurnId":"busy"}
+  ---
+  duration_ms: 0.7992
+  ...
+# Subtest: ack alone cannot admit a fork and timeout retains release recovery
+ok 20 - ack alone cannot admit a fork and timeout retains release recovery
+  ---
+  duration_ms: 37.8774
+  ...
+# Subtest: known rejection differs from ambiguous command outcome, no command is retried
+ok 21 - known rejection differs from ambiguous command outcome, no command is retried
+  ---
+  duration_ms: 0.393
+  ...
+# Subtest: unknown completed cut rejects before submission
+ok 22 - unknown completed cut rejects before submission
+  ---
+  duration_ms: 0.1282
+  ...
+1..22
+# tests 22
+# suites 0
+# pass 22
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 806.0618

@@ -9,6 +9,17 @@ import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/run
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
+test('ephemeral native hosts never advertise or dispatch a persistent fork',async t=>{const h=await harness(t);h.host.initializeResult.sessionDurability='ephemeral';await h.connect();assert.equal(h.runtime.snapshot().forkSupported,false);await assert.rejects(h.runtime.forkSession({sessionId:'session-one'}));assert.equal(h.calls.some(c=>c.method==='session/fork'),false);});
+test('fork verifies current configuration and blocks concurrent native work before command admission',async t=>{
+ let revision='before';const h=await harness(t,{verifyConfiguration:async()=>({executionRevision:revision})});await h.connect();revision='changed';await assert.rejects(h.runtime.forkSession({sessionId:'session-one'}),/Reconnect|configuration/);assert.equal(h.calls.filter(c=>c.method==='session/fork').length,0);
+});
+test('fork holds runtime operation ownership through matching release without submitting a turn',async t=>{
+ const h=await harness(t);await h.connect();
+ const read=h.host.connection.request;h.host.connection.request=async(method,params)=>method==='session/read'?{session:h.session(),pendingRequests:[],history:{mode:'inline',items:[]}}:read(method,params);
+ let enter,release;const entered=new Promise(r=>enter=r),held=new Promise(r=>release=r);t.after(()=>release());const command=h.host.connection.command;
+ h.host.connection.command=async(method,params,options)=>{if(method==='session/fork'){enter();await held;return{session:{...h.session(),sessionId:'fork-child',forkedFrom:{sessionId:'session-one',commandId:options.commandId,cutExplicit:false,cutCursor:'cut'}},pendingRequests:[],history:{mode:'inline',items:[]}};}if(method==='session/leave'){queueMicrotask(()=>h.emit({method:'session/leaveCompleted',params:{sessionId:'fork-child',commandId:options.commandId,outcome:'released',viewCursor:'release'}}));return{commandId:options.commandId,status:'accepted'};}return command(method,params,options);};
+ const pending=h.runtime.forkSession({sessionId:'session-one'});await entered;assert.equal(h.runtime.statusSnapshot().operationBusy,true);await assert.rejects(h.runtime.send({text:'Must not cross fork'}));release();const receipt=await pending;assert.equal(receipt.status,'released');assert.equal(h.runtime.snapshot().nativeSessionId,'session-one');assert.equal(h.runtime.statusSnapshot().operationBusy,false);assert.equal(h.calls.filter(c=>c.method==='turn/start').length,0);
+});
 test('lazy OAuth gateway binds verified actual native session before the first turn',async t=>{
  let bound=null;const h=await harness(t,{discoveryMcp:async()=>({config:{transport:'stdio',command:'trusted',args:[],mode:'required'},verify:async()=>{},bindSession:async id=>{assert.equal(h.calls.filter(row=>row.method==='session/read').length,1);bound=id;},prepareTurn:async()=>{assert.equal(bound,'session-one');},close:async()=>{}})});h.host.initializeResult.grantedCapabilities=['sessionMcp'];await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,toolDiscovery:{sources:[{id:'global:fixture',revision:'a'.repeat(64),authBindingRevision:'b'.repeat(64)}],reviewed:true}});assert.equal(bound,'session-one');await h.runtime.send({text:'First turn after native binding'});assert.equal(h.calls.filter(row=>row.method==='turn/start').length,1);
 });
