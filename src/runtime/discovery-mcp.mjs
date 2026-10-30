@@ -1,6 +1,7 @@
 import {fileURLToPath} from 'node:url';
 import path from 'node:path';
 import {createDiscoveryGateway} from './discovery-gateway.mjs';
+import {discoverySetupKind,discoverySetupError,readDiscoverySetupResponse} from './discovery-errors.mjs';
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const exact=(value,keys)=>object(value)&&Object.keys(value).every(key=>keys.includes(key));
 const schema=(properties,required)=>({type:'object',properties,required,additionalProperties:false});
@@ -23,7 +24,7 @@ export async function createDiscoveryMcpServer({service,input=process.stdin,outp
   if(method!=='tools/call')return error(id,-32601,'Method not supported.');
   if(!exact(params,['name','arguments','_meta'])||!['discovery_search','discovery_call'].includes(params.name))return error(id,-32602,'Invalid discovery request.');
   try{const value=await service[params.name==='discovery_search'?'search':'call'](params.arguments,{signal});const reply=result({content:[{type:'text',text:JSON.stringify(value)}]});if(Buffer.byteLength(JSON.stringify(reply)+'\n')>(params.name==='discovery_search'?65536:131072))return result({isError:true,content:[{type:'text',text:'Discovery response exceeded its encoded limit.'}]});return reply;}
-  catch(e){return result({isError:true,content:[{type:'text',text:String(e.message).slice(0,500)}]});}
+  catch(e){const kind=params.name==='discovery_search'?discoverySetupKind(e):undefined;return result({isError:true,content:[{type:'text',text:String(e.message).slice(0,500)}],...(kind?{structuredContent:{musebenchDiscoverySetup:kind}}:{})});}
  }
  async function pump(){if(running||closed)return;running=true;try{while(queue.length&&!closed){active=queue.shift();const job=active;let answer;try{answer=job.parseError?error(null,-32700,'Parse error.'):await dispatch(job.message,job.controller.signal);}finally{requests.delete(job.message?.id);}if(answer&&!job.cancelled&&!closed){const frame=JSON.stringify(answer)+'\n';if(!output.write(frame))await new Promise(resolve=>{const timer=setTimeout(stop,5000);const finish=()=>{clearTimeout(timer);output.removeListener('drain',finish);resolve();};output.once('drain',finish);void done.then(finish);});}active=null;}}catch{stop();}finally{running=false;}}
  function accept(frame){
@@ -41,7 +42,7 @@ export async function createDiscoveryMcpServer({service,input=process.stdin,outp
 async function main(){
  const worker=process.argv.length===3&&process.argv[2]==='--worker';if(process.argv.length!==2&&!worker)throw Error();const endpoint=process.env.MUSEBENCH_DISCOVERY_ENDPOINT,token=process.env.MUSEBENCH_DISCOVERY_TOKEN,sessionId=process.env.MUSE_SESSION_ID;
  if(!/^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/.test(endpoint??'')||! /^[a-f0-9]{64}$/.test(token??'')||typeof sessionId!=='string'||!sessionId||sessionId.length>200)throw Error();
- const request=async(route,extra={},signal)=>{const response=await fetch(endpoint+route,{method:'POST',headers:{authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({sessionId,...extra}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(335000)]):AbortSignal.timeout(5000)});if(!response.ok){const error=Error('Source selection changed or connection unavailable. Reconnect and review again.');error.notSubmitted=true;throw error;}const text=await response.text();if(Buffer.byteLength(text)>524288)throw Error();return JSON.parse(text);};
+ const request=async(route,extra={},signal)=>{const response=await fetch(endpoint+route,{method:'POST',headers:{authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({sessionId,...extra}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(335000)]):AbortSignal.timeout(5000)});if(!response.ok){const kind=route==='/search'?await readDiscoverySetupResponse(response):undefined,error=kind?discoverySetupError(kind):Error('Source selection changed or connection unavailable. Reconnect and review again.');error.notSubmitted=true;throw error;}const text=await response.text();if(Buffer.byteLength(text)>524288)throw Error();return JSON.parse(text);};
  let service;
  if(worker){const config=await request('/worker-bootstrap');service=createDiscoveryGateway({...config,sessionId,verify:()=>request('/worker-validate')});}
  else{await request('/bootstrap');const lifetime=new AbortController(),lease=await fetch(endpoint+'/lifetime',{method:'POST',headers:{authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({sessionId}),signal:lifetime.signal});if(!lease.ok)throw Error();void lease.text().catch(()=>{});service={search:(args,{signal}={})=>request('/search',{arguments:args},signal),call:async(args,{signal}={})=>{try{return await request('/call',{arguments:args},signal);}catch(error){if(error.notSubmitted)throw error;return{sourceId:typeof args?.sourceId==='string'?args.sourceId.slice(0,110):'unknown',tool:typeof args?.tool==='string'?args.tool.slice(0,200):'unknown',outcome:'unknown',error:'No final broker receipt was received. The operation may have executed. It was not retried. Reconnect and review again.'};}},dispose:async()=>{lifetime.abort();}};}

@@ -7,6 +7,7 @@ import {createServer} from 'node:http';
 import {randomBytes,timingSafeEqual} from 'node:crypto';
 import {inspectDiscoverySources,resolveDiscoverySelection} from '../src/runtime/discovery-sources.mjs';
 import {discoverySelection,discoveryIdentity} from '../src/shared/tool-discovery.mjs';
+import {readDiscoverySetupKind} from '../src/runtime/discovery-errors.mjs';
 async function checked(value){if(typeof value!=='string'||!path.isAbsolute(value))throw Error('A trusted absolute app path is required.');const result=await realpath(value);if((await lstat(value)).isSymbolicLink()||path.resolve(value).toLowerCase()!==result.toLowerCase())throw Error('A canonical app path is required.');return result;}
 // Ephemeral per-connection broker. Source env/args never enter the renderer,
 // provider-facing schema, command line, persisted session or diagnostic output.
@@ -43,7 +44,10 @@ export function createDiscoveryMcpConfig({appRoot,executable=process.execPath,he
      if(!Array.isArray(result.content)||result.content.length!==1||result.content[0].type!=='text')throw Error();
      if(result.isError&&req.url==='/call'){
       submitted=false;response={sourceId:typeof callArguments?.sourceId==='string'?callArguments.sourceId.slice(0,110):'unknown',tool:typeof callArguments?.tool==='string'?callArguments.tool.slice(0,200):'unknown',outcome:'failed',submitted:false,error:'Rejected before downstream submission: '+result.content[0].text.slice(0,500)};
-     }else{if(result.isError)throw Error();response=JSON.parse(result.content[0].text);}
+     }else{
+      if(result.isError){const kind=readDiscoverySetupKind(result.structuredContent);if(req.url==='/search'&&kind){res.writeHead(409,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify({musebenchDiscoverySetup:kind}));return;}throw Error();}
+      response=JSON.parse(result.content[0].text);
+     }
     }else throw Error();
     res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(response));
    }catch{
