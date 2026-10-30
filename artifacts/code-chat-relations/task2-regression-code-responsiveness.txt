@@ -1,0 +1,267 @@
+
+> musebench@0.2.0 test:code-responsiveness
+> node scripts/code-render-responsiveness-smoke.mjs && node scripts/dictation-subscription-smoke.mjs && node scripts/timeline-performance-regression.mjs
+
+{
+  "checks": {
+    "collapsedDetailsAbsent": true,
+    "expandedOutputAccessible": true,
+    "closingDetailsInert": true,
+    "closedDetailsReleased": true,
+    "codeCopyCorrect": true,
+    "historyNodeAfterDraft": true,
+    "codeCopyStateAfterDraft": true,
+    "historyNodeAfterStream": true,
+    "streamedMarkdownCorrect": true,
+    "streamedResponseCopyCorrect": true,
+    "draftRetained": true,
+    "feedbackSurvivesSnapshot": true,
+    "branchUsesCurrentMessage": true,
+    "otherChatFeedbackIsolated": true,
+    "otherChatDetailsCollapsed": true,
+    "otherChatResponseCopyCorrect": true,
+    "otherChatBranchCorrect": true
+  },
+  "timings": {
+    "draftMs": 67.19999998807907
+  },
+  "errors": []
+}
+PASS Twenty typed characters retain immediate saves and one dictation subscription/status request
+PASS Availability refresh updates inactive composer metadata without capturing unrelated speech or resubscribing
+PASS Unrelated renders preserve the listener and speech uses the newest draft callback once
+PASS Switching chats excludes speech before passive cancellation and late events from the previous chat
+PASS Delayed start and streaming speech use the newest callback and reject other capture IDs
+PASS Disabling voice and switching during a pending start reject stale captures without resubscribing
+PASS Unmount releases the listener and late events cannot save another draft
+Report: C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\output\playwright\dictation-subscription\report.json
+{
+  "status": "passed",
+  "checks": [
+    "Top, exact threshold, middle, backward scroll, near-end and bottom selection",
+    "Live geometry reflects offscreen answer growth and shrink without cached positions",
+    "ResizeObserver updates active selection when the bottom moves",
+    "Jump clears the previous current marker and aligns the requested prompt",
+    "Keyboard Home/End/Enter jumps and Escape closes preview",
+    "Hover preview and answer text mutation preserve scroll position",
+    "Appended and removed prompts rebuild current markers without stale buttons",
+    "Same-length node replacement restores one active marker on the new buttons",
+    "Conversation replacement and empty history clear old markers",
+    "Disposal cancels pending work and disconnects scroll, resize and mutation updates",
+    "Serialized timeline supports ancestor scrolling",
+    "Serialized timeline supports document scrolling",
+    "Before-first fallback and tied prompt tops select the last qualifying prompt",
+    "At most 9 prompt geometry reads per non-bottom position, zero at bottom, and at most 2 active-marker writes"
+  ],
+  "samples": [
+    {
+      "name": "top",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 0,
+      "current": [
+        0
+      ],
+      "scrollTop": 0,
+      "want": 0,
+      "bottom": false,
+      "unchanged": true
+    },
+    {
+      "name": "before second prompt threshold",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 0,
+      "current": [
+        0
+      ],
+      "scrollTop": 169,
+      "want": 0,
+      "bottom": false,
+      "unchanged": true
+    },
+    {
+      "name": "exact second prompt threshold",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        1
+      ],
+      "scrollTop": 170,
+      "want": 1,
+      "bottom": false,
+      "unchanged": false
+    },
+    {
+      "name": "after second prompt threshold",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 0,
+      "current": [
+        1
+      ],
+      "scrollTop": 171,
+      "want": 1,
+      "bottom": false,
+      "unchanged": true
+    },
+    {
+      "name": "middle",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        250
+      ],
+      "scrollTop": 49970,
+      "want": 250,
+      "bottom": false,
+      "unchanged": false
+    },
+    {
+      "name": "backward scroll",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        100
+      ],
+      "scrollTop": 19970,
+      "want": 100,
+      "bottom": false,
+      "unchanged": false
+    },
+    {
+      "name": "near end",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        496
+      ],
+      "scrollTop": 99170,
+      "want": 496,
+      "bottom": false,
+      "unchanged": false
+    },
+    {
+      "name": "four pixels before bottom",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        497
+      ],
+      "scrollTop": 99436,
+      "want": 497,
+      "bottom": false,
+      "unchanged": false
+    },
+    {
+      "name": "within three pixels of bottom",
+      "promptReads": 0,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        499
+      ],
+      "scrollTop": 99437,
+      "want": 499,
+      "bottom": true,
+      "unchanged": false
+    },
+    {
+      "name": "bottom",
+      "promptReads": 0,
+      "viewportReads": 1,
+      "currentWrites": 0,
+      "current": [
+        499
+      ],
+      "scrollTop": 99440,
+      "want": 499,
+      "bottom": true,
+      "unchanged": true
+    },
+    {
+      "name": "before offscreen answer growth",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        250
+      ],
+      "scrollTop": 49970,
+      "want": 250,
+      "bottom": false,
+      "unchanged": false
+    },
+    {
+      "name": "after offscreen answer growth",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        248
+      ],
+      "scrollTop": 49970,
+      "want": 248,
+      "bottom": false,
+      "unchanged": false
+    },
+    {
+      "name": "after offscreen answer shrink",
+      "promptReads": 9,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        250
+      ],
+      "scrollTop": 49970,
+      "want": 250,
+      "bottom": false,
+      "unchanged": false
+    },
+    {
+      "name": "before viewport resize",
+      "promptReads": 0,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        499
+      ],
+      "scrollTop": 99438,
+      "want": 499,
+      "bottom": true,
+      "unchanged": false
+    },
+    {
+      "name": "appended prompt at bottom",
+      "promptReads": 0,
+      "viewportReads": 1,
+      "currentWrites": 2,
+      "current": [
+        500
+      ],
+      "scrollTop": 99640,
+      "want": 500,
+      "bottom": true,
+      "unchanged": false
+    },
+    {
+      "name": "removed earlier prompt at bottom",
+      "promptReads": 0,
+      "viewportReads": 1,
+      "currentWrites": 0,
+      "current": [
+        499
+      ],
+      "scrollTop": 99440,
+      "want": 499,
+      "bottom": true,
+      "unchanged": false
+    }
+  ],
+  "out": "C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\artifacts\\timeline-performance\\report.json"
+}

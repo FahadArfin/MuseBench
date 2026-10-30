@@ -1,0 +1,17 @@
+(node:48728) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS Current menu creates a fresh linked side without sending or inheriting parent state; parent draft survives
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
++ actual - expected
+
++ 'Side only draft'
+- 'Keep parent draft'
+
+    at file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/scripts/code-chat-relations-smoke.mjs:41:327 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 'Side only draft',
+  expected: 'Keep parent draft',
+  operator: 'strictEqual'
+}
+Report: C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\code-chat-relations\ui-desktop-M6aEsw

@@ -1,0 +1,75 @@
+TAP version 13
+# Subtest: sidebar collections preserve manual order, recent fallback and archived membership
+ok 1 - sidebar collections preserve manual order, recent fallback and archived membership
+  ---
+  duration_ms: 7.5589
+  ...
+# Subtest: grouping reads project membership once per task instead of once per project
+ok 2 - grouping reads project membership once per task instead of once per project
+  ---
+  duration_ms: 1.3576
+  ...
+# Subtest: equivalent copies ignore project instruction bodies but detect every sidebar task field
+ok 3 - equivalent copies ignore project instruction bodies but detect every sidebar task field
+  ---
+  duration_ms: 0.7097
+  ...
+# Subtest: stable data never reads unrelated project payloads or scans unchanged array contents
+ok 4 - stable data never reads unrelated project payloads or scans unchanged array contents
+  ---
+  duration_ms: 0.1151
+  ...
+# Subtest: project relations nest sides once, keep forks top-level and promote unavailable parents
+ok 5 - project relations nest sides once, keep forks top-level and promote unavailable parents
+  ---
+  duration_ms: 0.4946
+  ...
+# Subtest: relation projection flattens legacy side chains under the surviving main and rejects cycles
+ok 6 - relation projection flattens legacy side chains under the surviving main and rejects cycles
+  ---
+  duration_ms: 0.1666
+  ...
+# Subtest: sidebar relation memo compares every primitive field and accepts equivalent cloned links
+ok 7 - sidebar relation memo compares every primitive field and accepts equivalent cloned links
+  ---
+  duration_ms: 0.3316
+  ...
+# Subtest: goal, memory and rename IPC enforce bounded typed payloads and support explicit clearing
+ok 8 - goal, memory and rename IPC enforce bounded typed payloads and support explicit clearing
+  ---
+  duration_ms: 1.2635
+  ...
+# Subtest: slash commands preserve the draft before the active command line
+ok 9 - slash commands preserve the draft before the active command line
+  ---
+  duration_ms: 0.3442
+  ...
+# Subtest: multiline slash submissions stay local while fenced source is ordinary message content
+ok 10 - multiline slash submissions stay local while fenced source is ordinary message content
+  ---
+  duration_ms: 0.146
+  ...
+# Subtest: aliases resolve to a real action and unknown commands remain unknown
+ok 11 - aliases resolve to a real action and unknown commands remain unknown
+  ---
+  duration_ms: 0.1307
+  ...
+# Subtest: fresh side and history fork are distinct commands with branch aliasing fork
+ok 12 - fresh side and history fork are distinct commands with branch aliasing fork
+  ---
+  duration_ms: 0.1788
+  ...
+# Subtest: filtering finds aliases and scopes skills without executing them
+ok 13 - filtering finds aliases and scopes skills without executing them
+  ---
+  duration_ms: 0.3723
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 69.1658

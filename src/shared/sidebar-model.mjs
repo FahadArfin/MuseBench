@@ -1,4 +1,14 @@
 import {sidebarKey,sidebarSort} from './sidebar-order.mjs';
+import {mainChat} from './chat-relations.mjs';
+/** Nest only usable side links. Organization order and independent collections stay flat. */
+export function projectChatRelations(rows,tasks){
+ const roots=[],children=new Map(),visible=new Set(rows.map(row=>row.id));
+ for(const row of rows){const main=row.chatRelation?.kind==='side'?mainChat(row,tasks):row;
+  if(main.id===row.id||!visible.has(main.id))roots.push(row);
+  else{if(!children.has(main.id))children.set(main.id,[]);children.get(main.id).push(row);}
+ }
+ return{roots,children};
+}
 
 export function sidebarCollections(projects,tasks,orders){
  const byProject=new Map(projects.map(project=>[project.id,[]])),pinned=[],recents=[];
@@ -17,10 +27,12 @@ export function sidebarCollections(projects,tasks,orders){
 const projectFields=['id','name','root'];
 const taskFields=['id','projectId','title','mode','createdAt','updatedAt','acceptedRevision','pinned','archived','archivedAt','runtimeBusy','runtimeStatus'];
 const sameList=(a,b,fields)=>a===b||a.length===b.length&&a.every((row,i)=>row===b[i]||fields.every(key=>row[key]===b[i][key]));
+const relationFields=['kind','parentTaskId','parentTitle','context','createdAt','messageId'];
+const sameRelations=(a,b)=>a===b||a.length===b.length&&a.every((row,i)=>row.chatRelation===b[i].chatRelation||relationFields.every(key=>row.chatRelation?.[key]===b[i].chatRelation?.[key]));
 const sameOrder=(a,b)=>a===b||Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((id,i)=>id===b[i]);
 function sameOrders(a,b){
  if(a===b)return true;
  const before=Object.keys(a??{}),after=Object.keys(b??{});
  return before.length===after.length&&before.every(key=>Object.hasOwn(b??{},key)&&sameOrder(a[key],b[key]));
 }
-export function sameSidebarData(a,b){return sameList(a.projects,b.projects,projectFields)&&sameList(a.tasks,b.tasks,taskFields)&&sameOrders(a.orders,b.orders);}
+export function sameSidebarData(a,b){return sameList(a.projects,b.projects,projectFields)&&sameList(a.tasks,b.tasks,taskFields)&&sameRelations(a.tasks,b.tasks)&&sameOrders(a.orders,b.orders);}

@@ -89,9 +89,9 @@ try{
  await history.getByRole('button',{name:'Response feedback',exact:true}).click();await history.getByRole('menuitemradio',{name:'Helpful',exact:true}).click();
  await page.evaluate(()=>window.__codeRenderFixture.touch());
  checks.feedbackSurvivesSnapshot=await history.getByRole('button',{name:'Response feedback',exact:true}).getAttribute('title')==='Helpful · Saved on this device';
- await history.getByRole('button',{name:'Branch in new chat',exact:true}).click();
+ await history.getByRole('button',{name:'Fork from here',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.assistant-message').length===1);
- checks.branchUsesCurrentMessage=await page.evaluate(()=>window.__codeRenderFixture.actions.some(action=>action.type==='forkTask'&&action.chatId==='render-a'&&action.messageId==='render-message-1'));
+ checks.branchUsesCurrentMessage=await page.evaluate(()=>window.__codeRenderFixture.actions.some(action=>action.type==='forkTask'&&action.taskId==='render-a'&&action.messageId==='render-message-1'));
 
  await page.evaluate(()=>window.__codeRenderFixture.select('render-a'));
  await page.waitForFunction(()=>document.querySelectorAll('.assistant-message').length===30);
@@ -102,9 +102,9 @@ try{
  checks.otherChatDetailsCollapsed=await activity.getByRole('button',{name:/Worked for/}).getAttribute('aria-expanded')==='false';
  await history.getByRole('button',{name:'Copy message',exact:true}).click();
  checks.otherChatResponseCopyCorrect=await page.evaluate(()=>window.__codeRenderFixture.copies.at(-1).startsWith('### Answer b 1'));
- await history.getByRole('button',{name:'Branch in new chat',exact:true}).click();
+ await history.getByRole('button',{name:'Fork from here',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.assistant-message').length===1);
- checks.otherChatBranchCorrect=await page.evaluate(()=>window.__codeRenderFixture.actions.some(action=>action.type==='forkTask'&&action.chatId==='render-b'&&action.messageId==='render-message-1'));
+ checks.otherChatBranchCorrect=await page.evaluate(()=>window.__codeRenderFixture.actions.some(action=>action.type==='forkTask'&&action.taskId==='render-b'&&action.messageId==='render-message-1'));
  await page.screenshot({path:path.join(out,'verified.png')});
  console.log(JSON.stringify({checks,timings,errors},null,2));
  assert.deepEqual(errors,[]);

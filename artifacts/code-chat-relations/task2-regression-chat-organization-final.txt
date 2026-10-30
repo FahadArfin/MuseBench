@@ -1,0 +1,23 @@
+
+> musebench@0.2.0 test:chat-organization
+> node scripts/chat-organization-smoke.mjs
+
+(node:53708) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS preview: Ellipsis offers the requested actions; cancelling details preserves the target and selected chat
+PASS preview: Edit details validates names and renames the nonselected chat without changing the current conversation
+PASS preview: Pin and Unpin move the shortcut while preserving its project and single saved chat
+PASS preview: Keyboard context menu supports arrow navigation, Home/End, Escape and focus restoration
+PASS preview: Archived chats can be renamed and restored through the project menu
+PASS preview: Direct deletion requires confirmation, Cancel preserves history, and confirmation retains other chats and project files
+PASS preview: Preview reload resets sample data without retaining test mutations
+PASS preview: Menu fits a narrow window and dismisses without changing the selected chat
+PASS source: Ellipsis offers the requested actions; cancelling details preserves the target and selected chat
+PASS source: Edit details validates names and renames the nonselected chat without changing the current conversation
+PASS source: Pin and Unpin move the shortcut while preserving its project and single saved chat
+PASS source: Keyboard context menu supports arrow navigation, Home/End, Escape and focus restoration
+PASS source: Archived chats can be renamed and restored through the project menu
+PASS source: Direct deletion requires confirmation, Cancel preserves history, and confirmation retains other chats and project files
+PASS source: Desktop names, pins and deletion survive reload while project files remain intact
+PASS source: Menu fits a narrow window and dismisses without changing the selected chat
+C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\chat-organization\menu-fXe1SJ

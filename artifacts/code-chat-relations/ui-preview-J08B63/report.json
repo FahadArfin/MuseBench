@@ -1,0 +1,16 @@
+{
+  "variant": "preview",
+  "checks": [
+    "Current menu creates a fresh linked side without sending or inheriting parent state; parent draft survives",
+    "Backlink and nesting navigate independent drafts; accessible disclosure collapses and reopens",
+    "A side chat creates a sibling under the same main chat",
+    "/side text creates an unsent fresh linked draft",
+    "/branch forks saved conversation context into an independent top-level chat",
+    "Fork from here binds the rendered source and copies only the chosen prefix",
+    "A stale sidebar menu still creates against its exact source after selection switches"
+  ],
+  "errors": [],
+  "providerCalls": 0,
+  "status": "failed",
+  "error": "locator.click: Error: strict mode violation: getByRole('region', { name: 'MuseBench sample active chats', exact: true }).getByRole('button', { name: 'Chat options for Build a clearer project overview', exact: true }) resolved to 2 elements:\n    1) <button aria-haspopup=\"menu\" aria-expanded=\"false\" class=\"chat-options icon-button\" aria-label=\"Chat options for Build a clearer project overview\">…</button> aka getByRole('region', { name: 'Projects' }).getByRole('button', { name: 'Chat options for Build a' })\n    2) <button aria-haspopup=\"menu\" aria-expanded=\"false\" class=\"icon-button project-conversation-options\" aria-label=\"Chat options for Build a clearer project overview\">…</button> aka getByRole('region', { name: 'Project chats' }).getByRole('button', { name: 'Chat options for Build a' })\n\nCall log:\n\u001b[2m  - waiting for getByRole('region', { name: 'MuseBench sample active chats', exact: true }).getByRole('button', { name: 'Chat options for Build a clearer project overview', exact: true })\u001b[22m\n\n    at C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\scripts\\code-chat-relations-smoke.mjs:54:241"
+}

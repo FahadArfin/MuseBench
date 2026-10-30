@@ -3,7 +3,7 @@ import {Check,Copy,Files,GitBranch,Square,ThumbsDown,ThumbsUp,Volume2} from 'luc
 import './response-actions.css';
 import {copyReply} from './copy-reply';
 
-export const ResponseActions=memo(function ResponseActions({messageId,text,at,chatId,branchDisabled,onBranch,runId,onChanges}:{messageId:string;text:string;at:string;chatId:string;branchDisabled:boolean;onBranch:(messageId:string)=>void;runId?:string;onChanges?:(runId:string)=>void}){
+export const ResponseActions=memo(function ResponseActions({messageId,text,at,chatId,branchDisabled,onBranch,runId,onChanges}:{messageId:string;text:string;at:string;chatId:string;branchDisabled:boolean;onBranch:(messageId:string,taskId:string)=>void;runId?:string;onChanges?:(runId:string)=>void}){
  const [status,setStatus]=useState(''),[menu,setMenu]=useState<'feedback'|null>(null),[speaking,setSpeaking]=useState(false);
  const key=`musebench-response-feedback:${chatId}:${messageId}`;
  const [feedback,setFeedback]=useState<string|null>(()=>{try{return localStorage.getItem(key);}catch{return null;}});
@@ -26,7 +26,7 @@ export const ResponseActions=memo(function ResponseActions({messageId,text,at,ch
   <button className="icon-button" aria-label={status==='Copied'?'Copied':'Copy message'} title="Copy message" onClick={async()=>{try{await copyReply(text);setStatus('Copied');}catch{setStatus('Copy unavailable. Select the response to copy it.');}}}>{status==='Copied'?<Check size={15}/>:<Copy size={15}/>}</button>
   <button className={`icon-button ${speaking?'selected':''}`} aria-label={speaking?'Stop reading':'Read aloud'} title={speaking?'Stop reading':'Read aloud'} aria-pressed={speaking} onClick={read}>{speaking?<Square size={14}/>:<Volume2 size={16}/>}</button>
   <button className={`icon-button ${feedback?'selected':''}`} aria-label="Response feedback" title={feedback?`${feedback==='helpful'?'Helpful':'Not helpful'} · Saved on this device`:'Response feedback'} aria-haspopup="menu" aria-expanded={menu==='feedback'} onClick={event=>{trigger.current=event.currentTarget;setMenu(menu==='feedback'?null:'feedback');}}>{feedback==='unhelpful'?<ThumbsDown size={15}/>:<ThumbsUp size={15}/>}</button>
-  <button className="icon-button" aria-label="Branch in new chat" title="Branch in new chat" disabled={branchDisabled} onClick={()=>{setMenu(null);stop();onBranch(messageId);}}><GitBranch size={15}/></button>
+  <button className="icon-button" aria-label="Fork from here" title="Fork from here" disabled={branchDisabled} onClick={()=>{setMenu(null);stop();onBranch(messageId,chatId);}}><GitBranch size={15}/></button>
   {runId&&onChanges&&<button className="icon-button" aria-label="Review changes from this reply" title="Review changes from this reply" onClick={()=>onChanges(runId)}><Files size={15}/></button>}
   {valid&&<time dateTime={date.toISOString()} title={date.toLocaleString()}>{date.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</time>}
   {menu&&<div ref={popup} className="response-action-menu" role="menu" aria-label="Response feedback" onKeyDown={navigate}><button role="menuitemradio" aria-checked={feedback==='helpful'} onClick={()=>rate('helpful')}><ThumbsUp size={15}/>Helpful</button><button role="menuitemradio" aria-checked={feedback==='unhelpful'} onClick={()=>rate('unhelpful')}><ThumbsDown size={15}/>Not helpful</button><small>Saved on this device</small></div>}

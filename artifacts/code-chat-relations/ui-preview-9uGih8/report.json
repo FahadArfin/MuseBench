@@ -1,0 +1,15 @@
+{
+  "variant": "preview",
+  "checks": [
+    "Current menu creates a fresh linked side without sending or inheriting parent state; parent draft survives",
+    "Backlink and nesting navigate independent drafts; accessible disclosure collapses and reopens",
+    "A side chat creates a sibling under the same main chat",
+    "/side text creates an unsent fresh linked draft",
+    "/branch forks saved conversation context into an independent top-level chat",
+    "Fork from here binds the rendered source and copies only the chosen prefix"
+  ],
+  "errors": [],
+  "providerCalls": 0,
+  "status": "failed",
+  "error": "locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('menuitem', { name: 'New side chat', exact: true })\u001b[22m\n\u001b[2m    - locator resolved to <button role=\"menuitem\" title=\"Fresh context linked to the main chat\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is not stable\u001b[22m\n\u001b[2m  - retrying click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m  - element was detached from the DOM, retrying\u001b[22m\n\n    at C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\scripts\\code-chat-relations-smoke.mjs:54:163"
+}

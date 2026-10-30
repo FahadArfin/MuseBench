@@ -20,7 +20,7 @@ const required=[
  'npm run test:native-failure','npm run test:native-question','npm run test:reply-copy','npm run test:model-settings',
  'npm run test:work-activity','npm run test:project-actions','npm run test:run-changes',
  'npm run test:connection-diagnostics','npm run test:update-details','npm run test:plugin-tools',
- 'npm run test:chat-organization','npm run test:code-responsiveness','npm run test:chat-navigation',
+ 'npm run test:code-chat-relations','npm run test:chat-organization','npm run test:code-responsiveness','npm run test:chat-navigation',
  'npm run test:navigation-cache','npm run test:browser-preview','npm run test:onboarding-preview',
  'npm run test:catalog-preview','npm run test:catalog-desktop','npm run test:billing-preview',
  'npm run test:billing-desktop','npm run test:preview-parity','node scripts/mobile-settings-smoke.mjs',

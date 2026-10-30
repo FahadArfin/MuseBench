@@ -1,0 +1,25 @@
+
+> musebench@0.2.0 test:chat-organization
+> node scripts/chat-organization-smoke.mjs
+
+(node:58512) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\chat-organization\menu-hyNJTJ
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+2 !== 1
+
+    at exercise (file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/scripts/chat-organization-smoke.mjs:60:12)
+    at async file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/scripts/chat-organization-smoke.mjs:225:7 {
+  generatedMessage: true,
+  code: 'ERR_ASSERTION',
+  actual: 2,
+  expected: 1,
+  operator: 'strictEqual'
+}
+
+Node.js v22.14.0

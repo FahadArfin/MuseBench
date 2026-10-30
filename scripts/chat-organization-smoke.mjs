@@ -56,8 +56,8 @@ async function exercise(page,{variant,projectName,firstTitle,secondTitle,project
     const baselineCount=baseline.tasks.length;
     let menu=await openMenu(folder,firstTitle);
     assert.equal(await menu.getByRole('menuitem',{name:'Edit details',exact:true}).count(),1,'Chat ellipsis must offer Edit details');
-    assert.deepEqual((await menu.getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Pin','Edit details','Archive','Delete']);
-    assert.equal(await menu.getByRole('separator').count(),1);
+    assert.deepEqual((await menu.getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Fork chat','New side chat','Pin','Edit details','Archive','Delete']);
+    assert.equal(await menu.getByRole('separator').count(),2);
     await menu.getByRole('menuitem',{name:'Edit details',exact:true}).click();
     const edit=page.getByRole('dialog',{name:'Edit chat details',exact:true});
     const name=edit.getByRole('textbox',{name:'Chat name',exact:true});
@@ -97,7 +97,7 @@ async function exercise(page,{variant,projectName,firstTitle,secondTitle,project
     assert.equal(await row(folder,renamed).count(),1);
     assert.equal((await state()).tasks.length,baselineCount);
     menu=await openMenu(pinned,renamed);
-    assert.deepEqual((await menu.getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Unpin','Edit details','Archive','Delete']);
+    assert.deepEqual((await menu.getByRole('menuitem').allTextContents()).map(text=>text.trim()),['Fork chat','New side chat','Unpin','Edit details','Archive','Delete']);
     await screenshot('pinned-menu');
     assert.equal(await menu.isVisible(),true,'Opening and focusing a pinned menu must not scroll a disclosure and dismiss it');
     await menu.getByRole('menuitem',{name:'Unpin',exact:true}).click();
@@ -109,9 +109,9 @@ async function exercise(page,{variant,projectName,firstTitle,secondTitle,project
     await page.keyboard.press('Shift+F10');
     menu=page.getByRole('menu',{name:`Options for ${renamed}`,exact:true});
     await menu.waitFor();
-    assert.equal(await menu.getByRole('menuitem',{name:'Pin',exact:true}).evaluate(element=>element===document.activeElement),true);
+    assert.equal(await menu.getByRole('menuitem',{name:'Fork chat',exact:true}).evaluate(element=>element===document.activeElement),true);
     await page.keyboard.press('ArrowDown');
-    assert.equal(await menu.getByRole('menuitem',{name:'Edit details',exact:true}).evaluate(element=>element===document.activeElement),true);
+    assert.equal(await menu.getByRole('menuitem',{name:'New side chat',exact:true}).evaluate(element=>element===document.activeElement),true);
     await page.keyboard.press('End');
     assert.equal(await menu.getByRole('menuitem',{name:'Delete',exact:true}).evaluate(element=>element===document.activeElement),true);
     await page.keyboard.press('Home');

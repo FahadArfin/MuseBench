@@ -1,0 +1,22 @@
+
+> musebench@0.2.0 test:reply-copy
+> node scripts/reply-copy-smoke.mjs && node scripts/response-actions-smoke.mjs
+
+PASS Browser Copy writes exact Markdown and safe rich formatting with no app controls
+PASS Denied rich copying falls back to the original text
+PASS Browsers without ClipboardItem still copy text
+PASS A failed clipboard write is never reported as copied
+PASS Desktop rich-copy failure falls back through the host plain-text bridge
+PASS Failure of both desktop writes remains an error
+Report: C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\reply-copy\preview-I0ydUE
+(node:31792) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+PASS Desktop clipboard has exact Markdown and safe rich headings, lists, code and links; timestamp is preserved
+PASS Trusted clipboard IPC rejects HTML objects and oversized source without overwriting the clipboard
+PASS A rich host write failure falls back to a completed plain-text write through the actual Copy action
+PASS Feedback is selectable, persists locally, and Escape closes its menu
+PASS Installed local speech engine starts successfully (muted validation)
+PASS Read aloud starts and stops using the speech interface (test voice)
+PASS Branch creates a new chat through the chosen response with no repeated response draft
+PASS Output actions and the direct branch button fit a narrow window
+C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\response-actions\source-HbJk0R

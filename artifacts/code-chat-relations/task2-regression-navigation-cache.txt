@@ -1,0 +1,18 @@
+
+> musebench@0.2.0 test:navigation-cache
+> node scripts/navigation-cache-smoke.mjs
+
+PASS Main Muse and Meta chats use independent documents and drafts
+PASS Visited Muse Feed and Library retain A-B-A documents, drafts, filters and scroll without requests
+PASS Three speculative tool pages warm invisibly without replacing the active chat
+PASS Warmed Muse Search, Meta Search and Media reuse documents with drafts, search terms and scroll intact
+PASS Rapid page switches and resize publications admit commands only through the normal main event loop
+PASS Manually closed Meta Search reopens in its cached document and repeated selection preserves the typed query
+PASS Muse Search detects a manually closed overlay, reopens once, and preserves query and document on repeated selection
+PASS Artifacts, Scheduled and Vibes retain separate documents while the main chat draft survives
+PASS Reloaded Feed and Library reuse previously verified routes without extra navigation clicks or document requests
+PASS A real inert dock replaced after hydration cannot falsely initialize a cached tool; a later explicit click succeeds
+PASS Authentication changes discard cached tools and reopening starts with a fresh document
+PASS Speculative warmup is suppressed when authentication is required
+PASS Close cancels queued warming and destroys every remote view; at most one view was ever visible
+Report: C:\Users\fahad\.codex\worktrees\code-chat-relations\MuseBench\artifacts\navigation-cache\report.json

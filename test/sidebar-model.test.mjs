@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {sidebarCollections,sameSidebarData} from '../src/shared/sidebar-model.mjs';
+import {sidebarCollections,sameSidebarData,projectChatRelations} from '../src/shared/sidebar-model.mjs';
 
 const projects=[{id:'a',name:'Alpha',root:'/a'},{id:'b',name:'Beta',root:'/b'}];
 const task=(id,projectId,extra={})=>({id,projectId,title:id,mode:'manual',createdAt:'2026-01-01',updatedAt:'2026-01-01',acceptedRevision:null,...extra});
@@ -24,4 +24,23 @@ test('equivalent copies ignore project instruction bodies but detect every sideb
 test('stable data never reads unrelated project payloads or scans unchanged array contents',()=>{
  const p={...projects[0]};Object.defineProperty(p,'instructions',{get(){throw Error('No heavy project payload reads');}});
  const before={projects:[p],tasks:[task('one','a')]};assert.equal(sameSidebarData(before,before),true);assert.equal(sameSidebarData(before,{projects:[{...projects[0]}],tasks:[task('one','a')]}),true);
+});
+
+const relation=(parentTaskId,kind='side')=>({kind,parentTaskId,parentTitle:'Main',context:kind==='side'?'fresh':'retained',createdAt:'2026-10-30T00:00:00Z'});
+test('project relations nest sides once, keep forks top-level and promote unavailable parents',()=>{
+ const main=task('main','a'),side=task('side','a',{chatRelation:relation('main')}),fork=task('fork','a',{chatRelation:relation('main','fork')}),orphan=task('orphan','a',{chatRelation:relation('missing')});
+ const rows=[side,fork,orphan,main],view=projectChatRelations(rows,rows);
+ assert.deepEqual(view.roots.map(t=>t.id),['fork','orphan','main']);assert.deepEqual(view.children.get('main').map(t=>t.id),['side']);
+ for(const altered of [{...main,archived:true},{...main,projectId:'b'}]){const all=[side,fork,orphan,altered],visible=all.filter(t=>!t.archived&&t.projectId==='a');assert(projectChatRelations(visible,all).roots.some(t=>t.id==='side'));}
+ const collection=sidebarCollections(projects,rows);assert.equal(collection.recents.length,4);assert.equal(collection.byProject.get('a').length,4);
+});
+test('relation projection flattens legacy side chains under the surviving main and rejects cycles',()=>{
+ const main=task('main','a',{chatRelation:relation('gone','fork')}),side=task('side','a',{chatRelation:relation('main')}),sibling=task('sibling','a',{chatRelation:relation('side')});
+ let all=[main,side,sibling],view=projectChatRelations(all,all);assert.deepEqual(view.roots.map(t=>t.id),['main']);assert.deepEqual(view.children.get('main').map(t=>t.id),['side','sibling']);
+ all=[{...side,chatRelation:relation('sibling')},sibling];view=projectChatRelations(all,all);assert.equal(view.roots.length,2);
+});
+test('sidebar relation memo compares every primitive field and accepts equivalent cloned links',()=>{
+ const before={projects,tasks:[task('side','a',{chatRelation:relation('main')})]};assert.equal(sameSidebarData(before,structuredClone(before)),true);
+ for(const [key,value] of Object.entries({kind:'fork',parentTaskId:'another',parentTitle:'Renamed',context:'native',createdAt:'later',messageId:'answer'})){const after=structuredClone(before);after.tasks[0].chatRelation[key]=value;assert.equal(sameSidebarData(before,after),false,key);}
+ const after=structuredClone(before);delete after.tasks[0].chatRelation;assert.equal(sameSidebarData(before,after),false);
 });

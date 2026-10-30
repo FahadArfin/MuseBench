@@ -1,0 +1,5 @@
+
+> musebench@0.2.0 test:browser-preview
+> node scripts/browser-preview-smoke.mjs
+
+PASS browser preview navigation, isolation, settings and responsive layout

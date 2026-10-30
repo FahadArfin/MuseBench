@@ -23,6 +23,10 @@ test('aliases resolve to a real action and unknown commands remain unknown',()=>
  assert.equal(findCommand('permissions').id,'approval');assert.equal(findCommand('unknown'),undefined);
  assert.equal(new Set(COMMANDS.map(c=>c.id)).size,COMMANDS.length);
 });
+test('fresh side and history fork are distinct commands with branch aliasing fork',()=>{
+ assert.equal(findCommand('side').id,'side');assert.match(findCommand('side').description,/fresh/i);
+ assert.equal(findCommand('fork').id,'fork');assert.equal(findCommand('branch').id,'fork');assert.match(findCommand('fork').description,/context/i);
+});
 test('filtering finds aliases and scopes skills without executing them',()=>{
  const skills=[{id:'bundled:test',name:'test',title:'Test project',description:'Run relevant tests',scope:'Bundled'}];
  assert.equal(filterCommands('permissions',skills)[0].id,'approval');

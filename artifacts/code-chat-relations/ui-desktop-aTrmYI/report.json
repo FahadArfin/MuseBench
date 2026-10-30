@@ -1,0 +1,20 @@
+{
+  "variant": "desktop",
+  "checks": [
+    "Current menu creates a fresh linked side without sending or inheriting parent state; parent draft survives",
+    "Backlink and nesting navigate independent drafts; accessible disclosure collapses and reopens",
+    "A side chat creates a sibling under the same main chat",
+    "/side text creates an unsent fresh linked draft",
+    "/branch forks saved conversation context into an independent top-level chat",
+    "Fork from here binds the rendered source and copies only the chosen prefix"
+  ],
+  "errors": [],
+  "providerCalls": 0,
+  "initialLayout": {
+    "scrollWidth": 279,
+    "clientWidth": 279,
+    "scrollLeft": 0
+  },
+  "status": "failed",
+  "error": "page.evaluate: TypeError: window.__releaseRelation is not a function\n    at eval (eval at evaluate (:370:30), <anonymous>:1:81)\n    at async <anonymous>:396:30\n    at C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\scripts\\code-chat-relations-smoke.mjs:55:13"
+}

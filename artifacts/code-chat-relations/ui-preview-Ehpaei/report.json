@@ -1,0 +1,8 @@
+{
+  "variant": "preview",
+  "checks": [],
+  "errors": [],
+  "providerCalls": 0,
+  "status": "failed",
+  "error": "locator.click: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByRole('button', { name: 'Current chat options', exact: true })\u001b[22m\n\n    at C:\\Users\\fahad\\.codex\\worktrees\\code-chat-relations\\MuseBench\\scripts\\code-chat-relations-smoke.mjs:35:74"
+}

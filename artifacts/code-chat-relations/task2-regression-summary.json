@@ -1,0 +1,32 @@
+[
+  {
+    "check": "chat-organization",
+    "exitCode": 1,
+    "log": "artifacts/code-chat-relations/task2-regression-chat-organization.txt"
+  },
+  {
+    "check": "chat-navigation",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-regression-chat-navigation.txt"
+  },
+  {
+    "check": "navigation-cache",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-regression-navigation-cache.txt"
+  },
+  {
+    "check": "code-responsiveness",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-regression-code-responsiveness.txt"
+  },
+  {
+    "check": "reply-copy",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-regression-reply-copy.txt"
+  },
+  {
+    "check": "browser-preview",
+    "exitCode": 0,
+    "log": "artifacts/code-chat-relations/task2-regression-browser-preview.txt"
+  }
+]

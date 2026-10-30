@@ -1,0 +1,13 @@
+{
+  "variant": "preview",
+  "checks": [],
+  "errors": [],
+  "providerCalls": 0,
+  "initialLayout": {
+    "scrollWidth": 360,
+    "clientWidth": 279,
+    "scrollLeft": 0
+  },
+  "status": "failed",
+  "error": "AssertionError [ERR_ASSERTION]: Nested sidebar contents must fit the sidebar width\n    at file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/scripts/code-chat-relations-smoke.mjs:40:212"
+}

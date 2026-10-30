@@ -1,0 +1,10 @@
+{
+  "variant": "desktop",
+  "checks": [
+    "Current menu creates a fresh linked side without sending or inheriting parent state; parent draft survives"
+  ],
+  "errors": [],
+  "providerCalls": 0,
+  "status": "failed",
+  "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ 'Side only draft'\n- 'Keep parent draft'\n\n    at file:///C:/Users/fahad/.codex/worktrees/code-chat-relations/MuseBench/scripts/code-chat-relations-smoke.mjs:41:327"
+}
