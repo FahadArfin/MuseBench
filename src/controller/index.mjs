@@ -18,6 +18,8 @@ import {createOutputStore} from './output-artifacts.mjs';
 import {validateCheckScripts,missingChecks,checkDiagnostics} from '../shared/validation.mjs';
 import {createHistoryStore} from './chat-history.mjs';
 import {createConversationImports} from './conversation-imports.mjs';
+import {createCodeSchedules} from './code-schedules.mjs';
+import {validateScheduleAction} from '../shared/code-schedules.mjs';
 import {createDraftStore} from './code-drafts.mjs';
 import {readRuntimeStatus,projectRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
 import {workIdentity,workLabel} from '../shared/work-activity.mjs';
@@ -158,7 +160,7 @@ async function killTree(child){
 }
 async function freePort(){const server=net.createServer();await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});const port=server.address().port;await new Promise(r=>server.close(r));return port;}
 
-export async function createController({dataDir,projectsDir,newProjectsDir,templateDir=fileURLToPath(new URL('../../templates/tea-store',import.meta.url)),runtime,runtimeFactory,checkTimeoutMs=120000,archiveNow=()=>Date.now()}={}){
+export async function createController({dataDir,projectsDir,newProjectsDir,templateDir=fileURLToPath(new URL('../../templates/tea-store',import.meta.url)),runtime,runtimeFactory,checkTimeoutMs=120000,archiveNow=()=>Date.now(),scheduleNow=()=>Date.now(),schedulePollMs=15000}={}){
   if(!dataDir)throw Error('A controller dataDir is required.');await fs.mkdir(dataDir,{recursive:true});dataDir=await fs.realpath(dataDir);
   runtime??=runtimeFactory?.();
   const imageStore=createImageStore(dataDir);
@@ -179,7 +181,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const db=new DatabaseSync(path.join(dataDir,'musebench.sqlite'));
   db.exec('PRAGMA secure_delete=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS app(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS baselines(task_id TEXT PRIMARY KEY,revision TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,revision TEXT NOT NULL,json TEXT NOT NULL);');
   const history=createHistoryStore(db),outputs=createOutputStore(db),analytics=createAnalyticsStore(db);
-  const imports=createConversationImports(db,history);
+  const imports=createConversationImports(db,history),schedules=createCodeSchedules(db,{now:scheduleNow});
   const saved=db.prepare('SELECT json FROM app WHERE id=1').get();
   const executions=createExecutionLedger(db),inbox=createActivityInbox(db),runChanges=createRunChangeStore(db);
   const state=saved?JSON.parse(saved.json):{projects:[],activeProject:null,task:null,checkpoints:[],preview:stopped(),runtime:missingRuntime(),busy:false,error:null};
@@ -241,6 +243,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const rows=[],title=task=>`Code · ${String(task?.title||'Chat').replace(/[\x00-\x1f\x7f]/g,' ').slice(0,140)}`;
     if(closing||closed)rows.push({id:'code-closing',label:'Code connection',detail:'Shutdown is still in progress.'});
     if(state.busy)rows.push({id:'code-workspace',label:'Code workspace',detail:'A workspace operation is still in progress.'});
+    if(schedules.isBusy())rows.push({id:'code-schedules',label:'Scheduled work',detail:'A scheduled occurrence is active or waiting for attention.'});
     if(imports.isBusy())rows.push({id:'conversation-import',label:'Conversation import',detail:'An export is being read or saved.'});
     if(checkProcess||state.task?.check?.status==='running'||state.task?.validationRun?.status==='running')rows.push({id:'code-check',label:title(state.task),detail:'A project check is running.'});
     for(const owner of new Set([context,...contexts.values()])){
@@ -251,7 +254,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     }
     return rows;
   };
-  const getState=()=>{const observations=new Map([...contexts.values()].map(owner=>[owner,readRuntimeStatus(owner.runtime)]));return structuredClone({...state,task:state.task?{...state.task,reviewUsage:combineUsage((state.task.reviewChildren??[]).map(id=>taskRecords.get(id)?.nativeUsage??null)),executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries(observations),workActivity:workActivity(observations),activityInbox:inbox.list().flatMap(event=>{const task=taskRecords.get(event.taskId);return task?[{...event,title:task.title,projectName:state.projects.find(p=>p.id===task.projectId)?.name??'Project'}]:[];})});};
+  const getState=()=>{const observations=new Map([...contexts.values()].map(owner=>[owner,readRuntimeStatus(owner.runtime)]));return structuredClone({...state,codeSchedules:schedules.list(),codeSchedulesAvailable:!!runtimeFactory,task:state.task?{...state.task,reviewUsage:combineUsage((state.task.reviewChildren??[]).map(id=>taskRecords.get(id)?.nativeUsage??null)),executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries(observations),workActivity:workActivity(observations),activityInbox:inbox.list().flatMap(event=>{const task=taskRecords.get(event.taskId);return task?[{...event,title:task.title,projectName:state.projects.find(p=>p.id===task.projectId)?.name??'Project'}]:[];})});};
   const saveTask=()=>{
     if(!state.task)return;persistActivity(state.task,()=>{analytics.sync(state.task);history.sync(state.task);state.task.messages=state.task.messages.slice(-150);context.task=state.task;
     const previous=taskRecords.get(state.task.id);
@@ -513,6 +516,83 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       default:throw Error('Invalid conversation import command.');
     }
   };
+  const assertScheduledDispatch=async(action,owner,task,project)=>{
+    if(!action.fromSchedule)return;const {id,runId}=action.fromSchedule,row=schedules.get(id);
+    const current=()=>{const active=schedules.get(id).active;return !closing&&!closed&&!owner.scheduleStopping&&active?.id===runId&&active.taskId===task.id&&scheduleNow()<active.deadlineAt;};
+    if(!current())throw Error('This scheduled occurrence is no longer authorized to start.');
+    if(row.root!==project.root||await canonicalRoot(project.root)!==row.root)throw Error('The scheduled project folder changed. Review the schedule again.');
+    if(!current())throw Error('This scheduled occurrence is no longer authorized to start.');
+  };
+  const observeScheduled=(owner,next)=>{
+    if(!owner.schedule||owner.scheduleStopping||!owner.schedulePromptId)return;
+    const {id,runId}=owner.schedule;if(!schedules.has(id))return;const row=schedules.get(id);if(row.active?.id!==runId)return;
+    if(next.status==='running')schedules.running(id,runId);
+    if(next.pending||next.status==='blocked'&&next.permissionVerified){schedules.attention(id,runId,'Open the scheduled chat to answer the pending request. Future runs are paused.');return;}
+    const receipt=executions.list(owner.task.id).find(item=>item.id===owner.schedulePromptId);
+    if(receipt?.phase!=='settled')return;
+    if(receipt.result==='completed'&&(next.childrenBusy||next.operationBusy))return;
+    const status=receipt.result==='completed'&&next.cleanup==='confirmed'?'completed':receipt.result==='cancelled'&&next.cleanup==='confirmed'?'stopped':receipt.result==='failed'||receipt.result==='rejected'?'failed':'uncertain';
+    schedules.settle(id,runId,status,receipt.reason??'');clearTimeout(owner.scheduleDeadline);owner.schedule=null;owner.schedulePromptId=null;
+  };
+  const stopScheduledRun=async(id,runId,status='stopped')=>{
+    const row=schedules.get(id);if(row.active?.id!==runId)throw Error('The scheduled run changed or is unavailable.');
+    const owner=contexts.get(row.active.taskId),reason=status==='timed-out'?'The per-run time limit was reached.':'Stopped by the user.';
+    schedules.attention(id,runId,reason);
+    if(!owner){schedules.settle(id,runId,'uncertain','The owning runtime is unavailable. Review its chat before continuing.');emit();return;}
+    owner.scheduleStopping=true;clearTimeout(owner.scheduleDeadline);
+    try{await owner.runtime.disconnect();const next=readRuntimeStatus(owner.runtime);schedules.settle(id,runId,next.cleanup==='confirmed'?status:'uncertain',next.cleanup==='confirmed'?reason:'Process cleanup is unconfirmed.');}
+    catch(error){schedules.settle(id,runId,'uncertain',String(error.message));}
+    finally{emit();}
+  };
+  const launchScheduledRun=async({schedule,run})=>{
+    const {id}=schedule;let owner;
+    try{
+      if(closing||closed||!runtimeFactory)throw Error('Scheduled work requires an open desktop with independent Muse connections.');
+      const project=state.projects.find(item=>item.id===run.spec.projectId);
+      if(!project||project.root!==schedule.root||await canonicalRoot(project.root)!==schedule.root)throw Error('The scheduled project is missing or its folder changed.');
+      const taskId=randomUUID();requireWritable({id:taskId},project);const snap=await snapshot(project.root);
+      if(closing||await canonicalRoot(project.root)!==schedule.root)throw Error('The app is closing or the project folder changed.');
+      const createdAt=now(),task={id:taskId,projectId:project.id,title:run.spec.title,createdAt,updatedAt:createdAt,request:run.spec.prompt,mode:'muse',runOptions:run.spec.runOptions,plan:'Scheduled request explicitly enabled by the user.',criteria:[],planApproved:false,baselineRevision:snap.revision,revision:snap.revision,changes:[],messages:[],shellResults:[],runs:[],promptQueue:[],queuePaused:true,check:null,previewRevision:null,acceptedRevision:null,runtimeComplete:false,scheduleOrigin:{id,runId:run.id}};
+      db.prepare('INSERT INTO baselines(task_id,revision,json) VALUES(?,?,?)').run(task.id,snap.revision,JSON.stringify(snap.files));
+      owner=newContext(runtimeFactory(),task);owner.schedule={id,runId:run.id};contexts.set(task.id,owner);subscribeContext(owner);saveRecord(task);schedules.attach(id,run.id,task.id);
+      owner.scheduleDeadline=setTimeout(()=>void stopScheduledRun(id,run.id,'timed-out').catch(()=>{}),Math.max(1,run.deadlineAt-scheduleNow()));owner.scheduleDeadline.unref?.();
+      await connectNative(owner,task,project,{transport:'exec',fullAccess:run.spec.fullAccess,workspaceTools:false});
+      const connected=owner.runtime.snapshot();if(connected.permissionVerified!==true||connected.transport!=='exec'||Boolean(connected.fullAccess)!==run.spec.fullAccess)throw Error('The scheduled connection did not verify its requested access.');
+      await sendToTask({type:'sendMessage',text:run.spec.prompt,fromSchedule:{id,runId:run.id}},task,owner);
+    }catch(error){
+      if(owner)clearTimeout(owner.scheduleDeadline);
+      const receipt=owner?.schedulePromptId&&executions.list(owner.task.id).find(item=>item.id===owner.schedulePromptId);
+      schedules.settle(id,run.id,receipt&&receipt.result!=='rejected'?'uncertain':'failed',String(error.message));
+      if(owner&&!contextBusy(owner))await owner.runtime.disconnect().catch(()=>{});
+    }
+  };
+  let scheduleTick=null;
+  const tickCodeSchedules=()=>{
+    if(closing||closed)return Promise.resolve();if(scheduleTick)return scheduleTick;
+    const operation=queue.then(async()=>{
+      if(closing||closed)return;let changed=false;
+      for(const row of schedules.list())if(row.active&&scheduleNow()>=row.active.deadlineAt){await stopScheduledRun(row.id,row.active.id,'timed-out');changed=true;}
+      for(const row of schedules.due()){
+        if(closing||closed)break;changed=true;
+        const project=state.projects.find(item=>item.id===row.spec.projectId);
+        if(!row.active&&scheduleNow()-Date.parse(row.nextAt)<=60000&&project){try{requireWritable({id:'scheduled-admission'},project);}catch(error){schedules.skip(row.id,error.message);continue;}}
+        const claim=schedules.claim(row.id);if(claim)await launchScheduledRun(claim);
+      }
+      if(changed)emit();
+    });
+    scheduleTick=operation.catch(error=>{if(!closed){state.error='Scheduled work could not be processed: '+String(error.message);emit();}throw error;}).finally(()=>{scheduleTick=null;});queue=scheduleTick.catch(()=>{});return scheduleTick;
+  };
+  const commandSchedule=async input=>{
+    const action=validateScheduleAction(input);
+    if(['save','enable'].includes(action.operation)){
+      if(!runtimeFactory)throw Error('Scheduling requires independent desktop Muse connections.');
+      const row=action.operation==='enable'?schedules.get(action.id):null,spec=action.spec??row.spec,project=state.projects.find(item=>item.id===spec.projectId);
+      if(!project||row&&row.root!==project.root||await canonicalRoot(project.root)!==project.root)throw Error('The scheduled project is missing or its folder changed.');
+      if(action.operation==='save')schedules.save(action,project.root);else schedules.enable(action.id,action.expectedRevision,action.confirmed);
+    }else if(action.operation==='pause')schedules.pause(action.id,action.expectedRevision);
+    else if(action.operation==='remove')schedules.remove(action.id,action.expectedRevision);
+    else await stopScheduledRun(action.id,action.runId);
+  };
   const selectedContext=()=>context;
   const connectNative=async(owner,task,project,options={})=>{
     for(const field of ['fullAccess','workspaceTools'])if(options[field]!==undefined&&typeof options[field]!=='boolean')throw Error(`${field} must be an explicit boolean.`);
@@ -539,11 +619,11 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const sendToTask=async(action,t=state.task,context=contexts.get(t?.id)??selectedContext())=>{
         const runtime=context.runtime,project=state.projects.find(p=>p.id===t?.projectId);if(!t||!project)throw Error('Chat or project unavailable.');
         const assertGoalDispatch=()=>{if(!action.fromGoal)return;const driver=t.goal?.driver;if(!driver?.armed||driver.id!==action.goalDriverId)throw Error(driver?.reason||'Goal continuation is no longer active.');if(Date.now()>=driver.deadline){pauseGoalDriver(driver,'Time budget reached');throw Error(driver.reason);}if(context!==selectedContext()||t.promptQueue?.length)throw Error('User input or navigation takes priority');};
-        assertGoalDispatch();
+        assertGoalDispatch();await assertScheduledDispatch(action,context,t,project);
         let runtimeState=runtime?.snapshot?.()??missingRuntime();
         if(closing)throw Error('The app is closing. This prompt was not sent.');
         if(runtimeFactory){if(contextBusy(context))throw Error('This chat already has a running or unresolved request.');}else requireNavigationIdle();if(t.mode==='muse')requireWritable(t,project);if(t.archived)throw Error('Restore this archived chat before sending.');if(t.validationRun?.status==='running')throw Error('Wait for validation or cancel it first.');if(action.fromQueue&&action.requiredChecks?.length){const snap=await snapshot(project.root);const missing=missingChecks(t,snap.revision,validateCheckScripts(action.requiredChecks));if(missing.length)throw Error('Run passing checks for this revision before this workflow phase: '+missing.join(', '));}if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
-        const files=fileReferences(action.files),images=imageReferences(action.images);const imagePaths=await imageStore.resolve(t.projectId,images);if(images.length&&t.mode!=='muse')throw Error('Screenshots require a Muse chat.');if(!action.fromQueue&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};const {attachments,snap:contextSnapshot}=await selectedSources(files,project);
+        const files=fileReferences(action.files),images=imageReferences(action.images);const imagePaths=await imageStore.resolve(t.projectId,images);if(images.length&&t.mode!=='muse')throw Error('Screenshots require a Muse chat.');if(!action.fromQueue&&!action.fromSchedule&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};const {attachments,snap:contextSnapshot}=await selectedSources(files,project);
         if(closing)throw Error('The app is closing. This prompt was not sent.');
         const prepared=composeChatContext({task:t,project:project,memories:state.memories,text:action.text,attachments,history:runtimeState.transport!=='msp'||!runtimeState.sessionSeeded});
         if(t.mode==='muse'){
@@ -556,7 +636,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
             runtimeState=await connectNative(context,t,project);
           }
           if(closing)throw Error('The app is closing. This prompt was not sent.');
-          assertGoalDispatch();
+          assertGoalDispatch();await assertScheduledDispatch(action,context,t,project);
           if(images.length&&runtimeState.transport!=='exec'&&runtimeState.imagesSupported!==true)throw Error('This native connection does not support screenshots.');
           delete t.queueError;
           const previousSession=t.nativeSession?structuredClone(t.nativeSession):null;
@@ -566,6 +646,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           t.skillReceipts=[];t.nativeUsage=null;t.runtimeComplete=false;t.acceptedRevision=null;context.pending=true;
           const before=runtime.snapshot?.()??runtimeState;
           const prompt={id:randomUUID(),role:'user',text:action.text.slice(0,16000),files,images,sources:attachments,at:now()};
+          if(action.fromSchedule)context.schedulePromptId=prompt.id;
           context.turn={taskId:t.id,promptId:prompt.id,captureRoot:project.root,queueItemId:action.fromQueue?action.id:null,messageBaseline:runtimeMessageIds(before),previousRunId:before.runId??null,runId:null,started:false,resetSeen:false};
           t.runs=restoreRuns([...(t.runs??[]),{id:prompt.id,promptId:prompt.id,prompt:prompt.text,runId:null,status:'queued',startedAt:prompt.at,activities:[]}],{interrupt:false});
           t.messages.push(prompt);t.messages=t.messages.slice(-150);
@@ -578,10 +659,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
             const rejected=e?.inputAdmission==='not-sent'||executions.list(t.id).find(r=>r.id===prompt.id)?.result==='rejected',unknownNative=runtimeState.transport==='msp'&&durable&&!rejected;
             executions.patch(prompt.id,{phase:'settled',result:rejected?'rejected':'unknown',reason:String(e.message).slice(0,1000)});runChanges.unavailable(t.id,prompt.id,'The request did not finish with a confirmed outcome.');
             if(unknownNative){t.nativeSession={...durable.session,status:'needs-recovery'};const run=t.runs.find(r=>r.id===prompt.id);if(run){run.status='interrupted';run.endedAt=now();}prompt.outcome='interrupted';}
-            else if(!context.turn?.started){t.nativeSession=previousSession;if(!action.fromQueue&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};history.remove(t.id,prompt.id);t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}
+            else if(!context.turn?.started){t.nativeSession=previousSession;if(!action.fromQueue&&!action.fromSchedule&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};history.remove(t.id,prompt.id);t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}
             context.pending=false;context.turn=null;throw Object.assign(new Error(String(e.message??e)),{queueDeliveryUnknown:action.fromQueue&&!rejected});
           }
-        }else{t.messages.push({id:randomUUID(),role:'user',text:action.text,at:now()},{id:randomUUID(),role:'system',text:'Added to the local task journal. Manual and demo messages do not call a model.',at:now()});}if(!action.fromQueue&&state.drafts[draftKey(t.projectId,t.id)]?.text===action.text)delete state.drafts[draftKey(t.projectId,t.id)];saveRecord(t);
+        }else{t.messages.push({id:randomUUID(),role:'user',text:action.text,at:now()},{id:randomUUID(),role:'system',text:'Added to the local task journal. Manual and demo messages do not call a model.',at:now()});}if(!action.fromQueue&&!action.fromSchedule&&state.drafts[draftKey(t.projectId,t.id)]?.text===action.text)delete state.drafts[draftKey(t.projectId,t.id)];saveRecord(t);
   };
 
   const deliverQueued=async(t,item,owner,{runQueue=false}={})=>{
@@ -689,12 +770,15 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     }
     if(task&&(['failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)||next.status==='completed'&&next.cleanup!=='confirmed')){task.queuePaused=true;task.queueHold=Boolean(task.promptQueue?.length);}
     if(inboxEvents.length){retainActivity(task,inboxEvents);saveRecord(task);}
+    observeScheduled(owner,next);
     publishRuntime(task,next,owner);if(next.status==='completed')scheduleQueue(owner);if(task?.goal?.driver?.armed&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status))scheduleGoal(owner);
   };
   const subscribeContext=owner=>{if(!owner.unsubscribe)owner.unsubscribe=owner.runtime?.subscribe?.(event=>onRuntime(event,owner));};
   subscribeContext(context);
+  const codeScheduleTimer=schedulePollMs>0?setInterval(()=>void tickCodeSchedules().catch(()=>{}),schedulePollMs):null;codeScheduleTimer?.unref?.();
   const handle=async action=>{
     switch(action.type){
+      case 'codeSchedule':await commandSchedule(action);break;
       // Companion actions are deliberately absent from renderer validateAction.
       // The paired host supplies only these bound operations to this same queue.
       case 'mobileSelect':{
@@ -986,6 +1070,6 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     });queue=op.catch(()=>{});return op;
   };
   const archiveTimer=setInterval(()=>{queue=queue.then(async()=>{if(closed||closing)return;if(inbox.prune())emit();await purgeArchived();}).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,getUpdateBlockers,prepareConversationImport,conversationImport,saveCodeDraft,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&!imports.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
+  return{getState,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';

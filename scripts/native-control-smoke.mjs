@@ -21,6 +21,7 @@ try{
  const value=async(name,args={})=>JSON.parse((await call(name,args)).content[0].text);
  const status=await value('app_status');assert.equal(status.packaged,false);assert.equal(status.runtime.liveVerified,false);checks.push('Real Electron controller is read through MCP using the app-supplied stdio configuration');
  let ui=await value('navigate',{target:'code'});assert.ok(ui.headings.includes('What would you like to build?'));checks.push('MCP opens the Code workspace without clicks');
+ ui=await value('navigate',{target:'codeSchedules'});assert.ok(ui.headings.includes('Scheduled'));assert.ok(ui.controls.some(control=>control.label==='New schedule'));checks.push('MCP opens local Code schedules without enabling or running one');await value('navigate',{target:'code'});
  const stalled=page.evaluate(()=>{const until=performance.now()+1800;while(performance.now()<until){/* Deliberately stalled renderer for cancellation regression. */}});
  await new Promise(r=>setTimeout(r,200));const cancellation=new AbortController();const queued=callNativeApp(profile,'navigate',{target:'settings',section:'updates'},{signal:cancellation.signal});const cancelled=assert.rejects(queued);await new Promise(r=>setTimeout(r,200));cancellation.abort();await cancelled;await stalled;
  ui=await value('inspect_ui');assert.ok(ui.headings.includes('What would you like to build?'));assert.ok(!ui.headings.includes('App updates'));checks.push('A cancelled request queued behind a stalled renderer cannot navigate later');

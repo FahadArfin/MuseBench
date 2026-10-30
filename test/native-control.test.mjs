@@ -53,3 +53,5 @@ test('Windows revokes pre-existing explicit Everyone grants before publishing a 
   const output=await exec('icacls.exe',[path.join(directory,'connection.json')],{windowsHide:true});assert.ok(!output.stdout.includes('Everyone'),output.stdout);
  }finally{await host?.close();await rm(dataDir,{recursive:true,force:true});}
 });
+
+test('native schedule navigation opens the page without permitting schedule execution',()=>{assert.doesNotThrow(()=>validateNativeCall('navigate',{target:'codeSchedules'}));assert.throws(()=>validateNativeCall('navigate',{target:'codeSchedules',operation:'enable'}));});

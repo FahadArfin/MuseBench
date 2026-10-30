@@ -1,3 +1,4 @@
+import {applyPreviewSchedule} from './code-schedules';
 import {createPreviewConversationImports} from './conversation-imports';
 import {sourceLineCount} from '../shared/file-diff.mjs';
 import {validateRunInspection,validateRunReview,validateRunFeedback} from '../shared/run-changes.mjs';
@@ -69,6 +70,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const imports=createPreviewConversationImports();
  const tasks=new Map([initial,other].map(t=>[t.id,t]));
  const state:AppState={workflows:copy(DEFAULT_WORKFLOWS),backgroundChats:true,projectCreationRoot:'Documents/MuseBench',projects:[project],tasks:[initial,other],activeProject:project,task:initial,checkpoints:[{id:'sample-checkpoint',taskId:initial.id,title:'Sample accepted revision',revision:'sample-before',createdAt:stamp}],preview:{status:'stopped',url:null,log:'',script:null},runtime:copy(runtime),busy:false,error:null,drafts:{}};
+ state.codeSchedules=[];state.codeSchedulesAvailable=true;state.codeSchedulesSimulation=true;
  const sampleEventAt=new Date().toISOString();state.activityInbox=[{id:'a'.repeat(64),taskId:initial.id,source:'run',sourceId:'sample-completed',kind:'run_completed',at:sampleEventAt,readAt:null,title:initial.title,projectName:'Preview sample'},{id:'b'.repeat(64),taskId:other.id,source:'run',sourceId:'sample-question',kind:'response_requested',at:sampleEventAt,readAt:null,title:other.title,projectName:'Preview sample'}];
  const runtimeOwners=new Map<string,RuntimeState>(),activityTokens=new Map<string,{key:string;id:string}>();
  const code=channel(()=>state);
@@ -96,6 +98,7 @@ export function createPreviewBridge():MuseBenchBridge {
  async function dispatch(action:Action):Promise<AppState>{
   const current=state.task,previousRuntime=copy(state.runtime);
   switch(action.type){
+   case 'codeSchedule':applyPreviewSchedule(state,action);break;
    case 'saveProjectAction':case 'runProjectAction':{const input=validateProjectActionRequest(action),view=projectActionView(input);if(view.revision!==input.revision)throw Error('Project actions changed. Review again.');if(input.type==='runProjectAction')throw Error('Preview only. Run project actions from the installed desktop app.');const definitions=view.actions.map(({id,name,cwd,commands,timeoutSeconds})=>({id,name,cwd,commands,timeoutSeconds}));projectActionDefinitions.set(input.projectId,[...definitions.filter(row=>row.id!==input.definition.id),copy(input.definition)]);projectActionRevision++;break;}
    case 'setRunFileReviewed':{const input=validateRunReview(action),view=runChangeView(input);if(view.revision!==input.revision||!view.files.some(file=>file.path===input.path))throw Error('The review changed. Refresh.');const key=input.taskId+':'+input.runId+':'+input.path;if(input.reviewed)reviewedRunFiles.add(key);else reviewedRunFiles.delete(key);break;}
    case 'setActivityRead':{validateActivityRead(action);state.activityInbox=state.activityInbox?.map(event=>action.ids.includes(event.id)?{...event,readAt:action.read?new Date().toISOString():null}:event);break;}

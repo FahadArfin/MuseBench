@@ -1,3 +1,4 @@
+import {validateScheduleAction} from '../src/shared/code-schedules.mjs';
 import {validateInputAction} from '../src/shared/user-input.mjs';
 import {validateCheckScripts} from '../src/shared/validation.mjs';
 import {validateWorkflow} from '../src/shared/workflows.mjs';
@@ -9,7 +10,7 @@ import {validateRunOptions} from '../src/shared/run-options.mjs';
 import {validateActivityRead} from '../src/shared/activity-inbox.mjs';
 import {validateRunReview} from '../src/shared/run-changes.mjs';
 import {validateProjectActionRequest} from '../src/shared/project-actions.mjs';
-const actions = new Set(['stopWork','inspectChild','answerInput','setExecutionAccess','childControl','compactSession','steerMessage','createReviewer','integrateReview','cancelReviewers','continueGoal','pauseGoalContinuation','proposeLesson','decideLesson','restoreCheckpoint','saveValidationProfile','runValidation','refreshModels','archiveWorktree','restoreWorktree','recoverWorktree','setupWorktree','saveWorkflow','deleteWorkflow','queueWorkflow','handoffContext','recoverSession','moveSidebarItem','createWorktree','openWorktree','createProject','setProjectInstructions','saveDraft','setTaskFlags','deleteTask','forkTask','queueMessage','beginQueueEdit','editQueued','sendQueued','moveQueued','removeQueued','pauseQueue','resumeQueue','renameTask','setGoal','setMemories','openProject','selectProject','selectTask','createDemo','createCommandCopy','newTask','setRunOptions','updatePlan','approvePlan','applyDemo','refresh','runCheck','cancelCheck','startPreview','stopPreview','inspectPreview','accept','sendMessage','connectMuse','disconnectMuse','runtimeDecision','clearError']);
+const actions = new Set(['codeSchedule','stopWork','inspectChild','answerInput','setExecutionAccess','childControl','compactSession','steerMessage','createReviewer','integrateReview','cancelReviewers','continueGoal','pauseGoalContinuation','proposeLesson','decideLesson','restoreCheckpoint','saveValidationProfile','runValidation','refreshModels','archiveWorktree','restoreWorktree','recoverWorktree','setupWorktree','saveWorkflow','deleteWorkflow','queueWorkflow','handoffContext','recoverSession','moveSidebarItem','createWorktree','openWorktree','createProject','setProjectInstructions','saveDraft','setTaskFlags','deleteTask','forkTask','queueMessage','beginQueueEdit','editQueued','sendQueued','moveQueued','removeQueued','pauseQueue','resumeQueue','renameTask','setGoal','setMemories','openProject','selectProject','selectTask','createDemo','createCommandCopy','newTask','setRunOptions','updatePlan','approvePlan','applyDemo','refresh','runCheck','cancelCheck','startPreview','stopPreview','inspectPreview','accept','sendMessage','connectMuse','disconnectMuse','runtimeDecision','clearError']);
 export {allowedExternal} from '../src/shared/external-links.mjs';
 export function trustedSender(event, contents, uiURL) { return event.sender === contents && event.senderFrame === contents.mainFrame && event.senderFrame.url === uiURL; }
 export function validateAction(action) {
@@ -35,6 +36,7 @@ export function validateAction(action) {
   if(['proposeLesson','decideLesson'].includes(action.type)){if(typeof action.projectId!=='string')throw Error('Choose a project.');if(action.type==='decideLesson'&&(typeof action.id!=='string'||!['accept','reject','revoke'].includes(action.decision)))throw Error('Invalid lesson decision.');if(action.type==='proposeLesson'&&['taskId','messageId','title','text','applicability'].some(k=>typeof action[k]!=='string'||action[k].length>1600))throw Error('Invalid lesson proposal.');}
   if(action.type==='continueGoal'&&(!Number.isInteger(action.maxRounds)||action.maxRounds<1||action.maxRounds>8||!Number.isInteger(action.minutes)||action.minutes<1||action.minutes>60))throw Error('Invalid goal budget.');
   if(action.type==='createReviewer'&&(['parentTaskId','projectId','role','question'].some(k=>typeof action[k]!=='string'||!action[k]||action[k].length>2000)))throw Error('Invalid review contract.');if(action.type==='integrateReview'&&typeof action.taskId!=='string')throw Error('Invalid review chat.');
+  if(action.type==='codeSchedule')validateScheduleAction(action);
   const fields = {openProject:'path',selectProject:'id',selectTask:'id',newTask:'request',runCheck:'script',startPreview:'script',inspectPreview:'revision',accept:'revision',sendMessage:'text',runtimeDecision:'decision'};
   if (fields[action.type]) string(fields[action.type]);
   if(action.type==='answerInput'){string('taskId',200);validateInputAction(action);}
@@ -56,7 +58,7 @@ export function validateAction(action) {
   if (action.type==='renameTask') {string('title',100);if(action.id!==undefined)string('id',200);}
   if (action.type==='setMemories' && (typeof action.text!=='string'||action.text.length>1500)) throw Error('Invalid memory instructions.');
   if (action.type==='setGoal' && (typeof action.objective!=='string'||action.objective.length>1000||!['active','paused'].includes(action.status))) throw Error('Invalid chat goal.');
-  if(['sendMessage','queueMessage','saveDraft'].includes(action.type)){fileReferences(action.files);imageReferences(action.images);if(action.fromGoal!==undefined||action.fromQueue!==undefined||action.type==='sendMessage'&&action.runOptions!==undefined)throw Error('Invalid request options.');}
+  if(['sendMessage','queueMessage','saveDraft'].includes(action.type)){fileReferences(action.files);imageReferences(action.images);if(action.fromSchedule!==undefined||action.fromGoal!==undefined||action.fromQueue!==undefined||action.type==='sendMessage'&&action.runOptions!==undefined)throw Error('Invalid request options.');}
   if(['queueMessage','saveDraft'].includes(action.type)){if(typeof action.text!=='string'||action.text.length>16000||action.type==='queueMessage'&&!action.text.trim()||action.mode!==undefined&&!['chat','plan'].includes(action.mode))throw Error('Invalid prompt or draft.');if(action.runOptions!==undefined)validateRunOptions(action.runOptions);}
   if(['saveDraft','setProjectInstructions'].includes(action.type))string('projectId',200);
   if(action.type==='saveDraft'&&action.taskId!==null)string('taskId',200);

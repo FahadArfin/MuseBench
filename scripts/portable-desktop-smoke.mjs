@@ -41,6 +41,7 @@ try{
  nativeClient=new Client({name:'packaged-native-check',version:'1.0.0'});await nativeClient.connect(new StdioClientTransport({...control.connectionConfig,stderr:'pipe'}));
  const result=await nativeClient.callTool({name:'app_status',arguments:{}});assert.ok(!result.isError,result.content?.[0]?.text);const native=JSON.parse(result.content[0].text);assert.equal(native.version,expected.version);assert.equal(native.packaged,true);
  const navigation=await nativeClient.callTool({name:'navigate',arguments:{target:'settings',section:'control'}});assert.ok(!navigation.isError,navigation.content?.[0]?.text);const ui=JSON.parse(navigation.content[0].text);assert.ok(ui.headings.includes('App control'),`Native navigation returned headings: ${JSON.stringify(ui.headings)}`);report.checks.push('Packaged executable and ASAR run MCP stdio; native tools inspect and navigate the actual packaged app');
+ const scheduled=await nativeClient.callTool({name:'navigate',arguments:{target:'codeSchedules'}});assert.ok(!scheduled.isError,scheduled.content?.[0]?.text);const scheduleUI=JSON.parse(scheduled.content[0].text);assert.ok(scheduleUI.headings.includes('Scheduled'));assert.ok(scheduleUI.controls.some(item=>item.label==='New schedule'));report.checks.push('Packaged native navigation inspects local schedules without enabling work');
  await nativeClient.close();nativeClient=null;await page.evaluate(()=>window.musebench.nativeControl({type:'disable'}));
  assert.deepEqual(errors,[]);report.status='passed';
  console.log(JSON.stringify(report));
