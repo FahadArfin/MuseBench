@@ -131,7 +131,7 @@ try{
  await click('button','Edit queued prompt 2');await compare('queued-message-editor');await click('button','Cancel');await compare('queue-edit-cancelled');
  for(let index=0;index<3;index++)await click('button','Remove queued prompt 1');
 
- await click('button','Reasoning effort');await compare('reasoning-picker');await click('button','Load installed models');await compare('native-model-catalog');await escape();
+ await click('button','Reasoning effort');await compare('reasoning-picker');await click('button','Change model');await click('button','Load installed models');await compare('native-model-catalog');await escape();
  await click('button','Add to chat');await click('button','Workflows');await compare('workflow-library');await click('button','Edit');await compare('workflow-editor');
  for(const page of [browserPage,desktopPage]){for(const character of 'test,lint'){await page.evaluate(character=>{const input=document.querySelector('input[aria-label="Phase 1 required checks"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,input.value+character);input.dispatchEvent(new Event('input',{bubbles:true}));},character);await page.waitForTimeout(20);}assert.equal(await page.evaluate(()=>document.querySelector('input[aria-label="Phase 1 required checks"]').value),'test, lint');}await compare('workflow-required-checks');await click('button','Close dialog');
  await click('button','Project overview');await compare('project-overview');

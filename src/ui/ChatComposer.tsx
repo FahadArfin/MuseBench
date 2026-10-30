@@ -9,7 +9,6 @@ import {Paperclip,ListPlus,ArrowUp,Check,ChevronDown,FolderOpen,Lightbulb,Mic,Pl
 import type {CodeImage,RunOptions,RuntimeState} from '../shared/types';
 import {ReasoningPicker,reasoningLabels as labels} from './ReasoningPicker';
 import {modelSettingsView} from '../shared/model-settings.mjs';
-import {ModelSettingsSummary} from './ModelSettingsSummary';
 import {useDictation} from './useDictation';
 import './composer.css';
 const approvals:{id:RunOptions['approval'];label:string;description:string}[]=[
@@ -17,7 +16,7 @@ const approvals:{id:RunOptions['approval'];label:string;description:string}[]=[
  {id:'auto',label:'Auto-review',description:'Muse reviews eligible requests. Unresolved approvals stop the run.'},
  {id:'never',label:'No prompts',description:'Run without approval prompts, within the Muse sandbox.'},
 ];
-type Props={runtime?:RuntimeState;onFullAccess:(value:boolean)=>void;canSteer?:boolean;fullAccess?:boolean;modelCatalog?:import("../shared/models.mjs").NativeModelCatalog;onRefreshModels:()=>void;images:CodeImage[];imageProjectId:string;onRemoveImage:(id:string)=>void;onAddImages:(files:File[])=>void;uploadingImages:boolean;onRunQueue?:()=>void;onQueue?:()=>void;onContext:()=>void;onCommand:(id:string,args:string,prefix:string)=>void;onLoadSkills:()=>void;skills:MuseSkill[];skillsStatus:string;theme:string;model:string;value:string;onChange:Dispatch<SetStateAction<string>>;inputRef:RefObject<HTMLTextAreaElement|null>;onSubmit:()=>void;onChooseProject:()=>void;onStop:()=>void;onConnection:()=>void;onOptions:(options:RunOptions)=>void;options:RunOptions;taskMode:'muse'|'manual'|'demo';onTaskMode:(mode:'muse'|'manual')=>void;messageMode:'chat'|'plan';onMessageMode:(mode:'chat'|'plan')=>void;showTask:boolean;busy:boolean;running:boolean;canSend:boolean;enterToSend:boolean;active:boolean;context:string;};
+type Props={runtime?:RuntimeState;onFullAccess:(value:boolean)=>void;canSteer?:boolean;fullAccess?:boolean;modelCatalog?:import("../shared/models.mjs").NativeModelCatalog;onRefreshModels:()=>void|Promise<void>;images:CodeImage[];imageProjectId:string;onRemoveImage:(id:string)=>void;onAddImages:(files:File[])=>void;uploadingImages:boolean;onRunQueue?:()=>void;onQueue?:()=>void;onContext:()=>void;onCommand:(id:string,args:string,prefix:string)=>void;onLoadSkills:()=>void;skills:MuseSkill[];skillsStatus:string;theme:string;model:string;value:string;onChange:Dispatch<SetStateAction<string>>;inputRef:RefObject<HTMLTextAreaElement|null>;onSubmit:()=>void;onChooseProject:()=>void;onStop:()=>void;onConnection:()=>void;onOptions:(options:RunOptions)=>void;options:RunOptions;taskMode:'muse'|'manual'|'demo';onTaskMode:(mode:'muse'|'manual')=>void;messageMode:'chat'|'plan';onMessageMode:(mode:'chat'|'plan')=>void;showTask:boolean;busy:boolean;running:boolean;canSend:boolean;enterToSend:boolean;active:boolean;context:string;};
 export function ChatComposer(p:Props){
  const [skillsOpen,setSkillsOpen]=useState(false);
  const [menu,setMenu]=useState<'add'|'approval'|'reasoning'|null>(null);
@@ -32,7 +31,7 @@ export function ChatComposer(p:Props){
  const open=(kind:typeof menu,event:React.MouseEvent<HTMLButtonElement>)=>{opener.current=event.currentTarget;setMenu(menu===kind?null:kind);};
  useEffect(()=>{setMenu(null);setSkillsOpen(false);},[p.active,p.context,p.showTask]);
  useLayoutEffect(()=>{
-  if(!menu)return;
+  if(!menu||menu==='reasoning')return;
   const position=()=>{const popup=root.current?.querySelector<HTMLElement>('.composer-popover'),anchor=opener.current;if(!popup||!anchor)return;const box=anchor.getBoundingClientRect(),above=box.top-56,below=window.innerHeight-box.bottom-20,down=above<popup.scrollHeight&&below>above;popup.style.top=down?'42px':'';popup.style.bottom=down?'auto':'42px';popup.style.maxHeight=Math.max(100,down?below:above)+'px';popup.style.overflowY='auto';};
   position();window.addEventListener('resize',position);return()=>window.removeEventListener('resize',position);
  },[menu]);
@@ -41,7 +40,9 @@ export function ChatComposer(p:Props){
   const outside=(e:PointerEvent)=>{if(!root.current?.contains(e.target as Node))setMenu(null);};
   const keyboard=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();setMenu(null);opener.current?.focus();}};
   document.addEventListener('pointerdown',outside);document.addEventListener('keydown',keyboard,true);
-  root.current?.querySelector<HTMLElement>('.composer-popover button,.composer-popover input,.composer-popover select')?.focus();
+  const popup=root.current?.querySelector<HTMLElement>('.composer-popover');
+  if(menu==='reasoning')popup?.focus();
+  else popup?.querySelector<HTMLElement>('button:not(:disabled),input:not(:disabled),select:not(:disabled)')?.focus();
   return()=>{document.removeEventListener('pointerdown',outside);document.removeEventListener('keydown',keyboard,true);};
  },[menu]);
  const selectedModel=p.modelCatalog?.models.find(m=>p.options.model?m.id===p.options.model:m.isDefault);
@@ -66,12 +67,8 @@ export function ChatComposer(p:Props){
    </div>
    {p.messageMode==='plan'&&muse&&<span className="composer-plan-tag"><Lightbulb size={12}/>Plan</span>}
    <span className="composer-spacer"/>
-   {muse&&<div className="composer-control"><button type="button" className="reasoning-chip" aria-label="Reasoning effort" title={p.running?'Inspect current and next-request settings':`Next request: ${settings.requested.model} · ${labels[p.options.reasoning]}`} aria-expanded={menu==='reasoning'} disabled={p.busy||voice.recording||p.uploadingImages} onClick={e=>open('reasoning',e)}><strong>{p.running?settings.observed?.model??'Awaiting Muse':selectedModel?.label??p.options.model??'Muse'}</strong><span>{p.running?'Running':`${labels[p.options.reasoning]} · Next`}</span><ChevronDown size={12}/></button>
-    {menu==='reasoning'&&<ReasoningPicker disabled={settingsLocked} value={p.options.reasoning} levels={selectedModel?.efforts.length?selectedModel.efforts:REASONING_LEVELS} onChange={reasoning=>p.onOptions({...p.options,reasoning})}>
-      <ModelSettingsSummary view={settings}/>
-      <label className="composer-mode-row"><span>Next model</span><select aria-label="Muse model" value={p.options.model??''} disabled={settingsLocked} onChange={e=>{const model=e.target.value,row=p.modelCatalog?.models.find(m=>model?m.id===model:m.isDefault);const {model:oldModel,...rest}=p.options;p.onOptions({...rest,...(model?{model}:{}),reasoning:row?.efforts.includes(p.options.reasoning)?p.options.reasoning:row?.defaultEffort??row?.efforts[0]??'high'});}}><option value="">Provider default</option>{p.options.model&&!selectedModel&&<option value={p.options.model} disabled>{p.options.model} (unavailable)</option>}{p.modelCatalog?.models.map(m=><option key={m.id} value={m.id} disabled={!m.efforts.length}>{m.label}</option>)}</select></label>
-      <p className="popover-help">{settingsLocked?'Settings can be changed when active work finishes.':'Changes apply when you send your next request. Queued prompts keep their saved settings.'}</p><button type="button" className="text-link" disabled={settingsLocked} onClick={p.onRefreshModels}>{p.modelCatalog?'Refresh models':'Load installed models'}</button>
-     </ReasoningPicker>}
+   {muse&&<div className="composer-control"><button type="button" className="reasoning-chip" aria-label="Reasoning effort" title={p.running?'Model settings for your next request':`Next request: ${settings.requested.model} · ${labels[p.options.reasoning]}`} aria-haspopup="dialog" aria-expanded={menu==='reasoning'} disabled={p.busy||voice.recording||p.uploadingImages} onClick={e=>open('reasoning',e)}><strong>{p.running?settings.observed?.model??'Awaiting Muse':p.options.model?selectedModel?.label??p.options.model:'Default'}</strong><span>{p.running?'Running':labels[p.options.reasoning]}</span><ChevronDown size={12}/></button>
+    {menu==='reasoning'&&<ReasoningPicker disabled={settingsLocked} value={p.options.reasoning} levels={selectedModel?selectedModel.efforts:REASONING_LEVELS} onChange={reasoning=>p.onOptions({...p.options,reasoning})} model={p.options.model} catalog={p.modelCatalog} onRefreshModels={p.onRefreshModels} onModelChange={model=>{const row=p.modelCatalog?.models.find(m=>model?m.id===model:m.isDefault);const {model:oldModel,...rest}=p.options;p.onOptions({...rest,...(model?{model}:{}),reasoning:row?.efforts.includes(p.options.reasoning)?p.options.reasoning:row?.defaultEffort??row?.efforts[0]??'high'});}}/>}
    </div>}
    <button type="button" className={`icon-button microphone-button ${voice.recording?'recording':''}`} aria-label={voice.recording?'Stop dictation':'Start dictation'} title={voice.recording?'Stop dictation':voice.state.available===false?'Dictation unavailable on this device':'Dictate with Windows speech recognition (on device)'} disabled={p.busy||p.running||voice.state.status==='stopping'||(!voice.recording&&voice.state.available===false)} onClick={()=>{setMenu(null);void voice.toggle();}}>{voice.recording?<Square size={14} fill="currentColor"/>:<Mic size={17}/>}</button>
    {!p.running&&p.onQueue&&<button type="button" className="icon-button" aria-label="Queue message" title="Queue for later - Alt+Enter" disabled={p.busy||voice.recording||!p.value.trim()} onClick={p.onQueue}><ListPlus size={17}/></button>}

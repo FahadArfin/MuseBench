@@ -8,7 +8,7 @@
 .access-chip span { max-width: 125px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .access-chip.no-prompts { color: #e99145; }
 .reasoning-chip strong { font-weight: 500; }
-.reasoning-chip > span { color: var(--muted); }
+.reasoning-chip > span { color: var(--accent); }
 .codex-composer .send-button { width: 30px; height: 30px; }
 .codex-composer .send-button:disabled { background: var(--surface); }
 .composer-popover { position: absolute; z-index: 50; bottom: 42px; left: 0; width: 330px; max-width: calc(100vw - 44px); border: 1px solid var(--border); background: var(--surface-hover); border-radius: 15px; padding: 8px; box-shadow: 0 10px 45px #0004; text-align: left; font-size: 12px; }
@@ -25,13 +25,17 @@
 .composer-mode-row > span { flex: 1; }
 .composer-mode-row select { border: 0; border-radius: 8px; background: var(--surface); color: var(--text); padding: 5px 9px; font-size: 11px; }
 .composer-plan-tag { display: flex; align-items: center; gap: 4px; color: var(--muted); font-size: 10px; }
-.reasoning-popover { width: 280px; left: auto; right: 0; padding: 12px; border-radius: 13px; background: var(--surface-hover); max-height: var(--reasoning-max-height,calc(100dvh - 160px)); overflow-y: auto; }
-.reasoning-popover[data-placement="below"] { top: 42px; bottom: auto; }
-.reasoning-heading { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.reasoning-heading>span { flex: 1; color: var(--muted); font-size: 11px; }
-.reasoning-heading select { min-width: 72px; max-width: 100px; padding: 3px 1px; border: 0; border-radius: 4px; background: transparent; color: var(--accent); font-size: 12px; font-weight: 500; cursor: pointer; }
+.reasoning-popover { width: 264px; left: auto; right: 0; padding: 10px 12px 12px; border-radius: 16px; background: var(--surface-hover); max-height: var(--reasoning-max-height,calc(100dvh - 160px)); overflow-y: auto; overscroll-behavior: contain; }
+.composer-popover.reasoning-popover:focus { outline: none; }
+.reasoning-heading { display: grid; grid-template-columns: 24px minmax(0,1fr) 24px; align-items: center; gap: 8px; }
+.reasoning-heading>svg { margin: auto; color: var(--muted); }
+.reasoning-heading select { appearance: none; justify-self: center; max-width: 100%; padding: 3px 8px; border: 0; border-radius: 5px; background: transparent; color: var(--accent); font-size: 13px; font-weight: 600; text-align: center; cursor: pointer; }
 .reasoning-heading option { background: var(--surface); color: var(--text); }
-.reasoning-heading .icon-button { width: 24px; height: 24px; }
+.reasoning-popover .icon-button { width: 24px; height: 24px; color: var(--muted); }
+.reasoning-model { display: flex; align-items: center; justify-content: center; gap: 3px; max-width: 100%; margin: 1px auto 10px; padding: 1px 5px; border-radius: 5px; color: var(--muted); font-size: 12px; line-height: 20px; }
+.reasoning-model span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.reasoning-model svg { flex-shrink: 0; }
+.reasoning-model:hover { color: var(--text); background: color-mix(in srgb,var(--muted) 10%,transparent); }
 .reasoning-slider { position: relative; height: 28px; }
 .reasoning-track { position: absolute; inset: 2px 0; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; overflow: hidden; border-radius: 20px; background: color-mix(in srgb,var(--muted) 18%,var(--surface)); border: 1px solid color-mix(in srgb,var(--border) 70%,transparent); pointer-events: none; }
 .reasoning-track>span { position: absolute; inset: 0; background: var(--accent-fill); clip-path: inset(0 calc(100% - 12px - (100% - 24px)*var(--reasoning-position)) 0 0); }
@@ -39,7 +43,20 @@
 .reasoning-popover input[type=range] { position: relative; appearance: none; width: 100%; height: 28px; margin: 0; cursor: pointer; background: transparent; border-radius: 20px; }
 .reasoning-popover input[type=range]::-webkit-slider-runnable-track { height: 28px; background: transparent; }
 .reasoning-popover input[type=range]::-webkit-slider-thumb { appearance: none; width: 26px; height: 26px; margin-top: 1px; border-radius: 50%; background: #fff; border: 1px solid #00000018; box-shadow: 0 1px 4px #0003; }
-.effort-scale { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin: 7px 2px 0; }
+.reasoning-popover input[type=range]:disabled { opacity: .45; cursor: default; }
+.model-list-popover { padding: 7px; }
+.model-list-heading { display: flex; align-items: center; gap: 4px; padding: 0 2px 5px; color: var(--muted); font-size: 12px; }
+.model-list-heading>span { flex: 1; }
+.model-option { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 34px; padding: 7px 10px; border-radius: 8px; text-align: left; font-size: 13px; }
+.model-option>span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.model-option small { display: block; margin-top: 3px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.model-option svg { flex-shrink: 0; color: var(--accent); }
+.model-option:hover:not(:disabled),.model-option:focus-visible { background: color-mix(in srgb,var(--muted) 12%,transparent); }
+.model-option:disabled { cursor: default; opacity: .5; }
+.model-picker-note { margin: 8px 5px 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.model-refreshing { animation: model-refresh-spin 1s linear infinite; }
+@keyframes model-refresh-spin { to { transform: rotate(360deg); } }
+@media(prefers-reduced-motion:reduce) { .model-refreshing { animation: none; } }
 .microphone-button.recording { color: #ef7d77; background: color-mix(in srgb,#ef7d77 12%,transparent); }
 .dictation-status { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; padding: 5px 4px 9px; line-height: 1.5; }
 .dictation-status > span:nth-child(2),.dictation-status.failed > span { flex: 1; }
@@ -50,9 +67,9 @@
  .composer-region { padding-left: 14px; padding-right: 14px; }
  .access-chip,.reasoning-chip { padding: 4px; gap: 4px; font-size: 10px; }
  .access-chip span { max-width: 92px; }
+ .reasoning-chip { max-width: min(170px,40vw); }
  .composer-toolbar .icon-button { width: 26px; }
  .approval-popover { left: -31px; width: 320px; }
- .reasoning-popover { right: -68px; width: 280px; }
  .composer-plan-tag { font-size: 0; gap: 0; }
 }
 
