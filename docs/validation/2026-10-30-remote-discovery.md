@@ -48,3 +48,18 @@ The whole-feature Astra review identified three correctness gaps; one correction
 Search setup diagnostics now survive the actual owned worker, broker and native wrapper. Only app-created branded authorization/redirect classifications cross that error boundary; bounded exact enum records recreate fixed text. Remote bodies, redirect targets, unknown/forged classifications and private extra fields are not forwarded. Startup/catalog401/403/redirect scenarios pass through the real processes, generic500 remains generic, and a submitted auth-failure effect remains unknown with exactly one invocation.
 
 Review regressions were first reproduced RED. Final focused checks:81 passed/0failed. Full suite:1,789 passed/0failed/1 unchanged optional skip. Production build passed with the existing Vite chunk warning. Original accepted archive/executable, receipts and manifests remain unchanged; refreshed logs and package acceptance use `artifacts/remote-discovery-fix/` and a distinct package directory. Frozen correction/package receipts follow after byte verification. No model inference, personal settings/account authorization, real OAuth, push/merge/install or external catalog request was performed by this worker.
+
+
+### Frozen correction artifact
+
+Correction implementation `a76f4d80066966ac73cef1368d5ba2befe20c52c`; tree `4197bf9a704621cd87263c6ac7aea89647e80cab`. Exact package `artifacts/remote-discovery-fix/package/win-unpacked` was built only after that commit froze. The verifier matched305source/build/runtime files, pinned client/core metadata and both Windows helpers before and after acceptance; the manifests are identical. All56original evidence/archive files remain hash-identical, including the original accepted ASAR.
+
+Source and exact-ASAR local/remote native allow/deny contracts each passed with14scripted Responses requests,0inference,1effect,denial0extra,confirmed worker ownership/socket cleanup and removed temporary profiles. Shared browser/source-Electron/exact-package renderer checks each passed8/8; retained paths under `artifacts/remote-discovery-fix/discovery-tools-ui/` are `browser-source-0CSbcf`, `desktop-source-uM5XAe` and `installed-ohTajo`. The last label is the existing directory-package override, not installation proof. The exact-package narrow screenshot was inspected.
+
+Correction ASAR SHA-256: `c793a928c140f73d21479964f0bfe5a92fc06a9a213933112a4af5e565be7350`.
+
+Correction source remote receipt SHA-256: `7160882d0a47b1ed0798641ef5a93de4e91868359d0f6e4254b6bf3de0c8f295`.
+
+Correction ASAR remote receipt SHA-256: `67562768f934f2c9739bdea6f50d68fb2a33e869efa790d80395f2d27b774385`.
+
+Full correction provenance and preserved-original count are in `artifacts/remote-discovery-fix/frozen-r1-r3-evidence.json`; RED/GREEN logs, source/package reports and pre/post manifests are separate from original acceptance. The parent independently attempted one public read-only documentation catalog against the frozen correction and reported an unsupported content-encoding failure before catalog/tools. That attempt is not a public-provider pass. Its actual response-header diagnosis and final scoped review remain parent-owned; this worker kept frozen source/archive stable and made no additional external request.
