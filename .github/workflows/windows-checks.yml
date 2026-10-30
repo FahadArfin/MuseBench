@@ -67,5 +67,6 @@ jobs:
             artifacts/native-control/report.json
             artifacts/navigation-cache/report.json
             artifacts/preview-annotations/**/report.json
+            artifacts/workspace-analysis/**/report.json
             artifacts/session-mcp-ui/**/report.json
             artifacts/mobile-settings/**/report.json

@@ -1,4 +1,5 @@
 import {validateScheduleAction} from '../src/shared/code-schedules.mjs';
+import {normalizeWorkspaceToolset} from '../src/shared/workspace-analysis.mjs';
 import {validateInputAction} from '../src/shared/user-input.mjs';
 import {validateCheckScripts} from '../src/shared/validation.mjs';
 import {validateWorkflow} from '../src/shared/workflows.mjs';
@@ -48,6 +49,7 @@ export function validateAction(action) {
   if(action.type==='connectMuse'&&action.transport!==undefined&&!['exec','msp'].includes(action.transport))throw Error('Invalid transport.');
   if(action.type==='connectMuse'&&action.fullAccess!==undefined&&typeof action.fullAccess!=='boolean')throw Error('Full access must be a boolean.');
   if(action.type==='connectMuse'&&action.workspaceTools!==undefined&&typeof action.workspaceTools!=='boolean')throw Error('Workspace tools must be a boolean.');
+  if(action.type==='connectMuse'&&action.workspaceToolset!==undefined){normalizeWorkspaceToolset(action.workspaceToolset);if(action.workspaceTools===false||action.transport==='exec')throw Error('Workspace tools require an interactive connection.');}
   if (action.type === 'connectMuse' && action.binary !== undefined) string('binary',4096);
   if(['createWorktree','openWorktree'].includes(action.type)){string('projectId',200);if(action.type==='createWorktree'){string('branch',100);string('base',200);}else string('id',100);}
   if (action.type === 'newTask' && !['demo','manual','muse'].includes(action.mode)) throw Error('Invalid task mode.');

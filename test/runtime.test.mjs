@@ -671,6 +671,18 @@ test('Provider default resolves the native catalog again after reconnect clears 
 test('workspace MCP is supplied by trusted factory only after the sessionMcp grant',async t=>{
  for(const granted of [false,true]){const h=await harness(t,{workspaceMcp:root=>({transport:'stdio',command:'node',args:['gateway',root]})});h.host.initializeResult.grantedCapabilities=granted?['sessionMcp']:[];const operation=h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true});if(!granted){await assert.rejects(operation,/sessionMcp|capability/i);assert.equal(h.calls.some(c=>c.method==='session/start'),false);}else{await operation;assert.equal(h.calls.find(c=>c.method==='session/start').params.config.mcpServers.musebench_workspace.args.at(-1),h.root);}assert.deepEqual(h.calls.find(c=>c.method==='initialize').params.capabilities.requestedCapabilities,['sessionMcp']);}
 });
+test('workspace analysis uses the explicitly selected toolset and rejects unknown selection before host startup',async t=>{
+ const requests=[];const h=await harness(t,{workspaceMcp:(root,options)=>{requests.push(options);return{transport:'stdio',command:'node',args:['gateway',root]};}});h.host.initializeResult.grantedCapabilities=['sessionMcp'];
+ await assert.rejects(h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true,workspaceToolset:'all'}),/tool set/);assert.equal(h.calls.length,0);
+ await assert.rejects(h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:false,workspaceToolset:'analysis-v1'}),/tools/);
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true,workspaceToolset:'analysis-v1'});assert.deepEqual(requests,[{toolset:'analysis-v1'}]);assert.equal(h.runtime.snapshot().workspaceToolset,'analysis-v1');assert.equal(h.calls.some(c=>c.method==='turn/start'),false);
+});
+test('interactive workspace tool receipts are observed only for the owning session and turn',async t=>{
+ const h=await harness(t,{workspaceMcp:()=>({transport:'stdio',command:'node',args:['gateway']})});h.host.initializeResult.grantedCapabilities=['sessionMcp'];await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true});await h.runtime.send({text:'Inspect'});
+ const item={itemId:'batch',kind:'toolCall',tool:'mcp__musebench_workspace__workspace_tool_batch',turnId:'turn-one',revision:1,status:'completed',visibleOutput:JSON.stringify({kind:'workspace-batch',version:1,calls:[{id:'a',operation:'hover',status:'completed',result:{items:[]}}]})};
+ h.emit({method:'item/completed',params:{sessionId:'other',item,viewCursor:'other-session'}});h.emit({method:'item/completed',params:{sessionId:'session-one',item:{...item,turnId:'other'},viewCursor:'other-turn'}});assert.equal(h.runtime.snapshot().activity?.items.length??0,0);
+ h.emit({method:'item/completed',params:{sessionId:'session-one',item,viewCursor:'batch-done'}});assert.equal(h.runtime.snapshot().activity.items[0].workspaceBatch.calls[0].id,'a');assert.equal(h.runtime.snapshot().status,'running');assert.equal(h.calls.filter(c=>c.method==='turn/start').length,1);
+});
 
 test('interactive required-server failure remains readable and does not hold the chat busy or resend',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Inspect this project'});

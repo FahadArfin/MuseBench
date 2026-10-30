@@ -49,9 +49,10 @@ try{
  if(options.native){
   stage='native-start';const binary=discoverMuseBinaries()[0];if(!binary)throw Error('Native binary unavailable.');
   const environment={...curateEnvironment(),USERPROFILE:profile,HOMEDRIVE:path.parse(profile).root,HOMEPATH:profile.slice(path.parse(profile).root.length-1),APPDATA:path.join(profile,'AppData','Roaming'),LOCALAPPDATA:path.join(profile,'AppData','Local')};
-  runtime=createRuntime({environment,workspaceMcp:factory,timeoutMs:10000});
-  const state=await bounded(runtime.connect({binary,workspaceRoot:workspace,workspaceTools:true,fullAccess:true}),30000);
-  report.native={status:state.status,sessionStarted:typeof state.sessionId==='string',workspaceTools:state.workspaceTools===true,permissionVerified:state.permissionVerified===true,modelTurnSent:false,toolInventoryVerified:false,profileIsolated:true};
+  runtime=createRuntime({environment,workspaceMcp:trustedFactory,timeoutMs:10000});
+  const state=await bounded(runtime.connect({binary,workspaceRoot:workspace,workspaceTools:true,workspaceToolset:options.toolset,fullAccess:true}),30000);
+  report.native={status:state.status,sessionStarted:typeof state.sessionId==='string',workspaceTools:state.workspaceTools===true,workspaceToolset:state.workspaceToolset,permissionVerified:state.permissionVerified===true,modelTurnSent:false,toolInventoryVerified:false,profileIsolated:true};
+  if(state.workspaceToolset!==(options.toolset??'navigation-v1'))throw Error('Native session toolset was not preserved.');
   stage='native-inventory';const inventory=await bounded(runtime.readMcpServers({sessionId:state.sessionId}));
   const server=inventory.servers.find(row=>row.name==='musebench_workspace'&&row.source==='session');
   if(server?.transport!=='stdio'||server?.oauth!=='notSupported')throw Error('Native session MCP inventory did not match its configured gateway.');

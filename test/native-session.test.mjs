@@ -19,3 +19,10 @@ test('MSP identity and access survive restore and cannot migrate to a different 
  assert.throws(()=>prepareNativeSession(value,value.root,{...connection,nativeSessionId:'foreign-session'}),/changed/);
  assert.throws(()=>prepareNativeSession(null,value.root,{transport:'msp'}),/changed/);
 });
+test('explicit analysis toolset survives restore while old saved sessions never upgrade',()=>{
+ const value={id:'native',root:'C:/project',transport:'msp',seeded:false,status:'ready',workspaceTools:true,workspaceToolset:'analysis-v1'};
+ assert.equal(restoreNativeSession(value).workspaceToolset,'analysis-v1');
+ assert.equal(prepareNativeSession(null,value.root,{transport:'msp',nativeSessionId:'native',workspaceTools:true,workspaceToolset:'analysis-v1'}).session.workspaceToolset,'analysis-v1');
+ const {workspaceToolset,...legacy}=value;assert.equal(restoreNativeSession(legacy).workspaceToolset,undefined);
+ assert.equal(restoreNativeSession({...value,workspaceToolset:'all'}),null);
+});

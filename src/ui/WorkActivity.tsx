@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Circle, Clock3, FileCode2, Files, GitBranch, LoaderCircle, MessageSquare, Pause, Square, Terminal, Wrench, X } from 'lucide-react';
 import type { ActivityItem, FileChange, ShellResult, WorkRun, WorkStatus } from '../shared/types';
 import {MotionDisclosure} from './MotionDisclosure';
+import {normalizeWorkspaceBatchSummary,workspaceBatchSummary} from '../shared/workspace-tool-activity.mjs';
 import {useSurfaceMotion} from './useSurfaceMotion';
 import './work-activity.css';
 
@@ -74,10 +75,20 @@ function ActivityDetails({ item, highlighted = false }: { item: ActivityItem; hi
       {item.tool && <div className="work-item-meta"><span>{item.kind === 'agent' ? 'Agent task' : item.kind === 'model' ? 'Model' : 'Native tool'}</span><code>{item.tool}</code></div>}
       {item.agentId && <div className="work-item-meta"><span>Agent</span><code>{item.agentId}</code></div>}
       {item.workflow&&<><div className="work-item-meta"><span>Parent run</span><code>{item.workflow.parentRunId}</code></div><p className="work-bound-note">Workflow concurrency limit: {item.workflow.parallelLimit}. This is a limit, not the number of children launched. Child identities, workspaces and individual usage were not reported. Child messaging and stop require the interactive host.</p></>}{item.detail && <p className="work-item-detail">{item.detail}</p>}
+      <WorkspaceBatchResults item={item}/>
       {item.output ? <pre tabIndex={0} aria-label={`${itemTitle(item)} output`}>{item.output}</pre> : <p className="work-no-output">{isLive(item.status) ? 'No output reported yet.' : 'No output reported.'}</p>}
       {item.truncated && <p className="work-bound-note">Only part of this activity’s details or output is retained.</p>}
     </div>
   </details>;
+}
+
+function WorkspaceBatchResults({item}:{item:ActivityItem}){
+ if(item.tool!=='mcp__musebench_workspace__workspace_tool_batch'||item.status!=='completed')return null;
+ const receipt=normalizeWorkspaceBatchSummary(item.workspaceBatch)??workspaceBatchSummary(item.tool,item.output,item.truncated);
+ if(!receipt)return null;
+ const titles:Record<string,string>={definition:'Definition',references:'References',implementation:'Implementation',hover:'Type information',workspace_symbols:'Workspace symbols',document_symbols:'File outline',syntax_diagnostics:'Syntax checks'};
+ const errors:Record<string,string>={SEMANTIC_PATH:'Could not read the source',SEMANTIC_POSITION:'Source position is unavailable',SEMANTIC_OUTPUT_LIMIT:'Result exceeded the display limit',SEMANTIC_CANCELLED:'Stopped'};
+ return <section className="workspace-batch-results" aria-label="Workspace batch results">{receipt.calls.map(row=><div className="workspace-batch-row" key={row.id}><StatusIcon status={row.status}/><div><strong>{titles[row.operation]}</strong><small>{row.id}{row.path?' · '+row.path:''}</small></div><span>{row.status==='failed'?(errors[row.error??'']??'Could not complete'):(row.count===null?'Completed':`${row.count}${row.truncated?'+':''} result${row.count===1?'':'s'}`)}</span></div>)}</section>;
 }
 
 function CommandResult({ result }: { result: ShellResult }) {

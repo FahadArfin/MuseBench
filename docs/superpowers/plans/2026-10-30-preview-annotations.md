@@ -53,4 +53,4 @@ Interfaces:
 - [x] Exercise production shell and real local tutorial preview in isolated Electron; build/typecheck and full unit suite once final source settles.
 - [x] Carry desktop192 acceptance forward, write guide/validation, update CX05 evidence.
 - [x] Commit feature; one fresh independent final review over immutable base..HEAD, fix material findings with failing regression and full verification. Preserve review/ledger.
-- [ ] Recheck exact main, merge/push authorized feature, await all release checks, verify exact published installer hashes, idle preflight, full profile backup, graceful install/reopen/native version and controls. Keep provider proof distinct.
+- [x] Recheck exact main, merge/push authorized feature, await all release checks, verify exact published installer hashes, idle preflight, full profile backup, graceful install/reopen/native version and controls. Keep provider proof distinct.

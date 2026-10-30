@@ -1,4 +1,5 @@
 import {createAnalyticsStore} from './analytics.mjs';
+import {normalizeWorkspaceToolset} from '../shared/workspace-analysis.mjs';
 import {createSemanticNavigation} from './semantic-navigation.mjs';
 import {workspaceSourcePaths} from './workspace-sources.mjs';
 import {reviewPrompt,parseReview} from '../shared/reviewer-contracts.mjs';
@@ -510,7 +511,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     return [...native,...imports.search(query)].sort((a,b)=>Number(b.pinned)-Number(a.pinned)||b.updatedAt.localeCompare(a.updatedAt)).slice(0,100);
   };
   const semanticQueries=new Set();
-  const semanticNavigate=async input=>{const project=state.activeProject;if(closing||closed)throw Error('Controller closed.');if(!project||input?.projectId!==project.id)throw Error('Choose the current project.');const service=createSemanticNavigation(project.root);semanticQueries.add(service);try{const result=await service.query(input);if(closing||closed||state.activeProject?.id!==project.id)throw Error('The selected project changed. Run navigation again.');return result;}finally{await service.dispose();semanticQueries.delete(service);}};
+  const semanticNavigate=async input=>{const project=state.activeProject;if(closing||closed)throw Error('Controller closed.');if(!project||input?.projectId!==project.id)throw Error('Choose the current project.');const service=createSemanticNavigation(project.root);semanticQueries.add(service);try{const {projectId,...query}=input;const result=await service.query(query);if(closing||closed||state.activeProject?.id!==project.id)throw Error('The selected project changed. Run navigation again.');return result;}finally{await service.dispose();semanticQueries.delete(service);}};
   const readCapturedOutput=input=>{if(!input||!taskRecords.has(input.taskId))throw Error('Chat not found.');return outputs.read(input);};
   const readChatHistory=input=>{if(!input||!taskRecords.has(input.taskId)&&!imports.has(input.taskId))throw Error('Chat not found.');const page=history.page(input);return imports.has(input.taskId)?{...page,coverage:'imported'}:page;};
   const prepareConversationImport=async source=>{if(closing||closed)throw Error('Controller closed.');return imports.prepare(source);};
@@ -611,13 +612,15 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(saved&&saved.root!==project.root)throw Error('This session belongs to another folder. Start a fresh session before continuing.');
     if(saved&&transport!==(saved.transport??'exec'))throw Error('This session belongs to another transport. Start a fresh session before continuing.');
     const request={binary:options.binary??preferredBinary??undefined,workspaceRoot:project.root,transport,fullAccess:options.fullAccess??saved?.fullAccess??false,workspaceTools:options.workspaceTools??saved?.workspaceTools??false,...(saved?.transport==='msp'?{sessionId:saved.id}:{})};
+    const selectedToolset=options.workspaceToolset??(request.workspaceTools?saved?.workspaceToolset:undefined);
+    if(selectedToolset!==undefined){normalizeWorkspaceToolset(selectedToolset);if(!request.workspaceTools||transport!=='msp')throw Error('Workspace tools require an interactive connection.');request.workspaceToolset=selectedToolset;}
     await owner.runtime.connect(request);owner.root=project.root;
     const next=owner.runtime.snapshot();if(owner===selectedContext())state.runtime=next;
     preferredBinary=next.binary??preferredBinary;
     if(task&&next.transport==='msp'&&next.permissionVerified&&next.nativeSessionId){
       if(saved&&saved.id!==next.nativeSessionId){await owner.runtime.disconnect();throw Error('Native session restoration returned a different session. Start fresh explicitly to replace it.');}
       const restored=next.restoration?.status==='restored',active=restored?next.restoration.activeTurnId:null;
-      task.nativeSession={id:next.nativeSessionId,root:project.root,transport:'msp',seeded:next.sessionSeeded===true||saved?.seeded===true,status:active?'needs-recovery':'ready',fullAccess:request.fullAccess,workspaceTools:request.workspaceTools};
+      task.nativeSession={id:next.nativeSessionId,root:project.root,transport:'msp',seeded:next.sessionSeeded===true||saved?.seeded===true,status:active?'needs-recovery':'ready',fullAccess:request.fullAccess,workspaceTools:request.workspaceTools,...(request.workspaceToolset?{workspaceToolset:request.workspaceToolset}:{})};
       if(active){
         const receipt=executions.list(task.id).find(r=>r.nativeSessionId===next.nativeSessionId&&r.runId===active),run=receipt&&(task.runs??[]).find(r=>r.id===receipt.id&&r.runId===active);
         if(receipt&&run){owner.turn={taskId:task.id,promptId:receipt.id,messageBaseline:runtimeMessageIds({messages:[]}),previousRunId:null,runId:active,started:true,resetSeen:false,restored:true};owner.pending=true;task.nativeSession.status='running';onRuntime(next,owner);}
@@ -754,7 +757,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       if(turn&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)&&!verifiedApprovalPause)captureTurn(turn,owner,next,ownsTurn&&next.cleanup==='confirmed'&&['completed','failed','cancelled'].includes(next.status));
       const progress=turn&&(task.runs??[]).find(item=>item.id===turn.promptId);
       if(progress){
-        if(ownsTurn){progress.runId=turn.runId;progress.ownedRunIds=Array.isArray(next.ownedRunIds)&&next.ownedRunIds.includes(turn.runId)?next.ownedRunIds.slice(0,5):[turn.runId];if(Array.isArray(next.activity?.items)){progress.activities=next.activity.items;progress.truncated=next.activity.truncated===true;}}
+        if(ownsTurn){progress.runId=turn.runId;progress.ownedRunIds=Array.isArray(next.ownedRunIds)&&next.ownedRunIds.includes(turn.runId)?next.ownedRunIds.slice(0,5):[turn.runId];if(Array.isArray(next.activity?.items)){if(next.activity.scope==='workspace-tools'){const merged=new Map(progress.activities.map(item=>[item.id,item]));for(const item of next.activity.items)merged.set(item.id,item);progress.activities=[...merged.values()].slice(0,120);progress.truncated=progress.truncated||merged.size>120||next.activity.truncated===true;}else{progress.activities=next.activity.items;progress.truncated=next.activity.truncated===true;}}}
         if(['running','starting','submitting'].includes(next.status)){progress.status='working';delete progress.endedAt;}
         if(['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)){
           progress.status=next.status==='completed'?(ownsTurn?'completed':'interrupted'):next.status==='cancelled'?'cancelled':verifiedApprovalPause?'waiting':'failed';

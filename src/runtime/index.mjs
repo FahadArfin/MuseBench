@@ -1,4 +1,6 @@
 import {inputPrompt,validateInputAnswers} from '../shared/user-input.mjs';
+import {normalizeWorkspaceToolset} from '../shared/workspace-analysis.mjs';
+import {createWorkspaceToolActivity} from '../shared/workspace-tool-activity.mjs';
 import {projectRuntimeStatus} from './status.mjs';
 import {childWorking} from '../shared/child-actions.mjs';
 import {createChildTracker} from './children.mjs';
@@ -157,6 +159,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  let revisionCounter=0;
  let awaitingChildReport=false,lastTerminal=null;
  const children=createChildTracker(),childCommands=new Set(),uncertainChildren=new Set(),childWork=new Map();
+ const workspaceActivity=createWorkspaceToolActivity();let workspaceActivityTurn=null;
  const childReads=new Set();
  let mcpReadEpoch=null;
  const compaction=createCompactionTracker();let compactionTimer;
@@ -170,6 +173,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const block=(reason,invalidatePermissions=true)=>{blockedReason=reason;update({status:'blocked',reason,...(invalidatePermissions?{permissionVerified:false}:{}),pending:displayPending(pending,pendingRevision)});};
  const assertCurrent=token=>{if(token!==epoch)throw Error('Muse connection was interrupted or disconnected.');};
  const syncAdapter=s=>{
+  if(s.rootTurnId&&s.rootTurnId!==workspaceActivityTurn){workspaceActivity.reset();workspaceActivityTurn=s.rootTurnId;}
+  if(['completed','failed','cancelled','unavailable','uncertain','closed'].includes(s.status))workspaceActivity.finish(s.status);
   const terminalUnavailable=['unavailable','uncertain','closed'].includes(s.status);
   if(terminalUnavailable){childReads.clear();state={...state,childInspections:[]};clearPending();blockedReason=null;interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Connection lost before compaction was confirmed.');syncCompaction();}
   if(s.pending&&!pending){putPending({kind:s.pending.approvalId?'approval':'input',...s.pending});}
@@ -178,7 +183,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const childrenActive=children.snapshot().items.some(childWorking)||childWork.size>0;
   const childrenBusy=childrenActive||awaitingChildReport;
   const status=terminalUnavailable?s.status:blockedReason?'blocked':connecting&&s.status==='idle'?'checking-permissions':terminal&&childrenBusy?'running':s.status;
-  update({status,childrenBusy,childWorkPending:childWork.size,foregroundActive:s.status==='running',rootTurnId:s.rootTurnId,ownedTurnIds:s.ownedTurnIds,ownedRunIds:s.ownedTurnIds,reason:terminalUnavailable?s.reason:blockedReason??s.reason,sessionId:s.sessionId,turnId:s.turnId,runId:s.turnId,nativeSessionId:s.sessionId,inputAccepted:!!s.turnId,sessionSeeded:state.sessionSeeded||!!s.turnId||s.restoration?.status==='restored',restoration:s.restoration??null,restoringRequests:restoreAwaiting.size,restoredMessages:s.restoredMessages??[],viewCursor:s.viewCursor,cleanup:['completed','failed','cancelled'].includes(status)?'confirmed':undefined,liveVerified:state.liveVerified||status==='completed',messages:s.messages,pending:displayPending(pending,pendingRevision),permissionVerified:terminalUnavailable?false:state.permissionVerified});
+  update({status,activity:workspaceActivity.snapshot(),childrenBusy,childWorkPending:childWork.size,foregroundActive:s.status==='running',rootTurnId:s.rootTurnId,ownedTurnIds:s.ownedTurnIds,ownedRunIds:s.ownedTurnIds,reason:terminalUnavailable?s.reason:blockedReason??s.reason,sessionId:s.sessionId,turnId:s.turnId,runId:s.turnId,nativeSessionId:s.sessionId,inputAccepted:!!s.turnId,sessionSeeded:state.sessionSeeded||!!s.turnId||s.restoration?.status==='restored',restoration:s.restoration??null,restoringRequests:restoreAwaiting.size,restoredMessages:s.restoredMessages??[],viewCursor:s.viewCursor,cleanup:['completed','failed','cancelled'].includes(status)?'confirmed':undefined,liveVerified:state.liveVerified||status==='completed',messages:s.messages,pending:displayPending(pending,pendingRevision),permissionVerified:terminalUnavailable?false:state.permissionVerified});
  };
  const release=async()=>{
   const old=owner;owner=null;
@@ -230,6 +235,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  function observe(frame) {
   if(!frame?.params||frame.params.sessionId!==state.sessionId)return;
   const p=frame.params;
+  if(state.workspaceTools&&['item/started','item/updated','item/completed'].includes(frame.method)&&workspaceActivity.observe(p.item,adapter?.snapshot().ownedTurnIds??[]))update({activity:workspaceActivity.snapshot()});
   if(['item/started','item/updated','item/completed'].includes(frame.method)&&['subagent','workflow'].includes(p.item?.kind)){children.observe(p.item);syncChildren();}
   if(['item/started','item/updated','item/completed'].includes(frame.method)&&p.item?.kind==='compaction'){compaction.observe(p.item);syncCompaction();}
   if(['session/permissionProfileChanged','session/approvalModeChanged'].includes(frame.method)){
@@ -268,9 +274,11 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   }
  }
 
- async function connect({binary=state.binary,workspaceRoot,fullAccess=false,sessionId=null,workspaceTools=false}={}) {
+ async function connect({binary=state.binary,workspaceRoot,fullAccess=false,sessionId=null,workspaceTools=false,workspaceToolset}={}) {
   if(typeof fullAccess!=='boolean')throw Error('Full access must be explicitly selected.');
   if(typeof workspaceTools!=='boolean'||workspaceTools&&typeof workspaceMcp!=='function')throw Error('Reviewed workspace tools are unavailable.');
+  const toolset=normalizeWorkspaceToolset(workspaceToolset);
+  if(workspaceToolset!==undefined&&!workspaceTools)throw Error('Select workspace tools before choosing a tool set.');
   if(sessionId!==null&&(typeof sessionId!=='string'||!sessionId||sessionId.length>200))throw Error('Invalid native session identity.');
   if(owner||connecting)throw Error('Disconnect the current Muse session before connecting again.');
   if(closing||state.cleanup==='pending')throw Error('Wait for Muse shutdown to finish before reconnecting.');
@@ -279,8 +287,9 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   if(platform==='win32'&&!binary.toLowerCase().endsWith('.exe'))throw Error('Select the native muse.exe, not a .cmd or PowerShell installer/launcher.');
   if(typeof workspaceRoot!=='string'||!isAbsolute(workspaceRoot))throw Error('Select an absolute project workspace first.');
   const preserveReceipts=sessionId&&state.nativeSessionId===sessionId;
+  workspaceActivity.reset();workspaceActivityTurn=null;
   const token=++epoch;connecting=true;blockedReason=null;clearPending();restoreAwaiting.clear();openingEvents=[];nativeCatalog=null;deferredInputs.clear();if(!preserveReceipts){settledInputs.clear();settledApprovals.clear();inputResponses.clear();approvalAttempts.clear();uncertainChildren.clear();update({inputResponse:null,inputResponses:[],childReceipts:[],steering:null});}childReads.clear();update({childInspections:[]});compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0});syncCompaction();
-  update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,workspaceTools,sessionSeeded:false,sessionId:null,messages:[],restoredMessages:[],restoration:null,modelCatalog:undefined,modelId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
+  update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,workspaceTools,workspaceToolset:workspaceTools?toolset:undefined,activity:workspaceActivity.snapshot(),sessionSeeded:false,sessionId:null,messages:[],restoredMessages:[],restoration:null,modelCatalog:undefined,modelId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
   let openedSession;
   try{
    binary=await realpath(binary);workspace=await realpath(workspaceRoot);assertCurrent(token);
@@ -305,7 +314,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    let sessionConfig,openingCommandId;
    if(workspaceTools){
     if(!host.initializeResult.grantedCapabilities?.includes('sessionMcp'))throw Error('Native host did not grant the sessionMcp capability.');
-    const server=await workspaceMcp(workspace);assertCurrent(token);
+    const server=await workspaceMcp(workspace,{toolset});assertCurrent(token);
     if(server?.transport!=='stdio'||typeof server.command!=='string'||!server.command||!Array.isArray(server.args)||server.args.some(a=>typeof a!=='string')||JSON.stringify(server).length>16384)throw Error('Invalid trusted workspace MCP configuration.');
     sessionConfig={mcpServers:{musebench_workspace:structuredClone(server)}};
    }

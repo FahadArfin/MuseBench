@@ -237,3 +237,4 @@
 .runtime-access label{display:flex;align-items:center;gap:8px;margin:8px 0;font-size:13px}
 .runtime-access input{accent-color:var(--accent)}
 .runtime-access p{font-size:12px;line-height:1.5;color:var(--muted);margin:10px 0 0}
+.workspace-tool-selection{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.workspace-tool-selection select{max-width:100%;width:auto;min-width:155px}.workspace-operation-discovery{margin-top:8px}.workspace-operation-discovery summary{font-size:12px;color:var(--muted);cursor:pointer}.workspace-operation-discovery input{margin-top:10px;width:100%}.workspace-operation-discovery ul{list-style:none;padding:0;margin:10px 0;max-height:220px;overflow:auto}.workspace-operation-discovery li{display:grid;gap:3px;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px}.workspace-operation-discovery li span{color:var(--muted)}
