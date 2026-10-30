@@ -39,6 +39,7 @@ jobs:
       - run: npm run test:plugin-tools
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness
+      - run: npm run test:chat-navigation
       - run: npm run test:browser-preview
       - run: npm run test:onboarding-preview
       - run: npm run test:catalog-preview
@@ -66,3 +67,5 @@ jobs:
             artifacts/reply-copy/**/report.json
             artifacts/response-actions/**/report.json
             artifacts/plugin-tools-ui/**/report.json
+            artifacts/chat-navigation/**/report.json
+            artifacts/sidebar-drag/**/report.json

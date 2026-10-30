@@ -1,7 +1,8 @@
-import {useEffect,useRef,useState,type DragEvent,type KeyboardEvent} from 'react';
+import {memo,useEffect,useLayoutEffect,useMemo,useRef,useState,type DragEvent,type KeyboardEvent} from 'react';
 import {ChevronRight,FolderOpen,MoreHorizontal,Pin,Plus,Search} from 'lucide-react';
 import type {Action,Project,TaskSummary} from '../shared/types';
-import {sidebarKey,sidebarSort} from '../shared/sidebar-order.mjs';
+import {sidebarKey} from '../shared/sidebar-order.mjs';
+import {sameSidebarData,sidebarCollections} from '../shared/sidebar-model.mjs';
 import {SidebarSection} from './SidebarSection';
 import {MotionDisclosure} from './MotionDisclosure';
 import {useChatActions} from './useChatActions';
@@ -9,16 +10,24 @@ import './chat-sidebar.css';
 
 type Move=Extract<Action,{type:'moveSidebarItem'}>;
 type Props={orders?:Record<string,string[]>;projects:Project[];tasks:TaskSummary[];selectedId?:string;projectId?:string;overview:boolean;busy:boolean;active:boolean;onProject:(id:string)=>void;onChat:(id:string)=>void;onNew:(id:string)=>void;onFolder:()=>void;onSearch:()=>void;act:(action:Action)=>Promise<unknown>};
-export function ChatSidebar({orders,projects,tasks,selectedId,projectId,overview,busy,active,onProject,onChat,onNew,onFolder,onSearch,act}:Props){
+export function ChatSidebar(props:Props){
+ const committed=useRef(props);
+ useLayoutEffect(()=>{committed.current=props;});
+ const handlers=useMemo(()=>({
+  onProject:(id:string)=>committed.current.onProject(id),onChat:(id:string)=>committed.current.onChat(id),onNew:(id:string)=>committed.current.onNew(id),
+  onFolder:()=>committed.current.onFolder(),onSearch:()=>committed.current.onSearch(),act:(action:Action)=>committed.current.act(action),
+ }),[]);
+ return <MemoSidebar {...props} {...handlers}/>;
+}
+const MemoSidebar=memo(SidebarContents,(a,b)=>a.selectedId===b.selectedId&&a.projectId===b.projectId&&a.overview===b.overview&&a.busy===b.busy&&a.active===b.active&&sameSidebarData(a,b));
+function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,busy,active,onProject,onChat,onNew,onFolder,onSearch,act}:Props){
  const [closed,setClosed]=useState<Set<string>>(new Set());
  const {open,isOpen,overlay}=useChatActions({tasks,busy,active,act});
  const selected=tasks.find(t=>t.id===selectedId);
- useEffect(()=>{const id=selected?.projectId??projectId;if(id)setClosed(before=>{const next=new Set(before);next.delete(id);return next;});},[selectedId,projectId]);
+ useEffect(()=>{const id=selected?.projectId??projectId;if(id)setClosed(before=>{if(!before.has(id))return before;const next=new Set(before);next.delete(id);return next;});},[selectedId,projectId,selected?.projectId]);
  const dragging=useRef<{kind:'project'|'chat';id:string}|null>(null),suppressClick=useRef(false);
  const [dropTarget,setDropTarget]=useState(''),[dragKind,setDragKind]=useState<'project'|'chat'|null>(null),[announcement,setAnnouncement]=useState('');
- const sorted=[...tasks].sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt));
- const pinned=sidebarSort(sorted.filter(t=>t.pinned&&!t.archived),orders?.pinned),recents=sidebarSort(sorted.filter(t=>!t.archived&&!t.pinned),orders?.recents);
- const projectList=sidebarSort(projects,orders?.projects);
+ const {projects:projectList,byProject,pinned,recents}=useMemo(()=>sidebarCollections(projects,tasks,orders),[projects,tasks,orders]);
  const move=async(action:Move)=>{const result=await act(action) as {error?:string}|undefined;setAnnouncement(result?.error??'Sidebar arrangement saved.');};
  const finish=()=>{dragging.current=null;setDragKind(null);setDropTarget('');setTimeout(()=>{suppressClick.current=false;},0);};
  const start=(event:DragEvent,kind:'project'|'chat',id:string)=>{if(busy){event.preventDefault();return;}event.stopPropagation();dragging.current={kind,id};setDragKind(kind);suppressClick.current=true;event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',id);};
@@ -50,7 +59,7 @@ export function ChatSidebar({orders,projects,tasks,selectedId,projectId,overview
  return <>
  <SidebarSection title="Projects" fullRow actions={<button className="icon-button" aria-label="Add project" title="Create a project" disabled={busy} onClick={onFolder}><Plus size={14}/></button>}>
  {projectList.map(project=>{
-   const chats=sidebarSort(sorted.filter(t=>t.projectId===project.id&&!t.archived),orders?.[sidebarKey('project',project.id)]);
+   const chats=byProject.get(project.id)!;
    const props=dropProps(dragKind==='project'?'projects':'project',dragKind==='project'?undefined:project.id,dragKind==='project'?project.id:undefined);
    return <div className="project-group" key={project.id}>
      <div {...props} draggable={!busy} onDragStart={event=>start(event,'project',project.id)} onDragEnd={finish} className={`project-row ${props.className} ${projectId===project.id?'current':''} ${projectId===project.id&&overview?'overview-selected':''}`}>

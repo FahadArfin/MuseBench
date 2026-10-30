@@ -1,20 +1,25 @@
 import {ProjectLessons} from './ProjectLessons';
 import {ContextReceipt} from './ContextReceipt';
 import {NativeUsageView} from './NativeUsageView';
-import {useEffect,useState} from 'react';
+import {useLayoutEffect,useState} from 'react';
+import {useLatestRead} from './useLatestRead';
 import {FileText,Search,Check,RefreshCw} from 'lucide-react';
 import type {Action,CodeContextResult,ContextFile,Project,Task} from '../shared/types';
 import {Modal} from './WorkspacePanels';
 import './code-context.css';
 
 export function CodeContext({project,taskId,text,files,onFiles,act,busy,close,task}:{task?:Task|null;project:Project;taskId:string|null;text:string;files:ContextFile[];onFiles:(files:ContextFile[])=>void;act:(action:Action)=>Promise<unknown>;busy:boolean;close:()=>void}){
- const [tab,setTab]=useState<'files'|'instructions'|'lessons'|'context'>('files'),[query,setQuery]=useState(''),[instructions,setInstructions]=useState(project.instructions??''),[info,setInfo]=useState<CodeContextResult|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(false),[revision,setRevision]=useState(0),[preview,setPreview]=useState('');
- useEffect(()=>{let active=true;setLoading(true);setError('');void window.musebench!.inspectCodeContext({projectId:project.id,taskId,text,files}).then(value=>{if(active)setInfo(value);}).catch(error=>{if(active)setError(String(error));}).finally(()=>{if(active)setLoading(false);});return()=>{active=false;};},[project.id,taskId,text,JSON.stringify(files),revision]);
+ const [tab,setTab]=useState<'files'|'instructions'|'lessons'|'context'>('files'),[query,setQuery]=useState(''),[instructions,setInstructions]=useState(project.instructions??''),[revision,setRevision]=useState(0),[preview,setPreview]=useState('');
+ const owner=JSON.stringify([project.id,taskId]);
+ const {value:info,error,pending:loading}=useLatestRead<CodeContextResult>({owner,key:JSON.stringify([text,files]),revision,read:()=>window.musebench!.inspectCodeContext({projectId:project.id,taskId,text,files})});
+ useLayoutEffect(()=>{setPreview('');setQuery('');},[owner]);
+ useLayoutEffect(()=>{setInstructions(project.instructions??'');},[project.id]);
  const toggle=(file:ContextFile)=>onFiles(files.some(f=>f.path===file.path)?files.filter(f=>f.path!==file.path):[...files,file]);
  const source=info?.attachments.find(f=>f.path===preview);
  return <Modal title="Project context" className="code-context-modal" close={close}>
   <div className="context-tabs" role="tablist" aria-label="Project context sections">{(['files','instructions','lessons','context'] as const).map(id=><button key={id} role="tab" aria-selected={tab===id} onClick={()=>setTab(id)}>{id==='files'?'Files':id==='instructions'?'Instructions':id==='lessons'?'Lessons':'What Muse receives'}</button>)}</div>
   {error&&<p role="alert" className="context-error">{error}</p>}
+  {loading&&tab!=='files'&&<p role="status" className="context-description">Updating context…</p>}
   {tab==='files'&&<><p className="context-description">Choose source files for your next request. Up to 8 files and 24,000 characters; changed files must be selected again.</p><div className="context-search"><Search size={16}/><input data-autofocus aria-label="Search project files" placeholder="Find a file…" value={query} onChange={e=>setQuery(e.target.value)}/><button className="icon-button" aria-label="Refresh file context" onClick={()=>setRevision(r=>r+1)}><RefreshCw size={15}/></button></div>
    {files.length>0&&<div className="context-selected">{files.map(file=><button key={file.path} onClick={()=>onFiles(files.filter(f=>f.path!==file.path))} title="Remove from context">{file.path} ×</button>)}<button onClick={()=>onFiles([])}>Clear selection</button></div>}
    <div className="context-files" aria-label="Project files">{loading&&<p role="status">Reading project files…</p>}{info?.files.filter(f=>f.path.toLowerCase().includes(query.toLowerCase())).map(file=><div className="context-file" key={file.path}><label><input type="checkbox" checked={files.some(f=>f.path===file.path)} disabled={!files.some(f=>f.path===file.path)&&(files.length>=8||file.characters>24000)} onChange={()=>toggle({path:file.path,hash:file.hash})}/><FileText size={15}/><span>{file.path}</span><small>{file.characters.toLocaleString()} chars</small></label>{files.some(f=>f.path===file.path)&&<button className="text-link" onClick={()=>setPreview(preview===file.path?'':file.path)}>Preview</button>}</div>)}{info&&!info.files.length&&<p>No eligible text files in this project.</p>}</div>{source&&<pre className="context-file-preview" aria-label="Selected file preview">{source.text}</pre>}</>}

@@ -51,6 +51,7 @@ jobs:
       - run: npm run test:update-details
       - run: npm run test:chat-organization
       - run: npm run test:code-responsiveness
+      - run: npm run test:chat-navigation
       - run: npm run test:navigation-cache
       - run: npm run test:browser-preview
       - run: npm run test:onboarding-preview
@@ -82,6 +83,8 @@ jobs:
             artifacts/native-control/report.json
             artifacts/navigation-cache/report.json
             artifacts/session-mcp-ui/**/report.json
+            artifacts/chat-navigation/**/report.json
+            artifacts/sidebar-drag/**/report.json
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-windows-x64
