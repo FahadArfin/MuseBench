@@ -1,10 +1,11 @@
 import {createServer} from 'node:http';
-export async function peer({current=false,mode='json',call='ok',catalog,catalogStatus,session=false}={}){
+export async function peer({current=false,mode='json',call='ok',catalog,catalogStatus,session=false,contentEncoding}={}){
  const requests=[],sockets=new Set();let effects=0;
  const server=createServer(async(req,res)=>{
   const raw=[];let bytes=0;for await(const chunk of req){bytes+=chunk.length;if(bytes>262144){req.destroy();return;}raw.push(chunk);}const body=Buffer.concat(raw).toString();let message;try{message=body?JSON.parse(body):null;}catch{}
   if(requests.length>1000){req.socket.destroy();return;}
   requests.push({method:req.method,url:req.url,headers:req.headers,message});
+  if(contentEncoding)res.setHeader('Content-Encoding',contentEncoding);
   if(req.method==='DELETE'){res.writeHead(405);res.end();return;}
   if(req.method==='GET'){res.writeHead(405);res.end();return;}
   if(current&&message?.method==='initialize'){res.writeHead(400);res.end('initialize forbidden');return;}

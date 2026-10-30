@@ -63,3 +63,12 @@ Correction source remote receipt SHA-256: `7160882d0a47b1ed0798641ef5a93de4e9186
 Correction ASAR remote receipt SHA-256: `67562768f934f2c9739bdea6f50d68fb2a33e869efa790d80395f2d27b774385`.
 
 Full correction provenance and preserved-original count are in `artifacts/remote-discovery-fix/frozen-r1-r3-evidence.json`; RED/GREEN logs, source/package reports and pre/post manifests are separate from original acceptance. The parent independently attempted one public read-only documentation catalog against the frozen correction and reported an unsupported content-encoding failure before catalog/tools. That attempt is not a public-provider pass. Its actual response-header diagnosis and final scoped review remain parent-owned; this worker kept frozen source/archive stable and made no additional external request.
+
+
+### R4 identity encoding correction
+
+A separate parent-owned production-adapter header capture confirmed the public documentation endpoint returned200/SSE with `Content-Encoding: identity` and160encoded bytes. That actual response exposed a missing unencoded identity branch; it was not a DNS/TLS/auth hypothesis. Parent diagnostic report SHA-256: `411de0dd03d2e4c5e21346ea51492aada9b732f4234c709218cc1e91a0ea3050`, retained unchanged under `artifacts/remote-discovery-fix/r4/parent-public-remote-headers.json` beside the earlier failed catalog receipt. This worker made no additional external request.
+
+Five actual HTTP regressions now cover identity JSON and POST-SSE negotiation/catalog/once-only invocation, identity oversized JSON/SSE unknown/no-replay outcomes, and continued unsupported-coding refusal. Four failed RED before the minimal correction; the unsupported-coding control already passed. Identity now uses the existing unencoded body path with all decoded-byte/frame/operation bounds intact. Focused discovery checks:86 passed/0failed. Fresh full suite after this production change:1,794 passed/0failed/1 unchanged skip. Production build passed with the existing warning.
+
+R4 joins the same consolidated correction wave before scoped review. Both earlier accepted archives and317prior evidence/archive files are preserved. Refreshed R4 source/package receipts use a separate `artifacts/remote-discovery-fix/r4/` output, with a new immutable freeze before package construction. Parent alone owns one distinct bounded public catalog recheck; public success is not inferred from local identity fixtures.

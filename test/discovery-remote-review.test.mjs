@@ -13,6 +13,9 @@ import {peer} from './fixtures/discovery-remote-peer.mjs';
 import {PassThrough} from 'node:stream';
 import {createDiscoveryMcpServer} from '../src/runtime/discovery-mcp.mjs';
 import {discoverySetupError,discoverySetupKind,readDiscoverySetupKind,readDiscoverySetupResponse} from '../src/runtime/discovery-errors.mjs';
+import {createRemoteDiscoveryClient} from '../src/runtime/discovery-remote.mjs';
+import {createDiscoveryGateway} from '../src/runtime/discovery-gateway.mjs';
+import {source} from './fixtures/discovery-remote-peer.mjs';
 
 test('R1 exact reserved IPv4 prefixes keep public neighbors and mapped IPv6 reachable',async()=>{
  const reserved=['0.1.2.3','100.64.0.1','100.127.255.254','169.254.1.1','192.0.0.1','192.0.2.1','198.18.0.1','198.19.255.254','198.51.100.1','203.0.113.1','224.0.0.1','255.255.255.255'];
@@ -84,4 +87,13 @@ test('R3 submitted broker effect auth failure remains once-only unknown',async()
  const remote=await peer({call:'auth'}),f=await brokerFixture(remote);try{const search=await f.client.callTool({name:'discovery_search',arguments:{query:''}}),row=JSON.parse(search.content[0].text).sources[0],args={sourceId:row.sourceId,catalogRevision:row.catalogRevision,tool:'allowed',arguments:{value:7}};
   const receipt=await f.client.callTool({name:'discovery_call',arguments:args});assert.equal(JSON.parse(receipt.content[0].text).outcome,'unknown');assert.equal(remote.effects,1);await f.client.callTool({name:'discovery_call',arguments:args});assert.equal(remote.effects,1);
  }finally{await f.close();await remote.close();}
+});
+for(const mode of ['json','sse'])test(`R4 identity-encoded ${mode} responses negotiate, list and call once`,async()=>{
+ const remote=await peer({current:true,mode,contentEncoding:'identity'}),client=createRemoteDiscoveryClient(source(remote.url));try{await client.connect();assert.equal((await client.catalog()).tools[0].name,'allowed');assert.equal((await client.call({name:'allowed',arguments:{value:7}})).content[0].text,'remote fixture receipt');assert.equal(remote.effects,1);assert.equal(remote.requests.some(req=>req.message?.method==='initialize'),false);}finally{await client.close();assert.equal(client.activeRequests,0);await remote.close();}
+});
+for(const mode of ['json','sse'])test(`R4 identity-encoded ${mode} excess still fails closed with no effect replay`,async()=>{
+ const remote=await peer({mode,contentEncoding:'identity',call:'oversized'}),service=createDiscoveryGateway({sources:[source(remote.url)],verify:async()=>{}});try{const catalog=(await service.search({query:''})).sources[0],args={sourceId:catalog.sourceId,catalogRevision:catalog.catalogRevision,tool:'allowed',arguments:{value:7}};assert.equal((await service.call(args)).outcome,'unknown');assert.equal(remote.effects,1);await assert.rejects(service.call(args),/closed/);assert.equal(remote.effects,1);}finally{await service.dispose();await remote.close();}
+});
+test('R4 unsupported content encoding is still refused before catalog/effects',async()=>{
+ const remote=await peer({contentEncoding:'unsupported-fixture'}),client=createRemoteDiscoveryClient(source(remote.url));try{await assert.rejects(client.connect(),/Unsupported remote content encoding/);assert.equal(remote.requests.length,1);assert.equal(remote.effects,0);assert.equal(client.activeRequests,0);}finally{await client.close();await remote.close();}
 });
