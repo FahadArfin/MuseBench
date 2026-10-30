@@ -95,9 +95,12 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
     }
   },{preferences,brokenAnimation,slowFirstPaint,busyTyping});
   await page.goto(`${server.resolvedUrls.local[0]}__startup__/index.html${query}`,{waitUntil:'domcontentloaded'});
+  if(name==='preview-launch'&&process.argv.includes('--late-animation-assertion'))await delay(3000);
   if(name==='preview-launch'||name==='light-launch'){
-    await page.waitForFunction(()=>{const letter=document.querySelector('.launch-name>span:last-child');return letter&&Number(getComputedStyle(letter).opacity)>.9;});
-    await page.screenshot({path:path.join(output,name==='preview-launch'?'launch-centered.png':'light-launch-centered.png')});
+    // The animation can finish before a slow inspector starts polling. Its
+    // pre-navigation frame observer retains actual rendered typing evidence.
+    await page.waitForFunction(()=>window.__launchObservation?.frames.some(frame=>frame.rendered&&frame.letters==='Muse AI'));
+    if(await page.locator('.launch-overlay[data-phase="typing"]').count())await page.screenshot({path:path.join(output,name==='preview-launch'?'launch-centered.png':'light-launch-centered.png')});
   }
   if(skip){await page.locator('.launch-overlay[data-phase="typing"]').waitFor();await skip(page);}
   await settled(page);await page.locator('.app').waitFor();
@@ -370,6 +373,7 @@ try{
   assert.deepEqual(report.errors,[]);report.status='passed';
 }catch(error){
   report.status='failed';report.error=String(error.stack??error);console.error(error);process.exitCode=1;
+  report.failureObservation=await lastPage?.evaluate(()=>window.__launchObservation).catch(()=>null);
   report.failureDocument=await lastPage?.evaluate(()=>({url:location.href,title:document.title,readyState:document.readyState,rootChildren:document.querySelector('#root')?.childElementCount??null,launchActive:document.documentElement.dataset.launchActive??null,overlay:document.querySelector('.launch-overlay')?.getAttribute('data-phase')??null})).catch(()=>null);
   console.error('Launch diagnostics:',JSON.stringify(Object.fromEntries(Object.entries(report.scenes).filter(([,scene])=>scene?.frames).map(([name,scene])=>[name,{appMountMs:scene.appObservedAt===undefined?null:Math.round(scene.appObservedAt-scene.startedAt),phases:scene.frames.reduce((counts,frame)=>({...counts,[frame.phase??'settled']:(counts[frame.phase??'settled']??0)+1}),{})}]))));
   console.error('Load diagnostics:',JSON.stringify({document:report.failureDocument,scenes:report.sceneLoads}));
