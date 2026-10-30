@@ -4,6 +4,8 @@ import {workspaceSourcePaths} from './workspace-sources.mjs';
 import {reviewPrompt,parseReview} from '../shared/reviewer-contracts.mjs';
 import {newGoalDriver,goalDecision,pauseGoalDriver} from '../shared/goal-driver.mjs';
 import {createExecutionLedger} from './execution-ledger.mjs';
+import {createActivityInbox} from './activity-inbox.mjs';
+import {validateActivityRead} from '../shared/activity-inbox.mjs';
 import {proposeLesson,decideLesson} from '../shared/project-lessons.mjs';
 import {restoreSelected} from './checkpoint-restore.mjs';
 import {contextReceipt} from './context-receipts.mjs';
@@ -168,7 +170,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   db.exec('PRAGMA secure_delete=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS app(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS baselines(task_id TEXT PRIMARY KEY,revision TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,revision TEXT NOT NULL,json TEXT NOT NULL);');
   const history=createHistoryStore(db),outputs=createOutputStore(db),analytics=createAnalyticsStore(db);
   const saved=db.prepare('SELECT json FROM app WHERE id=1').get();
-  const executions=createExecutionLedger(db);
+  const executions=createExecutionLedger(db),inbox=createActivityInbox(db);
   const state=saved?JSON.parse(saved.json):{projects:[],activeProject:null,task:null,checkpoints:[],preview:stopped(),runtime:missingRuntime(),busy:false,error:null};
   state.projectCreationRoot=newProjectsDir;
   state.workflows=Array.isArray(state.workflows)?state.workflows.flatMap(w=>{try{return[validateWorkflow(w)];}catch{return[];}}).slice(0,30):structuredClone(DEFAULT_WORKFLOWS);
@@ -193,11 +195,13 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   let baseline=state.task?JSON.parse(db.prepare('SELECT json FROM baselines WHERE task_id=?').get(state.task.id)?.json??'{}'):{};
   for(const task of taskRecords.values())analytics.sync(task);
   const listeners=new Set();let queue=Promise.resolve(),closed=false,closing=false,closePromise=null,checkProcess=null,previewProcess=null,previewToken=null,checkInvalidated=false;
-  const contexts=new Map();let preferredBinary=runtime?.snapshot?.().binary??null;
+  const contexts=new Map(),pendingActivity=new Map();let preferredBinary=runtime?.snapshot?.().binary??null;
+  const retainActivity=(task,events)=>{for(const event of events){const key=JSON.stringify([task.id,event.source,event.sourceId,event.kind,event.identity??'']);if(!pendingActivity.has(key))pendingActivity.set(key,{taskId:task.id,event:{...event,at:now()}});}while(pendingActivity.size>200)pendingActivity.delete(pendingActivity.keys().next().value);};
+  const persistActivity=(task,write)=>{const pending=[...pendingActivity].filter(([,item])=>item.taskId===task.id);if(!pending.length)return write();inbox.recordMany(task.id,pending.map(([,item])=>item.event),write);for(const [key] of pending)pendingActivity.delete(key);};
   const newContext=(owner,task=null)=>{const observed=owner?.snapshot?.();return{id:randomUUID(),runtime:owner,task,root:null,pending:false,turn:null,workIdentity:workIdentity(observed),messageBaseline:runtimeMessageIds(observed),navigation:false,queueScheduled:false,unsubscribe:null};};
   let context=newContext(runtime,state.task);if(state.task)contexts.set(state.task.id,context);
   const contextBusy=c=>!!c&&(c.pending||runtimeStatusBusy(readRuntimeStatus(c.runtime)));
-  const saveRecord=t=>{if(!t)return;analytics.sync(t);history.sync(t);t.messages=t.messages.slice(-150);t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));};
+  const saveRecord=t=>{if(!t)return;persistActivity(t,()=>{analytics.sync(t);history.sync(t);t.messages=t.messages.slice(-150);t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));});};
   const bindContext=task=>{
     if(!runtimeFactory){contexts.clear();context.task=task;if(task)contexts.set(task.id,context);return;}
     let next=task&&contexts.get(task.id);
@@ -233,15 +237,15 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     }
     return rows;
   };
-  const getState=()=>{const observations=new Map([...contexts.values()].map(owner=>[owner,readRuntimeStatus(owner.runtime)]));return structuredClone({...state,task:state.task?{...state.task,reviewUsage:combineUsage((state.task.reviewChildren??[]).map(id=>taskRecords.get(id)?.nativeUsage??null)),executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries(observations),workActivity:workActivity(observations)});};
+  const getState=()=>{const observations=new Map([...contexts.values()].map(owner=>[owner,readRuntimeStatus(owner.runtime)]));return structuredClone({...state,task:state.task?{...state.task,reviewUsage:combineUsage((state.task.reviewChildren??[]).map(id=>taskRecords.get(id)?.nativeUsage??null)),executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries(observations),workActivity:workActivity(observations),activityInbox:inbox.list().flatMap(event=>{const task=taskRecords.get(event.taskId);return task?[{...event,title:task.title,projectName:state.projects.find(p=>p.id===task.projectId)?.name??'Project'}]:[];})});};
   const saveTask=()=>{
-    if(!state.task)return;analytics.sync(state.task);history.sync(state.task);state.task.messages=state.task.messages.slice(-150);context.task=state.task;
+    if(!state.task)return;persistActivity(state.task,()=>{analytics.sync(state.task);history.sync(state.task);state.task.messages=state.task.messages.slice(-150);context.task=state.task;
     const previous=taskRecords.get(state.task.id);
     if(previous&&JSON.stringify({...previous,updatedAt:undefined})!==JSON.stringify({...state.task,updatedAt:undefined}))state.task.updatedAt=new Date(Math.max(Date.now(),Date.parse(previous.updatedAt)+1)).toISOString();
     taskRecords.set(state.task.id,structuredClone(state.task));
-    db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(state.task.id,JSON.stringify(state.task));
+    db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(state.task.id,JSON.stringify(state.task));});
   };
-  const persist=()=>{if(closed)return;saveTask();draftStore.sync(state.drafts);state.tasks=summaries();db.prepare('INSERT INTO app(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify({...state,runtime:{...state.runtime,childInspections:undefined}}));for(const p of state.projects)db.prepare('INSERT INTO projects(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(p.id,JSON.stringify(p));};
+  const persist=()=>{if(closed)return;saveTask();for(const id of new Set([...pendingActivity.values()].map(item=>item.taskId)))saveRecord(contexts.get(id)?.task??taskRecords.get(id));draftStore.sync(state.drafts);state.tasks=summaries();db.prepare('INSERT INTO app(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify({...state,runtime:{...state.runtime,childInspections:undefined}}));for(const p of state.projects)db.prepare('INSERT INTO projects(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(p.id,JSON.stringify(p));};
   const emit=()=>{if(closed)return;persist();const view=getState();for(const listener of listeners)try{listener(view);}catch{}};
   const runtimeDirty=new Set();let runtimeTimer=null;
   const flushRuntime=()=>{
@@ -291,7 +295,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     return applyCurrentSnapshot(await snapshot(root));
   };
   const stopPreview=async()=>{previewToken=null;const child=previewProcess;previewProcess=null;await killTree(child);state.preview=stopped();};
-  const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';outputs.finish(state.task.id,state.task.check.id,'cancelled');state.task.check.endedAt=now();persist();}await killTree(child);};
+  const observeCheck=(task,check)=>{const kind={passed:'check_passed',failed:'check_failed',cancelled:'check_stopped',stale:'check_stale'}[check?.status];if(kind){retainActivity(task,[{source:'check',sourceId:check.id,kind}]);saveRecord(task);}};
+  const cancelCheck=async()=>{if(state.task?.validationRun?.status==='running')state.task.validationRun.status='cancelled';const child=checkProcess;checkProcess=null;if(state.task?.check?.status==='running'){state.task.check.status='cancelled';outputs.finish(state.task.id,state.task.check.id,'cancelled');state.task.check.endedAt=now();observeCheck(state.task,state.task.check);persist();}await killTree(child);};
   const disconnectContext=async owner=>{
     const task=owner.task,turn=owner.turn;
     pauseGoalDriver(task?.goal?.driver,'Disconnected by you');if(task?.nativeSession?.status==='running')task.nativeSession.status='needs-recovery';if(task){task.queuePaused=true;task.queueHold=Boolean(task.promptQueue?.length);}
@@ -319,10 +324,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(state.task?.id===id){await navigationCleanup();state.task=null;baseline={};diffCache.clear();state.runtime=missingRuntime();}
     db.exec('BEGIN IMMEDIATE');
     try{
-      executions.deleteTask(id);outputs.deleteTask(id);history.deleteTask(id);db.prepare('DELETE FROM restore_operations WHERE task_id=?').run(id);db.prepare('DELETE FROM tasks WHERE id=?').run(id);db.prepare('DELETE FROM baselines WHERE task_id=?').run(id);db.prepare('DELETE FROM checkpoints WHERE task_id=?').run(id);
+      inbox.deleteTask(id);executions.deleteTask(id);outputs.deleteTask(id);history.deleteTask(id);db.prepare('DELETE FROM restore_operations WHERE task_id=?').run(id);db.prepare('DELETE FROM tasks WHERE id=?').run(id);db.prepare('DELETE FROM baselines WHERE task_id=?').run(id);db.prepare('DELETE FROM checkpoints WHERE task_id=?').run(id);
       const retained=contexts.get(id);if(retained){retained.unsubscribe?.();retained.unsubscribe=null;retained.task=null;contexts.delete(id);}if(context.task?.id===id)context.task=null;
-      analytics.deleteTask(id);taskRecords.delete(id);delete state.drafts[draftKey(target.projectId,id)];state.checkpoints=state.checkpoints.filter(item=>item.taskId!==id);persist();db.exec('COMMIT');
-    }catch(error){db.exec('ROLLBACK');Object.assign(state,previous.state);baseline=previous.baseline;taskRecords.clear();for(const [key,value] of previous.records)taskRecords.set(key,value);state.runtime=runtime?.snapshot?.()??missingRuntime();throw error;}
+      analytics.deleteTask(id);taskRecords.delete(id);delete state.drafts[draftKey(target.projectId,id)];state.checkpoints=state.checkpoints.filter(item=>item.taskId!==id);persist();db.exec('COMMIT');for(const [key,item] of pendingActivity)if(item.taskId===id)pendingActivity.delete(key);inbox.refresh();
+    }catch(error){db.exec('ROLLBACK');inbox.refresh();Object.assign(state,previous.state);baseline=previous.baseline;taskRecords.clear();for(const [key,value] of previous.records)taskRecords.set(key,value);state.runtime=runtime?.snapshot?.()??missingRuntime();throw error;}
     try{db.exec('PRAGMA wal_checkpoint(TRUNCATE)');}catch{/* Logical deletion is committed; SQLite retries checkpointing on close. */}
   };
   const purgeArchived=async()=>{
@@ -376,6 +381,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       if(closed||state.task?.id!==taskId||state.task.check?.id!==check.id)return;if(checkProcess===child)checkProcess=null;if(error){outputs.append(taskId,check.id,'\n[MuseBench] '+error.message);check.log=(check.log+'\n'+error.message).slice(-MAX_LOG);}check.exitCode=code;check.endedAt=now();
       if(check.status!=='cancelled')try{const latest=await current();check.status=checkInvalidated||latest.revision!==check.revision?'stale':code===0?'passed':'failed';}catch(e){check.status='stale';state.error=e.message;}
       outputs.finish(task.id,check.id,check.status);task.checkReceipts=[...(task.checkReceipts??[]),{...check,log:check.log.slice(-8000)}].slice(-40);
+      observeCheck(task,check);
       const validation=task.validationRun;
       if(validation?.status==='running'){
         if(check.status!=='passed'||check.revision!==validation.revision)validation.status=check.status==='passed'?'stale':check.status;
@@ -562,7 +568,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const onRuntime=(event,owner)=>{
     const selected=owner===selectedContext(),context=owner,runtime=owner.runtime,task=owner.task;
-    if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;owner.workIdentity=workIdentity(next);if(selected)state.runtime=structuredClone(next);
+    if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;owner.workIdentity=workIdentity(next);if(selected)state.runtime=structuredClone(next);const inboxEvents=[];
     if(task&&next.childReceipts?.length){for(const receipt of next.childReceipts)task.childControlReceipts=[...(task.childControlReceipts??[]).filter(r=>r.commandId!==receipt.commandId),structuredClone(receipt)].slice(-40);saveRecord(task);}
     if(task&&next.compaction?.commandId){task.compactionReceipts=[...(task.compactionReceipts??[]).filter(r=>r.commandId!==next.compaction.commandId),structuredClone(next.compaction)].slice(-20);saveRecord(task);}
     if(task&&next.inputResponse?.userInputId){
@@ -608,6 +614,12 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         }
         for(const item of task.messages)if(item.id===progress.promptId||item.turnId===progress.promptId)item.outcome=progress.status;
         task.runs=restoreRuns(task.runs,{interrupt:false});
+        if(['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)){
+          if(verifiedApprovalPause){
+            const requests=[...(Array.isArray(next.pendingRequests)?next.pendingRequests.slice(0,32):[]),next.pending].filter(p=>p&&p.sessionId===next.sessionId&&['input','approval'].includes(p.kind));
+            for(const pending of requests){const requestId=pending.userInputId??pending.approvalId??pending.id;inboxEvents.push({source:'run',sourceId:progress.id,kind:pending.kind==='input'?'response_requested':'approval_requested',identity:JSON.stringify([typeof requestId==='string'?requestId.slice(0,200):null,Number.isSafeInteger(pending.revision)?pending.revision:null])});}
+          }else inboxEvents.push({source:'run',sourceId:progress.id,kind:next.status==='completed'&&ownsTurn&&next.cleanup==='confirmed'?'run_completed':next.status==='cancelled'&&ownsTurn&&next.cleanup==='confirmed'?'run_stopped':'run_attention'});
+        }
       }
       if(turn&&task.nativeSession&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)&&!verifiedApprovalPause)task.nativeSession=settleNativeSession(task.nativeSession,next,ownsTurn);
       if(turn&&next.transport==='exec'&&next.inputAccepted===false&&!turn.runId&&['failed','cancelled','unavailable'].includes(next.status)&&next.cleanup==='confirmed'){
@@ -619,6 +631,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       if(['running','starting','submitting'].includes(next.status))task.runtimeComplete=false;
     }
     if(task&&(['failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)||next.status==='completed'&&next.cleanup!=='confirmed')){task.queuePaused=true;task.queueHold=Boolean(task.promptQueue?.length);}
+    if(inboxEvents.length){retainActivity(task,inboxEvents);saveRecord(task);}
     publishRuntime(task,next,owner);if(next.status==='completed')scheduleQueue(owner);if(task?.goal?.driver?.armed&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status))scheduleGoal(owner);
   };
   const subscribeContext=owner=>{if(!owner.unsubscribe)owner.unsubscribe=owner.runtime?.subscribe?.(event=>onRuntime(event,owner));};
@@ -676,6 +689,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'selectTask':{
         const task=taskRecords.get(action.id),p=state.projects.find(p=>p.id===task?.projectId);if(!task||!p)throw Error('Saved task has no valid project association.');await selectProject(p,task.id);break;
       }
+      case 'setActivityRead':{validateActivityRead(action);inbox.setRead(action.ids,action.read);break;}
       case 'createDemo':{
         requireNavigationIdle();await navigationCleanup();const root=path.join(await prepareProjectsDir(),`tea-store-${randomUUID().slice(0,8)}`);await fs.cp(templateDir,root,{recursive:true,errorOnExist:true,force:false});const info=await scriptsFor(root);const p={id:randomUUID(),name:'Willow & Leaf · tutorial',root,demo:true,scripts:info.scripts};state.projects.push(p);state.activeProject=p;await startTask('Add a caffeine-free tea filter','demo');break;
       }
@@ -907,7 +921,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       state.runtime=runtime?.snapshot?.()??missingRuntime();emit();
     });queue=op.catch(()=>{});return op;
   };
-  const archiveTimer=setInterval(()=>{queue=queue.then(purgeArchived).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
+  const archiveTimer=setInterval(()=>{queue=queue.then(async()=>{if(closed||closing)return;if(inbox.prune())emit();await purgeArchived();}).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
   return{getState,getUpdateBlockers,saveCodeDraft,readMcpServers,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,searchChats,readChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');await handle(action);}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';

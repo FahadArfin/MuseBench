@@ -6,10 +6,12 @@ import {validateSidebarMove} from '../src/shared/sidebar-order.mjs';
 import {projectDetails} from '../src/shared/create-project.mjs';
 import {fileReferences} from '../src/shared/chat-context.mjs';
 import {validateRunOptions} from '../src/shared/run-options.mjs';
+import {validateActivityRead} from '../src/shared/activity-inbox.mjs';
 const actions = new Set(['stopWork','inspectChild','answerInput','setExecutionAccess','childControl','compactSession','steerMessage','createReviewer','integrateReview','cancelReviewers','continueGoal','pauseGoalContinuation','proposeLesson','decideLesson','restoreCheckpoint','saveValidationProfile','runValidation','refreshModels','archiveWorktree','restoreWorktree','recoverWorktree','setupWorktree','saveWorkflow','deleteWorkflow','queueWorkflow','handoffContext','recoverSession','moveSidebarItem','createWorktree','openWorktree','createProject','setProjectInstructions','saveDraft','setTaskFlags','deleteTask','forkTask','queueMessage','beginQueueEdit','editQueued','sendQueued','moveQueued','removeQueued','pauseQueue','resumeQueue','renameTask','setGoal','setMemories','openProject','selectProject','selectTask','createDemo','createCommandCopy','newTask','setRunOptions','updatePlan','approvePlan','applyDemo','refresh','runCheck','cancelCheck','startPreview','stopPreview','inspectPreview','accept','sendMessage','connectMuse','disconnectMuse','runtimeDecision','clearError']);
 export {allowedExternal} from '../src/shared/external-links.mjs';
 export function trustedSender(event, contents, uiURL) { return event.sender === contents && event.senderFrame === contents.mainFrame && event.senderFrame.url === uiURL; }
 export function validateAction(action) {
+  if(action?.type==='setActivityRead')return validateActivityRead(action);
   if (!action || typeof action !== 'object' || Array.isArray(action) || !actions.has(action.type) || JSON.stringify(action).length > 100000) throw Error('Invalid workspace action.');
   const string = (name,max=20000) => { if (typeof action[name] !== 'string' || !action[name].trim() || action[name].length > max) throw Error(`Invalid ${name}.`); };
   if(action.type==='stopWork'){string('taskId',200);string('id',210);if(typeof action.controlId!=='string'||!/^[a-f0-9]{64}$/.test(action.controlId)||Object.keys(action).some(key=>!['type','taskId','id','controlId'].includes(key)))throw Error('Invalid activity control.');}

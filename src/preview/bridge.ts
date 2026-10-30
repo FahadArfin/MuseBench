@@ -1,3 +1,4 @@
+import {validateActivityRead} from '../shared/activity-inbox.mjs';
 import {projectRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
 import {workIdentity,workLabel} from '../shared/work-activity.mjs';
 import {sampleAnalytics} from './analytics';
@@ -60,11 +61,13 @@ export function createPreviewBridge():MuseBenchBridge {
  other.messages.push({id:id(),role:'assistant',at:stamp,text:'A compact composer keeps attachments, reasoning, and approval controls close to your message. Open the menus to review their spacing.'});
  const tasks=new Map([initial,other].map(t=>[t.id,t]));
  const state:AppState={workflows:copy(DEFAULT_WORKFLOWS),backgroundChats:true,projectCreationRoot:'Documents/MuseBench',projects:[project],tasks:[initial,other],activeProject:project,task:initial,checkpoints:[{id:'sample-checkpoint',taskId:initial.id,title:'Sample accepted revision',revision:'sample-before',createdAt:stamp}],preview:{status:'stopped',url:null,log:'',script:null},runtime:copy(runtime),busy:false,error:null,drafts:{}};
+ const sampleEventAt=new Date().toISOString();state.activityInbox=[{id:'a'.repeat(64),taskId:initial.id,source:'run',sourceId:'sample-completed',kind:'run_completed',at:sampleEventAt,readAt:null,title:initial.title,projectName:'Preview sample'},{id:'b'.repeat(64),taskId:other.id,source:'run',sourceId:'sample-question',kind:'response_requested',at:sampleEventAt,readAt:null,title:other.title,projectName:'Preview sample'}];
  const runtimeOwners=new Map<string,RuntimeState>(),activityTokens=new Map<string,{key:string;id:string}>();
  const code=channel(()=>state);
  function sync(){
   if(state.task)runtimeOwners.set(state.task.id,copy(state.runtime));
   state.tasks=[...tasks.values()].map(task=>({...task,runtimeBusy:runtimeStatusBusy(projectRuntimeStatus(runtimeOwners.get(task.id)??{})),runtimeStatus:runtimeOwners.get(task.id)?.status??null}));
+  state.activityInbox=state.activityInbox?.flatMap(event=>{const task=tasks.get(event.taskId);return task?[{...event,title:task.title}]:[];});
   state.workActivity=[...runtimeOwners].flatMap(([taskId,value])=>{
    const task=tasks.get(taskId),status=projectRuntimeStatus(value);if(!task||!runtimeStatusBusy(status))return[];
    const identity=workIdentity(value),key=JSON.stringify([identity,status,task.messages.at(-1)?.id]);let token=activityTokens.get(taskId);if(token?.key!==key){token={key,id:(id()+id()).replaceAll('-','')};activityTokens.set(taskId,token);}
@@ -77,6 +80,7 @@ export function createPreviewBridge():MuseBenchBridge {
  async function dispatch(action:Action):Promise<AppState>{
   const current=state.task,previousRuntime=copy(state.runtime);
   switch(action.type){
+   case 'setActivityRead':{validateActivityRead(action);state.activityInbox=state.activityInbox?.map(event=>action.ids.includes(event.id)?{...event,readAt:action.read?new Date().toISOString():null}:event);break;}
    case 'createReviewer':if(current){const child=task('Review · '+action.question);child.reviewContract={parentTaskId:current.id,parentProjectId:current.projectId,sourceRevision:'sample-after',inputRevision:'sample-after',role:action.role,question:action.question,budget:'standard',createdAt:stamp};child.messages.push({id:id(),role:'assistant',text:JSON.stringify({findings:[],unresolved:['Preview only. No independent native review was executed.']}),at:stamp});child.runtimeComplete=true;current.reviewChildren=[...(current.reviewChildren??[]),child.id];tasks.set(child.id,child);state.task=child;}break;
    case 'integrateReview':if(current?.reviewContract){const parent=tasks.get(current.reviewContract.parentTaskId);if(parent){const draft=state.drafts?.[`${parent.projectId}:${parent.id}`];if(draft?.text||draft?.files?.length||draft?.images?.length)throw Error('The parent already has a draft. Save or send it before integrating this review.');(state.drafts??={})[`${parent.projectId}:${parent.id}`]={text:'Simulated review: no native execution. Review the example findings before sending.',files:[],images:[],mode:'chat',updatedAt:stamp};state.task=parent;}}break;
    case 'cancelReviewers':break;
