@@ -26,3 +26,10 @@ test('empty conversations and non-text content are counted, while preview text n
  const long='x'.repeat(20000),result=parse([{name:'Empty',chat_messages:[]},{name:'Images',chat_messages:[{sender:'human',content:[{type:'image',url:'https://example.invalid'}]},{sender:'assistant',text:long}]}]);
  assert.equal(result.skippedConversations,1);assert.equal(result.conversations[0].messages[0].text.length,20000);assert.ok(result.conversations[0].omittedMessages>=1);
 });
+
+test('ChatGPT tool-directed and hidden assistant text is omitted from the public conversation',()=>{
+ const q=node(null,'user','Question'),call=node('q','assistant','{"query":"tool call"}'),tool=node('call','tool','tool result'),hidden=node('tool','assistant','hidden analysis'),answer=node('hidden','assistant','Public answer');
+ call.message.recipient='browser';hidden.message.channel='analysis';answer.message.recipient='all';answer.message.channel='final';
+ const c=parse([{title:'Routed',current_node:'answer',mapping:{q,call,tool,hidden,answer}}]).conversations[0];
+ assert.deepEqual(c.messages.map(m=>m.text),['Question','Public answer']);assert.equal(c.omittedMessages,3);
+});

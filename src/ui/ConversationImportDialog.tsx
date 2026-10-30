@@ -10,7 +10,7 @@ import './conversation-import.css';
 function InspectExport({preview,row,back}:{preview:ConversationImportPreview;row:ImportConversation;back:()=>void}){
  const [cursor,setCursor]=useState<HistoryCursor>({});
  const {value:page,pending,error}=useLatestRead<HistoryPage>({owner:`${preview.token}:${row.id}`,key:JSON.stringify(cursor),read:()=>window.musebench!.readImportPreview({token:preview.token,id:row.id,...cursor})});
- return <div className="import-inspection"><button className="text-link" onClick={back}>Back to selection</button><h3>{row.title}</h3><p className="import-meta">{row.format} · {row.messageCount} messages · {row.omittedMessages+row.omittedBlocks} non-chat items omitted</p>{error&&<p role="alert">{error}</p>}{pending&&<p role="status">Reading export…</p>}{page&&<HistoryMessages page={page} pending={pending} onPage={setCursor}/>}</div>;
+ return <div className="import-inspection"><button className="text-link" onClick={back}>Back to selection</button><h3>{row.title}</h3><p className="import-meta">{row.format} · {row.messageCount} messages · {row.omittedMessages+row.omittedBlocks} non-chat items omitted</p>{error&&<p role="alert">{error}</p>}{pending&&<p role="status">Reading export…</p>}{page&&<HistoryMessages page={page} pending={pending} onPage={setCursor} onReset={Object.keys(cursor).length?()=>setCursor({}):undefined}/>}</div>;
 }
 
 export function ConversationImportDialog({back,close,onImported}:{back:()=>void;close:()=>void;onImported:()=>void}){
@@ -18,8 +18,8 @@ export function ConversationImportDialog({back,close,onImported}:{back:()=>void;
  const alive=useRef(true),token=useRef<string|null>(null);
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;if(token.current)void window.musebench!.discardConversationImport(token.current).catch(()=>{});};},[]);
  const {value:matches=[],pending,error:searchError}=useLatestRead<ImportConversation[]>({owner:preview?.token??'no-import',key:query,revision,read:()=>preview?window.musebench!.searchImportPreview({token:preview.token,query}):Promise.resolve([])});
- const bytes=preview?.conversations.filter(row=>selected.includes(row.id)).reduce((sum,row)=>sum+row.textBytes,0)??0;
- const overLimit=selected.length>IMPORT_LIMITS.selectedConversations||bytes>IMPORT_LIMITS.selectedBytes;
+ const selection=preview?.conversations.filter(row=>selected.includes(row.id))??[],bytes=selection.reduce((sum,row)=>sum+row.textBytes,0),messages=selection.reduce((sum,row)=>sum+row.messageCount,0),indexTerms=selection.reduce((sum,row)=>sum+row.indexTerms,0);
+ const overLimit=selected.length>IMPORT_LIMITS.selectedConversations||bytes>IMPORT_LIMITS.selectedBytes||messages>IMPORT_LIMITS.selectedMessages||indexTerms>IMPORT_LIMITS.selectedIndexTerms;
  async function choose(){
   setBusy(true);setError('');setNotice('');setPreview(null);setSelected([]);setInspection(null);
   try{const previous=token.current;token.current=null;if(previous)await window.musebench!.discardConversationImport(previous);if(!alive.current)return;const next=await window.musebench!.previewConversationImport();if(!alive.current){if(next)await window.musebench!.discardConversationImport(next.token);return;}token.current=next?.token??null;setPreview(next);setQuery('');setLimit(80);}
@@ -45,7 +45,7 @@ export function ConversationImportDialog({back,close,onImported}:{back:()=>void;
      {!matches.length&&!pending&&<p className="context-description">No matching conversations.</p>}
      {matches.length>limit&&<button className="text-link import-more" onClick={()=>setLimit(value=>value+80)}>Show next conversations</button>}
     </div>
-    <div className="import-confirm"><span>{selected.length} selected · {(bytes/1024).toFixed(0)} KiB{overLimit&&<small role="alert">Select up to 100 chats and 2 MiB per import.</small>}</span><button className="primary-button" disabled={busy||!selected.length||overLimit} onClick={()=>void confirm()}>{busy?'Importing…':`Import ${selected.length} ${selected.length===1?'chat':'chats'}`}</button></div>
+    <div className="import-confirm"><span>{selected.length} selected · {messages.toLocaleString()} messages · {(bytes/1024).toFixed(0)} KiB{overLimit&&<small role="alert">{indexTerms>IMPORT_LIMITS.selectedIndexTerms?'Too much distinct text for one import. Choose fewer chats or a smaller export.':'Select up to 100 chats, 2,000 messages and 2 MiB per import.'}</small>}</span><button className="primary-button" disabled={busy||!selected.length||overLimit} onClick={()=>void confirm()}>{busy?'Importing…':`Import ${selected.length} ${selected.length===1?'chat':'chats'}`}</button></div>
    </>}
   </>}
   {(error||searchError)&&<p className="context-error" role="alert">{error||searchError}</p>}{notice&&<p className="context-description" role="status">{notice}</p>}

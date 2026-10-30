@@ -34,4 +34,18 @@ test('selection limits, full preview search and exact duplicate batches are enfo
  await writeFile(f.file,JSON.stringify([{name:'Large',chat_messages:Array.from({length:3},()=>({sender:'human',text:'x'.repeat(800000)}))}]));preview=await f.service.prepare(f.file);await assert.rejects(f.service.confirm({token:preview.token,ids:['0']}),/2 MiB/);assert.equal(f.service.search('').length,1);
 });
 
+test('short-message and distinct-word selections cannot bypass the persistence work budget',async t=>{
+ const f=await fixture(t);
+ for(const [messages,reason] of [[Array.from({length:50000},(_,i)=>({role:'user',text:`message ${i}`})),/2,000|message/i],[[{role:'user',text:Array.from({length:21000},(_,i)=>`word${i}`).join(' ')}],/distinct|index|text/i]]){
+  await writeFile(f.file,JSON.stringify({format:'musebench-conversations',version:1,conversations:[{title:'Work budget',messages}]}));const preview=await f.service.prepare(f.file);
+  await assert.rejects(f.service.confirm({token:preview.token,ids:['0']}),reason);assert.equal(f.service.search('').length,0);
+ }
+});
+
+test('maximum accepted message and index-work budgets match durable index entries',async t=>{
+ const f=await fixture(t),messages=Array.from({length:2000},(_,i)=>({role:'user',text:Array.from({length:10},(_,j)=>`term${i}_${j}`).join(' ')}));
+ await writeFile(f.file,JSON.stringify({format:'musebench-conversations',version:1,conversations:[{title:'Accepted boundary',messages}]}));const preview=await f.service.prepare(f.file);assert.equal(preview.conversations[0].indexTerms,20000);
+ assert.equal((await f.service.confirm({token:preview.token,ids:['0']})).imported,1);assert.equal(f.db.prepare('SELECT count(*) n FROM history_terms').get().n,20000);assert.equal(f.db.prepare('SELECT count(*) n FROM chat_history').get().n,2000);
+});
+
 

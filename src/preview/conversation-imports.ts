@@ -7,7 +7,7 @@ export function createPreviewConversationImports(){
  const stored=new Map<string,{conversation:ParsedConversation;fingerprint:string;provenance:ImportedProvenance}>();
  let active:{preview:ConversationImportPreview;conversations:ParsedConversation[]}|null=null;
  const requirePreview=(token:string)=>{if(!active||token!==active.preview.token||Date.parse(active.preview.expiresAt)<=Date.now())throw Error('This import preview expired. Choose the export again.');return active;};
- const rows=(conversations:ParsedConversation[])=>conversations.map((c,index)=>({id:String(index),title:c.title,format:c.format,messageCount:c.messages.length,textBytes:c.textBytes,omittedMessages:c.omittedMessages,omittedBlocks:c.omittedBlocks,snippet:c.messages[0].text.slice(0,180),duplicate:[...stored.values()].some(row=>row.fingerprint===conversationFingerprintInput(c))}));
+ const rows=(conversations:ParsedConversation[])=>conversations.map((c,index)=>({id:String(index),title:c.title,format:c.format,messageCount:c.messages.length,textBytes:c.textBytes,indexTerms:c.indexTerms,omittedMessages:c.omittedMessages,omittedBlocks:c.omittedBlocks,snippet:c.messages[0].text.slice(0,180),duplicate:[...stored.values()].some(row=>row.fingerprint===conversationFingerprintInput(c))}));
  const page=(c:ParsedConversation,input:{before?:string;messageId?:string;offset?:number;limit?:number},coverage:string):HistoryPage=>{
   const messages=c.messages.map((m,i)=>({...m,id:`m${i}`})),offset=input.offset??0,end=input.before?messages.findIndex(m=>m.id===input.before):messages.length;if(end<0)throw Error('Invalid history cursor.');
   const selected=input.messageId?messages.filter(m=>m.id===input.messageId):messages.slice(Math.max(0,end-(input.limit??20)),end);

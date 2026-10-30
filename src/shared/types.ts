@@ -120,7 +120,7 @@ export interface ContextReceipt {version:number;promptHash:string;revision:strin
 export interface ContextSummary {receipt?:ContextReceipt;historyMode?:'replay'|'native'|'connection';characters:number;estimatedTokens:number;includedMessages:number;omittedMessages:number;truncatedMessages:number;fileCount:number;replayedFiles:number;limit:number;}
 export interface CodeContextResult extends ContextSummary {prompt:string;attachments:(ContextFile&{text:string})[];files:(ContextFile&{characters:number})[];}
 export interface ImportedProvenance {format:string;sourceName:string;sourceDigest:string;importedAt:string;messageCount:number;omittedMessages:number;omittedBlocks:number;simulation?:boolean;}
-export interface ImportConversation {id:string;title:string;format:string;messageCount:number;textBytes:number;omittedMessages:number;omittedBlocks:number;snippet:string;duplicate:boolean;}
+export interface ImportConversation {id:string;title:string;format:string;messageCount:number;textBytes:number;indexTerms:number;omittedMessages:number;omittedBlocks:number;snippet:string;duplicate:boolean;}
 export interface ConversationImportPreview {token:string;sourceName:string;sourceDigest:string;expiresAt:string;conversations:ImportConversation[];skippedConversations:number;textBytes:number;simulation?:boolean;}
 export interface ConversationImportConfirmation {imported:number;skipped:number;ids:string[];preview:ConversationImportPreview;}
 export interface ChatSearchResult extends TaskSummary {projectName:string;snippet:string;messageId?:string;offset?:number;at?:string|null;imported?:ImportedProvenance;}

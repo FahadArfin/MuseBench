@@ -40,3 +40,10 @@ test('ZIP shards without readable text are skipped while their source messages c
  const empty=JSON.stringify([{name:'No text',chat_messages:Array.from({length:26000},()=>({sender:'tool',text:'not public text'}))}]);
  await writeFile(file,zip([['conversations-0.json',empty],['conversations-1.json',empty],['conversations-2.json',exported('Readable')]]));await assert.rejects(reader.read(file),/message|limit/i);
 });
+
+test('valid JSON in a ZIP entry with a corrupt CRC is rejected before preview',async t=>{
+ const {root,reader}=await fixture(t),file=path.join(root,'crc-corrupt.zip'),data=zip([['conversations.json',exported('Intact JSON')]]);
+ // Both ZIP headers agree, but neither matches the decompressed entry bytes.
+ data.writeUInt32LE((data.readUInt32LE(14)^1)>>>0,14);const central=data.indexOf(Buffer.from([0x50,0x4b,0x01,0x02]));data.writeUInt32LE((data.readUInt32LE(central+16)^1)>>>0,central+16);await writeFile(file,data);
+ await assert.rejects(reader.read(file),/checksum|CRC|corrupt/i);
+});

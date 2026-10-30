@@ -1,4 +1,4 @@
-export const IMPORT_LIMITS=Object.freeze({sourceBytes:128*1024*1024,decodedBytes:32*1024*1024,conversations:2000,messages:50000,messageCharacters:1024*1024,textBytes:16*1024*1024,selectedConversations:100,selectedBytes:2*1024*1024});
+export const IMPORT_LIMITS=Object.freeze({sourceBytes:128*1024*1024,decodedBytes:32*1024*1024,conversations:2000,messages:50000,messageCharacters:1024*1024,textBytes:16*1024*1024,selectedConversations:100,selectedBytes:2*1024*1024,selectedMessages:2000,selectedIndexTerms:20000});
 const object=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
 const bytes=text=>new TextEncoder().encode(text).length;
 const title=value=>String(value??'Untitled conversation').replace(/[\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]/g,' ').trim().slice(0,200)||'Untitled conversation';
@@ -45,6 +45,7 @@ export function parseConversationExport(text,fileName='conversations.json',{allo
    total=Object.values(row.mapping).filter(n=>object(n)&&n.message!=null).length;
    raw=selectedBranch(row.mapping,row.current_node).map(n=>{
     const m=n.message;if(!object(m))return null;
+    if(m.recipient!=null&&m.recipient!=='all'||m.channel!=null&&m.channel!=='final'||m.metadata?.is_visually_hidden_from_conversation===true)return null;
     const content=Array.isArray(m.content?.parts)?textParts(m.content.parts):{text:'',omitted:1};omittedBlocks+=content.omitted;
     return{role:m.author?.role,text:content.text,at:date(m.create_time)};
    });
@@ -58,14 +59,16 @@ export function parseConversationExport(text,fileName='conversations.json',{allo
    });
   }else throw Error('Unsupported conversation format. Choose a ChatGPT, Claude or MuseBench export.');
   totalMessages+=total;if(totalMessages>IMPORT_LIMITS.messages)throw Error('Export exceeds the 50,000-message limit.');
-  const messages=[];let textBytes=0;
+  const messages=[];let textBytes=0,indexTerms=0;
   for(const m of raw){
    if(!m||!['user','assistant'].includes(m.role)||typeof m.text!=='string'||!m.text.trim())continue;
    const size=bytes(m.text);if(m.text.length>IMPORT_LIMITS.messageCharacters||size>IMPORT_LIMITS.messageCharacters)throw Error('A message exceeds the 1 MiB import limit.');
    textBytes+=size;totalBytes+=size;if(totalBytes>IMPORT_LIMITS.textBytes)throw Error('Export exceeds the 16 MiB saved-text limit.');messages.push({role:m.role,text:m.text,at:m.at});
+   // Match history_terms' per-message unique-word work, calculated off-thread.
+   indexTerms+=new Set(m.text.toLowerCase().match(/[\p{L}\p{N}_]+/gu)??[]).size;
   }
   if(!messages.length){skippedConversations++;continue;}
-  conversations.push({title:title(row.title??row.name),format,sourceId,messages,textBytes,omittedMessages:Math.max(0,total-messages.length),omittedBlocks});
+  conversations.push({title:title(row.title??row.name),format,sourceId,messages,textBytes,indexTerms,omittedMessages:Math.max(0,total-messages.length),omittedBlocks});
  }
  if(!conversations.length&&!allowEmpty)throw Error('The export contains no readable user or assistant text.');
  return{conversations,skippedConversations,textBytes:totalBytes,sourceMessageCount:totalMessages};

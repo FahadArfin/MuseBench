@@ -12,7 +12,7 @@ export function createConversationImports(db,history,{now=Date.now,reader=create
  const discard=token=>{if(pending?.token===token){pending=null;clearTimeout(timer);}};
  function selected(token){available();if(!pending||typeof token!=='string'||pending.token!==token)throw Error('This import preview is no longer available. Choose the export again.');if(now()>=pending.expires){discard(token);throw Error('This import preview expired. Choose the export again.');}return pending;}
  function metadata(row){return JSON.parse(row.provenance);}
- function summary(item){const {conversation:c,id,fingerprint}=item;return{id,title:c.title,format:c.format,messageCount:c.messages.length,textBytes:c.textBytes,omittedMessages:c.omittedMessages,omittedBlocks:c.omittedBlocks,snippet:c.messages[0].text.slice(0,180),duplicate:!!byFingerprint.get(fingerprint)||item.repeated};}
+ function summary(item){const {conversation:c,id,fingerprint}=item;return{id,title:c.title,format:c.format,messageCount:c.messages.length,textBytes:c.textBytes,indexTerms:c.indexTerms,omittedMessages:c.omittedMessages,omittedBlocks:c.omittedBlocks,snippet:c.messages[0].text.slice(0,180),duplicate:!!byFingerprint.get(fingerprint)||item.repeated};}
  const publicPreview=p=>({token:p.token,sourceName:p.fileName,sourceDigest:p.digest,expiresAt:new Date(p.expires).toISOString(),conversations:p.items.map(summary),skippedConversations:p.parsed.skippedConversations,textBytes:p.parsed.textBytes});
  async function prepare(source){
   available();if(busy)throw Error('An import is already being prepared.');busy=true;discard(pending?.token);
@@ -39,6 +39,8 @@ export function createConversationImports(db,history,{now=Date.now,reader=create
   const p=selected(token);if(busy)throw Error('An import is already being prepared.');
   if(!Array.isArray(ids)||!ids.length||ids.length>IMPORT_LIMITS.selectedConversations||new Set(ids).size!==ids.length||ids.some(id=>typeof id!=='string'||!p.items.some(item=>item.id===id)))throw Error('Choose a valid selection of at most 100 conversations.');
   const items=ids.map(id=>p.items.find(item=>item.id===id));if(items.reduce((total,item)=>total+item.conversation.textBytes,0)>IMPORT_LIMITS.selectedBytes)throw Error('Selection exceeds 2 MiB of text. Select fewer conversations.');
+  if(items.reduce((total,item)=>total+item.conversation.messages.length,0)>IMPORT_LIMITS.selectedMessages)throw Error('Selection exceeds 2,000 messages. Choose fewer chats or a smaller export.');
+  if(items.reduce((total,item)=>total+item.conversation.indexTerms,0)>IMPORT_LIMITS.selectedIndexTerms)throw Error('Too much distinct text for one import. Choose fewer chats or a smaller export.');
   busy=true;
   try{
    await reader.read(p.source,{expectedDigest:p.digest});if(selected(token)!==p)throw Error('Import preview changed.');

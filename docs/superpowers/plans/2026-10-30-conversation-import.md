@@ -19,7 +19,7 @@ Base: 3539b0dc23e2a26b3e704218648b76c51b853ca4 (fast-forwarded from ccf56e2 with
 
 ## Task 3: Review and release
 
-- [ ] Fresh independent whole-feature review, one material-fix pass with regression evidence, record decisions and deferred findings.
+- [x] Fresh independent whole-feature review, one material-fix pass with regression evidence, record decisions and deferred findings.
 - [ ] Commit/push completed source with roadmap/evidence updates. Keep routine releases Windows x64 only.
 - [ ] Verify the exact latest published Windows artifact and install/reopen when required checks and idle-work checks pass; record installed versus fixture evidence separately.
 

@@ -45,6 +45,9 @@ async function readBounded(source){
  }finally{await handle.close();}
 }
 function decode(buffer){try{return new TextDecoder('utf-8',{fatal:true}).decode(buffer);}catch{throw Error('Export must contain valid UTF-8 text.');}}
+// yauzl verifies entry sizes, but explicitly leaves CRC verification to callers.
+const crcTable=Uint32Array.from({length:256},(_,value)=>{for(let bit=0;bit<8;bit++)value=value>>>1^(value&1?0xedb88320:0);return value>>>0;});
+const updateCrc=(crc,chunk)=>{for(const byte of chunk)crc=crcTable[(crc^byte)&255]^(crc>>>8);return crc;};
 function readZip(buffer){
  return new Promise((resolve,reject)=>{
   yauzl.fromBuffer(buffer,{lazyEntries:true,validateEntrySizes:true},(error,archive)=>{
@@ -60,8 +63,9 @@ function readZip(buffer){
     archive.openReadStream(entry,async(error,stream)=>{
      if(error){finish(Error('Conversation JSON in ZIP could not be opened.'));return;}
      try{
-      const chunks=[];for await(const chunk of stream){decoded+=chunk.length;if(decoded>IMPORT_LIMITS.decodedBytes)throw Error('ZIP exceeds the 32 MiB decoded-text limit.');chunks.push(chunk);}
+      const chunks=[];let crc=0xffffffff;for await(const chunk of stream){decoded+=chunk.length;if(decoded>IMPORT_LIMITS.decodedBytes)throw Error('ZIP exceeds the 32 MiB decoded-text limit.');crc=updateCrc(crc,chunk);chunks.push(chunk);}
       if(settled)return;
+      if(((crc^0xffffffff)>>>0)!==entry.crc32)throw Error('Conversation JSON has an invalid ZIP checksum (CRC-32). Choose a fresh export.');
       const part=parseConversationExport(decode(Buffer.concat(chunks)),entry.fileName,{allowEmpty:true});
       parsed.conversations.push(...part.conversations);parsed.skippedConversations+=part.skippedConversations;parsed.textBytes+=part.textBytes;
       totalMessages+=part.sourceMessageCount;
