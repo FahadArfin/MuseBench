@@ -18,5 +18,19 @@ try{
  const long=await read({selector:'html > body:nth-of-type(1) > p:nth-of-type(1)'});assert(long.text.length<=600);
  await page.locator('button').evaluate(e=>e.style.display='none');assert.equal(await read({selector:selected.selector}),null);
  assert.equal(await read({x:-1,y:.2}),null);assert.equal(await read({x:.2,y:2}),null);
+ const visibilityCases=[
+  ['collapsed details','<div>Visible heading<details><summary>More</summary><p>COLLAPSED_SECRET</p></details></div>'],
+  ['overflow clipping','<div style="height:50px;overflow:hidden">Visible heading<p style="margin-top:200px">CLIPPED_SECRET</p></div>'],
+  ['screen reader clipping','<div>Visible heading<span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">READER_SECRET</span></div>'],
+  ['partially visible text node','<div style="position:absolute;top:675px;left:10px;white-space:pre;font:16px/24px Arial">Visible heading\nOFFSCREEN_SECRET</div>'],
+ ];
+ const leaks=[];
+ for(const[name,html]of visibilityCases){
+  await page.setContent('<!doctype html><style>body{margin:20px;font:16px/24px Arial}</style>'+html);
+  const target=await read({selector:'html > body:nth-of-type(1) > div:nth-of-type(1)'});
+  assert.match(target?.text??'',/Visible heading/,name+' retains visible text');
+  if(/SECRET/.test(target.text))leaks.push(name+': '+target.text);
+ }
+ assert.deepEqual(leaks,[],'No collapsed, clipped or offscreen text may enter feedback');
  console.log('PASS visible DOM evidence, form/editable/hidden/offscreen privacy, bounded text, nested frame isolation, no click activation');
 }finally{await browser.close();}

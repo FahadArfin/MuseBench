@@ -34,10 +34,10 @@ Interfaces:
 - inspect accepts projectId/taskId/frameName/x/y, yields a token, owner, sanitized page URL and bounded target. feedback revalidates and yields {text}.
 - createDesktopPreviewAnnotations({contents,getState,onInvalidate}) wraps the service and Electron navigation listeners; close removes listeners.
 
-- [ ] Write meaningful tests for valid evidence and untrusted formatting, strict input bounds, owner/frame/URL eligibility, expiration, invalidation, concurrent and late reads, changed target, timeout and discarded tokens; observe failures.
-- [ ] Implement minimal bounded validators/service and fixed DOM capture. Test real DOM privacy/geometry/visibility in Chromium.
-- [ ] Implement the Electron adapter with direct-child frame resolution and navigation invalidation. Exercise real cross-origin frame capture with no page bridge.
-- [ ] Run focused suites, preserve evidence and ledger Task 1.
+- [x] Write meaningful tests for valid evidence and untrusted formatting, strict input bounds, owner/frame/URL eligibility, expiration, invalidation, concurrent and late reads, changed target, timeout and discarded tokens; observe failures.
+- [x] Implement minimal bounded validators/service and fixed DOM capture. Test real DOM privacy/geometry/visibility in Chromium.
+- [x] Implement the Electron adapter with direct-child frame resolution and navigation invalidation. Exercise real cross-origin frame capture with no page bridge.
+- [x] Run focused suites, preserve evidence and ledger Task 1.
 
 ### Task 2: Shared selection UI, wiring and delivery
 
@@ -48,9 +48,9 @@ Interfaces:
 - ProjectPreview receives current owner, URL, onDraft(targetKey,text); owns overlay, pending/error/note, key and navigation invalidation. App delegates exact key to appendDraftText.
 - Browser adapter uses same service/capture against only the registered sample; real desktop adapter controls only owned local frame.
 
-- [ ] Add failing production UI scenarios: pointer/keyboard capture, no site activation, editable note, draft metadata preservation, capacity rejection, cancellation/navigation/late result; no dispatch or model calls.
-- [ ] Implement shared UI and wiring, test desktop/browser parity and responsive/reduced-motion layouts.
-- [ ] Exercise production shell and real local tutorial preview in isolated Electron; build/typecheck and full unit suite once final source settles.
-- [ ] Carry desktop192 acceptance forward, write guide/validation, update CX05 evidence.
-- [ ] Commit feature; one fresh independent final review over immutable base..HEAD, fix material findings with failing regression and full verification. Preserve review/ledger.
+- [x] Add failing production UI scenarios: pointer/keyboard capture, no site activation, editable note, draft metadata preservation, capacity rejection, cancellation/navigation/late result; no dispatch or model calls.
+- [x] Implement shared UI and wiring, test desktop/browser parity and responsive/reduced-motion layouts.
+- [x] Exercise production shell and real local tutorial preview in isolated Electron; build/typecheck and full unit suite once final source settles.
+- [x] Carry desktop192 acceptance forward, write guide/validation, update CX05 evidence.
+- [x] Commit feature; one fresh independent final review over immutable base..HEAD, fix material findings with failing regression and full verification. Preserve review/ledger.
 - [ ] Recheck exact main, merge/push authorized feature, await all release checks, verify exact published installer hashes, idle preflight, full profile backup, graceful install/reopen/native version and controls. Keep provider proof distinct.

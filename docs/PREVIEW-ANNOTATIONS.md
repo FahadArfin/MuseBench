@@ -10,6 +10,8 @@ This works with the local Code project preview. The browser demonstration includ
 
 The capture contains a structural selector, page URL without query or fragment, a short title, a visible text excerpt and the element's viewport rectangle. It does not read form values, editable text, cookies, storage or full HTML. Captures are temporary; only feedback you add becomes part of a saved draft. Page content is labelled as untrusted evidence.
 
+Clipped or partially visible characters are omitted. Text using nonrectangular clipping or masks is also omitted when visibility cannot be established. Very large elements produce a short bounded excerpt.
+
 ## Implementation and validation boundary
 
 The desktop inspects only the current project's direct child frame through a fixed function using [Electron's frame API](https://www.electronjs.org/docs/latest/api/web-frame-main). [Frame navigation events](https://www.electronjs.org/docs/latest/api/web-contents) invalidate pending selections. The public interface never accepts JavaScript or a selector to execute. Existing sandbox, navigation policy and top-level IPC checks remain active.
