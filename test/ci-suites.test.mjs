@@ -14,7 +14,7 @@ const packageJson=JSON.parse(await readFile(new URL('../package.json',import.met
 // accidentally omitting an expensive check. New coverage is added deliberately.
 const required=[
  'node scripts/discovery-oauth-smoke.mjs','node scripts/discovery-oauth-smoke.mjs --desktop','node scripts/discovery-oauth-recovery-smoke.mjs','node scripts/discovery-oauth-recovery-smoke.mjs --desktop','node scripts/discovery-oauth-protection.mjs --local-fixture',
- 'npm run test:background-engine','npm run test:recent-context','npm run test:context-history','npm run test:integration-panels',
+ 'npm run test:app-instructions','npm run test:background-engine','npm run test:recent-context','npm run test:context-history','npm run test:integration-panels',
  'npm test','npm run test:startup-animation','npm run test:session-recovery','npm run test:profile-identity',
  'npm run test:typography','npm run test:motion','npm run test:activity','npm run test:child-inspection','npm run test:child-restart',
  'npm run test:native-failure','npm run test:native-question','npm run test:reply-copy','npm run test:model-settings',

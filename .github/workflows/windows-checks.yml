@@ -78,6 +78,7 @@ jobs:
             artifacts/workspace-analysis/**/report.json
             artifacts/background-engine/**/report.json
             artifacts/integration-panels/**/report.json
+            artifacts/app-instructions/**/report.json
             artifacts/context-history/**/report.json
             artifacts/session-mcp-ui/**/report.json
             artifacts/mobile-settings/**/report.json

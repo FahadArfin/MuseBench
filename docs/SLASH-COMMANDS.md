@@ -13,7 +13,7 @@ Commands act locally. Selecting a skill or prompt-writing action fills an editab
 | `/plan`, `/plan on`, `/plan off` | Toggle optional planning. `/plan <request>` enables Plan and fills a draft. Planning is guidance, not a read-only security boundary. |
 | `/fast`, `/fast on`, `/fast off` | Toggle a low-reasoning preset. This does not enable a premium provider service tier or guarantee a particular speed. Off returns to High. |
 | `/goal` | Edit a saved objective for the current chat. Active objectives accompany each request you send. `/goal pause`, `/goal resume` and `/goal clear` act directly. No autonomous background work is started. |
-| `/memories` | Edit explicit app-wide instructions, included with subsequent Muse Code requests. Clear the field to stop including them. |
+| `/memories` | Edit explicit app-wide instructions. Each future request includes current personal/project app settings; clearing explicitly replaces earlier personal settings with an empty scope on the next request. Saving sends nothing. |
 | `/skills` | Browse enabled skills reported by the installed Muse CLI; select one to draft a skill request. Project/plugin skill execution still depends on the existing validated connection policy. |
 | `/new`, `/resume`, `/rename` | Start a draft, search saved chats, or rename the current chat. |
 | `/side`, `/btw`, `/fork` | Draft another chat with a bounded copy of recent context. It is not a parallel or temporary agent. |

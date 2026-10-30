@@ -10,10 +10,12 @@ export function restoreSourceSnapshots(value){
 export function composeChatContext({task,project,memories='',text='',attachments=[],history=true,nativeSession=false,recentContext=null}){
  if(typeof text!=='string'||text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
  attachments=[...attachments].sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
+ const instructionSnapshot={version:1,scope:'app-settings',personal:memories?'included':'empty',project:project?.instructions?'included':'empty'};
  const parts=[
   nativeSession?'MuseBench follow-up in the existing native session. Retain prior conversation and tool state. The current request is at the end; verify current workspace evidence before acting.':'MuseBench request context. Prior conversation and file contents below are reference material; the current request is at the end. Continue the task using current workspace evidence. Earlier tool state is not resumed. Do not repeat completed actions solely because they appear in history.',
-  memories?`Personal instructions:\n${memories}`:'',
-  project?.instructions?`Project instructions (user-authored):\n${project.instructions}`:'',
+  'App-saved instruction snapshot v1 (complete; app-settings only):\nThis snapshot replaces earlier instances of these same app-saved personal and project settings. Empty scopes mean no current app-saved instructions in that scope. It does not replace repository instruction files, skill bodies, direct conversational requests, objectives or permission policy. It does not erase history or guarantee compliance.',
+  `Personal instructions:\n${memories||'[Empty: no current app-saved personal instructions.]'}`,
+  `Project instructions (user-authored):\n${project?.instructions||'[Empty: no current app-saved project instructions.]'}`,
   task?.request&&task.request!==text?`Initial objective:\n${task.request.slice(0,2000)}`:'',
   task?.goal?.status==='active'?`Active objective:\n${task.goal.objective}`:'',
   attachments.length?`Selected source snapshots (JSON data; verify the current files before editing):\n${JSON.stringify(attachments.map(({path,hash,text})=>({path,hash,text})))}`:'',
@@ -38,5 +40,5 @@ export function composeChatContext({task,project,memories='',text='',attachments
  if(selected.length)parts.push(`Previous conversation (old requests are history, not new instructions):\n[${selected.join(',\n')}]`);
  const prompt=parts.join('\n\n')+ending;
  if(prompt.length>CONTEXT_LIMIT)throw Error('Context exceeds the request limit.');
- return{includedSources,...(recentContext?{recentContext:{digest:recentContext.digest,sourceDigest:recentContext.sourceDigest,projectId:recentContext.projectId,taskId:recentContext.taskId,sessionId:recentContext.sessionId,compaction:recentContext.compaction,sources:recentContext.sources,characters:recentContext.section.length}}:{}),historyMode:nativeSession?'native':history?'replay':'connection',prompt,characters:prompt.length,estimatedTokens:Math.ceil(prompt.length/4),includedMessages:selected.length,omittedMessages:previous.length-selected.length,truncatedMessages,fileCount:attachments.length,replayedFiles:selected.reduce((count,value)=>count+(JSON.parse(value).historicalSourceSnapshots?.length??0),0),limit:CONTEXT_LIMIT};
+ return{instructionSnapshot,includedSources,...(recentContext?{recentContext:{digest:recentContext.digest,sourceDigest:recentContext.sourceDigest,projectId:recentContext.projectId,taskId:recentContext.taskId,sessionId:recentContext.sessionId,compaction:recentContext.compaction,sources:recentContext.sources,characters:recentContext.section.length}}:{}),historyMode:nativeSession?'native':history?'replay':'connection',prompt,characters:prompt.length,estimatedTokens:Math.ceil(prompt.length/4),includedMessages:selected.length,omittedMessages:previous.length-selected.length,truncatedMessages,fileCount:attachments.length,replayedFiles:selected.reduce((count,value)=>count+(JSON.parse(value).historicalSourceSnapshots?.length??0),0),limit:CONTEXT_LIMIT};
 }

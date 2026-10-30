@@ -11,6 +11,7 @@
     "preview:ui": "vite --config vite.preview.config.mjs",
     "test:browser-preview": "node scripts/browser-preview-smoke.mjs",
     "test:background-engine": "node scripts/background-settings-smoke.mjs && node scripts/background-engine-smoke.mjs",
+    "test:app-instructions": "node scripts/app-instructions-smoke.mjs && node scripts/app-instructions-smoke.mjs --desktop",
     "test:context-history": "node scripts/context-history-smoke.mjs && node scripts/context-history-smoke.mjs --desktop",
     "test:recent-context": "node scripts/recent-context-smoke.mjs && node scripts/recent-context-smoke.mjs --desktop",
     "test:integration-panels": "node scripts/integration-panel-smoke.mjs && node scripts/integration-panel-smoke.mjs --desktop",
