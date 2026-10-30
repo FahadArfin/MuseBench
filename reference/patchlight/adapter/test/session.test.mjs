@@ -14,6 +14,18 @@ test('native context readings are session owned, cursor checked and bounded acro
  p.emit(usageFrame('usage-2',{usedTokens:10,windowTokens:undefined}));assert.equal(a.snapshot().contextUsage.usedTokens,10);assert.equal(a.snapshot().contextUsage.windowTokens,null);
  p.emit(usageFrame('usage-1',{usedTokens:80}));assert.equal(a.snapshot().status,'unavailable');assert.equal(a.snapshot().contextUsage.usedTokens,10);
 });
+test('context cannot reuse a previous turn or message cursor after a new submission',async()=>{
+ for(const method of ['turn/completed','item/completed']){
+  const {adapter:a,port:p}=await setup();await a.send({text:'First fixture'});for(const f of events)p.emit(f);assert.equal(a.snapshot().status,'completed');
+  const cursor=event(method).params.viewCursor;await a.send({text:'Second fixture'});p.emit(usageFrame(cursor,{usedTokens:99}));
+  assert.equal(a.snapshot().status,'unavailable');assert.equal(a.snapshot().reason,'conflicting-event-cursor');assert.equal(a.snapshot().contextUsage,null);
+ }
+});
+test('session cursor ownership has an explicit fail-closed bound and never evicts evidence',async()=>{
+ const {adapter:a,port:p}=await setup({maxSessionEvents:3});
+ for(let i=1;i<=3;i++)p.emit(usageFrame('bounded-'+i,{usedTokens:i}));assert.equal(a.snapshot().contextUsage.usedTokens,3);
+ p.emit(usageFrame('bounded-4',{usedTokens:4}));assert.equal(a.snapshot().status,'unavailable');assert.equal(a.snapshot().reason,'session-event-limit');assert.equal(a.snapshot().contextUsage.usedTokens,3);
+});
 test('buffered native context and malformed occupancy never create a guessed reading',async()=>{
  const p=new FixturePort(),a=new MuseSessionAdapter({connection:p,...descriptor()}),cmd=p.command.bind(p);
  p.command=async(...args)=>{p.emit(usageFrame());return cmd(...args);};await a.open(root);assert.equal(a.snapshot().contextUsage.usedTokens,40);

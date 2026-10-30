@@ -1,4 +1,5 @@
 import {isAbsolute} from 'node:path';
+import {createHash} from 'node:crypto';
 import {compatibility} from './compatibility.mjs';
 import {terminalReason} from './diagnostics.mjs';
 import {normalizeContextUsage,validContextSourceRange} from '../../../src/shared/native-context-usage.mjs';
@@ -14,9 +15,11 @@ const str = v => typeof v==='string' && v.length>0;
  * The controller must render strings as text, not trusted HTML.
  */
 export class MuseSessionAdapter {
- #connection; #state; #messages=new Map(); #seen=new Map(); #contextSeen=new Map(); #buffer=[];
+ #connection; #state; #messages=new Map(); #seen=new Map(); #sessionSeen=new Map(); #buffer=[]; #maxSessionEvents;
  #epoch=0; #timeout; #listeners=new Set(); #maxEvents; #maxText; #allowContinuation; #durable; #queuedTurns=new Set(); #observeToolItem; #observeContextItem;
- constructor({connection,sdkVersion,initializeResult,fullAccess=false,allowContinuation=()=>false,observeToolItem=null,observeContextItem=null,timeoutMs=10000,maxEvents=2000,maxText=524288}={}){
+ constructor({connection,sdkVersion,initializeResult,fullAccess=false,allowContinuation=()=>false,observeToolItem=null,observeContextItem=null,timeoutMs=10000,maxEvents=2000,maxSessionEvents=32000,maxText=524288}={}){
+  if(!Number.isSafeInteger(maxSessionEvents)||maxSessionEvents<1||maxSessionEvents>65536)throw Error('Invalid session event bound');
+  this.#maxSessionEvents=maxSessionEvents;
   this.#allowContinuation=allowContinuation;
   this.#observeToolItem=typeof observeToolItem==='function'?observeToolItem:null;
   this.#observeContextItem=typeof observeContextItem==='function'?observeContextItem:null;
@@ -148,16 +151,19 @@ export class MuseSessionAdapter {
   if(method==='item/updated'&&!messageKinds.has(p.item?.kind)&&!(this.#observeToolItem&&p.item?.kind==='toolCall')&&!(this.#observeContextItem&&p.item?.kind==='compaction'))return;
   if(!str(p.viewCursor)){this.disconnect('missing-event-cursor');return;}
   const payload=JSON.stringify(frame);
-  // Context facts are session scoped: turn submission must not erase their
-  // replay/conflict guard. Cursors are opaque and are never sorted as strings.
-  if(this.#contextSeen.has(p.viewCursor)){if(this.#contextSeen.get(p.viewCursor)!==payload)this.disconnect('conflicting-event-cursor');return;}
+  // Remember ownership of every admitted cursor across turns. Fixed-size hashes
+  // bound memory without retaining old transcript payloads. Never evict evidence:
+  // reaching the session cap requires reconnecting through native restoration.
+  const digest=value=>createHash('sha256').update(value).digest('hex');
+  const cursorHash=digest(p.viewCursor),payloadHash=digest(payload);
+  if(this.#sessionSeen.has(cursorHash)){if(this.#sessionSeen.get(cursorHash)!==payloadHash)this.disconnect('conflicting-event-cursor');return;}
+  if(this.#sessionSeen.size>=this.#maxSessionEvents){this.disconnect('session-event-limit');return;}
   if(this.#seen.has(p.viewCursor)){if(this.#seen.get(p.viewCursor)!==payload)this.disconnect('conflicting-event-cursor');return;}
   if(this.#seen.size>=this.#maxEvents){this.disconnect('event-limit');return;}
   this.#seen.set(p.viewCursor,payload);
+  this.#sessionSeen.set(cursorHash,payloadHash);
   this.#state.viewCursor=p.viewCursor;
   if(method==='session/contextUsage'){
-   if(this.#contextSeen.size>=this.#maxEvents){this.disconnect('event-limit');return;}
-   this.#contextSeen.set(p.viewCursor,payload);
    this.#state.contextUsage=validContextSourceRange(p.sourceRange)?normalizeContextUsage(p,{sessionId:p.sessionId,viewCursor:p.viewCursor,source:'live',observedAt:new Date().toISOString()}):null;
    this.#emit();return;
   }

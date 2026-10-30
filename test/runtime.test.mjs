@@ -16,6 +16,13 @@ test('native context freshness follows the owned connection and reconnect never 
  await h.runtime.disconnect();assert.equal(h.runtime.snapshot().contextUsage.connected,false);h.emit({...frame,params:{...frame.params,viewCursor:'late',usedTokens:99}});assert.equal(h.runtime.snapshot().contextUsage.usedTokens,42);
  await h.connect();assert.equal(h.runtime.snapshot().contextUsage,null);obsoleteNotify({...frame,params:{...frame.params,viewCursor:'old-connection',usedTokens:99}});assert.equal(h.runtime.snapshot().contextUsage,null);
 });
+test('conflicting context evidence keeps native cleanup unresolved until explicit disconnect',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Fixture'});
+ const frame={method:'session/contextUsage',params:{sessionId:'session-one',viewCursor:'same-cursor',usedTokens:20,windowTokens:100,pressure:'normal',sourceRange:{stream:{id:'s',kind:'session'},first:{id:'r',sequence:1},last:{id:'r',sequence:1}}}};
+ h.emit(frame);h.emit({...frame,params:{...frame.params,usedTokens:90}});
+ assert.equal(h.runtime.snapshot().status,'unavailable');assert.equal(h.runtime.snapshot().contextUsage.connected,false);assert.equal(h.runtime.snapshot().cleanup,'unconfirmed');assert.equal(h.runtime.statusSnapshot().cleanup,'unconfirmed');assert.equal(h.calls.filter(c=>c.method==='close').length,0);
+ await h.runtime.disconnect();assert.equal(h.runtime.snapshot().cleanup,'confirmed');
+});
 test('interactive compact status follows native lifecycle without transcript clones',async t=>{
  const h=await harness(t);assert.equal(typeof h.runtime.statusSnapshot,'function');
  const check=()=>{const s=h.runtime.snapshot();let copies=0;const clone=globalThis.structuredClone;const mocked=t.mock.method(globalThis,'structuredClone',value=>{copies++;return clone(value);});let actual;try{actual=h.runtime.statusSnapshot();}finally{mocked.mock.restore();}assert.equal(copies,0);assert.deepEqual(actual,{status:s.status??null,cleanup:s.cleanup??null,pending:!!s.pending,operationBusy:!!s.operationBusy,childrenBusy:!!s.childrenBusy});return actual;};

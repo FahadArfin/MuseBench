@@ -18,3 +18,14 @@ One normalized reading is retained per owning chat. Missing/invalid counts do no
 The prior completion audit was too broad: native occupancy is already supported. Retention configuration and background-summary replacement remain separate research prerequisites. Native reasoning-effort reporting is the next audit, not included here. Preview uses the shared implementation with explicit fixture data; normal preview startup does not invent a native reading.
 
 Review and correction evidence is preserved under `.superpowers/sdd/2026-10-30-native-context-usage/` in the attached worktree.
+
+## Final review and correction
+
+One independent whole-branch review found one Important issue and no Critical/Minor issues: after starting a new turn, a context event could reuse a cursor previously owned by a message/turn event. The reviewer reproduced it and independently passed the original 217 focused tests. New cross-method replay and bounded-history regressions both failed before correction.
+
+The adapter now retains SHA-256 identities for every admitted cursor and payload across turns. Memory is bounded to 32,000 session events; reaching that limit stops admission without evicting evidence. A reconnect can restore native state. A related regression also showed that an admission failure could leave native cleanup unspecified; it is now explicitly unconfirmed until the owner disconnects. This keeps update/restart guards engaged without forcibly stopping a potentially active model. That regression failed before the fix and passed afterward.
+
+The review's sole declined item was live provider emission and measurement accuracy. Ruling: this remains unverified because no fresh model-call allowance is authorized; source/installed fixture acceptance is described separately. No additional reviewer or deferred minor finding.
+
+The follow-up C04 audit confirmed `ReasoningEffortState` is a standing session default, not an observed effective per-turn setting. `TurnStartedParams` does not report effective effort, and MuseBench supplies an explicit per-turn request. Reading the standing default would not justify marking the requested effort as applied. The existing effective-effort limitation remains accurate.
+`Final correction verification: 1,681 tests passed, one pre-existing optional skip; production build passed. Cross-method cursor conflicts and explicit unconfirmed-cleanup regressions are green. No source tests were removed.

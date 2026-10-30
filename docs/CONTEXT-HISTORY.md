@@ -6,6 +6,8 @@ The context reading is Muse's last reported occupancy floor: counted-once prompt
 
 The chip marks saved readings. Session details show whether the owning connection still reports that fact, whether it came from an event or restored snapshot, the local observation time and native pressure. Reconnecting without a fresh native reading does not make saved data current. No background polling or model request is needed.
 
+Cursor ownership is retained across turns using bounded hashes, without retaining old message payloads for that guard. After 32,000 admitted events the connection requires explicit recovery; evidence is not silently discarded. Conflicting or uncertain connections keep updates blocked until native shutdown is confirmed.
+
 The history retains up to 30 native observations per chat, including automatic and manual compaction. Expand a row for its session/turn identity, revision, observed token counts and optional opaque boundary. Restored observations are labeled; records from previous sessions remain distinguishable. The timestamp is when MuseBench first observed the item, not an invented provider completion time.
 
 Compaction token snapshots describe a past compaction. They are separate from the reported context reading and do not promise exactly which messages Muse retained. Missing measurements stay unknown. Local transcript and files remain unchanged. Starting or accepting a manual compaction request is distinct from observing its completion; the existing Compact context control retains its connection and idle guards.
