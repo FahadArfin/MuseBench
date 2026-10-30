@@ -33,10 +33,10 @@ export function createWorkspaceToolActivity(){
    if(item?.kind!=='toolCall'||!tools.has(item.tool)||!ownedTurns.includes(item.turnId)||typeof item.itemId!=='string'||!item.itemId||item.itemId.length>200||!Number.isInteger(item.revision)||item.revision<1)return false;
    if((rows.get(item.itemId)?.revision??0)>=item.revision)return false;
    if(!rows.has(item.itemId)&&rows.size>=120){truncated=true;return false;}
-   const statuses={inProgress:'working',completed:'completed',failed:'failed',cancelled:'cancelled',declined:'failed',interrupted:'interrupted'};
+   const statuses={inProgress:'working',completed:'completed',failed:'failed',cancelled:'cancelled',declined:'failed',rejected:'failed',interrupted:'interrupted'};
    const status=statuses[item.status]??'interrupted',output=typeof item.visibleOutput==='string'?item.visibleOutput:'';
    const workspaceBatch=status==='completed'?workspaceBatchSummary(item.tool,output,item.truncated===true):null;
-   rows.set(item.itemId,{revision:item.revision,id:item.itemId,kind:'tool',title:tools.get(item.tool),tool:item.tool,status,detail:status==='working'?'Reading workspace source':status==='completed'?'Native tool completed':'Native tool did not complete',output:output.slice(0,6000),truncated:item.truncated===true||output.length>6000,...(workspaceBatch?{workspaceBatch}:{})});return true;
+   rows.set(item.itemId,{revision:item.revision,id:item.itemId,kind:'tool',title:tools.get(item.tool),tool:item.tool,status,detail:item.status==='rejected'?'Tool request was not approved':status==='working'?'Reading workspace source':status==='completed'?'Native tool completed':'Native tool did not complete',output:output.slice(0,6000),truncated:item.truncated===true||output.length>6000,...(workspaceBatch?{workspaceBatch}:{})});return true;
   },
   finish(status){for(const row of rows.values())if(row.status==='working'){row.status=status==='cancelled'?'cancelled':'interrupted';row.detail='No final tool result was reported';}},
   snapshot(){return{scope:'workspace-tools',items:structuredClone([...rows.values()].map(({revision,...row})=>row)),truncated};},

@@ -27,3 +27,7 @@ test('workspace tool activity binds owner, revision and bounded output without i
  const large=output();large.calls[0].result.items=Array.from({length:80},()=>({name:'x'.repeat(150)}));tracker.reset();tracker.observe({...item(),visibleOutput:JSON.stringify(large)},['owned-turn']);const row=tracker.snapshot().items[0];assert.equal(row.workspaceBatch.calls[0].count,80);assert.ok(row.output.length<=6000);assert.equal(row.truncated,true);
  const run={id:'run',promptId:'prompt',prompt:'Inspect',startedAt:new Date().toISOString(),status:'completed',activities:[row]};assert.equal(restoreRuns([run])[0].activities[0].workspaceBatch.calls[0].count,80);
 });
+test('native rejected tool receipts show a refusal rather than an interrupted read',()=>{
+ const tracker=api.createWorkspaceToolActivity();tracker.observe({...item(),status:'rejected',visibleOutput:undefined},['owned-turn']);
+ const row=tracker.snapshot().items[0];assert.equal(row.status,'failed');assert.equal(row.detail,'Tool request was not approved');assert.equal(row.output,'');assert.equal(row.workspaceBatch,undefined);
+});
