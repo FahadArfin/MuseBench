@@ -66,5 +66,6 @@ jobs:
             artifacts/sidebar-drag/**/report.json
             artifacts/native-control/report.json
             artifacts/navigation-cache/report.json
+            artifacts/preview-annotations/**/report.json
             artifacts/session-mcp-ui/**/report.json
             artifacts/mobile-settings/**/report.json

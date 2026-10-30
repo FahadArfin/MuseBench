@@ -16,6 +16,7 @@ try{
  const initial=await waitState(state=>!state.busy&&state.task?.mode==='demo');assert.equal(initial.task.mode,'demo');
  const composer=page.getByRole('textbox',{name:'Message Muse',exact:true});await composer.fill('/preview');await page.getByRole('option',{name:/^Preview Open the local project preview/}).click();
  await page.getByRole('button',{name:'Start preview',exact:true}).click();await waitState(state=>state.preview.status==='running');
+ await page.setViewportSize({width:1000,height:900});
  const iframe=page.locator('iframe[title="Project preview"]');await page.frameLocator('iframe[title="Project preview"]').locator('h1').waitFor();
  await page.getByRole('button',{name:'Comment on preview',exact:true}).click();const frameBounds=await iframe.boundingBox(),target=await page.frameLocator('iframe[title="Project preview"]').locator('h1').boundingBox();
  await page.getByRole('button',{name:'Select preview element'}).click({position:{x:Math.max(1,target.x-frameBounds.x+4),y:Math.max(1,target.y-frameBounds.y+4)}});
@@ -24,8 +25,13 @@ try{
  await page.getByRole('button',{name:'Add to draft',exact:true}).click();
  const after=await waitState(state=>state.drafts[initial.task.projectId+':'+initial.task.id]?.text.includes('breathing room'));assert.match(await composer.inputValue(),/untrusted page content[\s\S]*breathing room/);assert.equal(after.task.id,initial.task.id);assert.equal(after.task.messages.length,initial.task.messages.length);assert.equal(after.runtime.liveVerified,false);assert.match(after.drafts[after.task.projectId+':'+after.task.id].text,/breathing room/);
  report.checks.push('Actual tutorial server element becomes an unsent durable draft through production shell/preload/IPC/controller; no provider request');
- const before=(await composer.inputValue());await page.getByRole('button',{name:'Comment on preview',exact:true}).click();await page.getByRole('button',{name:'Select preview element'}).click({position:{x:30,y:30}});await page.getByRole('textbox',{name:'Preview comment'}).fill('Do not stage after reload');
- const frame=page.frames().find(f=>f.url()===after.preview.url);assert(frame);await frame.evaluate(()=>location.reload());await page.getByRole('region',{name:'Selected preview element'}).waitFor({state:'hidden'});assert.equal(await composer.inputValue(),before);report.checks.push('Same-URL reload invalidates actual desktop selection without changing the draft');
+ const before=await composer.inputValue();
+ await page.getByRole('button',{name:'Comment on preview',exact:true}).waitFor({state:'hidden'});
+ await composer.fill(before+'\n/preview');await page.getByRole('option',{name:/^Preview Open the local project preview/}).click();
+ const draftText=async()=>(await waitState(state=>state.drafts[initial.task.projectId+':'+initial.task.id]?.text===before)).drafts[initial.task.projectId+':'+initial.task.id].text;
+ assert.equal(await draftText(),before);report.checks.push('Narrow-screen draft handoff closes the panel; reopening the preview preserves all staged feedback');
+ await page.getByRole('button',{name:'Comment on preview',exact:true}).click();await page.getByRole('button',{name:'Select preview element'}).click({position:{x:30,y:30}});await page.getByRole('textbox',{name:'Preview comment'}).fill('Do not stage after reload');
+ const frame=page.frames().find(f=>f.url()===after.preview.url);assert(frame);await frame.evaluate(()=>location.reload());await page.getByRole('region',{name:'Selected preview element'}).waitFor({state:'hidden'});assert.equal(await draftText(),before);report.checks.push('Same-URL reload invalidates actual desktop selection without changing the draft');
  await page.getByRole('button',{name:'Cancel preview comment'}).click();await page.getByRole('button',{name:'Stop preview',exact:true}).click();
  assert.deepEqual(report.errors,[]);report.status='passed';console.log(JSON.stringify(report));
 }catch(error){report.status='failed';report.failure=error.stack;console.error(error);await page?.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});process.exitCode=1;}finally{await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log('Report: '+output);await app?.close();}

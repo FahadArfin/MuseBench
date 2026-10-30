@@ -45,3 +45,7 @@ Evidence retained under .superpowers/sdd/2026-10-30-preview-annotations and arti
 ## Packaged application
 
 The rebuilt Windows x64 package passed the real tutorial-server scenario after the review fixes. Production shell, preload, IPC and controller staged an unsent durable draft, then discarded a selection on same-URL reload. The selected-target screenshot was inspected. Evidence: artifacts/preview-annotations/app-pDNZ9V, review-package.log and review-packaged-app.log. This used isolated data, not the installed personal profile.
+
+## Release-run correction
+
+Release 0.2.194 (run 41025654423) was not published. Packaging and five validation groups passed; the real-app annotation test failed after staging feedback. The runner's smaller display correctly triggered the existing responsive panel close, while the test assumed the panel remained open. Explicitly setting a 1,000-pixel viewport reproduced the exact timeout locally. The test now asserts that close, reopens through the normal `/preview` command with the existing draft as prefix, verifies the durable draft remains identical, and continues the reload check. Product behavior is unchanged. Annotation suites and the CI contract suite passed; the packaged app also passed the corrected small-screen scenario. Failure reports for this suite are now included in CI's fixture-report artifact without profiles or screenshots.
