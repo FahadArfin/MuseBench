@@ -8,8 +8,8 @@ const [mode,root]=process.argv.slice(2);
 // after deliberately losing the inner supervisor's cleanup receipt.
 const script=String.raw`const {spawn}=require('node:child_process');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',windowsHide:true,detached:true});process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'fixture/ready',params:{pids:[process.pid,child.pid]}})+'\n');setInterval(()=>{},1000);`;
 const transport=new DiscoveryTransport({command:process.execPath,args:['-e',script],cwd:root,env:process.env},{helperPath:path.resolve('native/bin/MuseBenchJob.exe'),sessionId:'fixture'});
-let errors=0,failedResolve,readyResolve,readyReject;
-const failed=new Promise(resolve=>{failedResolve=resolve;}),ready=new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject;});
+let errors=0,failedResolve,failedReject,readyResolve,readyReject;
+const failed=new Promise((resolve,reject)=>{failedResolve=resolve;failedReject=reject;}),ready=new Promise((resolve,reject)=>{readyResolve=resolve;readyReject=reject;});
 transport.onerror=()=>{errors++;failedResolve();};transport.onmessage=readyResolve;
 await transport.start();
 const startup=setTimeout(()=>readyReject(Error('Owned fixture exceeded the reviewed-source 30s startup budget.')),30000);
@@ -29,7 +29,10 @@ else{
  else if(mode==='stdout'){transport.closed=false;transport.child.stdout.emit('data',Buffer.from('not-json\n'));}
  else throw Error('Unknown mode');
 }
-await failed;
+// Match the existing Windows Job stop bound. A missing error event must fail
+// this isolated process so its independent outer Job can perform teardown.
+const failureTimeout=setTimeout(()=>failedReject(Error('Owned fixture did not report failure within the 8s cleanup bound.')),8000);
+try{await failed;}finally{clearTimeout(failureTimeout);}
 assert.ok(errors>0);assert.equal(transport.closed,true);
 await assert.rejects(transport.close(),/cleanup is unconfirmed/);
 await assert.rejects(transport.close(),/cleanup is unconfirmed/);
