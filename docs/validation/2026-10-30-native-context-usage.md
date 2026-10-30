@@ -28,4 +28,12 @@ The adapter now retains SHA-256 identities for every admitted cursor and payload
 The review's sole declined item was live provider emission and measurement accuracy. Ruling: this remains unverified because no fresh model-call allowance is authorized; source/installed fixture acceptance is described separately. No additional reviewer or deferred minor finding.
 
 The follow-up C04 audit confirmed `ReasoningEffortState` is a standing session default, not an observed effective per-turn setting. `TurnStartedParams` does not report effective effort, and MuseBench supplies an explicit per-turn request. Reading the standing default would not justify marking the requested effort as applied. The existing effective-effort limitation remains accurate.
-`Final correction verification: 1,681 tests passed, one pre-existing optional skip; production build passed. Cross-method cursor conflicts and explicit unconfirmed-cleanup regressions are green. No source tests were removed.
+Final correction verification: 1,681 tests passed, one pre-existing optional skip; production build passed. Cross-method cursor conflicts and explicit unconfirmed-cleanup regressions are green. No source tests were removed.
+
+## Release correction: cold launch font
+
+Candidate 0.2.213, release run 41064495306, passed packaging and five validation groups. Appearance failed because the brand never reached the typing phase. Its retained frame evidence shows fallback-font glyphs followed by a correctly released, interactive application. A normal local replay passed, but deliberately delaying the bundled font by 650 ms and the renderer by 500 ms reproduced the missing animation before correction.
+
+Desktop and preview now preload the existing bundled Latin interface font from their HTML entry points. Fetching it alongside the renderer avoids discovering it only after React mounts and the 400 ms readiness timer starts. No font, animation duration, fallback deadline, CSP permission or release gate changed. Vite resolves the preload to the same hashed font asset already used by the stylesheet.
+
+The reproduced cold-font case, all 19 browser/Electron launch checks, two existing font contracts and production build pass after correction. Slow/missing-font fallback, main-thread stalls, reduced motion, skip controls, exact sidebar landing and native visibility remain covered. The source report is `artifacts/startup-animation/source-8xMHzZ/report.json`; RED/GREEN logs remain in the worktree ledger directory. Published and installed acceptance still requires the corrected exact commit to pass CI.

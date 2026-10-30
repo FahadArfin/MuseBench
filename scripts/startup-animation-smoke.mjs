@@ -57,7 +57,7 @@ async function until(check,label,timeout=12000){
 const settled=page=>page.waitForFunction(()=>document.querySelector('.launch-content')&&!document.querySelector('.launch-overlay')&&document.documentElement.dataset.launchActive!=='true'&&!document.querySelector('.launch-content').inert);
 const observation=page=>page.evaluate(()=>window.__launchObservation);
 
-async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,fontDelay=0,skip}={}){
+async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,fontDelay=0,rendererDelay=0,skip}={}){
   const page=lastPage=await browser.newPage({viewport,reducedMotion,...(name==='preview-launch'?{recordVideo:{dir:output,size:viewport}}:{})});
   page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(`${name}: ${error.message}`));
   const load=report.sceneLoads??={};load[name]={failedRequests:[],failedResponses:[],crashed:false};
@@ -69,6 +69,7 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
     if(url.hostname!=='127.0.0.1')return route.abort();
     // Reproduce a delayed renderer bundle without changing presentation timing.
     if(name==='preview-launch'&&process.argv.includes('--slow-renderer')&&/\/assets\/index-[^/]+\.js$/.test(url.pathname))await delay(7000);
+    if(rendererDelay&&/\/assets\/index-[^/]+\.js$/.test(url.pathname))await delay(rendererDelay);
     if(fontDelay&&/\/inter-latin-wght-normal-[^/]+\.woff2$/.test(url.pathname))await delay(fontDelay);
     return route.continue();
   });
@@ -193,6 +194,11 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
     }catch{res.statusCode=404;res.end();}
   });}}]});await server.listen();
   browser=await chromium.launch({headless:true});
+  // On a cold machine, load the brand font alongside the renderer rather than
+  // only discovering it after React mounts and starting its readiness deadline.
+  const coldFont=await browserScene('cold-brand-font',{fontDelay:650,rendererDelay:500});
+  checkLaunchMotion(coldFont.frames,'cold brand font');await coldFont.page.close();
+  pass('Cold font and renderer loading overlap, preserving the normal animation without extending its readiness deadline');
   const normal=await browserScene('preview-launch');
   checkLaunchMotion(normal.frames,'dark theme');
   pass('Preview types the large blue Muse AI wordmark in the center, animates to the actual sidebar brand, and releases interaction in under 2.35 seconds');
