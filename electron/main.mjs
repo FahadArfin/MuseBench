@@ -1,3 +1,5 @@
+import {createBackgroundEngine} from './background-engine.mjs';
+import {createNativeControlRouter} from './native-control-router.mjs';
 import {createBillingReader} from './billing-reader.mjs';
 import {createCodeBilling} from './code-billing.mjs';
 import {createBillingPayments} from './billing-payments.mjs';
@@ -30,7 +32,7 @@ import {createWorkExporter} from './work-export.mjs';
 import {writeFile} from 'node:fs/promises';
 import {workDataDirectory} from './work-root.mjs';
 import {createDictation} from './dictation.mjs';
-import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, shell, session, nativeTheme, Notification, protocol, safeStorage, clipboard, ClipboardItem } from 'electron';
+import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, Tray, shell, session, nativeTheme, Notification, protocol, safeStorage, clipboard, ClipboardItem } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -52,17 +54,18 @@ const sessionDurability = createSessionDurability({ app });
 const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
-let window, controller, customize, personal, billingReader, billingPayments, codeBilling, onboarding, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, nativeService, closing = false, updateInstalling=false, updateShutdown, pendingIpc=0;
+let window, ui, openWindow, background, closeOwned, controller, customize, codeBilling, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0;
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', () => { if(window) { if(window.isMinimized()) window.restore(); window.show(); window.focus(); } });
+  app.on('second-instance',()=>{void openWindow?.().catch(startupFailed);});
+  app.on('activate',()=>{void openWindow?.().catch(startupFailed);});
   app.whenReady().then(async () => {
     const helperPath = app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchJob.exe') : path.join(root,'native','bin','MuseBenchJob.exe');
     const dataDir = app.getPath('userData');
     const extensionReview=createExtensionReview({dataDir,profile:userProfile()});
     const workspaceMcp=createWorkspaceMcpConfig({appRoot:root});
-    codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>!!onboarding?.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>billingReader.read()});
+    codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>!!ui?.onboarding?.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
     const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp});
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.13 can stall before shell launch inside the user profile.
@@ -93,11 +96,77 @@ else {
     sessionDurability.track(session.defaultSession);
     session.defaultSession.setPermissionRequestHandler((_contents,_permission,callback)=>callback(false));
     session.defaultSession.setPermissionCheckHandler(()=>false);
+
+    dictation = createDictation({helperPath: app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchSpeech.exe') : path.join(root,'native','bin','MuseBenchSpeech.exe'), onState: value => { if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:dictation-update',value); }});
+    customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{if(!window||window.isDestroyed())throw Error('Open MuseBench to choose a folder.');const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
+    mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||!!ui?.onboarding?.isBusy()})});
+    const updateBusy=()=>pendingIpc>0||nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||ui?.onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
+    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',ui?.onboarding?.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
+    let opening=null,firstWindow=true,blockedDialog=false,pendingWindowClose=false;
+    const showBlocked=async message=>{if(blockedDialog||closing)return;blockedDialog=true;try{await openWindow();await dialog.showMessageBox(window,{type:'info',title:'MuseBench is still working',message,detail:updateBlockers().map(row=>row.label+': '+row.detail).join('\n'),buttons:['Keep running']});}finally{blockedDialog=false;}};
+    openWindow=()=>{
+      if(closing||updateInstalling)return Promise.reject(Error('MuseBench is closing or updating.'));
+      if(opening)return opening;
+      if(window&&!window.isDestroyed()){if(window.isMinimized())window.restore();window.show();window.focus();return Promise.resolve(window);}
+      opening=(async()=>{
     window = new BrowserWindow({ width:1480, height:960, minWidth:390, minHeight:600, show:false, title:'MuseBench', icon:path.join(root,'electron','assets','musebench.ico'), backgroundColor:'#181818', autoHideMenuBar:true,
       ...(process.platform === 'win32' ? {titleBarStyle:'hidden',titleBarOverlay:titleBarOverlay('dark')} : {}),
       webPreferences:{preload:path.join(root,'electron','preload.cjs'),additionalArguments:['--musebench-launch-animation'],contextIsolation:true,nodeIntegration:false,sandbox:true,webviewTag:false,webSecurity:true,spellcheck:false} });
-    dictation = createDictation({helperPath: app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchSpeech.exe') : path.join(root,'native','bin','MuseBenchSpeech.exe'), onState: value => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:dictation-update',value); }});
-    window.on('close',event=>{if(updateShutdown?.preparing())event.preventDefault();});
+        const ownWindow=window,view={window:ownWindow};ui=view;
+        ownWindow.once('closed',()=>{if(window===ownWindow)window=null;});
+        try{await attachWindow(ownWindow,view);firstWindow=false;return ownWindow;}catch(error){ownWindow.destroy();throw error;}
+      })().finally(()=>{opening=null;if(pendingWindowClose){pendingWindowClose=false;const requestedWindow=window;if(requestedWindow&&!requestedWindow.isDestroyed())setImmediate(()=>{if(!requestedWindow.isDestroyed())requestedWindow.close();});}});return opening;
+    };
+    background=await createBackgroundEngine({dataDir,windowOpen:()=>!!window&&!window.isDestroyed(),openWindow,quit:()=>app.quit(),isBusy:updateBusy,onBlocked:message=>{void showBlocked(message).catch(()=>{});},createTray:actions=>{
+      const tray=new Tray(path.join(root,'electron','assets',process.platform==='win32'?'musebench.ico':'musebench.png'));
+      tray.setToolTip('MuseBench — running in the background');tray.setContextMenu(Menu.buildFromTemplate([{label:'Open MuseBench',click:actions.open},{type:'separator'},{label:'Quit MuseBench',click:actions.quit}]));tray.on('click',actions.open);return tray;
+    }});
+    const nativeRouter=createNativeControlRouter({app,controller,getView:()=>ui?.nativeService,getBackground:()=>background.snapshot(),isBlocked:()=>closing||updateInstalling||customize.isBusy()||codeBilling.isBusy()||!!ui?.onboarding?.isBusy()});
+    nativeControl=await createNativeControlHost({dataDir,service:nativeRouter,connectionConfig:()=>prepareNativeMcpConfig({dataDir,executable:process.execPath,appRoot:root})});
+    closeOwned=async()=>{
+      closing=true;updates?.close();ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();ui?.onboarding?.close();
+      const results=await Promise.allSettled([nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close(),background.close()]);
+      for(const notification of notifications)notification.close();notifications.clear();
+      await sessionDurability.close();if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
+    };
+    const {autoUpdater}=updaterPackage;
+    autoUpdater.setFeedURL({provider:'github',owner:'FahadArfin',repo:'MuseBench',private:false});
+    updateShutdown=createUpdateShutdown({isBusy:updateBusy,voice:()=>dictation.dispatch('status'),lock:value=>{updateInstalling=value;},closeServices:closeOwned,verifyClosed:()=>!updateBlocked(controller.getState(),work.getState(),sites.getState())});
+    updates=createAppUpdates({updater:autoUpdater,version:app.getVersion(),enabled:app.isPackaged&&(process.platform==='win32'&&existsSync(path.join(path.dirname(app.getPath('exe')),'Uninstall MuseBench.exe'))||process.platform==='linux'&&!!process.env.APPIMAGE),isBusy:updateBusy,getBlockers:updateBlockers,onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('musebench:app-update-state',value);},prepareInstall:()=>updateShutdown.prepare()});
+    updates.start();const updateStartup=setTimeout(()=>{void updates.dispatch('check').catch(()=>{});},15000);updateStartup.unref();
+    const notifications=new Set();
+    const notifier=createRunNotifier({report:(id,status)=>controller.recordDelivery(id,status),isFocused:()=>!!window&&!window.isDestroyed()&&window.isFocused(),send:(options,receipt)=>{
+      if(!Notification.isSupported()){receipt.delivery('unsupported');return;}
+      const notification=new Notification(options);notifications.add(notification);
+      notification.on('click',()=>{void openWindow?.().catch(()=>{});});
+      notification.on('close',()=>notifications.delete(notification));
+      notification.on('show',()=>receipt.delivery('shown'));
+      notification.on('failed',()=>{receipt.delivery('failed');notifications.delete(notification);});
+      notification.show();
+      while(notifications.size>5){const oldest=notifications.values().next().value;notifications.delete(oldest);oldest.close();}
+    }});
+    notifier.observe(controller.getState());
+
+    sites.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:sites-update',value);});
+    spaces.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:spaces-update',value);});
+    work.subscribe(publishWork);
+    controller.subscribe(state=>{notifier.observe(state);if(window&&!window.isDestroyed())window.webContents.send('musebench:update',state);});
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      {label:'MuseBench',submenu:[{label:'Open project…',accelerator:'CmdOrCtrl+O',click:async()=>{if(updateInstalling||closing||customize?.isBusy())return;await openWindow();pendingIpc++;try{const r=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!r.canceled&&!updateInstalling&&!closing){const next=await controller.dispatch({type:'openProject',path:r.filePaths[0]});if(!next.error&&!window.isDestroyed()){ui?.personal.hide();window.webContents.send('musebench:personal-shortcut','code');}}}finally{pendingIpc--;}}},{type:'separator'},{role:'quit'}]},
+      {role:'editMenu'}, {label:'View',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},...(!app.isPackaged?[{role:'toggleDevTools'}]:[])]},
+    ]));
+
+    async function attachWindow(window,view){
+
+    window.on('close',event=>{
+      if(closing)return;
+      if(opening){event.preventDefault();pendingWindowClose=true;return;}
+      if(updateShutdown?.preparing()){event.preventDefault();return;}
+      if(pendingIpc>0){event.preventDefault();view.closeAfterIpc=true;return;}
+      if(codeBilling.isBusy()||view.onboarding?.isBusy()||updateBlocked(dictation.snapshot())||!background.snapshot().enabled&&updateBusy()){
+        event.preventDefault();void showBlocked('Finish or stop active work before closing MuseBench, or enable background mode in General settings.').catch(()=>{});
+      }
+    });
     window.on('blur',()=>{ void dictation.stop(true).catch(()=>{}); });
     window.webContents.setWindowOpenHandler(()=>({action:'deny'}));
     window.webContents.on('will-navigate',(event,url)=>{if(url!==uiURL) event.preventDefault();});
@@ -110,11 +179,12 @@ else {
       try{if(!previewURL||new URL(event.url).origin!==new URL(previewURL).origin)event.preventDefault();}catch{event.preventDefault();}
     });
     window.webContents.on('will-attach-webview', event=>event.preventDefault());
-    personal = createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell,
+    const personal = view.personal = createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell,
       onState: state => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:personal-update', state); },
       onShortcut: shortcut => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:personal-shortcut', shortcut); },
     });
     const launch = createLaunchAnimation({setHeld: held => personal.setLaunchHold(held)});
+    if(!firstWindow)launch.complete();
     personal.preloadInitial();
     // Preload needs this one boolean before the renderer's first paint. The
     // synchronous handler only consumes an in-memory ticket; it does no I/O.
@@ -128,13 +198,15 @@ else {
     });
     window.webContents.on('render-process-gone',()=>launch.complete());
     window.once('closed',()=>{launch.close();ipcMain.removeListener('musebench:launch-claim',claimLaunch);});
-    const handler = (name, fn) => ipcMain.handle(name, async (event,...args) => {
+    const handlers=[];
+    const handler = (name, fn) => {handlers.push(name);ipcMain.handle(name, async (event,...args) => {
       if (!trustedSender(event,window.webContents,uiURL)) throw Error('Workspace access is restricted to the main MuseBench window.');
       if(updateInstalling&&name!=='musebench:app-update')throw Error('MuseBench is restarting to install an update.');
       if((codeBilling.isBusy()||onboarding?.isBusy())&&['musebench:action','musebench:work','musebench:sites','musebench:customize'].includes(name))throw Error('Finish the billing source change or sign-in before starting work.');
       if(name==='musebench:app-update')return fn(...args);
-      pendingIpc++;try{return await fn(...args);}finally{pendingIpc--;}
-    });
+      pendingIpc++;try{return await fn(...args);}finally{pendingIpc--;if(pendingIpc===0&&view.closeAfterIpc){view.closeAfterIpc=false;setImmediate(()=>{if(!window.isDestroyed())window.close();});}}
+    });};
+    handler('musebench:background-engine',command=>background.command(command));
     handler('musebench:launch-complete',()=>launch.complete());
     const openFileEditor=createFileEditor({dataDir,getState:()=>controller.getState(),choose:async()=>{
       const result=await dialog.showOpenDialog(window,{title:'Choose your preferred text editor',properties:['openFile'],...(process.platform==='win32'?{filters:[{name:'Editor application',extensions:['exe']}]}:{})});
@@ -167,27 +239,11 @@ else {
     });
     handler('musebench:conversation-import',input=>controller.conversationImport(input));
     handler('musebench:code-draft',input=>controller.saveCodeDraft(validateAction({...input,type:'saveDraft'})));
-    customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
-    mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||!!onboarding?.isBusy()})});
     handler('musebench:mobile-device',command=>mobileHost.command(command));
     const nativeRenderer=createNativeRenderer({window,ipcMain,trusted:event=>trustedSender(event,window.webContents,uiURL)});
-    nativeService=createNativeControlService({app,window,controller,personal,renderer:nativeRenderer,isBlocked:()=>closing||updateInstalling||window.webContents.isLoading()||customize.isBusy()||codeBilling.isBusy()||!!onboarding?.isBusy()});
-    nativeControl=await createNativeControlHost({dataDir,service:nativeService,connectionConfig:()=>prepareNativeMcpConfig({dataDir,executable:process.execPath,appRoot:root})});
+    const nativeService=view.nativeService=createNativeControlService({app,window,controller,personal,renderer:nativeRenderer,isBlocked:()=>closing||updateInstalling||window.webContents.isLoading()||customize.isBusy()||codeBilling.isBusy()||!!onboarding?.isBusy()});
     handler('musebench:native-control',command=>nativeControl.command(command));
-    const updateBusy=()=>pendingIpc>0||nativeControl.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation);
-    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['app-control','App control',nativeControl.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',onboarding?.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
-    const {autoUpdater}=updaterPackage;
-    autoUpdater.setFeedURL({provider:'github',owner:'FahadArfin',repo:'MuseBench',private:false});
-    updateShutdown=createUpdateShutdown({isBusy:updateBusy,voice:()=>dictation.dispatch('status'),lock:value=>{updateInstalling=value;},closeServices:async()=>{
-      closing=true;personal.close();billingReader?.close();
-      nativeService.close();
-      const results=await Promise.allSettled([nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close()]);
-      await sessionDurability.close();
-      if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
-    },verifyClosed:()=>!updateBlocked(controller.getState(),work.getState(),sites.getState())});
-    updates=createAppUpdates({updater:autoUpdater,version:app.getVersion(),enabled:app.isPackaged&&(process.platform==='win32'&&existsSync(path.join(path.dirname(app.getPath('exe')),'Uninstall MuseBench.exe'))||process.platform==='linux'&&!!process.env.APPIMAGE),isBusy:updateBusy,getBlockers:updateBlockers,onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('musebench:app-update-state',value);},prepareInstall:()=>updateShutdown.prepare()});
     handler('musebench:app-update',command=>updates.dispatch(command));
-    updates.start();const updateStartup=setTimeout(()=>{void updates.dispatch('check').catch(()=>{});},15000);updateStartup.unref();
     handler('musebench:customize',command=>customize.dispatch(command));
     handler('musebench:sites-state',()=>sites.getState());
     handler('musebench:sites',command=>{if(customize.isBusy())throw Error('Wait for Customize to finish before starting another operation.');return sites.dispatch(command);});
@@ -204,11 +260,9 @@ else {
       if(result.canceled)return sites.getState();
       return sites.importFolder(result.filePaths[0],{replaceId:selected});
     });
-    sites.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:sites-update',value);});
     handler('musebench:spaces-state',()=>spaces.getState());
     handler('musebench:spaces',command=>spaces.dispatch(command));
     handler('musebench:spaces-copy-invitation',()=>{const invitation=spaces.getState().invitation;if(!invitation)throw Error('Create an invitation first.');return clipboard.writeText(invitation.text);});
-    spaces.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:spaces-update',value);});
     handler('musebench:work-state',()=>workSnapshot(work.getState()));
     handler('musebench:work',async command=>{if(customize.isBusy())throw Error('Wait for Customize to finish before starting another operation.');return workSnapshot(await work.dispatch(command));});
     handler('musebench:work-import',async()=>{
@@ -230,10 +284,9 @@ else {
       if(result.canceled||!result.filePath)return{saved:false};
       return workExporter.export({artifact,format,filePath:result.filePath,theme:nativeTheme.shouldUseDarkColors?'dark':'light',updatedAt:snapshot.artifactUpdatedAt});
     });
-    work.subscribe(publishWork);
-    billingReader=createBillingReader({BrowserWindow,session,parent:window});
+    const billingReader=view.billingReader=createBillingReader({BrowserWindow,session,parent:window});
     const billingChanged=()=>{if(!window.isDestroyed())window.webContents.send('musebench:billing-update');};
-    billingPayments=createBillingPayments({BrowserWindow,session,shell,parent:window,onClosed:billingChanged});
+    const billingPayments=view.billingPayments=createBillingPayments({BrowserWindow,session,shell,parent:window,onClosed:billingChanged});
     window.on('closed',()=>billingReader.close());
     window.on('closed',()=>billingPayments.close());
     handler('musebench:code-billing',async command=>{
@@ -256,10 +309,10 @@ else {
         const result=await dialog.showOpenDialog(window,{title:'Mention a project file',properties:['openFile']});
         return result.canceled?{status:'cancelled'}:{status:'ready',path:result.filePaths[0]};
       }
-      if(type==='close'){window.close();return{status:'ready'};}
+      if(type==='close'){setImmediate(()=>{if(!window.isDestroyed())window.close();});return{status:'ready'};}
       throw Error('Unsupported command.');
     });
-    onboarding=createOnboarding({getBinary:()=>controller.getState().runtime.binary,getRuntime:()=>controller.getState().runtime,personal});
+    const onboarding=view.onboarding=createOnboarding({getBinary:()=>controller.getState().runtime.binary,getRuntime:()=>controller.getState().runtime,personal});
     handler('musebench:onboarding',async command=>{
       if(command?.type==='apiKey'){await codeBilling.command({type:'saveApiKey',key:command.key});billingChanged();return{code:{status:'ready',method:'api'},personal:{status:'unknown'}};}
       if(command?.type==='loginCode')return codeBilling.signIn(()=>onboarding.command(command));
@@ -275,27 +328,19 @@ else {
     handler('musebench:choose-project', async()=>{const result=await dialog.showOpenDialog(window,{title:'Open a local project',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];});
     handler('musebench:choose-binary',async()=>{const result=await dialog.showOpenDialog(window,{title:'Select your official Muse CLI executable',properties:['openFile'],filters:[{name:'Muse CLI',extensions:process.platform==='win32'?['exe']:['*']}]});return result.canceled?null:result.filePaths[0];});
     handler('musebench:external',async url=>{if(!allowedExternal(url))throw Error('This external link is not supported.');await shell.openExternal(url);});
-    const notifications=new Set();
-    const notifier=createRunNotifier({report:(id,status)=>controller.recordDelivery(id,status),isFocused:()=>!window||window.isDestroyed()||window.isFocused(),send:(options,receipt)=>{
-      if(!Notification.isSupported()){receipt.delivery('unsupported');return;}
-      const notification=new Notification(options);notifications.add(notification);
-      notification.on('click',()=>{if(!window.isDestroyed()){if(window.isMinimized())window.restore();window.show();window.focus();}});
-      notification.on('close',()=>notifications.delete(notification));
-      notification.on('show',()=>receipt.delivery('shown'));
-      notification.on('failed',()=>{receipt.delivery('failed');notifications.delete(notification);});
-      notification.show();
-      while(notifications.size>5){const oldest=notifications.values().next().value;notifications.delete(oldest);oldest.close();}
-    }});
-    notifier.observe(controller.getState());
     handler('musebench:notifications',value=>{notifier.configure(value);return{supported:Notification.isSupported()};});
-    controller.subscribe(state=>{notifier.observe(state);if(window&&!window.isDestroyed())window.webContents.send('musebench:update',state);});
-    Menu.setApplicationMenu(Menu.buildFromTemplate([
-      {label:'MuseBench',submenu:[{label:'Open project…',accelerator:'CmdOrCtrl+O',click:async()=>{if(updateInstalling||closing||customize?.isBusy())return;pendingIpc++;try{const r=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!r.canceled&&!updateInstalling&&!closing){const next=await controller.dispatch({type:'openProject',path:r.filePaths[0]});if(!next.error&&!window.isDestroyed()){personal.hide();window.webContents.send('musebench:personal-shortcut','code');}}}finally{pendingIpc--;}}},{type:'separator'},{role:'quit'}]},
-      {role:'editMenu'}, {label:'View',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},...(!app.isPackaged?[{role:'toggleDevTools'}]:[])]},
-    ]));
-    window.once('ready-to-show',()=>window.show());
+    window.once('closed',()=>{for(const name of handlers)ipcMain.removeHandler(name);nativeService.close();personal.close();if(ui===view){ui=null;} });
+    window.once('ready-to-show',()=>{if(!window.isDestroyed())window.show();});
     await window.loadURL(uiURL);
+    }
+    await openWindow();
   }).catch(startupFailed);
 }
-app.on('window-all-closed',()=>app.quit());
-app.on('before-quit',event=>{if(updateShutdown?.preparing()){event.preventDefault();return;}updates?.close();personal?.close();billingReader?.close();if(!closing){event.preventDefault();closing=true;nativeService?.close();Promise.allSettled([nativeControl?.close(),mobileHost?.close(),customize?.close(),sites?.close(),spaces?.close(),controller?.close(),work?.close(),workExporter?.close(),dictation?.close()]).then(()=>sessionDurability.close()).catch(()=>{}).finally(()=>app.quit());}});
+app.on('window-all-closed',()=>{if(background)background.windowClosed();else app.quit();});
+app.on('before-quit',event=>{
+  if(updateShutdown?.preparing()){event.preventDefault();return;}
+  if(closing)return;
+  if(background&&!background.beforeQuit(event))return;
+  event.preventDefault();closing=true;
+  Promise.resolve().then(()=>closeOwned?.()).catch(()=>{}).finally(()=>app.quit());
+});

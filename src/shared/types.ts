@@ -99,6 +99,7 @@ export interface MuseBenchBridge {
 export interface MuseBenchBridge {mobileDevice(command:import('./mobile-types').MobileDeviceCommand):Promise<import('./mobile-types').MobileDeviceState>;}
 export interface MuseBenchBridge {
  nativeControl(command:{type:'status'|'enable'|'disable'}):Promise<import('./native-control-types').NativeControlState>;
+ backgroundEngine(command:{type:'status'}|{type:'set';enabled:boolean}):Promise<{enabled:boolean;running:boolean;windowOpen:boolean;simulation?:boolean}>;
  onNativeRequest?(callback:(request:import('./native-control-types').NativeRequest)=>Promise<unknown>):()=>void;
 }
 declare global { interface Window { musebench?: MuseBenchBridge } }

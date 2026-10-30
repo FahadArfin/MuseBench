@@ -1003,6 +1003,13 @@ test('retry after a failed initial navigation reloads the curated destination in
   h.browser.close();
 });
 
+test('a prevented native close preserves personal contents for continued use', async () => {
+  const h=harness();await h.browser.dispatch({type:'navigate',destination:'bot'});await h.browser.dispatch(layout);
+  const remote=h.views[0].webContents;h.window.emit('close',{defaultPrevented:true});
+  assert.equal(remote.destroyed,false);await h.browser.dispatch({type:'navigate',destination:'ideas'});
+  h.window.emit('close',{defaultPrevented:false});assert.equal(remote.destroyed,true);
+});
+
 test('native window close cleans up before destruction and never reads destroyed window getters', async () => {
   const h = harness(); await h.browser.dispatch({ type: 'navigate', destination: 'bot' }); await h.browser.dispatch(layout);
   const localContents = h.window.webContents;

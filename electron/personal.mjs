@@ -721,7 +721,8 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   const shellPointer=(_event,input)=>{if(input.type==='mouseDown'&&requestedVisible&&destination==='chat'&&!closed&&current()?.key!=='meta-search')void metaAdapter.dismiss(current()?.contents);};
   localContents.on('before-mouse-event',shellPointer);
   localContents.on('did-start-navigation', localNavigation); localContents.on('render-process-gone', hide); localContents.on('destroyed', hide); localContents.on('zoom-changed', resize);
-  window.on('resize', resize); window.on('close', close);
+  const beforeClose=event=>{if(!event?.defaultPrevented)close();};
+  window.on('resize', resize); window.on('close', beforeClose); window.on('closed', close);
   function close() {
     if (closed) return;
     closed = true; accountSync.close(); stopWarmup(true); if(setupLoginWindow&&!setupLoginWindow.isDestroyed())setupLoginWindow.destroy(); clearTimeout(scheduleTimer); requestedVisible = false; cancelActions(); clearLibrary(); clearTimeout(libraryTimer); libraryTimer = null;
@@ -739,7 +740,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     for (const value of serviceSessions.values()) value.dispose();
     localContents.removeListener('before-mouse-event',shellPointer);
     localContents.removeListener('did-start-navigation', localNavigation); localContents.removeListener('render-process-gone', hide); localContents.removeListener('destroyed', hide); localContents.removeListener('zoom-changed', resize);
-    window.removeListener('resize', resize); window.removeListener('close', close);
+    window.removeListener('resize', resize); window.removeListener('close', beforeClose); window.removeListener('closed', close);
   }
   function setLaunchHold(held) { if (!closed) { launchHeld = Boolean(held); publish(); } }
   function preloadInitial() {

@@ -4,6 +4,7 @@ import {useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode,
 import {Bell, BookOpen, Brain, Check, Code2, CreditCard, Database, Info, Keyboard, Mic, Monitor, Moon, Search, Settings2, ShieldCheck, Sun, Terminal, User, X} from 'lucide-react';
 import {Modal} from './WorkspacePanels';
 import {SettingsServicePanel} from './SettingsServicePanel';
+import {BackgroundSettings} from './BackgroundSettings';
 import {normalizePreferences, readPreferences, resolveTheme, writePreferences, type Preferences} from './preferences.mjs';
 import {findSettings, type SettingsCategory} from './settings-catalog.mjs';
 import {REASONING_LEVELS} from '../shared/run-options.mjs';
@@ -97,6 +98,7 @@ export function SettingsDialog({preferences, onChange, close, openConnection, st
             <SettingRow title="Reduce motion" description="Keep transitions and animations to a minimum."><Toggle label="Reduce motion" value={preferences.reducedMotion} change={value=>update('reducedMotion',value)}/></SettingRow>
           </section>
           <section className="settings-section"><h3>Composer</h3><SettingRow title="Enter to send" description={preferences.enterToSend?'Enter sends your message. Shift+Enter adds a new line.':'Ctrl+Enter sends your message. Enter adds a new line.'}><Toggle label="Enter to send" value={preferences.enterToSend} change={value=>update('enterToSend',value)}/></SettingRow></section>
+          <BackgroundSettings/>
           <p className="settings-note">Preferences save automatically on this computer.</p>
         </>}
         {active==='notifications'&&<section className="settings-section"><h3>Notifications</h3><p className="settings-description">Get a Windows notification while MuseBench is in the background. These alerts cover Muse Code tasks.</p>

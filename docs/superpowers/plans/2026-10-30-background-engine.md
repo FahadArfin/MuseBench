@@ -1,6 +1,6 @@
 # Background Engine Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Keep owned work available with no window when explicitly enabled, with safe reopen/quit/update behavior.
 
@@ -26,18 +26,18 @@
 ### Task 1: Owned lifecycle and background native projection
 **Files:** electron/background-engine.mjs, electron/native-control-service.mjs, test/background-engine.test.mjs, test/native-control.test.mjs.
 **Interfaces:** createBackgroundEngine({dataDir,createTray,openWindow,quit,isBusy,onBlocked}) exposes snapshot(), command({type:'status'|'set',enabled?}), windowClosed(), beforeQuit(event), close(). A stable native router delegates UI calls only to an attached view, and reads controller state without one.
-- [ ] Write failing tests for default/persisted settings, serialized mutation/rollback, tray-open/quit, active work guards and read-only native behavior with no window.
-- [ ] Run `node --test test/background-engine.test.mjs test/native-control.test.mjs` and observe RED.
-- [ ] Implement the bounded lifecycle and native projection. No new public execution methods.
-- [ ] Run the same tests, expect all PASS, then commit.
+- [x] Write failing tests for default/persisted settings, serialized mutation/rollback, tray-open/quit, active work guards and read-only native behavior with no window.
+- [x] Run `node --test test/background-engine.test.mjs test/native-control.test.mjs` and observe RED.
+- [x] Implement the bounded lifecycle and native projection. No new public execution methods.
+- [x] Run the same tests, expect all PASS, then commit.
 
 ### Task 2: Disposable desktop windows and shared setting
 **Files:** electron/main.mjs, electron/preload.cjs, electron/personal.mjs, src/shared/types.ts, src/preview/bridge.ts, src/ui/BackgroundSettings.tsx, src/ui/Preferences.tsx, scripts/background-engine-smoke.mjs, scripts/run-ci-suite.mjs, package.json, .github/workflows/windows-checks.yml, docs/BACKGROUND-ENGINE.md.
 **Interfaces:** MuseBenchBridge.backgroundEngine({type:'status'|'set',enabled?}) returns {enabled,running,windowOpen,simulation?}. Main attaches exactly one window; closes UI listeners/handlers on disposal while existing controller/mobile/native owners persist.
-- [ ] Add real-Electron smoke for setting defaults, actual window disposal, repeated/concurrent reopen, profile preference persistence, stable native owner and safe quit; use disposable profile and zero provider calls. Add shared settings UI checks.
-- [ ] Run `npm run test:background-engine` and observe RED against the missing feature.
-- [ ] Refactor owner/window boundaries and add the compact setting; preserve existing window security and update guards. Wire CI and docs, including 0.2.199 installed acceptance from retained evidence.
-- [ ] Run targeted lifecycle/native/update/personal tests, shared smoke, `npm test` and `npm run build`; expect PASS then commit.
+- [x] Add real-Electron smoke for setting defaults, actual window disposal, repeated/concurrent reopen, profile preference persistence, stable native owner and safe quit; use disposable profile and zero provider calls. Add shared settings UI checks.
+- [x] Run `npm run test:background-engine` and observe RED against the missing feature.
+- [x] Refactor owner/window boundaries and add the compact setting; preserve existing window security and update guards. Wire CI and docs, including 0.2.199 installed acceptance from retained evidence.
+- [x] Run targeted lifecycle/native/update/personal tests, shared smoke, `npm test` and `npm run build`; expect PASS then commit.
 
 ### Task 3: Review and verified delivery
 **Files:** docs/ROADMAP-2026-10-29.md, docs/validation/2026-10-30-background-engine.md and focused corrections if required.
