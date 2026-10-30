@@ -63,6 +63,14 @@ test('personal sign-in stays busy after its opening command settles until the ac
  assert.equal(onboarding.isBusy(),false);assert.equal(h.browser.snapshot().authWindowOpen,false);
 });
 
+test('a passive signed-out document does not lock closing or updates without an account window',async t=>{
+ const h=harness({warmLimit:0});t.after(()=>h.browser.close());await h.browser.dispatch(layout);
+ await h.views[0].webContents.loadURL('https://auth.meta.com/login');
+ const onboarding=createOnboarding({getBinary:()=>null,personal:h.browser});
+ assert.equal(h.browser.snapshot().authenticating,true);assert.equal(h.browser.snapshot().authWindowOpen,false);
+ assert.equal(onboarding.isBusy(),false);
+});
+
 test('launch prepares the default chat behind the animation and reveals the same native document', async t => {
   const h = harness({warmLimit:0});
   t.after(()=>h.browser.close());

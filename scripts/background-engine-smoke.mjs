@@ -9,10 +9,10 @@ await mkdir('artifacts/background-engine',{recursive:true});
 const output=await mkdtemp(path.resolve('artifacts/background-engine/desktop-'));
 const profile=path.join(output,'profile');
 const env=isolatedDesktopEnvironment(profile);
-let app,page;const report={checks:[],providerCalls:0,errors:[]};
+let app,page,call;const report={checks:[],providerCalls:0,errors:[],lifecycle:[],processExits:[]};
 const pass=label=>{report.checks.push(label);console.log('PASS '+label);};
 const shell=async()=>{const deadline=Date.now()+10000;while(Date.now()<deadline){const found=app.windows().find(p=>p.url().includes('/dist/index.html'));if(found){found.setDefaultTimeout(8000);await found.waitForFunction(()=>!!window.musebench);return found;}await new Promise(resolve=>setTimeout(resolve,100));}throw Error('MuseBench shell did not open.');};
-const launch=async()=>{const executablePath=process.env.MUSEBENCH_EXECUTABLE;app=await electron.launch({...(executablePath?{executablePath}:{}),args:[...(executablePath?[]:['.']),'--host-resolver-rules=MAP * 0.0.0.0, EXCLUDE localhost'],env});app.process().stderr.on('data',chunk=>{const text=chunk.toString();if(/Uncaught|UnhandledPromiseRejection|Shutdown regression/.test(text))report.errors.push(text);});page=await shell();};
+const launch=async()=>{const executablePath=process.env.MUSEBENCH_EXECUTABLE;app=await electron.launch({...(executablePath?{executablePath}:{}),args:[...(executablePath?[]:['.']),'--host-resolver-rules=MAP * 0.0.0.0, EXCLUDE localhost'],env});app.process().on('exit',(code,signal)=>report.processExits.push({code,signal}));app.process().stderr.on('data',chunk=>{const text=chunk.toString();if(/Uncaught|UnhandledPromiseRejection|Shutdown regression/.test(text))report.errors.push(text);if(text.includes('BACKGROUND_LIFECYCLE'))report.lifecycle.push(text.slice(0,1500));});page=await shell();await app.evaluate(({app,BrowserWindow})=>{for(const name of ['before-quit','will-quit','window-all-closed'])app.on(name,event=>process.stderr.write('BACKGROUND_LIFECYCLE '+JSON.stringify({name,pid:process.pid,prevented:!!event?.defaultPrevented,windows:BrowserWindow.getAllWindows().length})+'\n'));});};
 try{
  await launch();
  assert.equal(await page.evaluate(()=>typeof window.musebench.backgroundEngine),'function');
@@ -26,7 +26,7 @@ try{
  const paired=await mobileRequest('/v1/pair',payload.secret,{name:'Lifecycle fixture'});
  await page.evaluate(()=>window.musebench.nativeControl({type:'enable'}));
  const native=JSON.parse(await readFile(path.join(profile,'native-control/connection.json'),'utf8'));
- const call=async(name,args={})=>{const response=await fetch(`http://127.0.0.1:${native.port}/call`,{method:'POST',headers:{authorization:`Bearer ${native.token}`,'content-type':'application/json'},body:JSON.stringify({name,arguments:args})});const value=await response.json();if(!response.ok)throw Error(value.error);return JSON.parse(value.content[0].text);};
+ call=async(name,args={},signal)=>{const response=await fetch(`http://127.0.0.1:${native.port}/call`,{method:'POST',signal,headers:{authorization:`Bearer ${native.token}`,'content-type':'application/json'},body:JSON.stringify({name,arguments:args})});const value=await response.json();if(!response.ok)throw Error(value.error);return JSON.parse(value.content[0].text);};
  await call('navigate',{target:'settings',section:'general'});
  const toggle=page.getByRole('switch',{name:'Keep running when the window closes'});assert.equal(await toggle.getAttribute('aria-checked'),'false');await toggle.click();await page.waitForFunction(async()=> (await window.musebench.backgroundEngine({type:'status'})).enabled);
  const before=await call('app_status');const pid=app.process().pid;pass('Desktop setting defaults off and explicitly enables the tray without provider work');
@@ -43,7 +43,10 @@ try{
  assert.equal((await page.evaluate(()=>window.musebench.personalState())).authenticating,false);
  pass('After the sign-in command settles, close and quit preserve the account window until it is dismissed');
  for(let i=0;i<3;i++){
-  const closed=page.waitForEvent('close');await app.evaluate(({BrowserWindow})=>{BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html')).close();});await closed;
+  report.closingCycle=i;report.beforeClose=await call('app_status');
+  // Let the inspector acknowledge the request before disposing its last page.
+  // The following native checks still require the same live engine and zero UI.
+  const closed=page.waitForEvent('close');await app.evaluate(({BrowserWindow})=>{const window=BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html'));setTimeout(()=>window.close(),50);});await closed;
   assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length),0);
   const state=await call('app_status');assert.equal(state.engine.windowOpen,false);assert.deepEqual(state.chats,before.chats);assert.equal(app.process().pid,pid);
   assert.equal((await mobileRequest('/v1/state',paired.token)).chats[0].id,seeded.task.id);assert.equal((await call('read_chat',{taskId:seeded.task.id})).total,2);
@@ -65,7 +68,17 @@ try{
  }
  pass('Three actual UI disposals preserve the same engine, authenticated native/mobile access and saved chat, with one window on concurrent reopen');
  await call('navigate',{target:'settings',section:'general'});await page.screenshot({path:path.join(output,'settings.png')});
- await app.close();app=null;await launch();
+ // Queue quit behind a real IPC operation. No system picker is shown.
+ await app.evaluate(({dialog})=>{dialog.showOpenDialog=()=>new Promise(resolve=>{globalThis.releaseFixturePicker=resolve;});});
+ const picker=page.evaluate(()=>window.musebench.chooseProject());
+ await app.evaluate(async()=>{while(!globalThis.releaseFixturePicker)await new Promise(resolve=>setTimeout(resolve,10));});
+ const quitExit=new Promise(resolve=>app.process().once('exit',resolve));
+ await app.evaluate(({app})=>app.quit());assert.equal(app.process().exitCode,null);
+ await app.evaluate(()=>globalThis.releaseFixturePicker({canceled:true,filePaths:[]}));await picker;
+ let quitTimer;const quitCode=await Promise.race([quitExit,new Promise(resolve=>quitTimer=setTimeout(()=>resolve('timeout'),5000))]);clearTimeout(quitTimer);
+ assert.equal(quitCode,0,'Quit requested during an IPC operation must run after it settles and recheck activity');app=null;
+ pass('Quit waits for a pending picker operation, then rechecks ownership and exits without dropping the request');
+ await launch();
  assert.equal((await page.evaluate(()=>window.musebench.backgroundEngine({type:'status'}))).enabled,true);pass('A new process restores background preference with a visible window');
  await page.evaluate(()=>window.musebench.backgroundEngine({type:'set',enabled:false}));
  await page.waitForFunction(async()=>!(await window.musebench.appUpdate('status')).blockers.length,{},{timeout:20000});
@@ -74,5 +87,5 @@ try{
  if(exit==='timeout')report.shutdown=await app.evaluate(({BrowserWindow})=>({trace:globalThis.backgroundTrace,windows:BrowserWindow.getAllWindows().map(w=>({title:w.getTitle(),visible:w.isVisible()}))}));
  assert.equal(exit,0);app=null;pass('Turning off background mode restores normal window-close shutdown');
  assert.deepEqual(report.errors,[]);report.status='passed';
-}catch(error){report.status='failed';report.failure=error.stack;report.pages=app?.windows().map(p=>p.url());console.error(error);process.exitCode=1;}
+}catch(error){report.status='failed';report.failure=error.stack;report.pages=app?.windows().map(p=>p.url());if(call)report.engineAfterFailure=await call('app_status',{},AbortSignal.timeout(1500)).catch(e=>({error:e.message}));console.error(error);process.exitCode=1;}
 finally{await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log('Report: '+output);await app?.close().catch(()=>{});}

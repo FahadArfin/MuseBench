@@ -95,7 +95,9 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     await login.loadURL(target);
   }
   function isAuthenticating() {
-    return !closed && Boolean(setupLoginWindow && !setupLoginWindow.isDestroyed() || personalAuthenticating(current()?.origin) || museAuthPending() || [...popups].some(popup => personalAuthenticating(popup.origin)));
+    // A signed-out landing page is observable auth state, not an active setup
+    // operation. Only owned account windows must keep close/quit waiting.
+    return !closed && Boolean(setupLoginWindow && !setupLoginWindow.isDestroyed() || [...popups].some(popup => !popup.window.isDestroyed()));
   }
   function snapshot() {
     const entry = current(), contents = alive(entry) ? entry.contents : null;
@@ -105,7 +107,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       canGoForward: Boolean(contents?.navigationHistory.canGoForward()), visible: Boolean(entry?.visible),
       available: personalAvailability(), compact, notice,
       appearance: { ...appearance }, profile: accountSync.snapshot(), agentProfile, schedules: destination==='chat'&&alive(entry)&&scheduledDocument(contents)?schedules:null,
-      authenticating: isAuthenticating(),
+      authenticating: isAuthenticating() || Boolean(personalAuthenticating(entry?.origin) || museAuthPending()),
       authWindowOpen: Boolean(setupLoginWindow && !setupLoginWindow.isDestroyed()) || popups.size > 0,
       library: catalog.snapshot(),
     };

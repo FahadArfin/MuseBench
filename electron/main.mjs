@@ -54,7 +54,8 @@ const sessionDurability = createSessionDurability({ app });
 const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
-let window, ui, openWindow, background, closeOwned, controller, customize, codeBilling, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0;
+let window, ui, openWindow, background, closeOwned, ownedWorkBusy, controller, customize, codeBilling, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0, opening=null, pendingQuit=false;
+const retryPendingQuit=()=>{if(pendingQuit&&!opening&&pendingIpc===0){pendingQuit=false;setImmediate(()=>app.quit());}};
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
@@ -100,9 +101,10 @@ else {
     dictation = createDictation({helperPath: app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchSpeech.exe') : path.join(root,'native','bin','MuseBenchSpeech.exe'), onState: value => { if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:dictation-update',value); }});
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{if(!window||window.isDestroyed())throw Error('Open MuseBench to choose a folder.');const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
     mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||!!ui?.onboarding?.isBusy()})});
-    const updateBusy=()=>pendingIpc>0||nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||ui?.onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
+    ownedWorkBusy=()=>nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||ui?.onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
+    const updateBusy=()=>pendingIpc>0||ownedWorkBusy();
     const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',ui?.onboarding?.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
-    let opening=null,firstWindow=true,blockedDialog=false,pendingWindowClose=false;
+    let firstWindow=true,blockedDialog=false,pendingWindowClose=false;
     const showBlocked=async message=>{if(blockedDialog||closing)return;blockedDialog=true;try{await openWindow();await dialog.showMessageBox(window,{type:'info',title:'MuseBench is still working',message,detail:updateBlockers().map(row=>row.label+': '+row.detail).join('\n'),buttons:['Keep running']});}finally{blockedDialog=false;}};
     openWindow=()=>{
       if(closing||updateInstalling)return Promise.reject(Error('MuseBench is closing or updating.'));
@@ -115,7 +117,7 @@ else {
         const ownWindow=window,view={window:ownWindow};ui=view;
         ownWindow.once('closed',()=>{if(window===ownWindow)window=null;});
         try{await attachWindow(ownWindow,view);firstWindow=false;return ownWindow;}catch(error){ownWindow.destroy();throw error;}
-      })().finally(()=>{opening=null;if(pendingWindowClose){pendingWindowClose=false;const requestedWindow=window;if(requestedWindow&&!requestedWindow.isDestroyed())setImmediate(()=>{if(!requestedWindow.isDestroyed())requestedWindow.close();});}});return opening;
+      })().finally(()=>{opening=null;retryPendingQuit();if(pendingWindowClose){pendingWindowClose=false;const requestedWindow=window;if(requestedWindow&&!requestedWindow.isDestroyed())setImmediate(()=>{if(!requestedWindow.isDestroyed())requestedWindow.close();});}});return opening;
     };
     background=await createBackgroundEngine({dataDir,windowOpen:()=>!!window&&!window.isDestroyed(),openWindow,quit:()=>app.quit(),isBusy:updateBusy,onBlocked:message=>{void showBlocked(message).catch(()=>{});},createTray:actions=>{
       const tray=new Tray(path.join(root,'electron','assets',process.platform==='win32'?'musebench.ico':'musebench.png'));
@@ -152,7 +154,7 @@ else {
     work.subscribe(publishWork);
     controller.subscribe(state=>{notifier.observe(state);if(window&&!window.isDestroyed())window.webContents.send('musebench:update',state);});
     Menu.setApplicationMenu(Menu.buildFromTemplate([
-      {label:'MuseBench',submenu:[{label:'Open project…',accelerator:'CmdOrCtrl+O',click:async()=>{if(updateInstalling||closing||customize?.isBusy())return;await openWindow();pendingIpc++;try{const r=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!r.canceled&&!updateInstalling&&!closing){const next=await controller.dispatch({type:'openProject',path:r.filePaths[0]});if(!next.error&&!window.isDestroyed()){ui?.personal.hide();window.webContents.send('musebench:personal-shortcut','code');}}}finally{pendingIpc--;}}},{type:'separator'},{role:'quit'}]},
+      {label:'MuseBench',submenu:[{label:'Open project…',accelerator:'CmdOrCtrl+O',click:async()=>{if(updateInstalling||closing||customize?.isBusy())return;await openWindow();pendingIpc++;try{const r=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!r.canceled&&!updateInstalling&&!closing){const next=await controller.dispatch({type:'openProject',path:r.filePaths[0]});if(!next.error&&!window.isDestroyed()){ui?.personal.hide();window.webContents.send('musebench:personal-shortcut','code');}}}finally{pendingIpc--;retryPendingQuit();}}},{type:'separator'},{role:'quit'}]},
       {role:'editMenu'}, {label:'View',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},...(!app.isPackaged?[{role:'toggleDevTools'}]:[])]},
     ]));
 
@@ -160,10 +162,13 @@ else {
 
     window.on('close',event=>{
       if(closing)return;
-      if(opening){event.preventDefault();pendingWindowClose=true;return;}
       if(updateShutdown?.preparing()){event.preventDefault();return;}
+      if(codeBilling.isBusy()||view.onboarding?.isBusy()||updateBlocked(dictation.snapshot())){
+        event.preventDefault();void showBlocked('Finish sign-in, dictation or active work before closing MuseBench. Background mode can keep Code work running.').catch(()=>{});return;
+      }
+      if(opening){event.preventDefault();pendingWindowClose=true;return;}
       if(pendingIpc>0){event.preventDefault();view.closeAfterIpc=true;return;}
-      if(codeBilling.isBusy()||view.onboarding?.isBusy()||updateBlocked(dictation.snapshot())||!background.snapshot().enabled&&updateBusy()){
+      if(!background.snapshot().enabled&&ownedWorkBusy()){
         event.preventDefault();void showBlocked('Finish or stop active work before closing MuseBench, or enable background mode in General settings.').catch(()=>{});
       }
     });
@@ -204,7 +209,7 @@ else {
       if(updateInstalling&&name!=='musebench:app-update')throw Error('MuseBench is restarting to install an update.');
       if((codeBilling.isBusy()||onboarding?.isBusy())&&['musebench:action','musebench:work','musebench:sites','musebench:customize'].includes(name))throw Error('Finish the billing source change or sign-in before starting work.');
       if(name==='musebench:app-update')return fn(...args);
-      pendingIpc++;try{return await fn(...args);}finally{pendingIpc--;if(pendingIpc===0&&view.closeAfterIpc){view.closeAfterIpc=false;setImmediate(()=>{if(!window.isDestroyed())window.close();});}}
+      pendingIpc++;try{return await fn(...args);}finally{pendingIpc--;retryPendingQuit();if(pendingIpc===0&&view.closeAfterIpc){view.closeAfterIpc=false;setImmediate(()=>{if(!window.isDestroyed())window.close();});}}
     });};
     handler('musebench:background-engine',command=>background.command(command));
     handler('musebench:launch-complete',()=>launch.complete());
@@ -343,6 +348,7 @@ app.on('will-quit',()=>updates?.close());
 app.on('before-quit',event=>{
   if(updateShutdown?.preparing()){event.preventDefault();return;}
   if(closing)return;
+  if((opening||pendingIpc>0)&&!ui?.onboarding?.isBusy()&&!codeBilling?.isBusy()&&!updateBlocked(dictation?.snapshot())){event.preventDefault();pendingQuit=true;return;}
   if(background&&!background.beforeQuit(event))return;
   event.preventDefault();closing=true;
   Promise.resolve().then(()=>closeOwned?.()).catch(()=>{}).finally(()=>app.quit());
