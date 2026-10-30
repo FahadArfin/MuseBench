@@ -169,7 +169,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const update=patch=>{state={...state,...patch,pendingRequests:pendingView()};emit();};
  const syncChildren=()=>{const view=children.snapshot();if(usable.has(adapter?.snapshot().status)&&view.items.some(childWorking))awaitingChildReport=true;for(const [key,target] of childWork){const i=view.items.find(i=>i.itemId===target.itemId);if(i&&i.revision>target.revision&&childWorking(i))childWork.delete(key);}update({children:view,childrenBusy:view.items.some(childWorking)||childWork.size>0||awaitingChildReport,childWorkPending:childWork.size});if(adapter)syncAdapter(adapter.snapshot());};
  const interruptChildCommands=()=>update({childReceipts:(state.childReceipts??[]).map(r=>r.status==='submitting'?{...r,status:'unknown',reason:'Connection lost before command admission was confirmed.'}:r)});
- const syncCompaction=()=>{const receipt=compaction.snapshot();if(!compaction.pending())clearTimeout(compactionTimer);update({compaction:receipt,operationBusy:compaction.pending()});};
+ const syncCompaction=()=>{const receipt=compaction.snapshot();if(!compaction.pending())clearTimeout(compactionTimer);update({compaction:receipt,contextCompactions:compaction.history(),operationBusy:compaction.pending()});};
  const block=(reason,invalidatePermissions=true)=>{blockedReason=reason;update({status:'blocked',reason,...(invalidatePermissions?{permissionVerified:false}:{}),pending:displayPending(pending,pendingRevision)});};
  const assertCurrent=token=>{if(token!==epoch)throw Error('Muse connection was interrupted or disconnected.');};
  const syncAdapter=s=>{
@@ -236,7 +236,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   if(!frame?.params||frame.params.sessionId!==state.sessionId)return;
   const p=frame.params;
   if(['item/started','item/updated','item/completed'].includes(frame.method)&&['subagent','workflow'].includes(p.item?.kind)){children.observe(p.item);syncChildren();}
-  if(['item/started','item/updated','item/completed'].includes(frame.method)&&p.item?.kind==='compaction'){compaction.observe(p.item);syncCompaction();}
+  if(['item/started','item/updated','item/completed'].includes(frame.method)&&p.item?.kind==='compaction'&&typeof p.viewCursor==='string'&&p.viewCursor.length>0&&state.permissionVerified){compaction.observe(p.item,state.sessionId);syncCompaction();}
   if(['session/permissionProfileChanged','session/approvalModeChanged'].includes(frame.method)){
    block('Muse permissions changed. Disconnect and reconnect to verify the selected profile before continuing.');
    // A blocked approval can still belong to an active turn. Stop on every
@@ -319,7 +319,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    }
    const holdOpening=entry=>{if(openingEvents.length>=128)throw Error('Native startup event limit reached.');openingEvents.push(structuredClone(entry));};
    let notificationHandler;
-   const routeNotification=frame=>{if(openingCommandId&&frame.params?.commandId===openingCommandId&&['session/approvalModeChanged','session/permissionProfileChanged'].includes(frame.method))return;observe(frame);if(!['approval/requested','approval/updated','approval/resolved','userInput/requested','userInput/settled'].includes(frame.method))notificationHandler(frame);};
+   const routeNotification=frame=>{if(token!==epoch||owner!==host)return;if(openingCommandId&&frame.params?.commandId===openingCommandId&&['session/approvalModeChanged','session/permissionProfileChanged'].includes(frame.method))return;observe(frame);if(!['approval/requested','approval/updated','approval/resolved','userInput/requested','userInput/settled'].includes(frame.method))notificationHandler(frame);};
    const routeRequest=request=>{
     if(request.params?.sessionId!==state.sessionId)throw Error('Foreign request during native restoration.');
     if(!receivePending({kind:request.method==='approval/request'?'approval':'input',...request.params}))return {};
@@ -368,6 +368,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    for(const p of adapter.snapshot().restoration?.pendingRequests??[])restoreAwaiting.add((p.kind==='approval'?'approval:':'input:')+(p.approvalId??p.userInputId));
    if(restoreAwaiting.size)blockedReason='Restoring pending native requests.';
    for(const item of adapter.snapshot().restoredChildren??[])children.observe(item);
+   for(const item of adapter.snapshot().restoredCompactions??[])compaction.observe(item,adapter.snapshot().sessionId,'restored');syncCompaction();
    connecting=false;
    update({questionsSupported:true,steeringSupported:true,compactionSupported:true,childControlsSupported:true,imagesSupported:true,modelsSupported:true,hooksSupported:true,durableSessions:host.initializeResult.sessionDurability===undefined||host.initializeResult.sessionDurability==='durable',modelId:openedSession?.modelId??null,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
    const held=openingEvents;openingEvents=[];for(const entry of held){assertCurrent(token);if(entry.kind==='request')routeRequest(entry.frame);else routeNotification(entry.frame);}assertCurrent(token);syncChildren();syncAdapter(adapter.snapshot());assertCurrent(token);

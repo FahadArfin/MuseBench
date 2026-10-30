@@ -1,3 +1,4 @@
+import {mergeCompactionHistory,interruptCompactionHistory} from '../shared/compaction-history.mjs';
 import {createAnalyticsStore} from './analytics.mjs';
 import {normalizeWorkspaceToolset} from '../shared/workspace-analysis.mjs';
 import {createSemanticNavigation} from './semantic-navigation.mjs';
@@ -70,7 +71,7 @@ function mergeShellResults(previous,incoming,runId){
   return recent.reverse();
 }
 function restoreTask(record,knownProjectId){
-  const task=structuredClone(record);
+  const task=structuredClone(record);task.contextCompactions=interruptCompactionHistory(task.contextCompactions);
   if(!task.projectId&&knownProjectId)task.projectId=knownProjectId;
   const validDate=value=>typeof value==='string'&&Number.isFinite(Date.parse(value));
   task.steeringReceipts=(Array.isArray(task.steeringReceipts)?task.steeringReceipts:[]).filter(r=>r&&['commandId','turnId','status','text','at'].every(k=>typeof r[k]==='string')).slice(-20).map(r=>({...r,text:r.text.slice(0,16000)}));
@@ -721,6 +722,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const selected=owner===selectedContext(),context=owner,runtime=owner.runtime,task=owner.task;
     if(closed)return;const next=runtime?.snapshot?.()??event;if(!next||typeof next!=='object')return;owner.workIdentity=workIdentity(next);if(selected)state.runtime=structuredClone(next);const inboxEvents=[];
     if(task&&next.childReceipts?.length){for(const receipt of next.childReceipts)task.childControlReceipts=[...(task.childControlReceipts??[]).filter(r=>r.commandId!==receipt.commandId),structuredClone(receipt)].slice(-40);saveRecord(task);}
+    if(task&&next.contextCompactions?.length){const history=mergeCompactionHistory(task.contextCompactions,next.contextCompactions);if(JSON.stringify(history)!==JSON.stringify(task.contextCompactions)){task.contextCompactions=history;saveRecord(task);}}
     if(task&&next.compaction?.commandId){task.compactionReceipts=[...(task.compactionReceipts??[]).filter(r=>r.commandId!==next.compaction.commandId),structuredClone(next.compaction)].slice(-20);saveRecord(task);}
     if(task&&next.inputResponse?.userInputId){
       const receipt=next.inputResponse,key=`input:${receipt.sessionId}:${receipt.userInputId}`;

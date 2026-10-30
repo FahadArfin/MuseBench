@@ -1,0 +1,15 @@
+# Observed context history
+
+OC06 continues the authorized roadmap. Keep the current native compaction control, but preserve bounded automatic and manual observations in each chat and expose them in Session details. This is read-only observation work: it adds no provider requests, background summaries, automatic compaction or new execution settings.
+
+The pinned Muse SDK 1.4.14 exposes compaction items with a stable item ID, revision, manual/auto trigger, terminal outcome, optional token snapshots and an opaque boundary. The current application retains only the latest app-requested manual receipt and drops restored/automatic items. Add a separate bounded observation history so the existing command admission, uncertain-outcome and busy guards keep their meaning.
+
+Use a shared normalizer and merge function. Retain only finite safe metadata, at most 30 observations per chat. Deduplicate by exact session/item identity and accept only newer revisions; preserve initial observation order. Missing/invalid token values stay unknown. A boundary is opaque and never parsed or used to infer retained message counts. Restored native observations are labeled as restored, not newly completed work. Pending observations become unknown on app restart or connection loss; later observed terminal revisions may reconcile them. No automatic replay follows uncertainty.
+
+Runtime events must belong to the owned session. Restored items enter only after existing native restore/permission checks. Controller persistence belongs to the emitting chat, including when another chat is selected. Avoid writes when the bounded observation history is unchanged.
+
+Session details show a compact Context history section, the latest observed outcome, optional before/after measurements and expandable older observations with source/session identity. Clearly state that these are past observations, current occupancy and exact retained content are not reported, and local messages/files remain unchanged. An observed-history chip opens Session from the chat; it does not trigger compaction. Show restored native session status accurately instead of claiming every reconnect starts a new session. Shared preview and desktop use the same presentation with labeled fixture data.
+
+OpenCode supports recent-token retention and experimental background summaries, but those options are not in Muse's pinned `SessionCompactParams` contract (commandId/sessionId/optional turnId). `recap/request` is a separate admission-only recap operation, not verified context replacement. Leave both retention tuning and background summaries unavailable until an explicit native contract and separately authorized model acceptance exist. No speculative configuration keys or alternate providers.
+
+Acceptance: source validation, revision/identity isolation, finite bounded history, automatic/manual/restored events, restart uncertainty and persistence under chat switching; shared UI history, unknown values, keyboard disclosure and narrow layout; existing compaction command behavior unchanged. Live compaction/model acceptance is outside the remaining authorization.

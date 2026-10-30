@@ -77,11 +77,12 @@ export class MuseSessionAdapter {
    if(!['approval','userInput'].includes(p?.kind)||!str(p[p.kind==='approval'?'approvalId':'userInputId'])||typeof p.viewCursor!=='string')throw Error('Unsupported restored pending request');
    return structuredClone(p);
   });
-  let textSize=0;const messages=[],children=[],tools=[];
+  let textSize=0;const messages=[],children=[],tools=[],compactions=[];
   for(const item of items){
    if(!str(item?.itemId)||!str(item.kind)||!Number.isInteger(item.revision)||item.revision<1)throw Error('Invalid restored item');
    if(['workflow','subagent'].includes(item.kind)){children.push(structuredClone(item));continue;}
    if(item.kind==='toolCall'){tools.push(item);continue;}
+   if(item.kind==='compaction'){compactions.push(structuredClone(item));continue;}
    if(!messageKinds.has(item.kind))continue;
    if(typeof item.text!=='string'||!str(item.turnId)||typeof item.status!=='string'||(textSize+=item.text.length)>this.#maxText)throw Error('Native restore text exceeds supported history');
    const message={id:item.itemId,kind:item.kind,turnId:item.turnId,text:item.text,revision:item.revision,status:item.status,phase:item.messagePhase??'finalAnswer'};
@@ -89,7 +90,7 @@ export class MuseSessionAdapter {
   }
   for(const turn of queued){if(!str(turn.turnId))throw Error('Invalid restored queued turn');this.#queuedTurns.add(turn.turnId);}
   this.#state.status=s.status;this.#state.turnId=s.activeTurnId;this.#state.rootTurnId=s.activeTurnId;this.#state.ownedTurnIds=s.activeTurnId?[s.activeTurnId]:[];
-  this.#state.restoredMessages=messages;this.#state.restoredChildren=children;
+  this.#state.restoredMessages=messages;this.#state.restoredChildren=children;this.#state.restoredCompactions=compactions;
   this.#state.restoration={status:'restored',sessionId:s.sessionId,viewCursor:result.viewCursor,historyMode:h.mode,pendingRequests:pointers,activeTurnId:s.activeTurnId,queuedTurnIds:[...this.#queuedTurns],turnCount:s.turnCount};
   for(const item of tools)this.#projectTool(item);
  }

@@ -615,6 +615,25 @@ test('pending request collection bounds resource use without deciding requests',
 });
 
 const restoredNative=(h,patch={})=>({session:{...h.session(),activeTurnId:null,turnCount:1,providerId:'meta',modelId:'muse-spark-1.2'},viewCursor:'restore-head',pendingRequests:[],history:{mode:'inline',items:[],snapshot:null},...patch});
+test('runtime observes automatic context history only from its session and interrupts pending observations',async t=>{
+ const h=await harness(t);await h.connect();const item={kind:'compaction',itemId:'automatic',turnId:'old-turn',revision:1,status:'inProgress',trigger:'auto'};
+ h.emit({method:'item/started',params:{sessionId:'foreign',item}});assert.deepEqual(h.runtime.snapshot().contextCompactions,[]);
+ h.emit({method:'item/started',params:{sessionId:'session-one',viewCursor:'auto-start',item}});assert.equal(h.runtime.snapshot().contextCompactions[0].status,'in-progress');assert.equal(h.runtime.snapshot().operationBusy,false);assert.equal(h.runtime.snapshot().compaction,null);
+ await h.runtime.disconnect();assert.equal(h.runtime.snapshot().contextCompactions[0].status,'unknown');assert.equal(h.calls.some(c=>c.method==='session/compact'||c.method==='turn/start'),false);
+ await h.connect();assert.deepEqual(h.runtime.snapshot().contextCompactions,[]);
+});
+test('invalid frames and old connection notifications cannot add context observations',async t=>{
+ const h=await harness(t);let old;const subscribe=h.host.connection.onNotification;h.host.connection.onNotification=fn=>{old=fn;subscribe(fn);};await h.connect();const oldNotify=old;await h.runtime.disconnect();await h.connect();
+ const item={kind:'compaction',itemId:'stale',turnId:'old-turn',revision:1,status:'completed',outcome:'compacted',trigger:'auto'};
+ oldNotify({method:'item/completed',params:{sessionId:'session-one',viewCursor:'old-cursor',item}});assert.deepEqual(h.runtime.snapshot().contextCompactions,[]);
+ h.emit({method:'item/completed',params:{sessionId:'session-one',item}});assert.deepEqual(h.runtime.snapshot().contextCompactions,[]);
+});
+test('runtime restores compaction observations after native identity and permission verification',async t=>{
+ const h=await harness(t),item={kind:'compaction',itemId:'restored-compact',turnId:'old-turn',revision:3,status:'completed',outcome:'compacted',trigger:'auto',tokensBefore:100,tokensAfter:60};
+ h.host.connection.command=async(method)=>{assert.equal(method,'session/resume');return restoredNative(h,{history:{mode:'inline',items:[item],snapshot:null}});};
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,sessionId:'session-one'});const rows=h.runtime.snapshot().contextCompactions;assert.equal(rows.length,1);assert.equal(rows[0].source,'restored');assert.equal(rows[0].tokensAfter,60);assert.equal(h.runtime.snapshot().compaction,null);
+ h.emit({method:'item/updated',params:{sessionId:'session-one',viewCursor:'old-revision',item:{...item,revision:2,tokensAfter:90}}});assert.equal(h.runtime.snapshot().contextCompactions[0].tokensAfter,60);assert.equal(h.calls.some(c=>c.method==='session/compact'||c.method==='turn/start'),false);
+});
 test('runtime restores a native session with no fresh start or history replay',async t=>{
  const h=await harness(t);const original=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>{if(method==='session/resume'){h.calls.push({method,params,opts});return restoredNative(h);}return original(method,params,opts);};
  await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,sessionId:'session-one'});const s=h.runtime.snapshot();assert.equal(s.restoration.status,'restored');assert.equal(s.sessionSeeded,true);assert.equal(s.durableSessions,true);assert.equal(s.permissionVerified,true);assert.equal(h.calls.some(c=>c.method==='session/start'||c.method==='turn/start'),false);
