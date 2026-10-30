@@ -20,6 +20,8 @@ This audit supersedes the status table in [26 October's inventory](REMAINING-FEA
 
 ## Boundaries that still require a different supported contract or further proof
 
+**30 October tool/context continuation:** The fixed workspace gateway now has scripted native search/definition/batch and approval/denial evidence. Broader on-demand search/call for explicitly reviewed disabled global stdio sources is implemented with fresh connection consent, exact source/catalog identity, bounded input/output schemas and owned cleanup; source and exact-ASAR native contracts passed without inference. See [gateway validation](VALIDATION-tool-discovery.md). Reviewed local excerpts after observed compaction shipped in 0.2.225; see [Recent excerpts](RECENT-CONTEXT.md). This supersedes earlier configuration-only acceptance limits for these tested scopes. Live model choice, other gateway modes and native retention/summary APIs remain separate prerequisites.
+
 **30 October child-control follow-up:** The production runtime now has a reproducible, opt-in native acceptance runner for exact-attempt Skip, independent Stop, completed child results and activity reads. Both isolated cases finished with confirmed cleanup and zero model inference. Retry still returned `invalid_target`; Close admission did not establish a closed projection, so Reopen was not dispatched. This supersedes the older Skip rejection for the tested pinned host configuration. [Contract and limits](validation/2026-10-30-native-child-contract.md).
 
 **29 October reviewed-hook follow-up:** Linux/macOS command projection no longer

@@ -16,3 +16,14 @@ Focused checks:
 - For exact installed renderer acceptance, set `MUSEBENCH_EXECUTABLE` to the installed executable and run `node scripts/discovery-tools-smoke.mjs --desktop`. The test serves that executable's exact ASAR renderer bytes with simulated bridge data, records their digest, uses an isolated profile and blocks external network access. It is labelled `installed`; source fixture evidence is labelled separately. The packaged native contract accepts the same override.
 
 Real model tool selection remains separate acceptance. This deliverable does not claim HTTP/OAuth support, enabled direct wrapping, shell-script command emulation, arbitrary plugin replacement, unsupported schema semantics or production release installation.
+
+
+## Integrated final verification
+
+The feature was integrated with the installed recent-excerpt baseline. Independent review reproduced an unhandled helper-cleanup rejection and premature SDK output-schema compilation, plus a shared-preview smoke assumption about a fresh conversation. The correction preserves explicit unconfirmed-cleanup blocking, reads catalogs without eager schema compilation, applies encoded limits and source filters first, validates supported input/output schemas with the bounded local policy, and starts the smoke with an explicitly fresh chat. A scoped independent re-review cleared all three findings without new material breakage.
+
+Final integrated source: `918b552ff17cb0043b7c327677827da78dc91854`; tree `c6a3859697867b3e9ab9bf840a12cf9e12411abf`. Covering tests: 284 passed. Full suite: 1,738 passed, zero failures, one unchanged optional retained-capture skip. Production build passed. Discovery controls passed seven checks each in Chromium, source Electron and the exact directory package; recent excerpts passed six browser and five Electron checks.
+
+Both source and exact-ASAR native contracts passed with 14 scripted loopback requests each, zero inference, one downstream invocation, no direct-original duplicate, native denial adding zero downstream invocations, stopped descendants and confirmed cleanup. The package verifier matched all 175 production code/build files, the packaged helper and renderer digests. The parent independently rechecked the 175 source/build hashes and both native receipt hashes against that immutable tree.
+
+Source native receipt SHA-256: `743941ae88aa5ef8eedab73a6e3d6778a4fade4f1db3b13fc4d33a098e394bb6`. Package native receipt SHA-256: `5d21c216abbce082bf45ea3b11a92bcbc38217483a64bbd448168db2e203028f`. Isolated package ASAR SHA-256: `948836b6ff61eebff8cda6f01556e370636a16b2382e79688b85e308c56f9b5d`. Logs, manifests and reviews are retained under ignored `artifacts/tool-discovery-fix-wave/` and `.superpowers/sdd/2026-10-30-tool-discovery/` in the integration checkout. These are package acceptance receipts, not a published or installed-release claim. Final delivery verifies the exact GitHub installer and installed executable separately.
