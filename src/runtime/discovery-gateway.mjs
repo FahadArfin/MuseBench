@@ -1,4 +1,5 @@
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
+import {ResultSchema,ToolSchema,CallToolResultSchema} from '@modelcontextprotocol/sdk/types.js';
 import {createHash} from 'node:crypto';
 import {DiscoveryTransport} from './discovery-transport.mjs';
 import {supportedSchema,validateDiscoveryArguments} from './discovery-schema.mjs';
@@ -13,18 +14,20 @@ export function createDiscoveryGateway({sources,helperPath,sessionId,verify}={})
  async function operation(fn){if(closed)throw Error('Gateway closed; reconnect and review again.');if(busy)throw Error('Gateway is busy. Arbitrary-effect batching is unsupported.');busy=true;try{await verify();return await fn();}finally{busy=false;}}
  async function ready(state,signal){
   if(state.closed)throw Error('Source closed; reconnect and review again.');
-  if(!state.client){const transport=new DiscoveryTransport(state.source,{helperPath,sessionId}),client=new Client({name:'musebench-discovery',version:'1.0.0'},{capabilities:{}});state.client=client;state.transport=transport;
+  if(!state.client){const transport=new DiscoveryTransport(state.source,{helperPath,sessionId}),client=new Client({name:'musebench-discovery',version:'1.0.0'},{capabilities:{},jsonSchemaValidator:{getValidator(){throw Error('SDK schema compilation is not permitted for discovery sources.');}}});state.client=client;state.transport=transport;
    transport.onclose=()=>{state.closed=true;};
    try{await client.connect(transport,{timeout:state.source.startupMs,signal});}catch{state.closed=true;await transport.close();throw Error('Source startup failed; reconnect and review again.');}
   }
  }
  async function catalog(state,signal){
-  await ready(state,signal);let result;try{result=await state.client.listTools(undefined,{timeout:state.source.startupMs,signal});}catch{state.closed=true;await state.transport.close();throw Error('Source catalog unavailable; reconnect and review again.');}
+  // listTools() eagerly compiles every outputSchema before returning. Read the
+  // raw result instead: encoded bounds and source filters precede schema work.
+  await ready(state,signal);let result;try{result=await state.client.request({method:'tools/list'},ResultSchema,{timeout:state.source.startupMs,signal});}catch{state.closed=true;await state.transport.close();throw Error('Source catalog unavailable; reconnect and review again.');}
   if(result.nextCursor||!Array.isArray(result.tools)||result.tools.length>200||bytes(result)>524288){state.closed=true;await state.transport.close();throw Error('Catalog exceeds 200 tools or 512 KiB; pagination is unsupported.');}
   let unsupported=0;const names=new Set(),tools=[];for(const tool of result.tools){
-   if(typeof tool.name!=='string'||!tool.name||tool.name.length>200||names.has(tool.name))throw Error('Invalid source tool identity.');names.add(tool.name);
+   if(!object(tool)||typeof tool.name!=='string'||!tool.name||tool.name.length>200||names.has(tool.name))throw Error('Invalid source tool identity.');names.add(tool.name);
    if(state.source.enabledTools&&!state.source.enabledTools.includes(tool.name)||state.source.disabledTools.includes(tool.name))continue;
-   try{supportedSchema(tool.inputSchema);if(tool.description!==undefined&&(typeof tool.description!=='string'||tool.description.length>8192))throw Error();tools.push({name:tool.name,...(tool.description?{description:tool.description}:{}),inputSchema:tool.inputSchema});}catch{unsupported++;}
+   try{supportedSchema(tool.inputSchema);if(tool.outputSchema!==undefined)supportedSchema(tool.outputSchema);ToolSchema.parse(tool);if(tool.execution?.taskSupport==='required'||tool.description!==undefined&&(typeof tool.description!=='string'||tool.description.length>8192))throw Error();tools.push({name:tool.name,...(tool.description?{description:tool.description}:{}),inputSchema:tool.inputSchema,...(tool.outputSchema!==undefined?{outputSchema:tool.outputSchema}:{})});}catch{unsupported++;}
   }
   const value={sourceId:state.source.id,sourceName:state.source.name,catalogRevision:digest({source:state.source.revision,tools:result.tools}),tools,unsupported};state.catalog=value;return value;
  }
@@ -48,7 +51,11 @@ export function createDiscoveryGateway({sources,helperPath,sessionId,verify}={})
    await verify();if(signal?.aborted)throw Error('Discovery call cancelled before submission.');
    const receipt={sourceId:state.source.id,sourceName:state.source.name,catalogRevision:fresh.catalogRevision,tool:tool.name};
    // From this point failure is unknown: a submitted effect is never replayed.
-   try{const result=await state.client.callTool({name:tool.name,arguments:args.arguments},undefined,{timeout:state.source.callMs,signal});const value={...receipt,outcome:result.isError?'failed':'completed',result};
+   try{const result=await state.client.request({method:'tools/call',params:{name:tool.name,arguments:args.arguments}},CallToolResultSchema,{timeout:state.source.callMs,signal});
+    // Never enter SDK metadata caching/output validation, even on call dispatch.
+    // A submitted call with an invalid final receipt remains unknown, unreplayed.
+    if(tool.outputSchema!==undefined){if(result.structuredContent===undefined&&!result.isError)throw Error('Missing structured output.');if(result.structuredContent!==undefined)validateDiscoveryArguments(tool.outputSchema,result.structuredContent);}
+    const value={...receipt,outcome:result.isError?'failed':'completed',result};
     if(wireBytes(value)>131072)return{...receipt,outcome:result.isError?'failed':'completed',truncated:true,error:'Tool result exceeded the encoded 128 KiB response limit. The operation completed; inspect its effects before another request.'};return value;
    }catch{state.closed=true;await state.transport.close().catch(()=>{});return{...receipt,outcome:'unknown',error:'No final receipt was received. The submitted operation may have executed. It was not retried. Reconnect and review before further calls.'};}
   });},

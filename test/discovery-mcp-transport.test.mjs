@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import {createJobSpawner} from '../src/runtime/windows-job.mjs';
 import {spawn} from 'node:child_process';import {mkdtemp,readFile,rm} from 'node:fs/promises';import {tmpdir} from 'node:os';import {pathToFileURL} from 'node:url';
+for(const mode of ['supervisor','stdin','child','stderr','stdout'])test(`transport ${mode} failure survives unconfirmed cleanup without permitting restart`,{skip:process.platform!=='win32'},async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),'discovery-transport-failure-'));
+ try{const child=spawn(process.execPath,['test/fixtures/discovery-transport-failure.mjs',mode,root],{cwd:process.cwd(),windowsHide:true});let output='';child.stdout.on('data',b=>output+=b);child.stderr.on('data',b=>output+=b);const code=await new Promise(resolve=>child.once('close',resolve));assert.equal(code,0,output);assert.match(output,/survived; cleanup unconfirmed; restart and send blocked/);}finally{await rm(root,{recursive:true,force:true});}
+});
 test('Windows Job duplex transport pipes stdin and confirms descendant shutdown', {skip:process.platform!=='win32'},async()=>{
  const child=createJobSpawner({helperPath:path.resolve('native/bin/MuseBenchJob.exe'),duplex:true})(process.execPath,['-e',`process.stdin.on('data',b=>process.stdout.write(b));setInterval(()=>{},1000)`],{cwd:process.cwd(),env:process.env});
  child.on('error',()=>{});assert.ok(child.stdin,'duplex exposes child stdin');

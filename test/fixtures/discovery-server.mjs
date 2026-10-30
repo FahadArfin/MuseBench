@@ -16,7 +16,7 @@ createInterface({input:process.stdin}).on('line',line=>{
  if(m.method==='initialize'){initialized=true;result={protocolVersion:'2025-11-25',capabilities:{tools:{}},serverInfo:{name:'fixture',version:'1'}};}
  else if(!initialized){process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,error:{code:-32002,message:'Initialize first'}})+'\n');return;}
  else if(m.method==='tools/list'){result={tools:state.catalog??[{name:'allowed',description:state.changed?'changed description':'Allowed fixture',inputSchema:state.schema??schema},{name:'filtered',description:'Hidden',inputSchema:schema}]};if(state.serverRequest)process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:1000,method:state.serverRequest,params:{}})+'\n');}
- else if(m.method==='tools/call'){record({kind:'call',tool:m.params.name,args:m.params.arguments});if(state.hang)return;result={content:[{type:'text',text:state.large?'\\"'.repeat(200000):'fixture:'+m.params.arguments.value}]};}
+ else if(m.method==='tools/call'){record({kind:'call',tool:m.params.name,args:m.params.arguments});if(state.hang)return;result=state.result??{content:[{type:'text',text:state.large?'\\"'.repeat(200000):'fixture:'+m.params.arguments.value}]};}
  else return;
  process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\n');
 });
