@@ -26,6 +26,48 @@ const source = {
   'decoy.ts': 'export function add(a: string) { return a; }\nconst unrelated = add("x");\n',
 };
 
+test('analysis finds workspace symbols, a file outline and syntax diagnostics',async t=>{
+ const {service}=await fixture(t,{...source,'broken.ts':'export const broken = ;\n'});
+ const symbols=await service.query({operation:'workspace_symbols',query:'add'});
+ assert.ok(symbols.items.some(x=>x.name==='add'&&x.path==='lib.ts'));
+ assert.ok(symbols.items.every(x=>typeof x.kind==='string'&&x.line>=1));
+ const outline=await service.query({operation:'document_symbols',path:'lib.ts'});
+ assert.ok(outline.items.some(x=>x.name==='add'&&x.path==='lib.ts'));
+ const diagnostics=await service.query({operation:'syntax_diagnostics',path:'broken.ts'});
+ assert.equal(diagnostics.diagnosticKind,'syntax');
+ assert.ok(diagnostics.items.some(x=>x.path==='broken.ts'&&x.line===1&&Number.isInteger(x.code)));
+ assert.equal((await service.query({operation:'syntax_diagnostics',path:'lib.ts'})).items.length,0);
+});
+
+test('a batch shares one source snapshot and preserves per-call order and independent failures',async t=>{
+ const {service}=await fixture(t,source);
+ assert.equal(typeof service.batch,'function');
+ const result=await service.batch([{id:'search',operation:'workspace_symbols',query:'add'},{id:'definition',operation:'definition',path:'main.ts',line:2,column:17},{id:'bad',operation:'hover',path:'main.ts',line:999,column:1},{id:'missing',operation:'document_symbols',path:'missing.ts'},{id:'outline',operation:'document_symbols',path:'lib.ts'}]);
+ assert.equal(result.kind,'workspace-batch');assert.equal(result.version,1);
+ assert.deepEqual(result.calls.map(x=>[x.id,x.status]),[['search','completed'],['definition','completed'],['bad','failed'],['missing','failed'],['outline','completed']]);
+ assert.match(result.snapshot,/^[a-f0-9]{64}$/);
+ for(const row of result.calls.filter(x=>x.status==='completed'))assert.equal(row.result.snapshot,result.snapshot);
+ assert.equal(result.calls[2].error,'SEMANTIC_POSITION');assert.equal(result.calls[3].error,'SEMANTIC_PATH');
+ assert.deepEqual(result.calls[1].result.items.map(x=>x.path),['lib.ts']);
+ assert.equal(result.scope.files,3);
+});
+
+test('per-request cancellation frees the worker without disposing the service',async t=>{
+ const {service}=await fixture(t,source),abort=new AbortController();
+ const pending=service.query({operation:'hover',path:'lib.ts',line:2,column:17},{signal:abort.signal});
+ const rejected=assert.rejects(pending,{code:'SEMANTIC_CANCELLED'});abort.abort();await rejected;
+ assert.match((await service.query({operation:'hover',path:'lib.ts',line:2,column:17})).hover.display,/add/);
+ await assert.rejects(service.query({operation:'hover',path:'lib.ts',line:2,column:17},{signal:abort.signal}),{code:'SEMANTIC_CANCELLED'});
+});
+
+test('batch cancellation and aggregate source limits apply to the whole batch',async t=>{
+ const {service}=await fixture(t,source,{maxFiles:1});assert.equal(typeof service.batch,'function');
+ await assert.rejects(service.batch([{id:'a',operation:'workspace_symbols',query:''},{id:'b',operation:'document_symbols',path:'lib.ts'}]),{code:'SEMANTIC_LIMIT'});
+ const normal=await fixture(t,source),abort=new AbortController();
+ const pending=normal.service.batch([{id:'a',operation:'workspace_symbols',query:''}],{signal:abort.signal});const rejected=assert.rejects(pending,{code:'SEMANTIC_CANCELLED'});abort.abort();await rejected;
+ assert.equal((await normal.service.batch([{id:'a',operation:'document_symbols',path:'lib.ts'}])).calls[0].status,'completed');
+});
+
 test('definitions resolve aliases and references exclude identically named unrelated symbols', async t => {
   const {service} = await fixture(t, source);
   const definition = await service.query({operation: 'definition', path: 'main.ts', line: 2, column: 17});

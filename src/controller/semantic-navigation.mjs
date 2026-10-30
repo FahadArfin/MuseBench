@@ -3,11 +3,11 @@ import {realpath, lstat} from 'node:fs/promises';
 import * as fs from 'node:fs';
 import {createHash} from 'node:crypto';
 import {Worker, isMainThread, parentPort, workerData} from 'node:worker_threads';
+import {validateWorkspaceQuery,validateWorkspaceBatch} from '../shared/workspace-analysis.mjs';
 
 const DEFAULTS = Object.freeze({maxFiles: 500, maxFileBytes: 256 * 1024, maxTotalBytes: 8 * 1024 * 1024, maxResults: 100, maxHoverChars: 4096, maxEntries: 10000, maxDepth: 16, timeoutMs: 5000});
 const CEILINGS = {maxFiles: 1000, maxFileBytes: 1024 * 1024, maxTotalBytes: 16 * 1024 * 1024, maxResults: 200, maxHoverChars: 16384, maxEntries: 20000, maxDepth: 32, timeoutMs: 15000};
 const EXCLUDED = new Set(['node_modules', 'vendor', 'dist', 'build', 'out', 'coverage', 'release']);
-const OPERATIONS = new Set(['definition', 'references', 'implementation', 'hover']);
 const SOURCE = /\.(?:[cm]?[jt]s|[jt]sx)$/i;
 const errorFor = (code, message) => Object.assign(new Error(message), {code: `SEMANTIC_${code}`});
 const key = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value);
@@ -28,16 +28,6 @@ function boundedLimits(input = {}) {
   return limits;
 }
 
-function checkedQuery(input) {
-  if (!input || !OPERATIONS.has(input.operation)) throw errorFor('INPUT', 'Choose definition, references, implementation or hover.');
-  const name = input.path;
-  if (typeof name !== 'string' || !name || name.length > 4096 || /[:\x00-\x1f]/.test(name) || path.isAbsolute(name) || path.win32.isAbsolute(name)) throw errorFor('PATH', 'Choose a relative workspace source path.');
-  const parts = name.replace(/\\/g, '/').split('/');
-  if (parts.some(part => !part || part === '.' || part === '..') || parts.slice(0, -1).some(excluded) || !SOURCE.test(name)) throw errorFor('PATH', 'Choose a supported workspace TypeScript or JavaScript source file.');
-  if (![input.line, input.column].every(number => Number.isSafeInteger(number) && number >= 1 && number <= 10000000)) throw errorFor('POSITION', 'Line and column must be positive, one-based UTF-16 positions.');
-  return {operation: input.operation, path: parts.join('/'), line: input.line, column: input.column};
-}
-
 /** One bound project, one request at a time. All discovery and compiler work runs off the caller thread. */
 export function createSemanticNavigation(rootInput, {limits: requestedLimits} = {}) {
   if (typeof rootInput !== 'string' || !path.isAbsolute(rootInput)) throw errorFor('PATH', 'Navigation requires an absolute workspace root.');
@@ -50,10 +40,10 @@ export function createSemanticNavigation(rootInput, {limits: requestedLimits} = 
     return {root, rootInput, identity: {dev: info.dev, ino: info.ino}};
   });
   binding.catch(() => {});
-  return {
-    async query(input) {
+  async function execute(payload, {signal}={}) {
       if (disposed) throw errorFor('DISPOSED', 'Semantic navigation has been disposed.');
-      const query = checkedQuery(input);
+      if(signal!==undefined&&!(signal instanceof AbortSignal))throw errorFor('INPUT','Invalid cancellation signal.');
+      if(signal?.aborted)throw errorFor('CANCELLED','Workspace analysis was cancelled.');
       if (active || activeWorkers >= 2) throw errorFor('BUSY', 'Semantic navigation is busy. Try again when the current request completes.');
       activeWorkers++;
       return new Promise((resolve, reject) => {
@@ -62,6 +52,7 @@ export function createSemanticNavigation(rootInput, {limits: requestedLimits} = 
           if (finishing) return finishing;
           settled = true;
           clearTimeout(timer);
+          signal?.removeEventListener('abort',onAbort);
           finishing = (async () => {
             if (worker) await worker.terminate().catch(() => {});
             activeWorkers--;
@@ -70,12 +61,14 @@ export function createSemanticNavigation(rootInput, {limits: requestedLimits} = 
           })();
           return finishing;
         };
+        const onAbort=()=>void finish(errorFor('CANCELLED','Workspace analysis was cancelled.'));
         active = {finish};
+        signal?.addEventListener('abort',onAbort,{once:true});
         timer = setTimeout(() => void finish(errorFor('TIMEOUT', 'Semantic navigation exceeded its time limit.')), limits.timeoutMs);
         binding.then(bound => {
           if (settled) return;
           worker = new Worker(new URL(import.meta.url), {
-            workerData: {kind: 'muse-semantic-navigation', ...bound, limits, query},
+            workerData: {kind: 'muse-semantic-navigation', ...bound, limits, ...payload},
             execArgv: [], resourceLimits: {maxOldGenerationSizeMb: 256, maxYoungGenerationSizeMb: 32, stackSizeMb: 4},
           });
           worker.once('message', message => void finish(message.error ? errorFor(message.error.code, message.error.message) : null, message.result));
@@ -83,7 +76,10 @@ export function createSemanticNavigation(rootInput, {limits: requestedLimits} = 
           worker.once('exit', () => { if (!settled) void finish(errorFor('WORKER', 'Semantic navigation stopped before returning a result.')); });
         }).catch(() => void finish(errorFor('PATH', 'The bound workspace root is unavailable.')));
       });
-    },
+  }
+  return {
+    async query(input,options){return execute({query:validateWorkspaceQuery(input)},options);},
+    async batch(calls,options){return execute({calls:validateWorkspaceBatch(calls)},options);},
     async dispose() {
       disposed = true;
       await active?.finish(errorFor('DISPOSED', 'Semantic navigation has been disposed.'));
@@ -91,7 +87,7 @@ export function createSemanticNavigation(rootInput, {limits: requestedLimits} = 
   };
 }
 
-function snapshotWorkspace({root, rootInput, identity, query, limits}) {
+function snapshotWorkspace({root, rootInput, identity, limits}) {
   const checkRoot = () => {
     const info = fs.lstatSync(root, {bigint: true});
     if (info.isSymbolicLink() || !info.isDirectory() || !sameFile(info, identity) || key(fs.realpathSync(rootInput)) !== key(root) || key(fs.realpathSync(root)) !== key(root)) throw errorFor('PATH', 'The bound workspace root changed.');
@@ -106,8 +102,6 @@ function snapshotWorkspace({root, rootInput, identity, query, limits}) {
     }
     if (key(fs.realpathSync(file)) !== key(file)) throw errorFor('PATH', 'The workspace source path changed.');
   };
-  const target = path.resolve(root, query.path);
-  safe(target);
   const files = new Map(), skipped = {symlinks: 0, directories: 0}, hash = createHash('sha256');
   let bytes = 0, entries = 0;
   function readSource(file) {
@@ -158,13 +152,12 @@ function snapshotWorkspace({root, rootInput, identity, query, limits}) {
   }
   walk(root, 0);
   checkRoot();
-  if (!files.has(key(target))) throw errorFor('PATH', 'The requested source file is not in the bounded workspace snapshot.');
-  return {files, target, snapshot: hash.digest('hex'), scope: {files: files.size, bytes, entries, skipped, config: 'fixed-no-project-config', standardLibrary: false, excludedDirectories: ['.*', ...EXCLUDED]}};
+  return {files, snapshot: hash.digest('hex'), scope: {files: files.size, bytes, entries, skipped, config: 'fixed-no-project-config', standardLibrary: false, excludedDirectories: ['.*', ...EXCLUDED]}};
 }
 
 async function navigate(data) {
   const started = performance.now();
-  const {files, target, snapshot, scope} = snapshotWorkspace(data);
+  const {files, snapshot, scope} = snapshotWorkspace(data);
   // This bare import resolves relative to this app-owned module, never the selected workspace.
   const {default: ts} = await import('typescript');
   const compilerOptions = {allowJs: true, checkJs: true, noEmit: true, noLib: true, types: [], target: ts.ScriptTarget.ESNext, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler, jsx: ts.JsxEmit.Preserve, allowImportingTsExtensions: true};
@@ -195,13 +188,19 @@ async function navigate(data) {
   const service = ts.createLanguageService(host, ts.createDocumentRegistry(host.useCaseSensitiveFileNames(), data.root));
   try {
     const program = service.getProgram();
+    function run(query){
+    const target=query.path?files.get(key(path.resolve(data.root,query.path)))?.file:null;
+    if(query.path&&!target)throw errorFor('PATH','The requested source file is not in the bounded workspace snapshot.');
+    let position=0;
+    if(query.line!==undefined){
     const input = program.getSourceFile(target);
-    const lines = input.getLineStarts(), lineIndex = data.query.line - 1;
+    const lines = input.getLineStarts(), lineIndex = query.line - 1;
     if (lineIndex >= lines.length) throw errorFor('POSITION', 'The requested line is outside the source file.');
     const start = lines[lineIndex], end = lineIndex + 1 < lines.length ? lines[lineIndex + 1] : input.text.length;
     const lineLength = input.text.slice(start, end).replace(/[\r\n]+$/, '').length;
-    if (data.query.column > lineLength + 1) throw errorFor('POSITION', 'The requested column is outside the source line.');
-    const position = start + data.query.column - 1;
+    if (query.column > lineLength + 1) throw errorFor('POSITION', 'The requested column is outside the source line.');
+    position = start + query.column - 1;
+    }
     let truncated = false, hover = null, items = [];
     const location = value => {
       const entry = files.get(key(value.fileName));
@@ -211,7 +210,29 @@ async function navigate(data) {
       const first = source.getLineAndCharacterOfPosition(value.textSpan.start), last = source.getLineAndCharacterOfPosition(value.textSpan.start + value.textSpan.length);
       return {path: path.relative(data.root, entry.file).replace(/\\/g, '/'), line: first.line + 1, column: first.character + 1, endLine: last.line + 1, endColumn: last.character + 1, ...(value.isWriteAccess !== undefined ? {isWriteAccess: value.isWriteAccess} : {})};
     };
-    if (data.query.operation === 'hover') {
+    const push=item=>{if(!item)return;if(items.length>=data.limits.maxResults){truncated=true;return;}items.push(item);};
+    if(query.operation==='workspace_symbols'){
+      for(const entry of service.getNavigateToItems(query.query,data.limits.maxResults+1)??[]){
+        const point=location(entry);if(point)push({...point,name:entry.name.slice(0,160),kind:entry.kind.slice(0,80)});
+      }
+    }else if(query.operation==='document_symbols'){
+      const pending=[...(service.getNavigationTree(target)?.childItems??[])].reverse();let visited=0;
+      while(pending.length&&visited++<data.limits.maxEntries){
+        const item=pending.pop();const point=item.spans?.[0]&&location({fileName:target,textSpan:item.spans[0]});
+        if(point)push({...point,name:item.text.slice(0,160),kind:item.kind.slice(0,80)});
+        if(truncated)break;
+        for(const child of [...(item.childItems??[])].reverse())pending.push(child);
+      }
+      if(pending.length)truncated=true;
+    }else if(query.operation==='syntax_diagnostics'){
+      for(const diagnostic of service.getSyntacticDiagnostics(target)){
+        const point=location({fileName:target,textSpan:{start:diagnostic.start??0,length:diagnostic.length??0}});
+        const message=ts.flattenDiagnosticMessageText(diagnostic.messageText,'\n');
+        if(message.length>1000)truncated=true;
+        if(point)push({...point,code:diagnostic.code,category:ts.DiagnosticCategory[diagnostic.category].toLowerCase(),message:message.slice(0,1000)});
+        if(items.length>=data.limits.maxResults){truncated=true;break;}
+      }
+    }else if (query.operation === 'hover') {
       const info = service.getQuickInfoAtPosition(target, position);
       if (info) {
         const display = ts.displayPartsToString(info.displayParts), documentation = ts.displayPartsToString(info.documentation);
@@ -221,7 +242,7 @@ async function navigate(data) {
       }
     } else {
       const methods = {definition: 'getDefinitionAtPosition', references: 'getReferencesAtPosition', implementation: 'getImplementationAtPosition'};
-      const results = service[methods[data.query.operation]](target, position) ?? [], seen = new Set();
+      const results = service[methods[query.operation]](target, position) ?? [], seen = new Set();
       for (const result of results) {
         const item = location(result);
         if (!item) continue;
@@ -232,7 +253,14 @@ async function navigate(data) {
         items.push(item);
       }
     }
-    return {operation: data.query.operation, path: data.query.path, line: data.query.line, column: data.query.column, items, hover, truncated, snapshot, scope, engine: `typescript-${ts.version}`, elapsedMs: Math.round(performance.now() - started)};
+    return {...query,items,hover,truncated,snapshot,scope,engine:`typescript-${ts.version}`,elapsedMs:Math.round(performance.now()-started),...(query.operation==='syntax_diagnostics'?{diagnosticKind:'syntax'}:{})};
+    }
+    if(!data.calls)return run(data.query);
+    const calls=data.calls.map(({id,...query})=>{
+      try{return{id,operation:query.operation,status:'completed',result:run(query)};}
+      catch(error){return{id,operation:query.operation,status:'failed',error:['SEMANTIC_PATH','SEMANTIC_POSITION'].includes(error.code)?error.code:'SEMANTIC_UNAVAILABLE'};}
+    });
+    return{kind:'workspace-batch',version:1,calls,snapshot,scope,engine:`typescript-${ts.version}`,elapsedMs:Math.round(performance.now()-started)};
   } finally { service.dispose(); }
 }
 
