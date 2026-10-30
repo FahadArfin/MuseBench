@@ -8,7 +8,8 @@ const validName=name=>typeof name==='string'&&/^[a-zA-Z0-9][\w:./-]{0,199}$/.tes
 function valuesOf(entry){
  const canonical=canonicalMcpEntry(entry);
  if(!['stdio','streamable-http'].includes(mcpTransport(canonical))||Boolean(canonical.command)===Boolean(canonical.url))throw Error('Unsupported MCP configuration.');
- return validateRunSettings({required:canonical.required??false,startupTimeout:canonical.startup_timeout_sec??30,toolTimeout:canonical.tool_timeout_sec??300});
+ const value=(key,fallback)=>Object.hasOwn(canonical,key)?canonical[key]:fallback;
+ return validateRunSettings({required:value('required',false),startupTimeout:value('startup_timeout_sec',30),toolTimeout:value('tool_timeout_sec',300)});
 }
 function updateEntry(entry,changes){
  const next=structuredClone(entry);

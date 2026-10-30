@@ -20,4 +20,5 @@ Continue under the standing implementation/delivery authorization; no repeated a
 
 The optional atomic approval callback rechecks ownership and saved source before a grant can be committed. Saved is distinct from connected, applied to an existing native session, or accepted by a provider. Only already-reviewed integrations are editable. Version 1 deliberately uses finite host controls; OpenCode executable plugins and MCP Apps have different contracts and are not claimed as compatible.
 
-Independent final review and installed acceptance are pending.
+Independent final review found one Important issue: explicit null required/timeout settings were displayed as defaults. Three regressions reproduced it before correction; all 36 panel tests now pass. Defaults apply only to absent fields, and malformed present values leave the panel read-only. No Critical or Minor findings were reported. Actual provider acceptance and published/installed behavior were correctly excluded from that source review and remain separately gated.
+`nFinal correction verification: full suite 1,650 passed, zero failures, one optional skip (`review-full.log`); shared preview `preview-ctwDeB` and real Electron `desktop-lki7ZV` passed (`review-shared.log`).

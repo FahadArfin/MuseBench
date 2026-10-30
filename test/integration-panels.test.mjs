@@ -45,7 +45,7 @@ test('an unreviewed executable cannot be approved indirectly through its setting
 for(const values of [{toolTimeout:0},{startupTimeout:3601},{required:'false'},{toolTimeout:null},{toolTimeout:NaN},{startupTimeout:Infinity},{command:'replace-program'},{url:'https://other.example'}])test(`rejects malformed or additional panel input ${JSON.stringify(values)}`,async()=>{
  const f=fixture();await assert.rejects(f.prepare(values),/invalid|timeout|field|required/i);assert.equal(f.writes,0);
 });
-for(const entry of [{type:'stdio',command:'node',required:true,mode:'required'},{type:'stdio',transport:'stdio',command:'node'},{command:'node',tool_timeout_sec:'50'},{command:'node',tool_timeout_sec:99999}])test(`unsupported existing settings are read-only: ${JSON.stringify(entry)}`,async()=>{
+for(const entry of [{type:'stdio',command:'node',required:true,mode:'required'},{type:'stdio',transport:'stdio',command:'node'},{command:'node',tool_timeout_sec:'50'},{command:'node',tool_timeout_sec:99999},...['required','startup_timeout_sec','tool_timeout_sec'].map(key=>({command:'node',[key]:null}))])test(`unsupported existing settings are read-only: ${JSON.stringify(entry)}`,async()=>{
  const f=fixture({entry}),panel=await f.inspect();assert.equal(panel.editable,false);assert.match(panel.reason,/official|unsupported|ambiguous/i);assert(!JSON.stringify(panel).includes('PRIVATE'));await assert.rejects(f.prepare({toolTimeout:40}));assert.equal(f.writes,0);
 });
 for(const change of ['source','unrelated','owner','chat','grant','busy','closed','expired'])test(`prepared settings reject ${change} changes without a write`,async()=>{

@@ -42,6 +42,6 @@
 ### Task 3: Review and verified delivery
 **Files:** docs/validation/2026-10-30-integration-panels.md, docs/ROADMAP-2026-10-29.md and focused corrections.
 **Interfaces:** Exact reviewed source and published installer; personal native controls distinct from disposable mutation fixtures.
-- [ ] Request one fresh whole-branch review, re-grade findings, fix Important/Critical with RED→GREEN, retain evidence.
+- [x] Request one fresh whole-branch review, re-grade findings, fix Important/Critical with RED→GREEN, retain evidence.
 - [ ] Push completed feature to main after fresh checks; wait for all six Windows groups and publication.
 - [ ] Verify exact installer hashes, recheck idle state, back up profile, gracefully install/reopen and inspect native UI; run isolated installed panel checks without changing personal integrations.
