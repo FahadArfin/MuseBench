@@ -2,6 +2,14 @@
 
 Shared Code controls now distinguish **Fork chat**, which carries conversation history, from **New side chat**, which starts fresh context linked to the main chat. Reply actions use **Fork from here**. See [behavior and runtime boundaries](../CODE-CHAT-RELATIONS.md).
 
+## Native history and isolation evidence
+
+`node scripts/native-session-fork-contract.mjs --local-fixture` passed against the actual pinned Muse SDK/host 1.4.14 with a disposable profile and scripted loopback provider. It exercised full-history and completed-turn-cut product forks, verified exact returned history/provenance and matching ownership release, restored the acquired fork on a second host, and continued parent and child independently. A separate fresh session excluded parent markers. Native `session/sideChat` inherited context, which is why fresh linked sides use independent sessions instead.
+
+The final receipt is `artifacts/code-chat-relations/native-contract-report.json`: seven scripted turns, 28 local requests within the 32-request bound, zero external model inference, no personal credentials, both hosts' cleanup confirmed and temporary workspace removed. Earlier failed probe receipts remain preserved; a real SDK single-notification-handler issue was corrected by runtime-owned subscription multiplexing and covered by regression tests. This proves the pinned local protocol and product path with scripted responses, not personal provider acceptance.
+
+Controller/runtime tests separately cover bounded history, native completed-turn mappings, exact source binding, active-work admission, no copied goals/queues/usage/tool leases, late and unknown outcomes, no silent retained-history fallback after a native failure, durable receipts surviving stale selection snapshots, and independent child visibility when its parent is unavailable. Task 1's final focused run passed 152 tests; its ancestry fix passed 104 covering tests. Latest UI/provenance checks are recorded below.
+
 ## Current local evidence
 
 All commands below ran in the isolated `codex/code-chat-relations` checkout. No personal profile was opened or changed and no provider inference ran. The browser bridge is sample behavior. Electron tests used disposable saved manual chats, actual product UI, actual controller actions and isolated profiles. The native uncertainty rendering case injects an explicit sample error/receipt; it does not claim a new native protocol execution. Task 1's separate local scripted-host contract proves that boundary.
@@ -60,3 +68,9 @@ The blanket related-chat header exclusion hid legitimate manual/demo initial req
 RED receipts: `task2-round2-controller-red.txt` (19 pass / 5 fail), `task2-round2-desktop-red.txt` (missing actual manual prompt), `task2-round2-stale-provenance-red.txt` (four restart failures with a stale app snapshot). Latest focused controller/index/history/native regression command passed137 with zero failures/skips (`task2-round2-focused-verified.txt`).
 
 Product smoke now passes preview16 and Electron15 checks (`ui-preview-CIiIZL/report.json`, `ui-desktop-pkIGXv/report.json`), including actual controller-owned manual sources whose initial question is absent from their message array, literal “Side chat” as a legitimate question, parent deletion and fork-of-fork. Both prior chat-level/reply-level side-fork checks remain green. Inspected `manual-initial-request.png`, `manual-literal-side-chat.png` and side-fork screenshots. Typecheck and Vite build passed. The final focused suite additionally covers stale-selection provenance restoration after those smoke runs; no renderer/build source changed subsequently. Broad verification remains root's integration scope.
+
+## Final integration checkpoint
+
+At source `9558a9f945b616288085c90f62ad0f03503d5ced`, root ran `npm.cmd run build` (native helpers, TypeScript, Vite and native MCP bundle) followed by `npm.cmd test`. Both processes completed with exit 0. Full suite: **1,974 passed, one existing skip, zero failed; 1,975 total**, 54.704 seconds. Evidence: `integration-9558a9f-build.txt` and `integration-9558a9f-tests.txt`. The previous `32b72c3` checkpoint passed 1,968 plus one skip; it is retained separately rather than represented as final provenance proof.
+
+Independent task reviews and scoped re-reviews found no remaining Critical/Important issues. Root added this evidence and the native-contract summary without changing product code; whole-feature final review and release/installed checks follow separately. No personal model request was made.
