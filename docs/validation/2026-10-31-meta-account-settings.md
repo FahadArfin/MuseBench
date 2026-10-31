@@ -33,3 +33,9 @@ App control is visibly enabled in the installed app, but the native connection r
 
 - [Electron window.open](https://www.electronjs.org/docs/latest/api/window-open): opener behavior and inherited preferences for blank windows.
 - [Google OAuth policies](https://developers.google.com/identity/protocols/oauth2/policies): embedded user-agent restrictions.
+
+## Release validation follow-up
+
+Release run 41209761480 passed packaging and five validation groups, including the new navigation tests, but the chats group stopped at the existing saved-prompts target-size assertion. Its desktop fixture sampled the opening dialog before the entrance animation completed. Local diagnostic sampling reproduced a nominal 40px button as 39.99998474121094px during a fractional vertical translation, with width 88px and gap 12px (`artifacts/prompt-shelf/desktop-2ZLnwo/report.json`).
+
+The smoke test now waits for the real finite modal and scrim entrance animations, with a three-second failure deadline. It records initial and settled measurements, requires no active entrance animations and fully opaque/untransformed content, and retains the original 40px height, 88px width and 8px minimum gap assertions. Production motion and button styling are unchanged. Corrected preview and desktop suites passed (`artifacts/prompt-shelf/preview-TZcLQX/report.json`, `artifacts/prompt-shelf/desktop-dRxUwh/report.json`). The failed release was not published or installed.
