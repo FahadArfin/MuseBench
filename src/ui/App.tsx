@@ -200,14 +200,14 @@ export default function App() {
     bridge.getState().then(value => { if (active&&!received) {canonicalState.current=value;setState(value);} }).catch(error => {if(active)setLocalError(String(error));});
     return () => { active = false; dispose(); };
   }, [bridge]);
-  const act = useCallback(async (action: Action) => {
+  const act = useCallback(async (action: Action, ownDestination?:string) => {
     if (!bridge) return null;
     const inspection=action.type==='inspectChild';
     const destination=shellDestination.current;
     if(!inspection)setPending(true);
     // Results carry action-specific errors/receipts; canonical state arrives
     // only through onState, including for reads and successful commands.
-    try { const next = await bridge.dispatch(action); if(destination!==shellDestination.current)obsoleteResults.current.add(next); if(next.error)setLocalError(next.error); if(!next.error&&currentResult(next)&&['forkTask','createSideChat'].includes(action.type)){setCreating(false);setView('chat');setReviewOpen(false);setMobileNav(false);setModal(null);requestAnimationFrame(()=>composer.current?.focus());} return next; }
+    try { const next = await bridge.dispatch(action); if(destination!==shellDestination.current&&ownDestination!==shellDestination.current)obsoleteResults.current.add(next); if(next.error)setLocalError(next.error); if(!next.error&&currentResult(next)&&['forkTask','createSideChat'].includes(action.type)){setCreating(false);setView('chat');setReviewOpen(false);setMobileNav(false);setModal(null);requestAnimationFrame(()=>composer.current?.focus());} return next; }
     catch (error) { setLocalError(error instanceof Error ? error.message : String(error)); return null; }
     finally { if(!inspection)setPending(false); }
   }, [bridge,currentResult]);
@@ -389,11 +389,15 @@ export default function App() {
       if (next && !next.error && currentResult(next)) {
         if(next.activeProject){setDraftFor(next.activeProject.id,null,{text:'',files:[],mode:'chat'});if(next.task)setDraftFor(next.activeProject.id,next.task.id,{text:chatMode==='muse'?text:'',files:chatMode==='muse'?contextFiles:[],images:chatMode==='muse'?codeImages:[],mode:messageMode});}
         if(view==='project')composerOrigin.current=composerShell.current?.getBoundingClientRect()??null;
+        // Follow-up commands may finish before or after this submission's own
+        // transition commits. Only that exact destination is allowed in addition
+        // to the origin; another navigation still invalidates their UI effects.
+        const submissionDestination=`${product}:chat:${modal}:false:${nativeDestination.revision}`;
         setCreating(false); setView('chat'); setStage('changes'); setReviewOpen(false);
         if (chatMode === 'muse') {
           const access=showTask&&task?.mode==='demo'?state.runtime.fullAccess===true:draftFullAccess;
-          const connected=await act({type:'setExecutionAccess',taskId:next.task!.id,fullAccess:access});if(!connected||connected.error||!currentResult(connected))return;setDraftFullAccess(false);
-          const sent = await act({ type: 'sendMessage', text, mode: messageMode, images:codeImages, files:contextFiles });
+          const connected=await act({type:'setExecutionAccess',taskId:next.task!.id,fullAccess:access},submissionDestination);if(!connected||connected.error||!currentResult(connected))return;setDraftFullAccess(false);
+          const sent = await act({ type: 'sendMessage', text, mode: messageMode, images:codeImages, files:contextFiles },submissionDestination);
           if (sent && !sent.error && currentResult(sent)) { draftForTask.current = ''; if(next.task&&next.activeProject)setDraftFor(next.activeProject.id,next.task.id,{text:'',files:[],mode:'chat'}); }
         }
       } else draftForTask.current = '';

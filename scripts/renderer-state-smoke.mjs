@@ -63,6 +63,46 @@ try{
  assert.equal(await page.getByRole('dialog',{name:'Settings',exact:true}).count(),1,'A late successful command must not close a newer Settings navigation');
  await page.getByRole('button',{name:'Close dialog',exact:true}).click();
  pass('Late successful command preserves a newer shell destination for the same canonical chat');
+ // A submission's own new-chat transition may commit while access setup is
+ // awaiting a response. Preview forwards offline sample actions; desktop
+ // replaces access/send with successful read-only replies, never a native call.
+ for(const navigation of ['own-transition','newer-settings','newer-chat']){
+ if(navigation==='newer-chat')await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Unrelated selected-chat draft');
+ if(desktop)await app.evaluate(({ipcMain})=>{
+  const original=ipcMain._invokeHandlers.get('musebench:action');globalThis.rendererOriginalAction=original;
+  const fixture=globalThis.rendererSubmission={calls:[],release:null};
+  ipcMain.removeHandler('musebench:action');ipcMain.handle('musebench:action',async(event,action)=>{
+   if(['newTask','setExecutionAccess','sendMessage'].includes(action.type))fixture.calls.push(action.type);
+   if(action.type==='setExecutionAccess'){const reply=await original(event,{type:'refresh'});return new Promise(resolve=>{fixture.release=()=>resolve(reply);});}
+   if(action.type==='sendMessage')return original(event,{type:'refresh'});
+   return original(event,action);
+  });
+ });else await page.evaluate(()=>{
+  const bridge=window.musebench,original=bridge.dispatch;window.rendererOriginalAction=original;
+  const fixture=window.rendererSubmission={calls:[],release:null};bridge.dispatch=async action=>{
+   if(['newTask','setExecutionAccess','sendMessage'].includes(action.type))fixture.calls.push(action.type);
+   const result=await original(action);if(action.type==='setExecutionAccess')return new Promise(resolve=>{fixture.release=()=>resolve(result);});return result;
+  };
+ });
+ await page.getByRole('button',{name:'New chat',exact:true}).click();
+ await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('Offline asynchronous new-chat submission fixture');
+ await page.getByRole('button',{name:'Create task',exact:true}).click();
+ if(desktop)await app.evaluate(async()=>{while(!globalThis.rendererSubmission.release)await new Promise(resolve=>setTimeout(resolve,10));});else await page.waitForFunction(()=>!!window.rendererSubmission.release);
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+ if(navigation==='newer-settings'){await page.keyboard.press('Control+,');const settings=page.getByRole('dialog',{name:'Settings',exact:true});await settings.waitFor();await settings.getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:'Memory',exact:true}).click();await settings.getByRole('textbox',{name:'Your instructions'}).fill('Unrelated unsaved Settings draft');}
+ if(navigation==='newer-chat'){await dispatch({type:'selectTask',id:second.id});await page.waitForFunction(title=>document.querySelector('.breadcrumbs strong')?.textContent===title,second.title);}
+ if(desktop)await app.evaluate(()=>globalThis.rendererSubmission.release());else await page.evaluate(()=>window.rendererSubmission.release());
+ await page.waitForFunction(()=>document.querySelector('.current-chat-options')?.disabled===false);
+ const calls=desktop?await app.evaluate(()=>globalThis.rendererSubmission.calls):await page.evaluate(()=>window.rendererSubmission.calls);
+ (report.submissions??=[]).push({navigation,calls});
+ assert.deepEqual(calls,navigation==='own-transition'?['newTask','setExecutionAccess','sendMessage']:['newTask','setExecutionAccess'],'Submission follows its own transition but cannot continue after superseding navigation');
+ if(navigation==='own-transition')await page.waitForFunction(()=>document.querySelector('textarea[aria-label="Message Muse"]')?.value==='');
+ if(navigation==='newer-settings'){const settings=page.getByRole('dialog',{name:'Settings',exact:true});assert.equal(await settings.count(),1);assert.equal(await settings.getByRole('textbox',{name:'Your instructions'}).inputValue(),'Unrelated unsaved Settings draft');await page.getByRole('button',{name:'Close dialog',exact:true}).click();assert.equal(await page.getByRole('textbox',{name:'Message Muse',exact:true}).inputValue(),'Offline asynchronous new-chat submission fixture');}
+ if(navigation==='newer-chat'){assert.equal((await read()).task.id,second.id);assert.equal(await page.getByRole('textbox',{name:'Message Muse',exact:true}).inputValue(),'Unrelated selected-chat draft');}
+ if(desktop)await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('musebench:action');ipcMain.handle('musebench:action',globalThis.rendererOriginalAction);});else await page.evaluate(()=>{window.musebench.dispatch=window.rendererOriginalAction;});
+ await dispatch({type:'selectTask',id:second.id});
+ pass(navigation==='own-transition'?'Successful asynchronous newTask/access/send chain survives its own committed chat transition and clears the draft':`Asynchronous new-chat setup does not send after ${navigation} supersedes it`);
+ }
  if(desktop){
   // Only this bounded presentation fixture owns the Code IPC stream. It uses
   // the shipped publisher/preload and public API; it does not claim native work.
