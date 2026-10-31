@@ -10,7 +10,7 @@ import {waitForDesktopRenderer} from './electron-window.mjs';
 const desktop=process.argv.includes('--desktop'),executablePath=desktop?process.env.MUSEBENCH_EXECUTABLE:undefined,variant=desktop?(executablePath?'packaged':'desktop'):'preview';
 await mkdir('artifacts/project-mcp',{recursive:true});
 const output=await mkdtemp(path.resolve('artifacts/project-mcp',variant+'-'));
-const report={variant,status:'running',checks:[],errors:[],providerRequests:0};
+const report={variant,status:'running',checks:[],errors:[],providerObservation:'Not instrumented by this catalog fixture; no provider request count is asserted.'};
 const pass=message=>{report.checks.push(message);console.log('PASS '+message);};
 let app,browser,page,server,project,projectFile;
 try{

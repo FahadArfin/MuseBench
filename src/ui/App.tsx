@@ -43,7 +43,7 @@ import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type R
 import { Archive, Pin, ArrowDown, ArrowUp, Bot, ChevronDown, ChevronRight, Code2, Copy, Files, FolderOpen, History, Home, Info, Keyboard, Lightbulb, LoaderCircle, MessageSquare, PanelLeft, Plus, Search, Settings2, ShieldCheck, Square, SquarePen, Target, Terminal, X } from 'lucide-react';
 import Markdown, {type Components} from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Action, AppState, PersonalCommand, PersonalDestination } from '../shared/types';
+import type { Action, AppState, Message, PersonalCommand, PersonalDestination } from '../shared/types';
 import { CheckpointDialog, Modal, ProjectToolsPanel, RuntimeDialog, ShellCommands } from './WorkspacePanels';
 import {useSurfaceMotion} from './useSurfaceMotion';
 import {animateMotion,motionScrollBehavior} from './motion.mjs';
@@ -90,6 +90,12 @@ const markdownComponents: Components = {
 // Bridge snapshots clone message objects; text equality still preserves settled responses.
 const MarkdownText = memo(function MarkdownText({ text }: { text: string }) {
   return <div className="markdown"><Markdown remarkPlugins={markdownPlugins} skipHtml components={markdownComponents}>{text}</Markdown></div>;
+});
+
+// Local composer edits retain message identity. Cloned bridge snapshots still
+// refresh every article, including its image, response and permission props.
+const TranscriptMessage = memo(function TranscriptMessage({item,projectId,chatId,branchDisabled,quoteDisabled,draftKey,onBranch,onChanges,onQuote}:{item:Message;projectId?:string;chatId:string;branchDisabled:boolean;quoteDisabled:boolean;draftKey:string;onBranch:(messageId:string,taskId:string)=>void;onChanges:(runId:string)=>void;onQuote:(capture:QuoteCapture)=>void}) {
+  return <article data-timeline-prompt={item.role==='user'?'':undefined} data-timeline-answer={item.role==='assistant'?'':undefined} className={`message ${item.role}-message`}>{item.role === 'user' ? <><p>{item.text}</p>{!!item.images?.length&&projectId&&<CodeImages images={item.images} projectId={projectId}/>} {!!item.files?.length&&<small>{item.files.length} source files attached</small>}</> : <MarkdownText text={item.text} />}{item.role === 'assistant' && <ResponseActions messageId={item.id} text={item.text} at={item.at} chatId={chatId} branchDisabled={branchDisabled} onBranch={onBranch} runId={item.turnId} onChanges={onChanges} draftKey={draftKey} quoteDisabled={quoteDisabled} onQuote={onQuote}/>}</article>;
 });
 
 type AppVisit =
@@ -202,6 +208,11 @@ export default function App() {
     const source=current?.task?.messages.find(item=>item.id===capture.messageId&&item.role==='assistant');if(!source||source.text!==capture.sourceText)throw Error('This response changed. Select it again.');
     const quoteText=buildResponseQuote(capture);appendDraftText(capture.draftKey,quoteText);setQuoteCapture(previous=>({...capture,quoteText,serial:(previous?.serial??0)+1}));requestAnimationFrame(()=>composer.current?.focus({preventScroll:true}));
   };
+  // Message rows need stable event identity, but quotation must use the current
+  // committed draft owner, edits and shelf fences. Never memoize that closure.
+  const committedQuoteReply=useRef(quoteReply);
+  useLayoutEffect(()=>{committedQuoteReply.current=quoteReply;});
+  const onQuoteReply=useCallback((capture:QuoteCapture)=>committedQuoteReply.current(capture),[]);
   const hasSession = Boolean(state?.runtime.sessionId);
   const runtimeBlocked = ['blocked', 'uncertain', 'unavailable', 'closed', 'error', 'failed'].includes(state?.runtime.status ?? '') || Boolean(state?.runtime.pending);
   const connected = !runtimeBlocked && (hasSession || state?.runtime.status === 'connected' || state?.runtime.status === 'ready');
@@ -512,7 +523,7 @@ export default function App() {
         <main className={`conversation ${!showTask ? 'new-conversation' : ''}`}>
           {showTask && task ? <div data-workspace-area="conversation" data-workspace-default className="conversation-transcript" ref={transcript} onScroll={onTranscriptScroll} tabIndex={0} aria-label="Conversation"><div className="transcript-inner"><ChatRelation task={task} tasks={state.tasks} busy={navigationBusy} onParent={id=>void navigateTask(id)}/>{showInitialRequest&&<article className="message user-message" data-timeline-prompt="" data-transcript-anchor="initial-request"><p>{task.request}</p>{initialPrompt?.images?.length&&project?<CodeImages images={initialPrompt.images} projectId={project.id}/>:null}</article>}{showInitialRequest&&initialPrompt?.text===task.request&&runActivity(initialPrompt.id)}
             {systemMessages.length > 0 && <details className="activity-details"><summary><Terminal size={14} /><span>Workspace activity</span><small>{systemMessages.length} updates</small><ChevronDown size={13} /></summary><div>{systemMessages.map(item => <p key={item.id}>{item.text}</p>)}</div></details>}
-            {visibleMessages.map(item => <div key={`${task.id}:${item.id}`} id={`turn-${item.id}`} data-transcript-anchor={item.id}><article data-timeline-prompt={item.role==='user'?'':undefined} data-timeline-answer={item.role==='assistant'?'':undefined} className={`message ${item.role}-message`}>{item.role === 'user' ? <><p>{item.text}</p>{!!item.images?.length&&project&&<CodeImages images={item.images} projectId={project.id}/>} {!!item.files?.length&&<small>{item.files.length} source files attached</small>}</> : <MarkdownText text={item.text} />}{item.role === 'assistant' && <ResponseActions messageId={item.id} text={item.text} at={item.at} chatId={task.id} branchDisabled={busy||runtimeActive} onBranch={branchResponse} runId={item.turnId} onChanges={openRunChanges} draftKey={draftKey} quoteDisabled={busy||runtimeActive||draftLocked||!!task.archived} onQuote={quoteReply}/>}</article>{item.role==='user'&&runActivity(item.id)}</div>)}
+            {visibleMessages.map(item => <div key={`${task.id}:${item.id}`} id={`turn-${item.id}`} data-transcript-anchor={item.id}><TranscriptMessage item={item} projectId={project?.id} chatId={task.id} branchDisabled={busy||runtimeActive} onBranch={branchResponse} onChanges={openRunChanges} draftKey={draftKey} quoteDisabled={busy||runtimeActive||draftLocked||!!task.archived} onQuote={onQuoteReply}/>{item.role==='user'&&runActivity(item.id)}</div>)}
             {!task.runs?.length&&<ShellCommands results={task.shellResults ?? []} />}{Boolean(state.runtime.pending) && <button className="permission-banner" onClick={() => setModal('runtime')}><ShieldCheck size={17} /><span>{(state.runtime.pending as {kind?:string})?.kind==='input'?'Muse has a question. Answer to continue.':'Muse needs your decision. Review the permission request.'}</span><ChevronRight size={15} /></button>}
             {runtimeActive && !task.runs?.some(run=>run.status==='working') && <div className="working-indicator" role="status"><LoaderCircle size={15} className="spin" />Muse is working in your project…<button className="text-link" onClick={() => void act({ type: 'disconnectMuse' })}>Stop</button></div>}
             {!runtimeActive&&!!task.changes.length&&<ChangedFiles key={task.id} files={task.changes} onOpenFile={openFile} onOpenAll={()=>openFile()}/>}

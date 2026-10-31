@@ -66,6 +66,7 @@
     "test:prompt-shelf": "node scripts/prompt-shelf-smoke.mjs && node scripts/prompt-shelf-smoke.mjs --desktop",
     "test:chat-history-find": "node scripts/chat-history-find-smoke.mjs && node scripts/chat-history-find-smoke.mjs --desktop",
     "test:transcript-position": "node scripts/transcript-position-smoke.mjs && node scripts/transcript-position-smoke.mjs --desktop",
+    "test:transcript-render": "node scripts/transcript-render-smoke.mjs",
     "test:chat-navigation": "node scripts/chat-navigation-smoke.mjs && node scripts/chat-navigation-smoke.mjs --desktop && node scripts/chat-read-smoke.mjs && node scripts/chat-read-smoke.mjs --desktop && node scripts/sidebar-drag-smoke.mjs",
     "test:run-changes": "node scripts/run-changes-smoke.mjs && node scripts/run-changes-smoke.mjs --desktop",
     "test:conversation-import": "node scripts/conversation-import-smoke.mjs && node scripts/conversation-import-smoke.mjs --desktop",

@@ -74,6 +74,7 @@ jobs:
             artifacts/code-schedules/**/report.json
             artifacts/code-chat-relations/ui-*/report.json
             artifacts/transcript-position/**/report.json
+            artifacts/transcript-render/**/report.json
             artifacts/chat-history-find/**/report.json
             artifacts/prompt-shelf/**/report.json
             artifacts/response-quote/**/report.json
