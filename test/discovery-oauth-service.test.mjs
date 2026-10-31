@@ -120,7 +120,27 @@ test('provider rejection stays actionable on local inspect without provider text
  const f=await fixture(t,{registrationError:true});const failed=await f.begin(await f.review());assert.equal(failed.status,'failed');const before=f.authority.counters.requests.length,inspection=await f.inspect();assert.equal(inspection.status,'failed');assert.equal(inspection.reasonCode,'network-failed');assert.equal(inspection.canPrepare,true);assert.ok(!JSON.stringify(inspection).includes('FIXTURE_PRIVATE'));assert.equal(f.authority.counters.requests.length,before);
 });
 test('snapshot invalidation during awaited save prevents enrollment and later cancellation preserves completed commit',async t=>{
- for(const mode of ['snapshot','throwing-snapshot','thenable-snapshot','after-commit']){const f=await fixture(t),original=f.store.commitGrant.bind(f.store);f.store.commitGrant=async(...args)=>{if(mode==='snapshot'){await Promise.resolve();f.snapshotInvalid=true;}if(mode==='throwing-snapshot')f.getSourceSnapshot=()=>{throw Error('PRIVATE_SNAPSHOT_ERROR');};if(mode==='thenable-snapshot')f.getSourceSnapshot=()=>Promise.resolve(f.resolveSource());const result=await original(...args);if(mode==='after-commit')f.owner.epoch++;return result;};const waiting=await f.begin(await f.review());const response=await fetch(f.opened[0],{redirect:'manual'});await fetch(response.headers.get('location'));await delay(40);assert.equal(f.store.listBindings(f.source.id).length,mode==='after-commit'?1:0);assert.notEqual((await f.command('status',{attemptId:waiting.attemptId})).status,'ready');}
+ for(const mode of ['snapshot','throwing-snapshot','thenable-snapshot','after-commit'])await t.test(mode,{timeout:10000},async t=>{
+  const entered=deferred(),release=deferred(),settled=deferred();let saveSettled=false;
+  // Register first so a timeout releases the save before fixture cleanup waits.
+  t.after(release.resolve);const f=await fixture(t),original=f.store.commitGrant.bind(f.store);
+  f.store.commitGrant=async(...args)=>{
+   entered.resolve();await release.promise;
+   try{
+    if(mode==='snapshot'){await Promise.resolve();f.snapshotInvalid=true;}
+    if(mode==='throwing-snapshot')f.getSourceSnapshot=()=>{throw Error('PRIVATE_SNAPSHOT_ERROR');};
+    if(mode==='thenable-snapshot')f.getSourceSnapshot=()=>Promise.resolve(f.resolveSource());
+    const result=await original(...args);if(mode==='after-commit')f.owner.epoch++;return result;
+   }finally{saveSettled=true;settled.resolve();}
+  };
+  const waiting=await f.begin(await f.review()),response=await fetch(f.opened[0],{redirect:'manual'});await fetch(response.headers.get('location'));await entered.promise;
+  // Keep the commit held beyond the old 40ms assumption. Time passing must not
+  // publish a binding or count as save completion; release/settlement is explicit.
+  await delay(60);assert.equal(saveSettled,false);assert.equal(f.store.listBindings(f.source.id).length,0);
+  release.resolve();await settled.promise;assert.equal(saveSettled,true);
+  assert.equal(f.store.listBindings(f.source.id).length,mode==='after-commit'?1:0);
+  assert.notEqual((await f.command('status',{attemptId:waiting.attemptId})).status,'ready');
+ });
 });
 test('wrong task unknown fields stale review and busy mutation perform zero registration or browser requests',async t=>{
  const f=await fixture(t),r=await f.review();await assert.rejects(f.oauth.command({taskId:'other-task',type:'begin',attemptId:r.attemptId,reviewRevision:r.reviewRevision,reviewed:true}));await assert.rejects(f.oauth.command({taskId:f.owner.taskId,type:'begin',attemptId:r.attemptId,reviewRevision:r.reviewRevision,reviewed:true,url:'https://injected.test'}));await assert.rejects(f.begin({...r,reviewRevision:'0'.repeat(64)}));f.activeRequest=true;assert.equal((await f.begin(r)).reasonCode,'busy');assert.equal(f.authority.counters.registrations,0);assert.equal(f.opened.length,0);
