@@ -26,6 +26,7 @@ const required=[
  'npm run test:billing-desktop','npm run test:preview-parity','node scripts/mobile-settings-smoke.mjs',
  'node scripts/native-control-smoke.mjs','node scripts/native-navigation-smoke.mjs','node scripts/session-mcp-smoke.mjs','node scripts/session-mcp-smoke.mjs --desktop',
  'node scripts/meta-settings-smoke.mjs','node scripts/meta-settings-smoke.mjs --desktop',
+ 'node scripts/settings-connections-smoke.mjs','node scripts/settings-connections-smoke.mjs --desktop',
  'npm run test:conversation-import','npm run test:code-schedules','npm run test:preview-annotations','npm run test:workspace-analysis','npm run test:tool-discovery','npm run test:discovery-approvals',
 ];
 

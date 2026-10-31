@@ -191,3 +191,9 @@ Compared the user's Codex Changes reference with artifacts/compact-file-changes.
 - Preview and production Electron renderer match for both the file changes view and editor menu. Desktop fixture checks cover multiple files, collapse/expand, keyboard navigation, and narrow layout.
 - Desktop editor launch defaults to VS Code and remembers a user-selected editor executable. Browser preview reports desktop-only capability; deleted files cannot open. Tests cover stale task binding, path traversal, symlink escape, cancellation, and remembered editor arguments.
 - Existing binary/large comparison notices retained. No P0/P1/P2 findings. P3: syntax coloring is unchanged; code uses the existing monospace text rendering.
+
+## 2026-10-31 Settings and Customize selected design
+
+Current scoped comparison and visual evidence: docs/validation/2026-10-31-settings-customize-polish.md. Source and implementation were inspected together at 1508 x 1043. Compact production density and opaque content are intentional. No unresolved P0/P1/P2 findings. Browser and isolated Electron interactions passed, including the corrected narrow navigation overlay.
+
+final result: passed

@@ -3,6 +3,8 @@ export const SETTINGS_CATEGORIES = Object.freeze([
  {id:'notifications',label:'Notifications',group:'Preferences',keywords:'task completion completions alerts needs attention approval notification sound background'},
  {id:'voice',label:'Voice',group:'Preferences',keywords:'dictation microphone speech recognition language transcribe audio processing availability'},
  {id:'shortcuts',label:'Keyboard shortcuts',group:'Preferences',keywords:'keys keyboard commands hotkeys'},
+ {id:'customize',label:'Customize',group:'Customize',keywords:'skills connectors plugins mcp servers hooks catalog installed tools'},
+ {id:'connections',label:'Connections',group:'Customize',keywords:'connect Meta AI apps Gmail Google Drive calendar Outlook account plan upgrade Muse connected apps'},
  {id:'code',label:'Muse Code',group:'Coding',keywords:'reasoning effort model default approval approvals access permission permissions sandbox new chat'},
  {id:'memory',label:'Memory',group:'Coding',keywords:'your instructions memories personalization prompt projects'},
  {id:'skills',label:'Skills',group:'Coding',keywords:'installed commands extensions customize'},

@@ -1,7 +1,7 @@
 import {useContext} from 'react';
 import {AppUpdatesContext} from './AppUpdates';
 import {useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction} from 'react';
-import {Bell, BookOpen, Brain, Check, Code2, CreditCard, Database, Info, Keyboard, Mic, Monitor, Moon, Search, Settings2, ShieldCheck, Sun, Terminal, User, X} from 'lucide-react';
+import {Link2, SlidersHorizontal, Bell, BookOpen, Brain, Check, Code2, CreditCard, Database, Info, Keyboard, Mic, Monitor, Moon, Search, Settings2, ShieldCheck, Sun, Terminal, User, X} from 'lucide-react';
 import {Modal} from './WorkspacePanels';
 import {SettingsServicePanel} from './SettingsServicePanel';
 import {BackgroundSettings} from './BackgroundSettings';
@@ -10,6 +10,9 @@ import {findSettings, type SettingsCategory} from './settings-catalog.mjs';
 import {REASONING_LEVELS} from '../shared/run-options.mjs';
 import type {Action, AppState, PersonalDestination} from '../shared/types';
 import './preferences.css';
+import './settings-surfaces.css';
+import {SettingsCustomize, SettingsConnections, type AccountSettingsCommand} from './SettingsConnections';
+import type {CustomizeTab} from '../shared/customize-types';
 import {useSurfaceMotion} from './useSurfaceMotion';
 export type {Preferences} from './preferences.mjs';
 
@@ -49,11 +52,11 @@ export function SettingRow({title, description, children}: {title: string; descr
 function Toggle({label, value, change}: {label: string; value: boolean; change: (value:boolean) => void}) {
   return <button type="button" role="switch" aria-label={label} aria-checked={value} className={`preference-toggle ${value ? 'on' : ''}`} onClick={() => change(!value)}><span>{value && <Check size={10}/>}</span></button>;
 }
-const icons = {general:Settings2,notifications:Bell,voice:Mic,shortcuts:Keyboard,code:Code2,memory:Brain,skills:BookOpen,connection:Terminal,mobile:Monitor,control:Terminal,account:User,billing:CreditCard,data:Database,updates:Info,about:Info};
+const icons = {customize:SlidersHorizontal,connections:Link2,general:Settings2,notifications:Bell,voice:Mic,shortcuts:Keyboard,code:Code2,memory:Brain,skills:BookOpen,connection:Terminal,mobile:Monitor,control:Terminal,account:User,billing:CreditCard,data:Database,updates:Info,about:Info};
 const effortNames:Record<string,string>={none:'None',minimal:'Minimal',low:'Low',medium:'Medium',high:'High',xhigh:'Extra high',max:'Max',ultra:'Ultra'};
-type Props={initialCategory?:SettingsCategory;openCustomize:()=>void;preferences:Preferences;onChange:Dispatch<SetStateAction<Preferences>>;close:()=>void;openConnection:()=>void;state:AppState;busy:boolean;act:(action:Action)=>Promise<AppState|null>;openPersonal:(destination:PersonalDestination)=>void};
+type Props={initialCategory?:SettingsCategory;openCustomize:(tab?:CustomizeTab)=>void;openAccountSettings:(command:AccountSettingsCommand)=>void;preferences:Preferences;onChange:Dispatch<SetStateAction<Preferences>>;close:()=>void;openConnection:()=>void;state:AppState;busy:boolean;act:(action:Action)=>Promise<AppState|null>;openPersonal:(destination:PersonalDestination)=>void};
 
-export function SettingsDialog({preferences, onChange, close, openConnection, state, busy, act, openPersonal,openCustomize,initialCategory='general'}:Props) {
+export function SettingsDialog({preferences, onChange, close, openConnection, state, busy, act, openPersonal,openCustomize,openAccountSettings,initialCategory='general'}:Props) {
   const {state:appUpdate}=useContext(AppUpdatesContext);
   const [category,setCategory]=useState<SettingsCategory>(initialCategory),[query,setQuery]=useState('');
   const [memory,setMemory]=useState(state.memories??''),[memoryMessage,setMemoryMessage]=useState(''),[saving,setSaving]=useState(false);
@@ -79,7 +82,7 @@ export function SettingsDialog({preferences, onChange, close, openConnection, st
           const next=e.key==='Home'?0:e.key==='End'?categories.length-1:(index+(e.key==='ArrowDown'?1:-1)+categories.length)%categories.length;
           const item=categories[next];if(item){setCategory(item.id);document.getElementById(`settings-nav-${item.id}`)?.focus();}
         }}>
-          {['Preferences','Coding','Account & data'].map(group=>{
+          {['Preferences','Customize','Coding','Account & data'].map(group=>{
             const items=categories.filter(item=>item.group===group);return items.length>0&&<div className="settings-nav-group" key={group}><p className="settings-nav-label">{group}</p>{items.map(({id,label})=>{const Icon=icons[id];return <button type="button" id={`settings-nav-${id}`} key={id} className={active===id?'active':''} aria-current={active===id?'page':undefined} onClick={()=>setCategory(id)}><Icon size={16}/><span>{label}</span></button>;})}</div>;
           })}
           {!categories.length&&<p className="settings-nav-empty">No matching sections</p>}
@@ -89,6 +92,8 @@ export function SettingsDialog({preferences, onChange, close, openConnection, st
       <div className="settings-content" ref={content} aria-label={selected?`${selected.label} settings`:'Settings search results'}>
         {!active?<div className="settings-empty"><Search size={24}/><h3>No settings found</h3><p>Try “theme”, “approvals”, “microphone” or “export”.</p><button className="settings-action" onClick={()=>setQuery('')}>Clear search</button></div>:<>
         {query&&<p className="settings-search-summary" role="status">{categories.length} matching {categories.length===1?'section':'sections'}</p>}
+        {active==='customize'&&<SettingsCustomize openCustomize={openCustomize}/>}
+        {active==='connections'&&<SettingsConnections openCustomize={openCustomize} openAccountSettings={openAccountSettings}/>}
         {active==='general'&&<>
           <section className="settings-section" aria-labelledby="appearance-heading"><h3 id="appearance-heading">Appearance</h3>
             <SettingRow title="Theme"><div className="theme-segments" role="group" aria-label="Theme">{([{value:'system',label:'System theme',icon:Monitor},{value:'light',label:'Light theme',icon:Sun},{value:'dark',label:'Dark theme',icon:Moon}] as const).map(({value,label,icon:Icon})=><button type="button" key={value} title={label} aria-label={label} aria-pressed={preferences.theme===value} onClick={()=>update('theme',value)}><Icon size={17}/></button>)}</div></SettingRow>

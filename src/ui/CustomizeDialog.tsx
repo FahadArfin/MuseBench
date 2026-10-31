@@ -15,14 +15,15 @@ import type {CustomizeCommand,CustomizeState,CustomizeTab,PreparedExtension,Serv
 import type {PersonalServiceAction} from '../shared/types';
 import {Modal} from './WorkspacePanels';
 import './customize.css';
+import './settings-surfaces.css';
 import {useSurfaceMotion} from './useSurfaceMotion';
 import {SkillContextDetails,SkillContextSummary} from './SkillContext';
 
 const tabs=[{id:'skills',label:'Skills',icon:BookOpen},{id:'connectors',label:'Connectors',icon:Link2},{id:'plugins',label:'Plugins',icon:Puzzle},{id:'mcp',label:'MCP servers',icon:Plug},{id:'hooks',label:'Hooks',icon:Terminal}] as const;
 const descriptions={hooks:'Reviewed commands for events in this project.',skills:'Teach Muse the workflows you use every day.',connectors:'Bring your apps and tools into your workflow.',plugins:'Add reusable bundles of skills and tools to Muse Code.',mcp:'Connect Muse Code to tools through Model Context Protocol.'};
 const accessNote='Plugin tools and MCP servers use their own permissions. Local programs run as your Windows account; remote services can receive data sent to their tools. They are outside the project shell sandbox. The Muse coding sandbox stays enabled.';
-type Props={initialTab?:CustomizeTab;initialQuery?:string;close:()=>void;onChanged:()=>void;onConnection:()=>void;onPersonal:(action:PersonalServiceAction)=>void;running:boolean};
-export function CustomizeDialog({initialTab='skills',initialQuery='',close,onChanged,onConnection,onPersonal,running}:Props){
+type Props={onMetaApps?:()=>void;initialTab?:CustomizeTab;initialQuery?:string;close:()=>void;onChanged:()=>void;onConnection:()=>void;onPersonal:(action:PersonalServiceAction)=>void;running:boolean};
+export function CustomizeDialog({initialTab='skills',initialQuery='',onMetaApps,close,onChanged,onConnection,onPersonal,running}:Props){
  const [tab,setTab]=useState<CustomizeTab>(initialTab),[query,setQuery]=useState(initialQuery),[state,setState]=useState<CustomizeState>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const catalogCache=useRef(new Map<string,CatalogPage>());
  const [source,setSource]=useState<'recommended'|'community'>('recommended');
@@ -88,6 +89,7 @@ export function CustomizeDialog({initialTab='skills',initialQuery='',close,onCha
    {state?.errors.map(text=><p key={text} className="extensions-alert">{text}</p>)}
    {!state&&busy&&<p className="extensions-loading" role="status"><LoaderCircle size={18} className="spin"/>Loading your Muse extensions…</p>}
    {state&&!state.available&&<button className="button" onClick={onConnection}>Open Muse connection<ArrowUpRight size={14}/></button>}
+   {tab==='connectors'&&onMetaApps&&!form&&!prepared&&!confirm&&!showProjectMcp&&<div className="extensions-meta-apps"><Link2 size={18}/><div><strong>Meta AI apps</strong><p>Connect apps to Meta AI chat. Muse Code tools are managed below.</p></div><button type="button" className="button" disabled={busy} onClick={onMetaApps}>Connect apps</button></div>}
    {(form||prepared||confirm||showProjectMcp)?<div className="extensions-setup"><button className="text-link" disabled={busy} onClick={back}><ChevronLeft size={15}/>Back to {tabs.find(item=>item.id===tab)?.label}</button>
     {showProjectMcp&&<ProjectMcpReview data={projectMcp} busy={busy} disabled={disabled} accepted={reviewed} setAccepted={setReviewed} execute={execute}/>}
     {form==='skill'&&<form onSubmit={event=>{event.preventDefault();void execute({type:'createSkill',name,description,instructions});}}><h3>Create a skill</h3><p>Write a repeatable workflow. Muse installs it in your personal skills and makes it available to future runs.</p><label>Skill name<input autoFocus aria-label="Skill name" placeholder="review-pull-request" value={name} onChange={e=>setName(e.target.value)} pattern="[a-z][a-z0-9-]{0,63}" required maxLength={64} disabled={disabled}/></label><label>Description<input aria-label="Skill description" placeholder="When should Muse use this skill?" value={description} onChange={e=>setDescription(e.target.value)} required maxLength={500} disabled={disabled}/></label><label>Instructions<textarea aria-label="Skill instructions" placeholder="Describe the steps Muse should follow…" value={instructions} onChange={e=>setInstructions(e.target.value)} required maxLength={20000} rows={9} disabled={disabled}/></label><button className="button primary" disabled={disabled||!state?.available||!name||!description.trim()||!instructions.trim()}>Create skill</button></form>}
