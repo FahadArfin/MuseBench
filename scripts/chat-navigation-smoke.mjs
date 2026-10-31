@@ -10,7 +10,7 @@ await mkdir('artifacts/chat-navigation',{recursive:true});
 const output=await mkdtemp(path.resolve('artifacts/chat-navigation',`${process.argv.includes('--baseline')?'before':'after'}-${variant}-`));
 const fixture=`import React,{useLayoutEffect,useState}from'react';import{createRoot}from'react-dom/client';import{ChatSidebar}from'./src/ui/ChatSidebar.tsx';
 const f=window.navigationFixture={calls:[],titleReads:0,durations:[],started:null};
-const projects=Array.from({length:40},(_,i)=>({id:'p'+i,name:'Project '+i,root:'/fixture/project-'+i}));
+const projects=Array.from({length:41},(_,i)=>({id:'p'+i,name:'Project '+i,root:'/fixture/project-'+i}));
 const tasks=Array.from({length:1000},(_,i)=>{const t={id:'c'+i,projectId:'p'+Math.floor(i/25),mode:'manual',createdAt:'2026-10-29T00:00:00.000Z',updatedAt:new Date(Date.UTC(2026,9,29,0,0,i)).toISOString(),acceptedRevision:null,pinned:i===3,archived:false};Object.defineProperty(t,'title',{enumerable:true,get(){f.titleReads++;return 'Chat '+String(i).padStart(4,'0');}});return t;});
 function Fixture(){const[draft,setDraft]=useState(''),[generation,setGeneration]=useState(0),[rows,setRows]=useState(tasks),[busy,setBusy]=useState(false),[active,setActive]=useState(true),[projectId,setProjectId]=useState('p0');
  f.clone=()=>setRows(previous=>previous.map(t=>({...t})));f.callbacks=()=>setGeneration(n=>n+1);f.busy=setBusy;f.active=setActive;f.rename=()=>setRows(previous=>previous.map(t=>t.id==='c0'?{...t,title:'Renamed chat'}:t));f.move=()=>{setRows(previous=>previous.map(t=>t.id==='c0'?{...t,projectId:'p1'}:t));setProjectId('p1');};
@@ -28,6 +28,17 @@ try{
  server=createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?js:html);});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}/`;
  if(desktop){const env={...process.env,MUSEBENCH_PARITY_DATA:path.join(output,'profile')};delete env.ELECTRON_RUN_AS_NODE;app=await electron.launch({args:['scripts/preview-parity-electron.mjs'],env});const created=app.waitForEvent('window');await app.evaluate(({BrowserWindow},url)=>{const w=new BrowserWindow({width:1100,height:800,useContentSize:true,show:false,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}});void w.loadURL(url);},url);page=await created;}else{browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:1100,height:800}});}
  page.on('pageerror',error=>report.errors.push(error.message));page.setDefaultTimeout(10000);await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());await page.goto(url);
+ assert.equal(await page.locator('.project-toggle[aria-expanded="true"]').count(),0,'First use must collapse every project, including the selected project');
+ await page.getByRole('button',{name:'Expand Project 0',exact:true}).click();
+ await page.getByRole('button',{name:'Expand Project 1',exact:true}).click();
+ await page.getByRole('button',{name:'Collapse Project 1',exact:true}).click();
+ await page.reload();
+ await page.getByRole('button',{name:'Collapse Project 0',exact:true}).waitFor();
+ assert.equal(await page.locator('.project-toggle[aria-expanded="true"]').count(),1,'Reload must restore only the projects the user left expanded');
+ await page.getByRole('button',{name:'Expand Project 40',exact:true}).click();
+ assert.equal(await page.getByText('No chats yet',{exact:true}).count(),0);
+ await page.getByRole('button',{name:'Collapse Project 40',exact:true}).click();
+ pass('Projects start collapsed, remember individual choices after reload, and empty projects have no placeholder');
  const first=page.getByRole('button',{name:'Chat 0000',exact:true});await first.waitFor();await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  await page.evaluate(()=>{window.navigationFixture.titleReads=0;window.navigationFixture.durations=[];});
  await page.getByRole('textbox',{name:'Draft',exact:true}).pressSequentially('abcdefghij');
@@ -43,9 +54,9 @@ try{
  await page.evaluate(()=>window.navigationFixture.rename());await page.getByRole('menu',{name:'Options for Renamed chat',exact:true}).waitFor();
  await page.evaluate(()=>window.navigationFixture.busy(true));await page.getByRole('menu').waitFor({state:'detached'});assert.equal(await page.getByRole('button',{name:'Renamed chat',exact:true}).isDisabled(),true);
  await page.evaluate(()=>window.navigationFixture.busy(false));pass('Real title and busy-state changes remain visible and dismiss unsafe menu actions');
- await page.getByRole('button',{name:'Collapse Project 1',exact:true}).click();await page.evaluate(()=>window.navigationFixture.move());await page.getByRole('button',{name:'Collapse Project 1',exact:true}).waitFor();
+ await page.evaluate(()=>window.navigationFixture.move());await page.getByRole('button',{name:'Expand Project 1',exact:true}).waitFor();await page.getByRole('button',{name:'Expand Project 1',exact:true}).click();
  const moved=page.getByRole('region',{name:'Project 1 active chats',exact:true}).getByRole('button',{name:'Renamed chat',exact:true});await moved.focus();await moved.press('Alt+Shift+ArrowUp');
- const action=await page.evaluate(()=>window.navigationFixture.calls.at(-1));assert.equal(action.kind,'action');assert.equal(action.action.type,'moveSidebarItem');assert.equal(action.action.projectId,'p1');assert.equal(action.action.id,'c0');assert.equal(action.generation,1);pass('Moving the selected chat expands its current project and keyboard reorder keeps exact ownership');
+ const action=await page.evaluate(()=>window.navigationFixture.calls.at(-1));assert.equal(action.kind,'action');assert.equal(action.action.type,'moveSidebarItem');assert.equal(action.action.projectId,'p1');assert.equal(action.action.id,'c0');assert.equal(action.generation,1);pass('Changing the selected project respects its collapsed state and keyboard reorder keeps exact ownership');
  await page.getByRole('textbox',{name:'Draft',exact:true}).fill('Retained draft');assert.equal(await page.getByRole('textbox',{name:'Draft',exact:true}).inputValue(),'Retained draft');
  await page.screenshot({path:path.join(output,'sidebar.png')});assert.deepEqual(report.errors,[]);report.status='passed';
 }catch(error){report.status='failed';report.failure=error.stack;await page?.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});console.error(error);process.exitCode=1;}

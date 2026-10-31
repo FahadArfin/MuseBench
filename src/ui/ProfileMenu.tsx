@@ -35,7 +35,9 @@ export function ProfileMenu({open,onOpenChange,onAction,compact=false,profile}:P
  useEffect(()=>{
   if(!open)return;
   const outside=(event:PointerEvent)=>{if(!menu.current?.contains(event.target as Node)&&!trigger.current?.contains(event.target as Node))onOpenChange(false);};
-  document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);
+  const leaveShell=()=>onOpenChange(false);
+  document.addEventListener('pointerdown',outside);window.addEventListener('blur',leaveShell);
+  return()=>{document.removeEventListener('pointerdown',outside);window.removeEventListener('blur',leaveShell);};
  },[open,onOpenChange]);
  const key=(event:KeyboardEvent)=>{
   if(event.key==='Escape'){event.preventDefault();event.stopPropagation();close(true);return;}

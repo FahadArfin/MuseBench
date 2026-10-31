@@ -8,7 +8,7 @@ const npm=(...names)=>names.map(name=>['npm','run',`test:${name}`]);
 // localhost ports. Parallelism comes from isolated GitHub Windows runners.
 export const CI_SUITES={
  unit:[['npm','test']],
- appearance:npm('startup-animation','motion','typography'),
+ appearance:npm('startup-animation','motion','typography','terminal-welcome'),
  navigation:[...npm('preview-parity','browser-preview','onboarding-preview','navigation-cache','preview-annotations'),['node','scripts/meta-settings-smoke.mjs'],['node','scripts/meta-settings-smoke.mjs','--desktop'],['node','scripts/settings-connections-smoke.mjs'],['node','scripts/settings-connections-smoke.mjs','--desktop']],
  extensions:npm('catalog-preview','catalog-desktop','plugin-tools','integration-panels','billing-preview','billing-desktop','conversation-import','code-schedules'),
  chats:npm('renderer-state','code-chat-relations','app-instructions','context-history','recent-context','chat-organization','code-responsiveness','transcript-render','chat-navigation','transcript-position','chat-history-find','prompt-shelf','image-annotations','chat-menu-tools','workspace-focus','profile-identity','session-recovery','update-details'),
@@ -16,7 +16,7 @@ export const CI_SUITES={
   ['node','scripts/discovery-oauth-smoke.mjs'],['node','scripts/discovery-oauth-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-recovery-smoke.mjs'],['node','scripts/discovery-oauth-recovery-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-protection.mjs','--local-fixture'],
   ['node','scripts/mobile-settings-smoke.mjs'],['node','scripts/native-control-smoke.mjs'],['node','scripts/native-navigation-smoke.mjs'],
   ['node','scripts/session-mcp-smoke.mjs'],['node','scripts/session-mcp-smoke.mjs','--desktop'],
-  ...npm('activity','child-inspection','child-restart','native-failure','native-retry','native-question','reply-copy','model-settings','work-activity','project-actions','run-changes','connection-diagnostics','workspace-analysis','tool-discovery','discovery-approvals','background-engine'),
+  ...npm('activity','child-inspection','child-restart','native-failure','native-retry','native-question','reply-copy','model-settings','meta-chat-history','work-activity','project-actions','run-changes','connection-diagnostics','workspace-analysis','tool-discovery','discovery-approvals','background-engine'),
  ],
 };
 

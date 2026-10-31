@@ -1,3 +1,6 @@
+import {createHash} from 'node:crypto';
+import {mergeMetaChatPins} from './meta-chat-pins.mjs';
+import {readMetaChatRows,openMetaChatRow,normalizeMetaChatRows} from './meta-chat-history.mjs';
 import {readMetaApps,connectMetaApp} from './meta-apps.mjs';
 import {META_APPS,unknownMetaApps} from '../src/shared/meta-apps.mjs';
 import {readPersonalAuth} from './personal-auth.mjs';
@@ -16,6 +19,8 @@ const toolTargets = Object.freeze({
   'muse-feed': { slot: 'bot', action: 'feed' },
   'muse-library': { slot: 'bot', action: 'library' },
   'meta-search': { slot: 'chat', action: 'search' },
+  'meta-history': { slot: 'chat', action: 'search' },
+  'meta-history-open': { slot: 'chat', action: 'search' },
   'meta-media': { slot: 'chat', action: 'media' },
   'meta-artifacts': { slot: 'chat', action: 'artifacts' },
   'meta-scheduled': { slot: 'chat', action: 'scheduled' },
@@ -34,7 +39,7 @@ const defaultLibraryAdapter = {
 
 // Only the trusted local main frame calls this controller. Remote contents have
 // no preload and never receive project state, credentials, or the local bridge.
-export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, settings: runMetaSettings, dismiss: dismissMetaSearch, ready: metaNavigationReady }, metaAppsAdapter = {read:readMetaApps,connect:connectMetaApp}, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 0 }) {
+export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, settings: runMetaSettings, dismiss: dismissMetaSearch, ready: metaNavigationReady }, metaAppsAdapter = {read:readMetaApps,connect:connectMetaApp}, metaHistoryAdapter = {read:readMetaChatRows,open:openMetaChatRow}, metaPinStore = {read:async()=>[],write:async()=>{}}, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 0 }) {
   // Native getters can throw after destruction: cache contents while alive.
   const localContents = window.webContents;
   const entries = new Map(), serviceSessions = new Map(), popups = new Set(), pendingReady = new Set();
@@ -51,6 +56,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   let selectedDocument = null;
   let agentProfile = null;
   let schedules = null, scheduleReading = false, scheduleTimer = null;
+  let metaHistory={owner:null,status:'idle',rows:[],sourceRows:[],localPins:[],selectedId:null},metaHistoryRead=null,metaHistoryEpoch=0,metaHistorySelection=null;
   let extraEntrySequence = 0, setupLoginWindow = null, knownLogin = 'unknown';
   const warmHints = new Set(), warmAttempted = new Set();
   let warmTimer = null, warming = false, warmBlocked = false;
@@ -119,7 +125,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       appearance: { ...appearance }, profile: accountSync.snapshot(), agentProfile, schedules: destination==='chat'&&alive(entry)&&scheduledDocument(contents)?schedules:null,
       authenticating: isAuthenticating() || Boolean(personalAuthenticating(entry?.origin) || museAuthPending()),
       authWindowOpen: Boolean(setupLoginWindow && !setupLoginWindow.isDestroyed()) || popups.size > 0,
-      library: catalog.snapshot(), metaApps:structuredClone(metaApps),
+      library: catalog.snapshot(), metaApps:structuredClone(metaApps), metaChats:metaHistorySnapshot(),
     };
   }
   function applyLayout() {
@@ -235,6 +241,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     cancelMetaApps();metaApps={status:'idle',items:unknownMetaApps()};
     knownLogin='unknown';
     warmBlocked = true; stopWarmup(); warmHints.clear(); warmAttempted.clear();
+    metaHistoryEpoch++;metaHistoryRead=null;metaHistory={owner:null,status:'idle',rows:[],sourceRows:[],localPins:[],selectedId:null};metaHistorySelection=null;
     libraryGeneration++; libraryEstablished = false; selectedDocument = null; agentProfile = null; catalog.reset();
     // Additional chat/draft documents belong to this account. Preserve an
     // authentication opener until its flow finishes; dispose the other copies.
@@ -601,6 +608,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       if (isMainFrame && code !== -3) { entry.awaitingCommit = false; fail(entry, 'Muse could not load. Check your connection, retry, or open the official service in your browser.'); }
     });
     contents.on('render-process-gone', () => fail(entry, 'The Muse page stopped responding. Reload the page to continue.'));
+    contents.on('focus', () => { if (entry === current() && entry.visible) onShortcut('provider-focus'); });
     contents.on('before-input-event', (event, input) => {
       if(input.type==='keyDown'&&input.alt&&!input.control&&!input.meta&&!input.shift&&['ArrowLeft','ArrowRight'].includes(input.key)){event.preventDefault();onShortcut?.(input.key==='ArrowLeft'?'back':'forward');return;}
       if (input.type !== 'keyDown' || !(input.control || input.meta) || input.alt || ![',', 'b', 'k', 'n'].includes(input.key.toLowerCase())) return;
@@ -624,7 +632,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     }
     return entry;
   }
-  function sectionEntry(target, activate = true) {
+  function sectionEntry(target, activate = true, requested = false) {
     const tool = toolTargets[target];
     const slot = tool?.slot ?? (target === 'meta-chat' ? 'chat' : target);
     if (!tool && !personalTarget(slot)) return null;
@@ -632,10 +640,11 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     if (activate && tool) { catalog.select(null); selectedDocument = null; }
     let entry = entries.get(key);
     if (!alive(entry)) {
-      entry = createEntry(slot, key); entry.tool = tool ?? null; entry.speculative = !activate;
+      entry = createEntry(slot, key); entry.tool = tool ?? null; entry.speculative = !activate && !requested;
       if (activate) { entry.visited = true; activeEntry = entry; destination = slot; }
       load(entry, personalTarget(slot));
     } else {
+      if(requested)entry.speculative=false;
       if (activate) { entry.visited = true; entry.speculative = false; activeEntry = entry; destination = slot; }
       if (!ownsMuseAuth(entry) && (entry.collectionGeneration !== libraryGeneration || entry.error)) {
         entry.collectionGeneration = libraryGeneration; entry.initialized = null; entry.toolURL = null; load(entry, personalTarget(slot));
@@ -698,6 +707,76 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     entry.visited = true; entry.speculative = false;
     return entry;
   }
+  async function metaHistoryOwner(entry,owner){
+    const account=await accountReader(entry.contents);
+    return account?.status==='ready'&&typeof account.handle==='string'&&`meta:${createHash('sha256').update(account.handle.toLowerCase()).digest('hex')}`===owner;
+  }
+  function metaHistorySnapshot(){
+    const owner=accountSync.snapshot()?.accountId;
+    if(!owner||owner!==metaHistory.owner)return{status:owner?'idle':'signed-out',items:[],selectedId:null};
+    return{status:metaHistory.status,items:metaHistory.rows.map(({id,title,pinned,localPinned,providerPinned,recent})=>({id,title,pinned,localPinned,providerPinned,recent})),selectedId:metaHistory.selectedId};
+  }
+  async function refreshMetaHistory(){
+    const owner=accountSync.snapshot()?.accountId;
+    if(!owner){metaHistory={owner:null,status:'signed-out',rows:[],sourceRows:[],localPins:[],selectedId:null};publish();return;}
+    if(metaHistoryRead?.owner===owner)return metaHistoryRead.promise;
+    if(metaHistory.owner!==owner)metaHistory={owner,status:'idle',rows:[],sourceRows:[],localPins:[],selectedId:null};
+    const generation=libraryGeneration,epoch=++metaHistoryEpoch;
+    metaHistory.status='loading';publish();
+    const reader=sectionEntry('meta-history',false,true);
+    const valid=()=>!closed&&generation===libraryGeneration&&epoch===metaHistoryEpoch&&accountSync.snapshot()?.accountId===owner;
+    const promise=Promise.resolve().then(async()=>{
+      const pins=await metaPinStore.read(owner);
+      if(!valid())return;metaHistory.localPins=pins;metaHistory.rows=mergeMetaChatPins(metaHistory.sourceRows,pins);
+      const ready=await initializeTool(reader);
+      const rows=ready&&valid()&&await metaHistoryOwner(reader,owner)?await metaHistoryAdapter.read(reader.contents):null;
+      if(Array.isArray(rows)&&!await metaHistoryOwner(reader,owner)){if(valid()){metaHistory.sourceRows=[];metaHistory.rows=mergeMetaChatPins([],metaHistory.localPins);metaHistory.status='unavailable';}return;}
+      if(!valid())return;
+      if(Array.isArray(rows)){const latestPins=await metaPinStore.read(owner);if(!valid())return;metaHistory.localPins=latestPins;metaHistory.sourceRows=normalizeMetaChatRows(rows,owner);metaHistory.rows=mergeMetaChatPins(metaHistory.sourceRows,metaHistory.localPins);metaHistory.status='ready';if(!metaHistory.rows.some(row=>row.id===metaHistory.selectedId))metaHistory.selectedId=null;}
+      else metaHistory.status='unavailable';
+    }).catch(()=>{if(valid())metaHistory.status='unavailable';}).finally(()=>{
+      if(entries.get(reader.key)===reader&&reader!==current())removeEntry(reader);
+      if(metaHistoryRead?.promise===promise)metaHistoryRead=null;
+      if(!closed)publish();
+    });
+    metaHistoryRead={owner,promise};return promise;
+  }
+  let metaPinWrite=Promise.resolve();
+  function pinMetaHistory(id,pinned){
+    const owner=accountSync.snapshot()?.accountId,row=metaHistory.owner===owner&&metaHistory.rows.find(item=>item.id===id),generation=libraryGeneration;
+    if(!owner||!row)throw Error('This Meta chat is no longer available. Reload Recents and try again.');
+    const job=metaPinWrite.catch(()=>{}).then(async()=>{
+      const pins=await metaPinStore.read(owner),next=pins.filter(item=>item.id!==id);
+      if(pinned)next.push(row);
+      await metaPinStore.write(owner,next);
+      if(!closed&&generation===libraryGeneration&&accountSync.snapshot()?.accountId===owner&&metaHistory.owner===owner){metaHistory.localPins=next;metaHistory.rows=mergeMetaChatPins(metaHistory.sourceRows,next);publish();}
+    });metaPinWrite=job;return job;
+  }
+  async function selectMetaHistory(id){
+    const owner=accountSync.snapshot()?.accountId,row=metaHistory.owner===owner&&metaHistory.rows.find(item=>item.id===id);
+    if(!owner||!row)throw Error('This Meta chat is no longer available. Reload Recents and try again.');
+    if(metaHistory.selectedId===id&&metaHistorySelection?.entry===current()&&metaHistorySelection.epoch===current()?.documentEpoch)return;
+    cancelActions();const epoch=actionEpoch,generation=libraryGeneration;
+    const valid=()=>!closed&&epoch===actionEpoch&&generation===libraryGeneration&&accountSync.snapshot()?.accountId===owner;
+    // Keep both the main chat draft and the user's separate Search query intact.
+    const key=`meta-history-chat-${id}`;
+    let entry=entries.get(key),opened=false;
+    if(!alive(entry))entry=createEntry('chat',key);
+    entry.metaHistoryRequest=epoch;entry.speculative=false;
+    try{
+      if(entry.metaHistoryDocument===entry.documentEpoch&&await metaHistoryOwner(entry,owner))opened=true;
+      if(!opened){
+        if(row.path){const target='https://www.meta.ai'+row.path;load(entry,target);opened=await waitForMuseDocument(entry,true,false,true)&&valid()&&entry.contents.getURL()===target&&await metaHistoryOwner(entry,owner);}
+        else {entry.tool=toolTargets['meta-history-open'];entry.initialized=null;load(entry,personalTarget('chat'));const ready=await initializeTool(entry);opened=ready&&valid()&&await metaHistoryOwner(entry,owner)&&await metaHistoryAdapter.open(entry.contents,row)&&await metaHistoryOwner(entry,owner);}
+      }
+      if(!valid())return;
+      if(opened){entry.metaHistoryDocument=entry.documentEpoch;activeEntry=entry;destination='chat';entry.visited=true;entry.speculative=false;catalog.select(null);metaHistory.selectedId=id;metaHistorySelection={entry,epoch:entry.documentEpoch};notice=null;}
+      else notice='This saved chat changed or is unavailable. Reload Recents or use Meta AI Search.';
+    }finally{
+      if(entry.metaHistoryRequest===epoch&&!entry.visited&&entry!==current()&&entries.get(entry.key)===entry)removeEntry(entry);
+    }
+  }
+
   async function dispatch(value) {
     const command = validatePersonalCommand(value);
     if (closed) throw Error('The personal Muse browser is closed.');
@@ -709,7 +788,10 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       requestedVisible = command.visible;
       if (command.bounds) cssBounds = command.bounds;
       if (requestedVisible && !alive(current())) selectDestination(destination);
+    } else if(command.type==='metaChats'){
+      if(command.action==='refresh')await refreshMetaHistory();else if(command.action==='pin')await pinMetaHistory(command.id,command.pinned);else await selectMetaHistory(command.id);
     } else if (command.type === 'navigate') {
+      metaHistory.selectedId=null;
       cancelActions(); notice = null; catalog.select(null); selectDestination(command.destination);
     } else if (command.type === 'refreshLibrary') {
       notice = null; await refreshLibrary(true);
@@ -740,6 +822,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       const entry=current(),item=command.action==='new'?{}:schedules?.items.find(item=>item.id===command.id);
       if(!alive(entry)||!item||!await activateMetaSchedule(entry.contents,item,command.action))notice='This reminder changed or is unavailable. Refresh Scheduled and use its original controls.';
     } else if(command.type==='metaAction'){
+      metaHistory.selectedId=null;
       cancelActions();const requestEpoch=actionEpoch;notice=null;
       const entry=command.action==='newChat'?selectDestination('chat'):sectionEntry(`meta-${command.action}`);publish();
       const succeeded=command.action==='newChat'

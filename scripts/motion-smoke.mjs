@@ -89,6 +89,7 @@ try{
   pass('Five rapid reversals settle at the correct height with no queued transitions');
  }
  await page.getByRole('button',{name:'Muse Code',exact:true}).click();await settle();await shot('code-chat');
+ await page.getByRole('button',{name:'Expand MuseBench sample',exact:true}).click();await settle();
  if(!audit)await checkMotionRefinements({page,pass,report,shot});
  if(!audit){
   for(const name of ['Pinned chats','Recents','MuseBench sample']){

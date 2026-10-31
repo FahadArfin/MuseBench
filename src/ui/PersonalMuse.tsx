@@ -1,3 +1,4 @@
+import {MetaChatHistory} from './MetaChatHistory';
 import {TypedText} from './TypedText';
 import {MotionDisclosure} from './MotionDisclosure';
 import {UpdateToolbar} from './AppUpdates';
@@ -94,7 +95,9 @@ function ScheduledTasks({schedules,onCommand}:{schedules:NonNullable<PersonalSta
  </section>;
 }
 
-export function PersonalNavigation({ schedules, agentProfile, destination, onNavigate, onAction, onCommand, available, library = emptyLibrary, filterRef, searchOpen, onSearchOpenChange }: {
+export function PersonalNavigation({ metaChats, metaAccountId, schedules, agentProfile, destination, onNavigate, onAction, onCommand, available, library = emptyLibrary, filterRef, searchOpen, onSearchOpenChange }: {
+  metaChats?:PersonalState['metaChats'];
+  metaAccountId?:string;
   schedules?:PersonalState['schedules'];
   agentProfile?: PersonalState['agentProfile'];
   destination: PersonalDestination;
@@ -161,6 +164,7 @@ export function PersonalNavigation({ schedules, agentProfile, destination, onNav
         <button type="button" className={`navigation-row personal-service-heading personal-meta-chat ${metaOpen?'active':''}`} aria-current={destination==='chat'?'page':undefined} aria-label="Chat" aria-expanded={metaOpen} aria-controls={metaSectionId} disabled={!available.chat} title="Regular Meta AI chat" {...warmOnIntent('meta-chat')} onClick={() => openService('meta')}><MessageCircle size={20} /><span className="personal-service-label"><strong>Meta AI Chat</strong><small>Chat &amp; create</small></span><ChevronRight className="personal-service-chevron" size={15} aria-hidden="true"/></button>
         <MotionDisclosure id={metaSectionId} className="personal-service-content" open={metaOpen}>
     {([{action:'newChat',label:'New chat',icon:SquarePen},{action:'search',label:'Search',icon:Search},{action:'media',label:'Media',icon:Images},{action:'artifacts',label:'Artifacts',icon:Shapes},{action:'scheduled',label:'Scheduled',icon:CalendarDays},{action:'vibes',label:'Vibes',icon:Clapperboard}] as const).map(item=><button key={item.action} type="button" aria-label={item.label} aria-current={item.action==='scheduled'&&schedules?'page':undefined} className={`navigation-row ${item.action==='scheduled'&&schedules?'active':''}`} disabled={!available.chat} {...warmOnIntent(item.action==='newChat'?'meta-chat':`meta-${item.action}`)} onClick={()=>onCommand({type:'metaAction',action:item.action})}><item.icon size={17}/><span>{item.label}</span>{destination==='chat'&&item.action==='search'&&<kbd>Ctrl K</kbd>}{destination==='chat'&&item.action==='newChat'&&<kbd>Ctrl N</kbd>}</button>)}
+    <MetaChatHistory key={metaAccountId??'signed-out'} history={metaChats} onCommand={onCommand} available={available.chat}/>
     {destination==='chat'&&schedules&&<ScheduledTasks schedules={schedules} onCommand={onCommand}/>}
         </MotionDisclosure>
       </nav>
@@ -192,10 +196,11 @@ export function usePersonalBrowser(): { state: PersonalState | null; command: (c
   return { state, command };
 }
 
-export function PersonalWorkspace({ active, obscured, destination, state, command, onNavigationOpen, onSettings, collapsed, onToggleSidebar, modeSwitch }: {
+export function PersonalWorkspace({ active, obscured, sidebarMenuOpen=false, destination, state, command, onNavigationOpen, onSettings, collapsed, onToggleSidebar, modeSwitch }: {
   modeSwitch?:ReactNode;
   active: boolean;
   obscured: boolean;
+  sidebarMenuOpen?: boolean;
   destination: PersonalDestination;
   state: PersonalState | null;
   command: (command: PersonalCommand) => Promise<void>;
@@ -259,8 +264,14 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
       frame = 0;
       const rect = slot.current?.getBoundingClientRect();
       const visible = Boolean(active && !covered && !error && rect && rect.width > 0 && rect.height > 0);
-      const bounds = rect ? { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) } : { x: 0, y: 0, width: 0, height: 0 };
-      const next: PersonalCommand = { type: 'layout', visible, bounds };
+      // Native provider views sit above the shell. A sidebar menu normally
+      // leaves the view untouched; on the collapsed rail, reserve only the
+      // horizontal overlap so the menu stays clickable without blanking chat.
+      const menu = sidebarMenuOpen ? document.getElementById('workspace-profile-menu')?.getBoundingClientRect() : null;
+      const overlaps = rect && menu && menu.left < rect.right && menu.right > rect.left && menu.top < rect.bottom && menu.bottom > rect.top;
+      const left = rect ? overlaps ? Math.min(rect.right, Math.ceil(menu!.right)) : rect.x : 0;
+      const bounds = rect ? { x: Math.round(left), y: Math.round(rect.y), width: Math.max(0,Math.round(rect.right-left)), height: Math.round(rect.height) } : { x: 0, y: 0, width: 0, height: 0 };
+      const next: PersonalCommand = { type: 'layout', visible: visible && bounds.width > 0, bounds };
       const signature = JSON.stringify(next);
       if (signature !== lastLayout.current) { lastLayout.current = signature; void command(next); }
     };
@@ -277,9 +288,11 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
       window.removeEventListener('scroll', schedule, true);
       window.visualViewport?.removeEventListener('resize', schedule);
       lastLayout.current = '';
-      void command({ type: 'layout', visible: false, bounds: { x: 0, y: 0, width: 0, height: 0 } });
     };
-  }, [active, covered, error, command]);
+  }, [active, covered, error, command, sidebarMenuOpen]);
+  useLayoutEffect(() => () => {
+    void command({ type: 'layout', visible: false, bounds: { x: 0, y: 0, width: 0, height: 0 } });
+  }, [command]);
   return <section className="workspace personal-workspace" hidden={!active} inert={!active ? true : undefined} aria-label="Meta AI workspace">
     <header className="topbar personal-topbar">
       <div className="personal-header-context">

@@ -50,6 +50,7 @@ async function exercise(page,{variant,projectName,firstTitle,secondTitle,project
     await page.setViewportSize({width:1200,height:900});
     await page.getByRole('group',{name:'Choose workspace'}).waitFor({timeout:30000});
     await page.getByRole('button',{name:'Muse Code',exact:true}).click();
+    await page.getByRole('button',{name:`Expand ${projectName}`,exact:true}).click();
     await row(folder,secondTitle).click();
     const baseline=await state(),first=baseline.tasks.find(task=>task.title===firstTitle).id,second=baseline.task.id;
     assert.notEqual(first,second);

@@ -33,6 +33,7 @@ try{
  await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  const state=()=>page.evaluate(()=>window.musebench.getState()),dispatch=action=>page.evaluate(action=>window.musebench.dispatch(action),action);
  const original=await state(),source=original.task,projectId=source.projectId;
+ await page.getByRole('button',{name:`Expand ${original.activeProject.name}`,exact:true}).click();
  const composer=page.locator('.workspace:not([hidden]) textarea').last();const draftIs=async text=>{await page.waitForFunction(text=>[...document.querySelectorAll('.workspace:not([hidden]) textarea')].at(-1)?.value===text,text);assert.equal(await composer.inputValue(),text);};await composer.fill('Keep parent draft');
  await page.getByRole('button',{name:'Current chat options',exact:true}).click();
  await page.getByRole('menuitem',{name:'Fork chat',exact:true}).waitFor();await page.screenshot({animations:'disabled',path:path.join(output,'current-menu.png')});await page.getByRole('menuitem',{name:'New side chat',exact:true}).click();

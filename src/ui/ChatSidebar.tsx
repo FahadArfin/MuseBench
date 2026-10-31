@@ -23,7 +23,14 @@ export function ChatSidebar(props:Props){
 }
 const MemoSidebar=memo(SidebarContents,(a,b)=>a.selectedId===b.selectedId&&a.projectId===b.projectId&&a.overview===b.overview&&a.busy===b.busy&&a.active===b.active&&sameSidebarData(a,b));
 function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,busy,active,onProject,onChat,onNew,onFolder,onSearch,act}:Props){
- const [closed,setClosed]=useState<Set<string>>(new Set());
+ const [expandedProjects,setExpandedProjects]=useState<Set<string>>(()=>{
+   try{const saved=JSON.parse(localStorage.getItem('musebench.code.expanded-projects.v1')??'[]');return new Set<string>(Array.isArray(saved)?saved.filter((id):id is string=>typeof id==='string'&&id.length>0&&id.length<=500).slice(0,5000):[]);}catch{return new Set<string>();}
+ });
+ const toggleProject=(id:string)=>{
+   const next=new Set(expandedProjects);if(next.has(id))next.delete(id);else next.add(id);
+   setExpandedProjects(next);
+   try{localStorage.setItem('musebench.code.expanded-projects.v1',JSON.stringify([...next]));}catch{/* Keep navigation usable when local preferences cannot be saved. */}
+ };
  const [closedSides,setClosedSides]=useState<Set<string>>(new Set());
  const {open,rename,isOpen,overlay}=useChatActions({tasks,busy,active,act});
  const selected=tasks.find(t=>t.id===selectedId);
@@ -34,7 +41,6 @@ function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,bu
  const relationIndex=useMemo(()=>createChatRelationIndex(tasks),[tasks]);
  const selectedMainId=selected?.chatRelation?.kind==='side'?relationIndex.main(selected).id:null;
  useEffect(()=>{if(!selectedMainId)return;setClosedSides(before=>{if(!before.has(selectedMainId))return before;const next=new Set(before);next.delete(selectedMainId);return next;});},[selectedId,selectedMainId]);
- useEffect(()=>{const id=selected?.projectId??projectId;if(id)setClosed(before=>{if(!before.has(id))return before;const next=new Set(before);next.delete(id);return next;});},[selectedId,projectId,selected?.projectId]);
  const dragging=useRef<{kind:'project'|'chat';id:string}|null>(null),suppressClick=useRef(false);
  const [dropTarget,setDropTarget]=useState(''),[dragKind,setDragKind]=useState<'project'|'chat'|null>(null),[announcement,setAnnouncement]=useState('');
  const {projects:projectList,byProject,pinned,recents}=useMemo(()=>sidebarCollections(projects,tasks,orders),[projects,tasks,orders]);
@@ -91,11 +97,11 @@ function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,bu
    const props=dropProps(dragKind==='project'?'projects':'project',dragKind==='project'?undefined:project.id,dragKind==='project'?project.id:undefined);
    return <div className="project-group" key={project.id}>
      <div {...props} draggable={!busy} onDragStart={event=>start(event,'project',project.id)} onDragEnd={finish} className={`project-row ${props.className} ${projectId===project.id?'current':''} ${projectId===project.id&&overview?'overview-selected':''}`}>
-       <button className="project-toggle" aria-label={`${closed.has(project.id)?'Expand':'Collapse'} ${project.name}`} aria-expanded={!closed.has(project.id)} aria-controls={`project-chats-${project.id}`} onClick={()=>setClosed(before=>{const next=new Set(before);if(next.has(project.id))next.delete(project.id);else next.add(project.id);return next;})}><ChevronRight size={12} className={closed.has(project.id)?'':'rotated'}/></button>
+       <button className="project-toggle" aria-label={`${!expandedProjects.has(project.id)?'Expand':'Collapse'} ${project.name}`} aria-expanded={expandedProjects.has(project.id)} aria-controls={`project-chats-${project.id}`} onClick={()=>toggleProject(project.id)}><ChevronRight size={12} className={!expandedProjects.has(project.id)?'':'rotated'}/></button>
        <button title={`${project.root} · Drag to reorder, or Alt+Shift+Up/Down`} disabled={busy} onKeyDown={event=>keyboardMove(event,'project',project.id,'projects',projectList)} onClick={()=>{if(!suppressClick.current)onProject(project.id);}}><FolderOpen size={15}/><span>{project.name.replace(' · tutorial','')}</span></button>
        <button className="project-new-chat" aria-label={`New chat in ${project.name.replace(' · tutorial','')}`} disabled={busy} onClick={()=>onNew(project.id)}><Plus size={14}/></button>
      </div>
-     <MotionDisclosure unmountWhenClosed id={`project-chats-${project.id}`} open={!closed.has(project.id)} innerClassName="project-chats">{()=><div {...dropProps('project',project.id)} role="region" aria-label={`${project.name} active chats`}>{relations.roots.map(chat=>{const sides=relations.children.get(chat.id)??[];return <div key={chat.id}>{row(chat,'project',chats,project.id,sides.length)}{!!sides.length&&<MotionDisclosure unmountWhenClosed id={`side-chats-${chat.id}`} open={!closedSides.has(chat.id)} innerClassName="side-chats">{()=><div role="region" aria-label={`Side chats of ${chat.title}`}>{sides.map(side=>row(side,'project',chats,project.id))}</div>}</MotionDisclosure>}</div>;})}{!chats.length&&<span className="no-chats">No chats yet</span>}<div className={`sidebar-drop-end ${dragKind==='chat'?'visible':''}`} aria-label={`Place chat last in ${project.name}`}/></div>}</MotionDisclosure>
+     <MotionDisclosure unmountWhenClosed id={`project-chats-${project.id}`} open={expandedProjects.has(project.id)} innerClassName="project-chats">{()=><div {...dropProps('project',project.id)} role="region" aria-label={`${project.name} active chats`}>{relations.roots.map(chat=>{const sides=relations.children.get(chat.id)??[];return <div key={chat.id}>{row(chat,'project',chats,project.id,sides.length)}{!!sides.length&&<MotionDisclosure unmountWhenClosed id={`side-chats-${chat.id}`} open={!closedSides.has(chat.id)} innerClassName="side-chats">{()=><div role="region" aria-label={`Side chats of ${chat.title}`}>{sides.map(side=>row(side,'project',chats,project.id))}</div>}</MotionDisclosure>}</div>;})}<div className={`sidebar-drop-end ${dragKind==='chat'?'visible':''}`} aria-label={`Place chat last in ${project.name}`}/></div>}</MotionDisclosure>
    </div>;
  })}
  <div {...dropProps('projects')} className={`sidebar-drop-end ${dragKind==='project'?'visible':''} ${dropTarget==='projects:end'?'sidebar-drop-target':''}`} aria-label="Place project last"/>

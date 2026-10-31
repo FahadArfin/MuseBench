@@ -104,6 +104,38 @@ try{
   assert.equal(await app.evaluate(({webContents},id)=>webContents.fromId(id).getURL(),chatId),before.url);
   pass('Real Meta account discovery publishes Alice Rivera through IPC to the sidebar without navigating the active chat or losing its draft');
 
+  await page.setViewportSize({width:1440,height:960});
+  await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>!window.getParentWindow()).webContents.focus());
+  await until(async()=>(await state()).visible,'chat visible before profile menu');
+  await app.evaluate(({BrowserWindow},id)=>{const view=BrowserWindow.getAllWindows().find(window=>!window.getParentWindow()).contentView.children.find(view=>view.webContents?.id===id);const setVisible=view.setVisible.bind(view);globalThis.__profileViewVisibility=[];view.setVisible=value=>{globalThis.__profileViewVisibility.push(value);return setVisible(value);};},chatId);
+  await page.getByRole('button',{name:'Profile menu',exact:true}).click();
+  await page.getByRole('menu',{name:'Your profile',exact:true}).waitFor();
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert.equal((await state()).visible,true,'Sidebar profile menu must keep the native conversation visible');
+  assert.equal(await app.evaluate(()=>globalThis.__profileViewVisibility.includes(false)),false,'Opening a sidebar-only menu must never hide or flash the native view');
+  assert.equal(await remote(`document.querySelector('textarea').value`),'Unsent Alice chat draft');
+  assert.equal(await app.evaluate(({webContents},id)=>webContents.fromId(id).getURL(),chatId),before.url);
+  await page.screenshot({path:path.join(output,'profile-menu-chat-visible.png')});
+  await app.evaluate(({webContents},id)=>webContents.fromId(id).focus(),chatId);
+  await until(async()=>await page.getByRole('menu',{name:'Your profile',exact:true}).count()===0,'focusing native conversation dismisses profile menu');
+  pass('Opening the sidebar profile menu keeps the native conversation and unsent website draft visible and unchanged');
+
+  await page.getByRole('button',{name:'Toggle sidebar',exact:true}).click();
+  await page.getByRole('button',{name:'Profile menu',exact:true}).click();
+  const profileMenu=page.getByRole('menu',{name:'Your profile',exact:true});await profileMenu.waitFor();
+  const menuBounds=await profileMenu.boundingBox();
+  await until(()=>app.evaluate(({BrowserWindow},{id,right})=>{const view=BrowserWindow.getAllWindows().find(window=>!window.getParentWindow()).contentView.children.find(view=>view.webContents?.id===id);return view.getVisible()&&view.getBounds().x>=Math.ceil(right);},{id:chatId,right:menuBounds.x+menuBounds.width}),'native view reserves collapsed menu overlap');
+  assert.equal((await state()).visible,true,'Collapsed sidebar profile menu must also keep chat visible');
+  assert.equal(await remote(`document.querySelector('textarea').value`),'Unsent Alice chat draft');
+  await page.screenshot({path:path.join(output,'profile-menu-collapsed-chat-visible.png')});
+  await profileMenu.getByRole('menuitem',{name:/^Settings/}).click();
+  await page.getByRole('dialog',{name:'Settings',exact:true}).waitFor();
+  await until(async()=>!(await state()).visible,'full Settings dialog still covers native view');
+  await page.getByRole('button',{name:'Close dialog',exact:true}).click();
+  await until(async()=>(await state()).visible,'native conversation returns after Settings');
+  await page.getByRole('button',{name:'Show sidebar',exact:true}).click();
+  pass('Collapsed sidebar reserves only menu overlap; Settings remains usable and hides native content only while its dialog is open');
+
   await openProfile();await page.getByRole('heading',{name:'Alice Rivera',exact:true}).waitFor();
   await page.getByRole('button',{name:'Edit profile',exact:true}).click();
   let dialog=page.getByRole('dialog',{name:'Edit profile',exact:true});

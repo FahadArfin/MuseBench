@@ -28,6 +28,7 @@ try{
  await page.setViewportSize({width:1280,height:960});
  await showCode();
  await page.locator('.project-row').first().waitFor();
+ await page.getByRole('button',{name:'Expand Alpha',exact:true}).click();await page.getByRole('button',{name:'Expand Beta',exact:true}).click();
  const side=page.locator('.sidebar'),alpha=side.getByRole('region',{name:'Alpha active chats',exact:true}),beta=side.getByRole('region',{name:'Beta active chats',exact:true}),pinned=side.getByRole('region',{name:'Pinned chats',exact:true}),recent=side.getByRole('region',{name:'Recents',exact:true});
  const projectButton=name=>side.locator('.project-row').getByRole('button',{name,exact:true});
  await drag(projectButton('Beta'),projectButton('Alpha'));

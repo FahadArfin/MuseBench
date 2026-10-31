@@ -4,8 +4,14 @@
 .product-name .product-brand-icon{color:var(--accent);transform-origin:center;animation:muse-icon-enter 420ms cubic-bezier(.2,.8,.2,1) both}
 @keyframes muse-icon-enter{from{opacity:.25;transform:scale(.72) translateX(-3px)}to{opacity:1;transform:scale(1) translateX(0)}}
 .product-name .typed-text{color:var(--accent)}
-.new-chat-content .terminal-welcome,.new-chat-content h1.typed-welcome{color:var(--accent)}
-.terminal-welcome svg path:last-child{animation:muse-terminal-blink 650ms steps(1,end) 3}
-@keyframes muse-terminal-blink{0%,100%{opacity:1}50%{opacity:.15}}
-:root[data-reduced-motion="true"] .typed-text>span,:root[data-reduced-motion="true"] .product-name .product-brand-icon,:root[data-reduced-motion="true"] .terminal-welcome svg path:last-child{animation:none}
-@media(prefers-reduced-motion:reduce){.typed-text>span,.product-name .product-brand-icon,.terminal-welcome svg path:last-child{animation:none}}
+.new-chat-content h1.typed-welcome{color:var(--accent)}
+:root[data-reduced-motion="true"] .typed-text>span,:root[data-reduced-motion="true"] .product-name .product-brand-icon{animation:none}
+@media(prefers-reduced-motion:reduce){.typed-text>span,.product-name .product-brand-icon{animation:none}}
+
+.terminal-prompt { position: relative; width: fit-content; max-width: 100%; margin-inline: auto; text-align: left; }
+.terminal-reserve { visibility: hidden; }
+.terminal-reveal { position: absolute; inset: 0; }
+.terminal-cursor { font-family: monospace; animation: muse-terminal-cursor 500ms steps(1,end) infinite; }
+@keyframes muse-terminal-cursor { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+:root[data-reduced-motion="true"] .terminal-cursor { animation: none; visibility: hidden; }
+@media (prefers-reduced-motion: reduce) { .terminal-cursor { animation: none; visibility: hidden; } }

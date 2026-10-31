@@ -51,6 +51,7 @@
     "test:model-settings": "node scripts/model-settings-smoke.mjs && node scripts/model-settings-smoke.mjs --desktop",
     "test:plugin-tools": "node scripts/plugin-tools-smoke.mjs && node scripts/plugin-tools-smoke.mjs --desktop",
     "test:typography": "node scripts/typography-smoke.mjs",
+    "test:terminal-welcome": "node scripts/terminal-welcome-smoke.mjs",
     "test:profile-identity": "node scripts/profile-identity-smoke.mjs && node scripts/profile-account-desktop-smoke.mjs",
     "test:startup-animation": "node scripts/startup-animation-smoke.mjs",
     "test:session-recovery": "node scripts/sidebar-loading-smoke.mjs && node scripts/session-durability-smoke.mjs",
@@ -75,7 +76,8 @@
     "test:preview-annotations": "node scripts/preview-target-smoke.mjs && node scripts/preview-annotations-smoke.mjs && node scripts/preview-annotations-smoke.mjs --desktop && node scripts/preview-annotations-app-smoke.mjs",
     "test:tool-discovery": "node scripts/discovery-tools-smoke.mjs && node scripts/discovery-tools-smoke.mjs --desktop",
     "test:discovery-approvals": "node scripts/discovery-approval-smoke.mjs && node scripts/discovery-approval-smoke.mjs --desktop",
-    "test:workspace-analysis": "node scripts/workspace-analysis-smoke.mjs && node scripts/workspace-analysis-smoke.mjs --desktop"
+    "test:workspace-analysis": "node scripts/workspace-analysis-smoke.mjs && node scripts/workspace-analysis-smoke.mjs --desktop",
+    "test:meta-chat-history": "node scripts/meta-chat-history-smoke.mjs"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.3.0",
@@ -108,7 +110,14 @@
   "build": {
     "appId": "local.musebench.desktop",
     "productName": "MuseBench",
-    "protocols": [{"name":"MuseBench chat","schemes":["musebench"]}],
+    "protocols": [
+      {
+        "name": "MuseBench chat",
+        "schemes": [
+          "musebench"
+        ]
+      }
+    ],
     "directories": {
       "output": "release"
     },

@@ -52,6 +52,7 @@ import {createCodeRuntime} from '../src/runtime/selector.mjs';
 import { createRuntime } from '../src/runtime/index.mjs';
 import { createExecRuntime } from '../src/runtime/exec.mjs';
 import { allowedExternal, trustedSender, validateAction } from './security.mjs';
+import {createMetaChatPinStore} from './meta-chat-pins.mjs';
 import { createPersonalBrowser } from './personal.mjs';
 import { createStartupFailureHandler } from './startup.mjs';
 import { createLaunchAnimation } from './launch-animation.mjs';
@@ -202,6 +203,7 @@ else {
     });
     window.webContents.on('will-attach-webview', event=>event.preventDefault());
     const personal = view.personal = createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell,
+      metaPinStore:createMetaChatPinStore(path.join(app.getPath('userData'),'meta-chat-pins.json')),
       onState: state => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:personal-update', state); },
       onShortcut: shortcut => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:personal-shortcut', shortcut); },
     });
