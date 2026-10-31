@@ -21,7 +21,7 @@ export function TerminalWelcome({active}:{active:boolean}){
   return()=>{stop();observer.disconnect();media.removeEventListener('change',finish);};
  },[active]);
  return <h1 className="typed-welcome terminal-prompt" aria-label="What would you like to build?">
-  <span className="terminal-reserve" aria-hidden="true">&gt;{greeting}_</span>
+  <span className="terminal-reserve" aria-hidden="true"><span>&gt;{greeting}</span><span className="terminal-cursor">_</span></span>
   <span className="terminal-reveal" aria-hidden="true"><span className="typed-text">&gt;{greeting.slice(0,count)}</span><span className="terminal-cursor">_</span></span>
  </h1>;
 }

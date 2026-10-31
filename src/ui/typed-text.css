@@ -10,6 +10,7 @@
 
 .terminal-prompt { position: relative; width: fit-content; max-width: 100%; margin-inline: auto; text-align: left; }
 .terminal-reserve { visibility: hidden; }
+.terminal-reserve .terminal-cursor { animation: none; }
 .terminal-reveal { position: absolute; inset: 0; }
 .terminal-cursor { font-family: monospace; animation: muse-terminal-cursor 500ms steps(1,end) infinite; }
 @keyframes muse-terminal-cursor { 0%,100% { opacity: 1; } 50% { opacity: 0; } }

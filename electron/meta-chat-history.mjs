@@ -48,11 +48,14 @@ async function bounded(contents,source){
 }
 export async function readMetaChatRows(contents){
  if(!metaDocument(contents))return null;
- const rows=await bounded(contents,`(${renderedRows.toString()})()`);
+ // Search opens before Meta finishes rendering its history groups. Wait only
+ // for that rendered list, within the existing bounded read deadline.
+ const rows=await bounded(contents,`(async()=>{const read=${renderedRows.toString()},end=Date.now()+4000;do{const rows=read();if(rows!==null)return rows;await new Promise(resolve=>setTimeout(resolve,100));}while(Date.now()<end);return null;})()`);
  return Array.isArray(rows)?rows:null;
 }
 export async function openMetaChatRow(contents,row){
  if(!metaDocument(contents)||!row||!text(row.label)||row.path!=null&&!chatPath(row.path))return false;
+ if(!Array.isArray(await readMetaChatRows(contents)))return false;
  return await bounded(contents,`(${async function(target){
   if(!['https://www.meta.ai','https://meta.ai'].includes(location.origin))return false;
   const input=document.querySelector('[role="dialog"] input[placeholder="Search chats"]');if(!input||input.value.trim())return false;
