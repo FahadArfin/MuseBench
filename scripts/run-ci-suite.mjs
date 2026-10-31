@@ -14,7 +14,7 @@ export const CI_SUITES={
  chats:npm('code-chat-relations','app-instructions','context-history','recent-context','chat-organization','code-responsiveness','chat-navigation','profile-identity','session-recovery','update-details'),
  native:[
   ['node','scripts/discovery-oauth-smoke.mjs'],['node','scripts/discovery-oauth-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-recovery-smoke.mjs'],['node','scripts/discovery-oauth-recovery-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-protection.mjs','--local-fixture'],
-  ['node','scripts/mobile-settings-smoke.mjs'],['node','scripts/native-control-smoke.mjs'],
+  ['node','scripts/mobile-settings-smoke.mjs'],['node','scripts/native-control-smoke.mjs'],['node','scripts/native-navigation-smoke.mjs'],
   ['node','scripts/session-mcp-smoke.mjs'],['node','scripts/session-mcp-smoke.mjs','--desktop'],
   ...npm('activity','child-inspection','child-restart','native-failure','native-question','reply-copy','model-settings','work-activity','project-actions','run-changes','connection-diagnostics','workspace-analysis','tool-discovery','background-engine'),
  ],

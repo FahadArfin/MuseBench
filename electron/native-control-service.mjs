@@ -44,34 +44,52 @@ function createScreenshotCapture(window){
 }
 export function createNativeRenderer({window,ipcMain,trusted}){
  const contents=window.webContents;
- const pending=new Map();let closed=false;
+ const pending=new Map(),receipts=[];let closed=false;
+ const expired=()=>Error('UI request expired. Inspect the current state before continuing.');
  const receive=(event,value)=>{
   if(!trusted(event)||!value||typeof value.id!=='string')return;
   const item=pending.get(value.id);if(!item?.claimed)return;
+  if(Date.now()>=item.deadline)return item.finish(expired(),null,'expired');
+  if(item.signal?.aborted)return item.finish(expired(),null,'cancelled');
   if(Buffer.byteLength(JSON.stringify(value))>160000)return item.finish(Error('UI response exceeded its limit.'));
+  if(!value.error&&item.operation==='navigate'&&(!['visual-settled','visual-unsettled'].includes(item.receipt.phase)||value.result?.navigation?.committed!==true||value.result.navigation.visualSettled!==(item.receipt.phase==='visual-settled')))return item.finish(Error('The requested destination did not commit.'));
   item.finish(value.error?Error('The app could not complete this UI request.'):null,value.result);
  };
+ const phase=(event,value)=>{
+  if(!trusted(event)||!value)return;const item=pending.get(value.id);
+  if(!item?.claimed||item.operation!=='navigate'||Date.now()>=item.deadline||item.signal?.aborted)return;
+  if(value.target!==item.args.target||value.section!==item.args.section)return;
+  if(value.phase==='committed'&&item.receipt.phase==='claimed'||['visual-settled','visual-unsettled'].includes(value.phase)&&item.receipt.phase==='committed')item.record(value.phase);
+ };
  ipcMain.on('musebench:native-reply',receive);
+ ipcMain.on('musebench:native-phase',phase);
  ipcMain.handle('musebench:native-claim',(event,id)=>{
   const item=typeof id==='string'?pending.get(id):null;
-  if(!trusted(event)||!item||item.claimed||Date.now()>item.deadline||item.signal?.aborted)return false;
-  item.claimed=true;return true;
+  if(!trusted(event)||!item||item.claimed||Date.now()>=item.deadline||item.signal?.aborted)return false;
+  item.claimed=true;item.record('claimed');return true;
  });
- const cancel=()=>{for(const item of pending.values())item.finish(Error('The app UI changed before the request completed.'));};
+ const cancel=()=>{for(const item of pending.values())item.finish(Error('The app UI changed before the request completed.'),null,'renderer-lost');};
  contents.on('did-start-loading',cancel);contents.on('render-process-gone',cancel);
  return{call(operation,args={},signal){
   if(closed||window.isDestroyed()||contents.isDestroyed())return Promise.reject(Error('The MuseBench window is closed.'));
   if(signal?.aborted)return Promise.reject(Error('UI request was cancelled.'));
   if(pending.size)return Promise.reject(Error('Another native UI request is still running.'));
   return new Promise((resolve,reject)=>{
-   const id=randomUUID(),deadline=Date.now()+8000;
-   const abort=()=>finish(Error('UI request expired. Inspect the current state before continuing.'));
-   const timer=setTimeout(abort,8000);
-   const finish=(error,result)=>{clearTimeout(timer);signal?.removeEventListener('abort',abort);pending.delete(id);if(error)reject(error);else resolve(result);};
-   pending.set(id,{finish,deadline,signal,claimed:false});signal?.addEventListener('abort',abort,{once:true});
+   const id=randomUUID(),deadline=Date.now()+8000,started=performance.now();let finished=false;
+   const receipt={operation:['navigate','inspect_ui'].includes(operation)?operation:'unknown',target:operation==='navigate'&&['code','codeSchedules','bot','chat','ideas','goals','search','feed','library','work','settings','customize','closeDialog'].includes(args.target)?args.target:'none',phase:'dispatched',outcome:'pending',elapsedMs:0,phases:[{phase:'dispatched',elapsedMs:0}]};
+   receipts.push(receipt);if(receipts.length>20)receipts.shift();
+   const record=phase=>{receipt.phase=phase;receipt.elapsedMs=Math.max(0,Math.round(performance.now()-started));receipt.phases.push({phase,elapsedMs:receipt.elapsedMs});};
+   const abort=()=>finish(expired(),null,'cancelled');
+   const timer=setTimeout(()=>finish(expired(),null,'expired'),8000);
+   const finish=(error,result,outcome=error?'failed':'completed')=>{
+    if(finished)return;finished=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);pending.delete(id);
+    if(!error)record('replied');receipt.outcome=outcome;receipt.elapsedMs=Math.max(0,Math.round(performance.now()-started));
+    if(error){try{if(!contents.isDestroyed())contents.send('musebench:native-cancel',{id});}catch{/* Renderer loss cannot prevent terminal cleanup. */}reject(error);}else resolve(result);
+   };
+   pending.set(id,{finish,deadline,signal,claimed:false,operation,args,receipt,record});signal?.addEventListener('abort',abort,{once:true});
    contents.send('musebench:native-request',{id,operation,args,deadline});
   });
- },close(){closed=true;cancel();ipcMain.removeHandler('musebench:native-claim');ipcMain.removeListener('musebench:native-reply',receive);contents.removeListener('did-start-loading',cancel);contents.removeListener('render-process-gone',cancel);}};
+ },receipts(){return structuredClone(receipts);},close(){closed=true;cancel();ipcMain.removeHandler('musebench:native-claim');ipcMain.removeListener('musebench:native-reply',receive);ipcMain.removeListener('musebench:native-phase',phase);contents.removeListener('did-start-loading',cancel);contents.removeListener('render-process-gone',cancel);}};
 }
 export function createNativeControlService({app,window,controller,personal,renderer,isBlocked=()=>false}){
  const contents=window.webContents;
@@ -96,7 +114,7 @@ export function createNativeControlService({app,window,controller,personal,rende
    const size=screenshot.getSize(),ratio=Math.min(1,1400/size.width,1200/size.height),data=screenshot.resize({width:Math.round(size.width*ratio),height:Math.round(size.height*ratio)}).toJPEG(80);
    return{content:[{type:'image',mimeType:'image/jpeg',data:data.toString('base64')}]};
   }
-  if(name==='diagnostics')return textResult({responsive:!unresponsive&&!contents.isDestroyed()&&!contents.isCrashed(),visible:window.isVisible(),minimized:window.isMinimized(),events:[...events],controllerHasError:!!controller.getState().error});
+  if(name==='diagnostics')return textResult({responsive:!unresponsive&&!contents.isDestroyed()&&!contents.isCrashed(),visible:window.isVisible(),minimized:window.isMinimized(),events:[...events],controllerHasError:!!controller.getState().error,operations:renderer.receipts?.()??[]});
   if(name==='read_chat'){
    const page=await controller.readChatHistory({...args,limit:args.limit??20});
    return textResult({taskId:args.taskId,before:page.before,total:page.total,messages:page.messages.map(m=>({id:m.id,role:m.role,text:clean(m.text,3000),truncated:(m.textLength??m.text?.length??0)>3000,at:m.at}))});

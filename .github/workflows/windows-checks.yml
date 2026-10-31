@@ -73,6 +73,7 @@ jobs:
             artifacts/chat-navigation/**/report.json
             artifacts/sidebar-drag/**/report.json
             artifacts/native-control/report.json
+            artifacts/native-navigation/report.json
             artifacts/navigation-cache/report.json
             artifacts/preview-annotations/**/report.json
             artifacts/workspace-analysis/**/report.json

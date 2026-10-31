@@ -434,17 +434,18 @@ export default function App() {
   useNativeControl(async input=>{
     if(navigationBusy||busy)throw Error('Wait for the current operation.');
     setProfileMenuOpen(false);setMobileNav(false);
-    if(input.target==='settings'){setNativeDestination(current=>({category:(input.section??'general') as SettingsCategory,revision:current.revision+1}));setModal('settings');return;}
-    if(input.target==='customize'){setNativeDestination(current=>({...current,revision:current.revision+1}));openCustomize((input.section??'skills') as CustomizeTab);return;}
+    if(input.target==='settings'){setNativeDestination(current=>({category:(input.section??'general') as SettingsCategory,revision:current.revision+1}));setModal('settings');return {state:{modal:'settings',section:input.section??'general'},selector:'.settings-modal'};}
+    if(input.target==='customize'){setNativeDestination(current=>({...current,revision:current.revision+1}));openCustomize((input.section??'skills') as CustomizeTab);return {state:{modal:'extensions',section:input.section??'skills'},selector:'.extensions-modal'};}
     closeModal();
-    if(input.target==='closeDialog')return;
-    if(input.target==='code'||input.target==='codeSchedules'){selectProduct('code');setView(input.target==='codeSchedules'?'scheduled':'chat');return;}
+    if(input.target==='closeDialog')return {state:{modal:null,product,view,personalMode,personalDestination,taskId:showTask?task?.id:null,projectId:project?.id??null},selector:'.app'};
+    if(input.target==='code'||input.target==='codeSchedules'){selectProduct('code');const nextView=input.target==='codeSchedules'?'scheduled':'chat';setView(nextView);return {state:{product:'code',view:nextView,modal:null,taskId:task&&!creating?task.id:null,projectId:project?.id??null},selector:'.workspace:not([hidden])'};}
     setProduct('personal');
-    if(input.target==='work'){setPersonalMode('work');setSitesVisible(false);setSpacesVisible(false);return;}
+    if(input.target==='work'){setPersonalMode('work');setSitesVisible(false);setSpacesVisible(false);return {state:{product:'personal',personalMode:'work',modal:null,spacesVisible:false,sitesVisible:false},selector:'.work-workspace:not([hidden])'};}
     setPersonalMode('chat');
     if(['search','feed','library'].includes(input.target))await personalCommand({type:'serviceAction',action:input.target as 'search'|'feed'|'library'});
     else await personalCommand({type:'navigate',destination:input.target as PersonalDestination});
-  },Boolean(state));
+    return {state:{product:'personal',personalMode:'chat',personalDestination:['search','feed','library'].includes(input.target)?'bot':input.target,modal:null},selector:'.personal-workspace:not([hidden])'};
+  },Boolean(state),{product,view,modal,personalMode,personalDestination,taskId:showTask?task?.id:null,projectId:project?.id??null,spacesVisible,sitesVisible});
   if (!bridge) return <main className="browser-fallback"><Terminal size={32} /><h1>MuseBench desktop</h1><p>Open the Windows application to work with your local projects and Muse.</p></main>;
   if (!state) return <main className="loading"><LoaderCircle className="spin" size={24} /><p>Opening MuseBench…</p>{localError && <p role="alert">{localError}</p>}</main>;
   const systemMessages = task?.messages.filter(item => item.role === 'system') ?? [];

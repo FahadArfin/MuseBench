@@ -9,9 +9,22 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   backgroundEngine: command => ipcRenderer.invoke('musebench:background-engine',command),
   mobileDevice: command => ipcRenderer.invoke('musebench:mobile-device',command),
   nativeControl: command => ipcRenderer.invoke('musebench:native-control',command),
+  nativeNavigationPhase: value => ipcRenderer.send('musebench:native-phase',value),
+  onNativeCancel: callback => {const listener=(_event,value)=>callback(value.id);ipcRenderer.on('musebench:native-cancel',listener);return()=>ipcRenderer.removeListener('musebench:native-cancel',listener);},
   onNativeRequest: callback => {
-    const listener=async(_event,request)=>{if(!request||Date.now()>request.deadline)return;try{if(!await ipcRenderer.invoke('musebench:native-claim',request.id))return;const result=await callback(request);ipcRenderer.send('musebench:native-reply',{id:request.id,result});}catch{ipcRenderer.send('musebench:native-reply',{id:request.id,error:true});}};
-    ipcRenderer.on('musebench:native-request',listener);return()=>ipcRenderer.removeListener('musebench:native-request',listener);
+    const active=new Map();let disposed=false;
+    const cancel=(_event,value)=>{active.delete(value?.id);};
+    const listener=async(_event,request)=>{
+      if(!request||Date.now()>=request.deadline||disposed)return;active.set(request.id,true);
+      try{
+        if(!await ipcRenderer.invoke('musebench:native-claim',request.id)||!active.has(request.id)||Date.now()>=request.deadline||disposed)return;
+        const result=await callback(request);
+        if(active.has(request.id)&&Date.now()<request.deadline&&!disposed)ipcRenderer.send('musebench:native-reply',{id:request.id,result});
+      }catch{if(active.has(request.id)&&Date.now()<request.deadline&&!disposed)ipcRenderer.send('musebench:native-reply',{id:request.id,error:true});}
+      finally{active.delete(request.id);}
+    };
+    ipcRenderer.on('musebench:native-request',listener);ipcRenderer.on('musebench:native-cancel',cancel);
+    return()=>{disposed=true;active.clear();ipcRenderer.removeListener('musebench:native-request',listener);ipcRenderer.removeListener('musebench:native-cancel',cancel);};
   },
   onAppUpdate: callback => {const listener=(_event,state)=>callback(state);ipcRenderer.on('musebench:app-update-state',listener);return()=>ipcRenderer.removeListener('musebench:app-update-state',listener);},
   inspectWorktrees: input => ipcRenderer.invoke('musebench:worktrees',input),

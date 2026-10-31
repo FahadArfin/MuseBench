@@ -106,6 +106,8 @@ export interface MuseBenchBridge {
  nativeControl(command:{type:'status'|'enable'|'disable'}):Promise<import('./native-control-types').NativeControlState>;
  backgroundEngine(command:{type:'status'}|{type:'set';enabled:boolean}):Promise<{enabled:boolean;running:boolean;windowOpen:boolean;simulation?:boolean}>;
  onNativeRequest?(callback:(request:import('./native-control-types').NativeRequest)=>Promise<unknown>):()=>void;
+ onNativeCancel?(callback:(id:string)=>void):()=>void;
+ nativeNavigationPhase?(value:{id:string;target:import('./native-control-types').NativeNavigation['target'];section?:string;phase:'committed'|'visual-settled'|'visual-unsettled'}):void;
 }
 declare global { interface Window { musebench?: MuseBenchBridge } }
 export interface MuseBenchBridge {
