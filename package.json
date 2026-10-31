@@ -60,6 +60,7 @@
     "test:work-activity": "node scripts/work-activity-smoke.mjs && node scripts/work-activity-smoke.mjs --desktop",
     "test:connection-diagnostics": "node scripts/connection-diagnostics-smoke.mjs && node scripts/connection-diagnostics-smoke.mjs --desktop",
     "test:update-details": "node scripts/update-details-smoke.mjs && node scripts/update-details-smoke.mjs --desktop",
+    "test:transcript-position": "node scripts/transcript-position-smoke.mjs && node scripts/transcript-position-smoke.mjs --desktop",
     "test:chat-navigation": "node scripts/chat-navigation-smoke.mjs && node scripts/chat-navigation-smoke.mjs --desktop && node scripts/chat-read-smoke.mjs && node scripts/chat-read-smoke.mjs --desktop && node scripts/sidebar-drag-smoke.mjs",
     "test:run-changes": "node scripts/run-changes-smoke.mjs && node scripts/run-changes-smoke.mjs --desktop",
     "test:conversation-import": "node scripts/conversation-import-smoke.mjs && node scripts/conversation-import-smoke.mjs --desktop",

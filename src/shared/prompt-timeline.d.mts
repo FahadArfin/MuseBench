@@ -1,1 +1,1 @@
-export function mountPromptTimeline(options:{host:HTMLElement;root:HTMLElement;userSelector:string;answerSelector:string;scrollElement?:HTMLElement;reducedMotion?:boolean}):()=>void;
+export function mountPromptTimeline(options:{host:HTMLElement;root:HTMLElement;userSelector:string;answerSelector:string;scrollElement?:HTMLElement;reducedMotion?:boolean;onNavigate?:()=>void}):()=>void;

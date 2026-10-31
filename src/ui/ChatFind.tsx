@@ -17,7 +17,7 @@ function findRanges(container:HTMLElement,query:string){
  }
  return ranges;
 }
-export function ChatFind({active,context,transcript}:{active:boolean;context:string;transcript:RefObject<HTMLDivElement|null>}){
+export function ChatFind({active,context,transcript,onNavigate}:{active:boolean;context:string;transcript:RefObject<HTMLDivElement|null>;onNavigate?:()=>void}){
  const [open,setOpen]=useState(false),[mode,setMode]=useState<'chat'|'web'>('chat'),[query,setQuery]=useState(''),[ranges,setRanges]=useState<Range[]>([]),[index,setIndex]=useState(0),[error,setError]=useState('');
  const input=useRef<HTMLInputElement>(null),trigger=useRef<HTMLButtonElement>(null);
  const close=()=>{setOpen(false);trigger.current?.focus();};
@@ -36,9 +36,9 @@ export function ChatFind({active,context,transcript}:{active:boolean;context:str
   CSS.highlights.delete('chat-find');CSS.highlights.delete('chat-find-current');
   if(!open||mode!=='chat'||!ranges.length)return;
   CSS.highlights.set('chat-find',new Highlight(...ranges));
-  const current=ranges[index];if(current){CSS.highlights.set('chat-find-current',new Highlight(current));const box=current.getBoundingClientRect(),container=transcript.current;if(container&&box.height){const bounds=container.getBoundingClientRect();container.scrollBy({top:box.top-bounds.top-bounds.height/2,behavior:'instant'});}}
+  const current=ranges[index];if(current){CSS.highlights.set('chat-find-current',new Highlight(current));const box=current.getBoundingClientRect(),container=transcript.current;if(container&&box.height){onNavigate?.();const bounds=container.getBoundingClientRect();container.scrollBy({top:box.top-bounds.top-bounds.height/2,behavior:'instant'});}}
   return()=>{CSS.highlights.delete('chat-find');CSS.highlights.delete('chat-find-current');};
- },[open,mode,ranges,index,transcript]);
+ },[open,mode,ranges,index,transcript,onNavigate]);
  const step=(direction:number)=>setIndex(i=>ranges.length?(i+direction+ranges.length)%ranges.length:0);
  const searchWeb=async()=>{if(!query.trim())return;try{await window.musebench!.openExternal(`https://www.google.com/search?q=${encodeURIComponent(query.trim())}`);setError('');}catch(e){setError(String(e));}};
  return <div className="chat-find-anchor">

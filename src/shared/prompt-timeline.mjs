@@ -1,6 +1,6 @@
 // DOM-only navigation, shared by the local renderer and guarded service pages.
 // This function is also serialized into remote pages; keep it self-contained.
-export function mountPromptTimeline({host,root,userSelector,answerSelector,scrollElement,reducedMotion=false}) {
+export function mountPromptTimeline({host,root,userSelector,answerSelector,scrollElement,reducedMotion=false,onNavigate}) {
  const shadow=host.attachShadow({mode:'open'}),doc=host.ownerDocument;
  const style=doc.createElement('style');style.textContent=`
  :host{position:fixed;z-index:30;width:30px;pointer-events:none;font:13px/1.55 var(--font-ui,system-ui,sans-serif);color:var(--text,#ececec)}
@@ -48,6 +48,7 @@ export function mountPromptTimeline({host,root,userSelector,answerSelector,scrol
  const schedulePosition=()=>{if(!frame&&!disposed)frame=requestAnimationFrame(position);};
  function jump(index){
   const entry=entries[index];if(!entry?.node.isConnected){refresh();return;}
+  onNavigate?.();
   const scroll=viewport(),rect=geometry(),top=scroll.scrollTop+entry.node.getBoundingClientRect().top-rect.top-20;
   scroll.scrollTo({top:Math.max(0,top),behavior:'instant'}); // Never race streaming auto-follow with a smooth animation.
   position();
