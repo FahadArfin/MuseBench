@@ -5,9 +5,9 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 const gateway=await import('../src/runtime/discovery-gateway.mjs').catch(()=>({}));
 // Positive fixtures use the reviewed-source startup default. Deadline failure
-// cases below deliberately keep their separate 500ms budget.
-async function fixture(){const root=await mkdtemp(path.join(tmpdir(),'discovery-gateway-')),log=path.join(root,'log'),control=path.join(root,'control');await writeFile(control,'{}');const source={id:'global:fixture',name:'fixture',revision:'a'.repeat(64),command:process.execPath,args:[path.resolve('test/fixtures/discovery-server.mjs'),log,control],cwd:root,env:{...process.env,FIXTURE_ENV:'reviewed',FIXTURE_GRANDCHILD:'1'},enabledTools:['allowed'],disabledTools:['filtered'],startupMs:30000,callMs:200};return{root,log,control,source,records:async()=>JSON.parse('['+(await readFile(log,'utf8')).trim().split('\n').join(',')+']')};}
-test('gateway filters catalogs, validates input, binds revisions and never retries uncertain calls',async()=>{
+// cases below deliberately keep their separate 500ms startup / 200ms call budgets.
+async function fixture({callMs=5000}={}){const root=await mkdtemp(path.join(tmpdir(),'discovery-gateway-')),log=path.join(root,'log'),control=path.join(root,'control');await writeFile(control,'{}');const source={id:'global:fixture',name:'fixture',revision:'a'.repeat(64),command:process.execPath,args:[path.resolve('test/fixtures/discovery-server.mjs'),log,control],cwd:root,env:{...process.env,FIXTURE_ENV:'reviewed',FIXTURE_GRANDCHILD:'1'},enabledTools:['allowed'],disabledTools:['filtered'],startupMs:30000,callMs};return{root,log,control,source,records:async()=>JSON.parse('['+(await readFile(log,'utf8')).trim().split('\n').join(',')+']')};}
+test('gateway filters catalogs, validates input and binds revisions for completed calls',async()=>{
  assert.equal(typeof gateway.createDiscoveryGateway,'function','gateway exists');const f=await fixture();let valid=true;
  const service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),sessionId:'owned-native-session',verify:async()=>{if(!valid)throw Error('Source review changed');}});
  try{
@@ -17,11 +17,27 @@ test('gateway filters catalogs, validates input, binds revisions and never retri
  await assert.rejects(service.call({...args,arguments:{value:'7'}}),/arguments/i);await assert.rejects(service.call({...args,tool:'filtered'}),/tool/i);
  await writeFile(f.control,JSON.stringify({changed:true}));await assert.rejects(service.call(args),/catalog.*changed|search/i);
  const fresh=await service.search({query:''});const next={...args,catalogRevision:fresh.sources[0].catalogRevision};
- await writeFile(f.control,JSON.stringify({changed:true,large:true}));const large=await service.call(next);assert.equal(large.truncated,true);assert.equal(large.outcome,'completed');
- await writeFile(f.control,JSON.stringify({changed:true,hang:true}));const uncertain=await service.call(next);assert.equal(uncertain.outcome,'unknown');await assert.rejects(service.call(next),/closed|reconnect/i);
- assert.equal((await f.records()).filter(r=>r.kind==='call').length,3);valid=false;await assert.rejects(service.search({query:''}),/changed/i);
+ await writeFile(f.control,JSON.stringify({changed:true,large:true}));const large=await service.call(next);assert.equal(large.outcome,'completed');assert.equal(large.truncated,true);
+ assert.equal((await f.records()).filter(r=>r.kind==='call').length,2);valid=false;await assert.rejects(service.search({query:''}),/changed/i);
  }finally{await service.dispose();const records=await f.records();for(const row of records.filter(r=>['start','grandchild'].includes(r.kind)))assert.throws(()=>process.kill(row.pid,0));await rm(f.root,{recursive:true,force:true});}
 });
+test('200ms withheld receipt stays unknown, closes the source and never replays an uncertain effect',async()=>{
+ const f=await fixture({callMs:200}),service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),verify:async()=>{},sessionId:'strict-uncertainty'});
+ try{
+  await writeFile(f.control,JSON.stringify({hang:true}));const row=(await service.search({query:''})).sources[0],args={sourceId:row.sourceId,catalogRevision:row.catalogRevision,tool:'allowed',arguments:{value:7}};
+  assert.equal((await service.call(args)).outcome,'unknown');await assert.rejects(service.call(args),/closed|reconnect/i);assert.equal((await f.records()).filter(row=>row.kind==='call').length,1);
+ }finally{await service.dispose();for(const row of (await f.records()).filter(row=>['start','grandchild'].includes(row.kind)))assert.throws(()=>process.kill(row.pid,0));await rm(f.root,{recursive:true,force:true});}
+});
+
+test('positive large response completes once after a scheduling delay beyond the uncertainty-test deadline',async()=>{
+ const f=await fixture(),service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),verify:async()=>{},sessionId:'delayed-large'});
+ try{
+  await writeFile(f.control,JSON.stringify({large:true,callDelayMs:350}));const row=(await service.search({query:''})).sources[0],started=performance.now();
+  const result=await service.call({sourceId:row.sourceId,catalogRevision:row.catalogRevision,tool:'allowed',arguments:{value:7}});
+  assert.equal(result.outcome,'completed',JSON.stringify({outcome:result.outcome,elapsedMs:performance.now()-started,callCount:(await f.records()).filter(row=>row.kind==='call').length}));assert.equal(result.truncated,true);assert.equal((await f.records()).filter(row=>row.kind==='call').length,1);
+ }finally{await service.dispose();for(const row of (await f.records()).filter(row=>['start','grandchild'].includes(row.kind)))assert.throws(()=>process.kill(row.pid,0));await rm(f.root,{recursive:true,force:true});}
+});
+
 test('positive gateway startup admits a delayed owned fixture within the reviewed-source default',async()=>{
  const f=await fixture();f.source.env.FIXTURE_START_DELAY_MS='3100';
  const service=gateway.createDiscoveryGateway({sources:[f.source],helperPath:path.resolve('native/bin/MuseBenchJob.exe'),verify:async()=>{},sessionId:'delayed-owned'});

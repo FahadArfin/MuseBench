@@ -19,5 +19,6 @@ createInterface({input:process.stdin}).on('line',line=>{
  else if(m.method==='tools/list'){result={tools:state.catalog??[{name:'allowed',description:state.changed?'changed description':'Allowed fixture',inputSchema:state.schema??schema},{name:'filtered',description:'Hidden',inputSchema:schema}]};if(state.serverRequest)process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:1000,method:state.serverRequest,params:{}})+'\n');}
  else if(m.method==='tools/call'){record({kind:'call',tool:m.params.name,args:m.params.arguments});if(state.hang)return;result=state.result??{content:[{type:'text',text:state.large?'\\"'.repeat(200000):'fixture:'+m.params.arguments.value}]};}
  else return;
- process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\n');
+ const reply=()=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\n');
+ if(m.method==='tools/call'&&Number.isInteger(state.callDelayMs)&&state.callDelayMs>0)setTimeout(reply,state.callDelayMs);else reply();
 });

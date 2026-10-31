@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
+import {analyzeFlightSampling,assertFlightCurve,renderFlightCurve} from './startup-motion-analysis.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const variant=process.env.MUSEBENCH_EXECUTABLE?'packaged':'source';
@@ -20,6 +21,12 @@ let server,browser,app,lastPage;
 function observeLaunch(){
   if(window.__launchObservation)return;
   const result=window.__launchObservation={frames:[],fontLoads:[],startedAt:performance.now(),timeOrigin:performance.timeOrigin};
+  const originalAnimate=Element.prototype.animate;
+  Element.prototype.animate=function(keyframes,options){
+    const animation=originalAnimate.call(this,keyframes,options);
+    if(this.classList.contains('launch-wordmark')&&Array.isArray(keyframes)&&keyframes.some(frame=>typeof frame.transform==='string'))result.flight={keyframes:animation.effect.getKeyframes(),timing:animation.effect.getTiming()};
+    return animation;
+  };
   const loadFont=document.fonts.load.bind(document.fonts);
   let rejectPreparedReadiness=null;
   const readinessPromises=new WeakSet(),race=Promise.race;
@@ -96,7 +103,7 @@ async function until(check,label,timeout=12000){
 const settled=page=>page.waitForFunction(()=>document.querySelector('.launch-content')&&!document.querySelector('.launch-overlay')&&document.documentElement.dataset.launchActive!=='true'&&!document.querySelector('.launch-content').inert);
 const observation=page=>page.evaluate(()=>window.__launchObservation);
 
-async function browserScene(name,{query='?launch=1',readiness,lateTarget=false,prepareFont=Boolean(readiness),viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,fontDelay=0,fontDelayAfterReadiness=0,rendererDelay=0,skip}={}){
+async function browserScene(name,{query='?launch=1',readiness,lateTarget=false,prepareFont=Boolean(readiness),viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,busyFlight=0,fontDelay=0,fontDelayAfterReadiness=0,rendererDelay=0,skip}={}){
   const page=lastPage=await browser.newPage({viewport,reducedMotion,...(name==='preview-launch'?{recordVideo:{dir:output,size:viewport}}:{})});
   let fontReadinessStarted;
   const fontReadiness=new Promise(resolve=>{fontReadinessStarted=resolve;});
@@ -134,7 +141,7 @@ async function browserScene(name,{query='?launch=1',readiness,lateTarget=false,p
     return route.continue();
   });
   await page.addInitScript(observeLaunch);
-  await page.addInitScript(({preferences,brokenAnimation,slowFirstPaint,busyTyping})=>{
+  await page.addInitScript(({preferences,brokenAnimation,slowFirstPaint,busyTyping,busyFlight})=>{
     localStorage.setItem('musebench.preferences.v1',JSON.stringify(preferences));
     if(brokenAnimation)Element.prototype.animate=function(){throw Error('Simulated unavailable animation compositor');};
     if(slowFirstPaint){
@@ -143,6 +150,14 @@ async function browserScene(name,{query='?launch=1',readiness,lateTarget=false,p
         // Reproduce a busy cold renderer consuming part of the launch deadline.
         if(!delayed&&this.classList.contains('launch-wordmark')){delayed=true;const until=performance.now()+slowFirstPaint;while(performance.now()<until){}}
         return animate.apply(this,args);
+      };
+    }
+    if(busyFlight){
+      const animate=Element.prototype.animate;let scheduled=false;
+      Element.prototype.animate=function(keyframes,...rest){
+        const animation=animate.call(this,keyframes,...rest);
+        if(!scheduled&&this.classList.contains('launch-wordmark')&&Array.isArray(keyframes)&&keyframes.some(frame=>typeof frame.transform==='string')){scheduled=true;setTimeout(()=>{const until=performance.now()+busyFlight;while(performance.now()<until){}},80);}
+        return animation;
       };
     }
     if(busyTyping){
@@ -154,7 +169,7 @@ async function browserScene(name,{query='?launch=1',readiness,lateTarget=false,p
         return animate.apply(this,args);
       };
     }
-  },{preferences,brokenAnimation,slowFirstPaint,busyTyping});
+  },{preferences,brokenAnimation,slowFirstPaint,busyTyping,busyFlight});
   await page.goto(`${server.resolvedUrls.local[0]}__startup__/index.html${query}${readiness?`&readiness=${readiness}`:''}${lateTarget?'&lateTarget=1':''}`,{waitUntil:'domcontentloaded'});
   if(name==='preview-launch'&&process.argv.includes('--late-animation-assertion'))await delay(3000);
   if(name==='preview-launch'||name==='light-launch'){
@@ -178,13 +193,24 @@ async function browserScene(name,{query='?launch=1',readiness,lateTarget=false,p
     return observed.frames.some(frame=>frame.at>=since&&!frame.active&&frame.phase===null&&!frame.inert&&frame.targetVisible);
   });
   const evidence=await observation(page);report.scenes[name]=evidence;
+  evidence.renderedCurve=evidence.flight?await verifyRenderedFlight(page,evidence.flight,name==='preview-launch'):null;
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,`${name}: no horizontal overflow`);
   assert.equal(await page.locator('.launch-content').getAttribute('inert'),null,`${name}: launch must release app interaction`);
   await page.screenshot({path:path.join(output,`${name}.png`)});
-  return {page,frames:evidence.frames,fontLoads:evidence.fontLoads,gate:evidence.gate};
+  return {page,frames:evidence.frames,fontLoads:evidence.fontLoads,gate:evidence.gate,renderedCurve:evidence.renderedCurve};
 }
 
-function checkLaunchMotion(frames,label){
+async function verifyRenderedFlight(page,flight,rejectControl=false){
+  assert(flight,'Actual production flight was captured');
+  assert.match(flight.timing.easing,/^cubic-bezier\((?:0)?\.65,\s*0,\s*(?:0)?\.22,\s*1\)$/,'Captured production easing contract is unchanged');
+  assert(flight.timing.duration>0&&flight.timing.duration<=740,'Captured flight retains its bounded production duration');
+  const curve=await page.evaluate(renderFlightCurve,{flight});assertFlightCurve(curve);
+  if(rejectControl){const control=await page.evaluate(renderFlightCurve,{flight,easing:'ease-out'});assert.throws(()=>assertFlightCurve(control),/accelerates gently/);curve.rejectedEaseOutControl=control;}
+  return curve;
+}
+
+function checkLaunchMotion(frames,label,renderedCurve){
+  assert(renderedCurve,`${label}: deterministic rendered production curve evidence exists`);assertFlightCurve(renderedCurve);
   const typed=frames.filter(frame=>frame.rendered&&frame.phase==='typing');
   assert(typed.length>5,'Explicit preview must visibly animate');
   assert(typed.some(frame=>frame.letters.length>0&&frame.letters!=='Muse AI'),'Brand letters appear progressively');
@@ -227,13 +253,10 @@ function checkLaunchMotion(frames,label){
   assert(Math.abs(landed.mark.x-landed.target.x)<3,'Flight lands on the real sidebar title position');
   assert(Math.abs(landed.mark.y-landed.target.y)<4,'Flight lands on the real sidebar title height');
   assert(moving.at(0).mark.width>landed.mark.width*2,'Brand scales down smoothly into the sidebar');
-  const duration=landed.at-moving[0].at;
-  const progress=frame=>(centered.mark.x-frame.mark.x)/(centered.mark.x-landed.mark.x);
-  const atFraction=fraction=>moving.reduce((nearest,frame)=>Math.abs(frame.at-moving[0].at-duration*fraction)<Math.abs(nearest.at-moving[0].at-duration*fraction)?frame:nearest,moving[0]);
-  const quarter=progress(atFraction(.25)),middle=progress(atFraction(.5)),threeQuarter=progress(atFraction(.75));
-  assert(quarter>.01&&quarter<.25,'Flight accelerates gently instead of darting across most of the distance immediately');
-  assert(middle>.35&&middle<.8,'Flight develops its main movement through the middle of the transition');
-  assert(middle-quarter>quarter&&middle-quarter>1-threeQuarter,'Flight accelerates out and slows down into the title');
+  const sampling=analyzeFlightSampling(moving,centered.mark.x);
+  (report.motionEvidence??={})[label]={naturalSampling:sampling,naturalCurveObserved:sampling.adequate,renderedCurve};
+  if(sampling.adequate)assertFlightCurve({quarter:sampling.quarter.progress,middle:sampling.middle.progress,threeQuarter:sampling.threeQuarter.progress});
+  else console.log(`OBSERVED ${label}: natural curve fractions unobserved (maximum frame gap ${sampling.maxGapMs.toFixed(1)}ms); deterministic rendered curve checked separately`);
   for(const key of ['x','y','width','height']){
     assert(Math.abs(landed.text[key]-landed.targetText[key])<2,`${label}: final text ${key} matches the actual sidebar text without a jump`);
     assert(Math.abs(landed.textGlyphBounds[key]-landed.targetGlyphBounds[key])<2,`${label}: final rendered glyph ${key} matches the real title`);
@@ -296,7 +319,7 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
   assert.equal(coldFont.fontLoads[0].count,1,'Cold-font motion resolves the real brand font');
   report.scenes['cold-brand-font'].actualFontLoadMs=coldFont.fontLoads[0].resolvedAt-coldFont.fontLoads[0].requestedAt;
   assert(coldFont.gate,'Cold real-font race outcome was observed');
-  if(coldFont.gate.outcome==='ready')checkLaunchMotion(coldFont.frames,'cold brand font');
+  if(coldFont.gate.outcome==='ready')checkLaunchMotion(coldFont.frames,'cold brand font',coldFont.renderedCurve);
   else {assert.equal(coldFont.gate.outcome,'budget-lost');checkNoFontMotion(coldFont,'cold brand font');}
   await checkInteractive(coldFont.page);await coldFont.page.close();
   pass(`Cold real font preserves its observed ${coldFont.gate.outcome} contract (${Math.round(report.scenes['cold-brand-font'].actualFontLoadMs)}ms actual readiness)`);
@@ -310,7 +333,7 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
     assert.equal(scene.gate?.outcome,{ready:'ready','over-budget':'budget-lost',failed:'failed'}[readiness]);
     if(readiness==='ready'){
       assert(load.controlledSettledAt-load.requestedAt<400,'Prepared-face success settles within the unchanged readiness budget');
-      checkLaunchMotion(scene.frames,'controlled under-budget readiness');
+      checkLaunchMotion(scene.frames,'controlled under-budget readiness',scene.renderedCurve);
     }
     else checkNoFontMotion(scene,`controlled ${readiness} readiness`);
     if(readiness==='over-budget'){
@@ -352,7 +375,7 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
   const normal=await browserScene('preview-launch',{prepareFont:true});
   assert.equal(normal.fontLoads[0].alreadyLoaded,true,'Warm browser integration uses the actual prepared font');
   assert.equal(normal.gate?.outcome,'ready');
-  checkLaunchMotion(normal.frames,'dark theme');
+  checkLaunchMotion(normal.frames,'dark theme',normal.renderedCurve);
   pass('Preview types the large blue Muse AI wordmark in the center, animates to the actual sidebar brand, and releases interaction in under 2.35 seconds');
   pass('One cursor follows softly revealed glyphs and withdraws before gentle acceleration, deceleration and a seamless text/icon handoff');
   await normal.page.getByRole('button',{name:'Muse Code',exact:true}).click();
@@ -363,15 +386,18 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
   pass('Switching between Muse AI and Muse Code does not replay launch');
   const video=normal.page.video();await normal.page.close();if(video)await video.saveAs(path.join(output,'launch-demo.webm'));
 
-  const light=await browserScene('light-launch',{preferences:{theme:'light'}});checkLaunchMotion(light.frames,'light theme');await light.page.close();
+  const light=await browserScene('light-launch',{preferences:{theme:'light'}});checkLaunchMotion(light.frames,'light theme',light.renderedCurve);await light.page.close();
   pass('Light theme retains the same typing, cursor, motion and exact sidebar landing');
 
-  const busy=await browserScene('busy-typing',{busyTyping:220});checkLaunchMotion(busy.frames,'busy typing');await busy.page.close();
+  const busy=await browserScene('busy-typing',{busyTyping:220});checkLaunchMotion(busy.frames,'busy typing',busy.renderedCurve);await busy.page.close();
   pass('A stalled main thread cannot move the cursor ahead of the compositor-painted letters');
+
+  const busyFlight=await browserScene('busy-flight',{prepareFont:true,busyFlight:330});checkLaunchMotion(busyFlight.frames,'busy flight',busyFlight.renderedCurve);assert.equal(report.motionEvidence['busy flight'].naturalCurveObserved,false);assert.ok(report.motionEvidence['busy flight'].naturalSampling.maxGapMs>=300);await busyFlight.page.close();
+  pass('A controlled flight sampling gap retains separate rendered curve and live landing evidence');
 
   const lateFont=await browserScene('late-brand-font',{fontDelay:350});
   assert(lateFont.gate,'Late-font race outcome was observed');
-  if(lateFont.gate.outcome==='ready')checkLaunchMotion(lateFont.frames,'late brand font');
+  if(lateFont.gate.outcome==='ready')checkLaunchMotion(lateFont.frames,'late brand font',lateFont.renderedCurve);
   else {assert.equal(lateFont.gate.outcome,'budget-lost');checkNoFontMotion(lateFont,'late brand font');}
   await lateFont.page.close();
   pass(`A late real font follows its observed ${lateFont.gate.outcome} contract`);
@@ -380,7 +406,7 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
   await stalledFont.page.close();
   pass('A stalled brand font releases interaction without starting a misaligned animation');
 
-  const slow=await browserScene('slow-first-paint',{slowFirstPaint:550});checkLaunchMotion(slow.frames,'slow first paint');await slow.page.close();
+  const slow=await browserScene('slow-first-paint',{slowFirstPaint:550});checkLaunchMotion(slow.frames,'slow first paint',slow.renderedCurve);await slow.page.close();
   pass('A busy cold renderer still completes the flight and icon handoff before the launch deadline');
   const exhausted=await browserScene('low-flight-budget',{slowFirstPaint:1000});
   // With any extra host delay the watchdog can release during typing instead
@@ -498,7 +524,7 @@ async function checkDesktop(){
   const motion=report.scenes['desktop-cold']=await observation(page);
   assert(motion.frames.some(frame=>frame.rendered&&frame.phase==='typing'),'Real desktop visibly types after its initially hidden window appears');
   assert(motion.frames.some(frame=>frame.rendered&&frame.phase==='moving'),'Real desktop visibly flies into the sidebar');
-  checkLaunchMotion(motion.frames,'desktop');
+  motion.renderedCurve=await verifyRenderedFlight(page,motion.flight,true);checkLaunchMotion(motion.frames,'desktop',motion.renderedCurve);
   if(variant==='source'){
     const fixture=await app.evaluate(()=>globalThis.__launchFixture);report.scenes['desktop-fixture']=fixture;
     assert(fixture.requests.some(request=>/^https:\/\/(www\.)?meta\.ai\/$/.test(request.url)),'Official initial chat URL was preloaded');
