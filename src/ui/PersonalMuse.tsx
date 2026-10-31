@@ -30,8 +30,8 @@ export function ProductSwitcher({ product, onChange, sidebarToggle }: {product: 
     <div key={product} data-launch-brand={product} className={`brand-button product-name product-name-${product}`} aria-label={product==='code'?'Muse Code':'Muse AI'}><ProductIcon className="product-brand-icon" size={28} strokeWidth={1.8} aria-hidden="true"/><TypedText text={product==='code'?'Muse Code':'Muse AI'} delay={300} interval={85}/></div>
     {sidebarToggle}
     <div className="product-mode-switch" role="group" aria-label="Choose workspace">
-      <button type="button" aria-label="Muse Code" aria-pressed={product==='code'} title="Muse Code" onClick={()=>onChange('code')}><Terminal size={18} strokeWidth={1.8} aria-hidden="true"/></button>
       <button type="button" aria-label="Muse AI" aria-pressed={product==='personal'} title="Muse AI · Chat, ideas, goals and Work" onClick={()=>onChange('personal')}><MessagesSquare size={18} strokeWidth={1.8} aria-hidden="true"/></button>
+      <button type="button" aria-label="Muse Code" aria-pressed={product==='code'} title="Muse Code" onClick={()=>onChange('code')}><Terminal size={18} strokeWidth={1.8} aria-hidden="true"/></button>
     </div>
   </div>;
 }
