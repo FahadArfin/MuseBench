@@ -21,10 +21,33 @@ function observeLaunch(){
   if(window.__launchObservation)return;
   const result=window.__launchObservation={frames:[],fontLoads:[],startedAt:performance.now(),timeOrigin:performance.timeOrigin};
   const loadFont=document.fonts.load.bind(document.fonts);
+  const readinessPromises=new WeakSet(),race=Promise.race;
+  // Observe the actual font race result, including a rejection. Timing alone
+  // cannot tell which queued settlement won at the readiness boundary.
+  Promise.race=function(values){
+    const resultPromise=race.call(this,values);
+    if(Array.isArray(values)&&values.some(value=>readinessPromises.has(value))){
+      resultPromise.then(ready=>{result.gate={outcome:ready?'ready':'budget-lost',at:performance.now()};},()=>{result.gate={outcome:'failed',at:performance.now()};});
+    }
+    return resultPromise;
+  };
   document.fonts.load=(...args)=>{
+    if(window.__launchPreparingRealFace)return loadFont(...args);
     const timing={font:args[0],requestedAt:performance.now(),alreadyLoaded:document.fonts.check(...args)};result.fontLoads.push(timing);
     window.__launchFontReadinessStarted?.();
-    return loadFont(...args).then(fonts=>{timing.resolvedAt=performance.now();timing.count=fonts.length;return fonts;});
+    const loaded=loadFont(...args).then(fonts=>{timing.resolvedAt=performance.now();timing.count=fonts.length;return fonts;});
+    const mode=new URLSearchParams(location.search).get('readiness');
+    const promise=mode?new Promise((resolve,reject)=>{
+      loaded.then(fonts=>{
+        timing.preparedRealFace=fonts.length>0&&fonts.every(face=>face.status==='loaded');
+        if(mode==='failed'){timing.rejectedAt=performance.now();reject(Error('Fixture-controlled font readiness failure'));}
+        else if(mode==='over-budget'){setTimeout(()=>{timing.controlledSettledAt=performance.now();resolve(fonts);},650);}
+        else {timing.controlledSettledAt=performance.now();resolve(fonts);}
+      },reject);
+    }):loaded;
+    const then=promise.then;
+    promise.then=function(...callbacks){const next=then.apply(this,callbacks);readinessPromises.add(next);return next;};
+    return promise;
   };
   const rect=element=>{if(!element)return null;const r=element.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height};};
   const union=boxes=>{if(!boxes.length)return null;const x=Math.min(...boxes.map(box=>box.x)),y=Math.min(...boxes.map(box=>box.y));return {x,y,width:Math.max(...boxes.map(box=>box.x+box.width))-x,height:Math.max(...boxes.map(box=>box.y+box.height))-y};};
@@ -63,7 +86,7 @@ async function until(check,label,timeout=12000){
 const settled=page=>page.waitForFunction(()=>document.querySelector('.launch-content')&&!document.querySelector('.launch-overlay')&&document.documentElement.dataset.launchActive!=='true'&&!document.querySelector('.launch-content').inert);
 const observation=page=>page.evaluate(()=>window.__launchObservation);
 
-async function browserScene(name,{query='?launch=1',viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,fontDelay=0,fontDelayAfterReadiness=0,rendererDelay=0,skip}={}){
+async function browserScene(name,{query='?launch=1',readiness,prepareFont=Boolean(readiness),viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,fontDelay=0,fontDelayAfterReadiness=0,rendererDelay=0,skip}={}){
   const page=lastPage=await browser.newPage({viewport,reducedMotion,...(name==='preview-launch'?{recordVideo:{dir:output,size:viewport}}:{})});
   let fontReadinessStarted;
   const fontReadiness=new Promise(resolve=>{fontReadinessStarted=resolve;});
@@ -76,6 +99,19 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
   await page.route('**/*',async route=>{
     const url=new URL(route.request().url());
     if(url.hostname!=='127.0.0.1')return route.abort();
+    if(prepareFont&&/\/assets\/index-[^/]+\.js$/.test(url.pathname)){
+      // The CSS and bundled preload may finish while the renderer is held.
+      // Prepare the actual CSS face before allowing React's readiness gate.
+      await page.waitForFunction(()=>[...document.styleSheets].some(sheet=>sheet.href?.includes('/assets/index-')));
+      await page.evaluate(async()=>{
+        window.__launchPreparingRealFace=true;
+        const faces=await document.fonts.load('500 17px "Inter Variable"','Muse AI');
+        window.__launchPreparingRealFace=false;
+        if(!faces.length||!faces.every(face=>face.status==='loaded'))throw Error('Real brand face did not prepare');
+        window.__launchPreparedFaceCount=faces.length;
+        window.__launchObservation.fontLoads=[];
+      });
+    }
     // Reproduce a delayed renderer bundle without changing presentation timing.
     if(name==='preview-launch'&&process.argv.includes('--slow-renderer')&&/\/assets\/index-[^/]+\.js$/.test(url.pathname))await delay(7000);
     if(rendererDelay&&/\/assets\/index-[^/]+\.js$/.test(url.pathname))await delay(rendererDelay);
@@ -109,7 +145,7 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
       };
     }
   },{preferences,brokenAnimation,slowFirstPaint,busyTyping});
-  await page.goto(`${server.resolvedUrls.local[0]}__startup__/index.html${query}`,{waitUntil:'domcontentloaded'});
+  await page.goto(`${server.resolvedUrls.local[0]}__startup__/index.html${query}${readiness?`&readiness=${readiness}`:''}`,{waitUntil:'domcontentloaded'});
   if(name==='preview-launch'&&process.argv.includes('--late-animation-assertion'))await delay(3000);
   if(name==='preview-launch'||name==='light-launch'){
     // The animation can finish before a slow inspector starts polling. Its
@@ -119,6 +155,10 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
   }
   if(skip){await page.locator('.launch-overlay[data-phase="typing"]').waitFor();await skip(page);}
   await settled(page);await page.locator('.app').waitFor();
+  if(readiness==='over-budget')await page.waitForFunction(()=>{
+    const observed=window.__launchObservation,load=observed.fontLoads[0];
+    return load?.controlledSettledAt!==undefined&&observed.frames.at(-1)?.at>load.controlledSettledAt;
+  });
   if(fontDelayAfterReadiness)await page.waitForFunction(()=>{
     const observed=window.__launchObservation,loaded=observed?.fontLoads.find(load=>load.resolvedAt!==undefined);
     return loaded&&observed.frames.at(-1)?.at>loaded.resolvedAt;
@@ -127,7 +167,7 @@ async function browserScene(name,{query='?launch=1',viewport={width:1440,height:
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,`${name}: no horizontal overflow`);
   assert.equal(await page.locator('.launch-content').getAttribute('inert'),null,`${name}: launch must release app interaction`);
   await page.screenshot({path:path.join(output,`${name}.png`)});
-  return {page,frames:evidence.frames,fontLoads:evidence.fontLoads};
+  return {page,frames:evidence.frames,fontLoads:evidence.fontLoads,gate:evidence.gate};
 }
 
 function checkLaunchMotion(frames,label){
@@ -193,6 +233,21 @@ function checkLaunchMotion(frames,label){
   assert(active.at(-1).at-active[0].at<2350,'Normal animation remains short');
 }
 
+function checkNoFontMotion(scene,label){
+  assert(scene.frames.some(frame=>frame.phase==='preparing'&&frame.inert),`${label}: preparation gates interaction`);
+  assert(!scene.frames.some(frame=>frame.rendered||frame.phase==='typing'||frame.phase==='moving'),`${label}: no fallback-font typing or flight`);
+  const released=scene.frames.find(frame=>frame.at>=scene.fontLoads[0].requestedAt&&!frame.active&&frame.phase===null);
+  assert(released&&!released.inert&&released.targetVisible,`${label}: visible app is released`);
+  assert(released.at-scene.fontLoads[0].requestedAt<2100,`${label}: unchanged hard readiness deadline`);
+}
+
+async function checkInteractive(page){
+  assert.equal(await page.locator('.launch-overlay').count(),0,'Font readiness releases the overlay');
+  await page.getByRole('button',{name:'Muse Code',exact:true}).click();
+  await page.getByRole('textbox',{name:'Message Muse',exact:true}).waitFor();
+  assert.equal(await page.locator('.launch-overlay').count(),0,'Controls work without replaying launch');
+}
+
 async function checkBrowser(){
   // Measure the shipped renderer. Cold Vite module transforms can otherwise
   // consume the launch watchdog after React mounts and before its first paint.
@@ -212,16 +267,40 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
     }catch{res.statusCode=404;res.end();}
   });}}]});await server.listen();
   browser=await chromium.launch({headless:true});
-  // Absolute font/renderer delays do not control the wait after React mounts.
-  // Keep the real preloaded font cold until readiness starts, then release it
-  // inside the intentional 400ms budget; exercise the full motion contract.
-  const coldFont=await browserScene('cold-brand-font',{fontDelayAfterReadiness:100,rendererDelay:500});
+  // A route hold controls release, not actual font delivery/decode/scheduling.
+  // Follow the observed race result; controlled prepared-face cases below
+  // guarantee the mandatory success, budget-loss and rejection coverage.
+  const coldFont=await browserScene('cold-brand-font',{fontDelayAfterReadiness:process.argv.includes('--fault-cold-budget')?650:100,rendererDelay:500});
   assert(report.sceneLoads['cold-brand-font'].fontRequests[0].requestedAt<report.scenes['cold-brand-font'].timeOrigin+coldFont.fontLoads[0].requestedAt,'Brand font preload starts before renderer font readiness');
   assert.equal(coldFont.fontLoads[0].alreadyLoaded,false,'Cold-font motion starts with the real font still pending');
   assert.equal(coldFont.fontLoads[0].count,1,'Cold-font motion resolves the real brand font');
-  assert(coldFont.fontLoads[0].resolvedAt-coldFont.fontLoads[0].requestedAt<400,'Cold-font motion receives the font within the supported readiness budget');
-  checkLaunchMotion(coldFont.frames,'cold brand font');await coldFont.page.close();
-  pass('A cold real font arriving within the readiness budget preserves progressive typing, cursor tracking and the full sidebar flight');
+  report.scenes['cold-brand-font'].actualFontLoadMs=coldFont.fontLoads[0].resolvedAt-coldFont.fontLoads[0].requestedAt;
+  assert(coldFont.gate,'Cold real-font race outcome was observed');
+  if(coldFont.gate.outcome==='ready')checkLaunchMotion(coldFont.frames,'cold brand font');
+  else {assert.equal(coldFont.gate.outcome,'budget-lost');checkNoFontMotion(coldFont,'cold brand font');}
+  await checkInteractive(coldFont.page);await coldFont.page.close();
+  pass(`Cold real font preserves its observed ${coldFont.gate.outcome} contract (${Math.round(report.scenes['cold-brand-font'].actualFontLoadMs)}ms actual readiness)`);
+  for(const readiness of ['ready','over-budget','failed']){
+    const scene=await browserScene(`controlled-${readiness}-readiness`,{readiness});
+    const load=scene.fontLoads[0];
+    assert.equal(load.alreadyLoaded,true,'Controlled readiness starts with the actual face prepared');
+    assert.equal(load.count,1,'Controlled readiness uses one actual bundled face');
+    assert.equal(load.preparedRealFace,true,'Controlled settlement keeps the real loaded face');
+    assert.equal(scene.gate?.outcome,{ready:'ready','over-budget':'budget-lost',failed:'failed'}[readiness]);
+    if(readiness==='ready'){
+      assert(load.controlledSettledAt-load.requestedAt<400,'Prepared-face success settles within the unchanged readiness budget');
+      checkLaunchMotion(scene.frames,'controlled under-budget readiness');
+    }
+    else checkNoFontMotion(scene,`controlled ${readiness} readiness`);
+    if(readiness==='over-budget'){
+      assert(load.controlledSettledAt-load.requestedAt>=650,'Controlled readiness remains pending beyond the unchanged budget');
+      const released=scene.frames.find(frame=>frame.at>=load.requestedAt&&!frame.active&&frame.phase===null);
+      assert(released.at<load.controlledSettledAt,'Budget loss releases the app before controlled readiness settles');
+      assert(scene.frames.some(frame=>frame.at>load.controlledSettledAt&&!frame.inert&&frame.targetVisible),'Late controlled settlement cannot replay launch');
+    }
+    await checkInteractive(scene.page);await scene.page.close();
+    pass(`Fixture-controlled ${readiness} readiness with the prepared real font satisfies its mandatory motion/interaction contract`);
+  }
   const overBudget=await browserScene('over-budget-brand-font',{fontDelayAfterReadiness:650,rendererDelay:500});
   const font=overBudget.fontLoads[0];
   assert.equal(font.alreadyLoaded,false,'Over-budget font starts cold');
@@ -239,7 +318,9 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
   assert.equal(await overBudget.page.locator('.launch-overlay').count(),0,'Controls work after font fallback without replaying launch');
   await overBudget.page.close();
   pass('An over-budget cold font releases a visible, usable app before it resolves and cannot replay the launch afterward');
-  const normal=await browserScene('preview-launch');
+  const normal=await browserScene('preview-launch',{prepareFont:true});
+  assert.equal(normal.fontLoads[0].alreadyLoaded,true,'Warm browser integration uses the actual prepared font');
+  assert.equal(normal.gate?.outcome,'ready');
   checkLaunchMotion(normal.frames,'dark theme');
   pass('Preview types the large blue Muse AI wordmark in the center, animates to the actual sidebar brand, and releases interaction in under 2.35 seconds');
   pass('One cursor follows softly revealed glyphs and withdraws before gentle acceleration, deceleration and a seamless text/icon handoff');
@@ -257,8 +338,12 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
   const busy=await browserScene('busy-typing',{busyTyping:220});checkLaunchMotion(busy.frames,'busy typing');await busy.page.close();
   pass('A stalled main thread cannot move the cursor ahead of the compositor-painted letters');
 
-  const lateFont=await browserScene('late-brand-font',{fontDelay:350});checkLaunchMotion(lateFont.frames,'late brand font');await lateFont.page.close();
-  pass('A late brand font preserves centered typing, cursor tracking and exact landing');
+  const lateFont=await browserScene('late-brand-font',{fontDelay:350});
+  assert(lateFont.gate,'Late-font race outcome was observed');
+  if(lateFont.gate.outcome==='ready')checkLaunchMotion(lateFont.frames,'late brand font');
+  else {assert.equal(lateFont.gate.outcome,'budget-lost');checkNoFontMotion(lateFont,'late brand font');}
+  await lateFont.page.close();
+  pass(`A late real font follows its observed ${lateFont.gate.outcome} contract`);
   const stalledFont=await browserScene('stalled-brand-font',{fontDelay:2000});
   assert(!stalledFont.frames.some(frame=>frame.rendered),'A stalled font skips the flourish instead of measuring fallback glyphs');
   await stalledFont.page.close();

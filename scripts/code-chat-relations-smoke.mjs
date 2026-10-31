@@ -13,6 +13,7 @@ const output=await mkdtemp(path.resolve('artifacts/code-chat-relations','ui-'+va
 let server,browser,app,page;
 const report={variant,checks:[],errors:[],providerCalls:0};
 const pass=text=>{report.checks.push(text);console.log('PASS '+text);};
+let slashCommand=null,relationTrace=async()=>[];
 try{
  if(desktop){
   const dataDir=path.join(output,'profile'),project=path.join(output,'Example project');await mkdir(project);await writeFile(path.join(project,'README.md'),'Untouched fixture project');
@@ -51,8 +52,82 @@ try{
  const revealed=await dispatch({type:'createSideChat',taskId:source.id});await sideRegion.getByRole('button',{name:side.title,exact:true}).waitFor();assert.equal(revealed.task.chatRelation.parentTaskId,source.id);
  await region.getByRole('button',{name:`Collapse side chats of ${source.title}`,exact:true}).click();await sideRegion.waitFor({state:'detached'});await dispatch({type:'selectTask',id:side.id});await sideRegion.getByRole('button',{name:side.title,exact:true}).waitFor();await draftIs('Side only draft');pass('Selected-side disclosure preserves user collapse across organization snapshots and reveals a newly selected side');
  await page.getByRole('button',{name:'Current chat options',exact:true}).click();await page.getByRole('menuitem',{name:'New side chat',exact:true}).click();await page.waitForFunction(id=>window.musebench.getState().then(s=>s.task.id!==id),side.id);next=await state();assert.equal(next.task.chatRelation.parentTaskId,source.id);assert.deepEqual(next.task.messages,[]);pass('A side chat creates a sibling under the same main chat');
- await page.getByRole('button',{name:'Back to main chat',exact:true}).click();await composer.fill('/side Optional unsent question');await composer.press('Enter');await page.waitForFunction(id=>window.musebench.getState().then(s=>s.task.id!==id),source.id);next=await state();assert.equal(next.task.chatRelation.context,'fresh');assert.deepEqual(next.task.messages,[]);await draftIs('Optional unsent question');pass('/side text creates an unsent fresh linked draft');
- await page.getByRole('button',{name:'Back to main chat',exact:true}).click();await composer.fill('/branch');await composer.press('Enter');await page.waitForFunction(id=>window.musebench.getState().then(s=>s.task.id!==id),source.id);next=await state();const fork=next.task;assert.equal(fork.chatRelation.kind,'fork');assert.equal(fork.chatRelation.parentTaskId,source.id);assert.deepEqual(fork.messages.filter(m=>m.role!=='system').map(m=>m.text),source.messages.filter(m=>m.role!=='system').map(m=>m.text));assert(!fork.nativeSession);assert(!fork.goal);assert(!fork.executionReceipts?.length);await page.getByText('Saved conversation',{exact:true}).waitFor();await page.screenshot({animations:'disabled',path:path.join(output,'fork-backlink.png')});assert.equal(await region.getByRole('button',{name:fork.title,exact:true}).count(),1);pass('/branch forks saved conversation context into an independent top-level chat');
+ // Hold source navigation before dispatch, without altering its private reply
+ // envelope. This proves the fixture cannot submit against the preceding side.
+ if(desktop)await app.evaluate(({ipcMain})=>{
+  const channel='musebench:action',original=ipcMain._invokeHandlers.get(channel);
+  const fixture=globalThis.__slashNavigation={actions:[],original};
+  ipcMain.removeHandler(channel);ipcMain.handle(channel,async(event,action)=>{
+   const logged=['selectTask','createSideChat','forkTask'].includes(action.type)?{type:action.type,sourceId:action.taskId??action.id}:null;
+   if(logged)fixture.actions.push(logged);
+   if(action.type==='selectTask'&&action.id===fixture.holdSource){
+    fixture.holdSource=null;fixture.held=true;fixture.expired=false;
+    await new Promise(resolve=>{const timer=setTimeout(()=>{fixture.expired=true;fixture.held=false;resolve();},5000);fixture.release=()=>{clearTimeout(timer);fixture.held=false;resolve();};});
+   }
+   const reply=await original(event,action);if(logged)logged.returnedId=reply.snapshot?.state?.task?.id;return reply;
+  });
+ });
+ else await page.evaluate(()=>{
+  const bridge=window.musebench,original=bridge.dispatch,fixture=window.__slashNavigation={actions:[],original};
+  bridge.dispatch=async action=>{
+   const logged=['selectTask','createSideChat','forkTask'].includes(action.type)?{type:action.type,sourceId:action.taskId??action.id}:null;
+   if(logged)fixture.actions.push(logged);
+   if(action.type==='selectTask'&&action.id===fixture.holdSource){
+    fixture.holdSource=null;fixture.held=true;fixture.expired=false;
+    await new Promise(resolve=>{const timer=setTimeout(()=>{fixture.expired=true;fixture.held=false;resolve();},5000);fixture.release=()=>{clearTimeout(timer);fixture.held=false;resolve();};});
+   }
+   const reply=await original(action);if(logged)logged.returnedId=reply.task?.id;return reply;
+  };
+ });
+ const navigationFixture=async(operation,id)=>desktop?app.evaluate((_electron,{operation,id})=>{
+  const f=globalThis.__slashNavigation;
+  if(operation==='arm')f.holdSource=id;if(operation==='release')f.release();
+  return {held:f.held,expired:f.expired,actions:f.actions};
+ },{operation,id}):page.evaluate(({operation,id})=>{
+  const f=window.__slashNavigation;
+  if(operation==='arm')f.holdSource=id;if(operation==='release')f.release();
+  return {held:f.held,expired:f.expired,actions:f.actions};
+ },{operation,id});
+ relationTrace=async()=>navigationFixture('read');
+ async function submitFromMain(command,restoredDraft){
+  slashCommand=command;await navigationFixture('arm',source.id);
+  const actionCount=(await relationTrace()).actions.length;
+  await page.getByRole('button',{name:'Back to main chat',exact:true}).click();
+  const deadline=Date.now()+3000;
+  while(!(await relationTrace()).held){assert(Date.now()<deadline,'Backlink reached the bounded selectTask hold');await new Promise(resolve=>setTimeout(resolve,20));}
+  const held=await state();
+  report.navigationHolds??=[];report.navigationHolds.push({command,selectedId:held.task.id,sourceId:source.id,legacyPredicateWouldPass:held.task.id!==source.id});
+  assert.notEqual(held.task.id,source.id,'The preceding side remains selected during the hold');
+  assert.equal((await relationTrace()).actions.slice(actionCount).some(action=>action.type!=='selectTask'),false,'No relation command is submitted while source navigation is held');
+  if(process.argv.includes('--fault-stale-navigation')){
+   // Mutation of the old wait: the preceding side already satisfies it.
+   await page.waitForFunction(id=>window.musebench.getState().then(s=>s.task.id!==id),source.id);
+   assert.equal((await state()).task.id,source.id,'Legacy inequality does not establish source navigation');
+  }
+  await navigationFixture('release');
+  await page.waitForFunction(id=>window.musebench.getState().then(s=>s.task.id===id&&!s.busy),source.id);
+  await page.waitForFunction(title=>document.querySelector('.breadcrumbs strong')?.textContent===title,source.title);
+  await draftIs(restoredDraft);assert.equal(await composer.isEditable(),true,'Source composer is editable after draft restore');
+  const restoredSourceId=(await state()).task.id;assert.equal(restoredSourceId,source.id,'Rendered source and restored draft belong to the main chat');
+  assert.equal((await relationTrace()).expired,false,'Source navigation was released by the fixture, not its safety deadline');
+  await composer.fill(command);assert.equal(await composer.inputValue(),command);assert.equal(await composer.isEditable(),true);
+  const existingIds=(await state()).tasks.map(task=>task.id);
+  await composer.press('Enter');
+  await page.waitForFunction(ids=>window.musebench.getState().then(s=>Boolean(s.task)&&!ids.includes(s.task.id)&&!s.busy),existingIds);
+  // A fresh controller snapshot alone does not prove React rendered the reply.
+  await page.waitForFunction(()=>{const c=[...document.querySelectorAll('.workspace:not([hidden]) textarea')].at(-1);return c&&!c.disabled&&!c.readOnly;});
+  const created=await state();assert(!existingIds.includes(created.task.id),'Submission selects a genuinely fresh task');
+  const trace=(await relationTrace()).actions.slice(actionCount),action=trace.find(action=>action.type===(command.startsWith('/side')?'createSideChat':'forkTask'));
+  assert(action,'The submitted relation operation was observed');assert.equal(action.sourceId,source.id);assert.equal(action.returnedId,created.task.id);
+  report.commandActions??=[];report.commandActions.push({command,sourceId:source.id,restoredSourceId,restoredDraft,selectedId:created.task.id,actions:trace});
+  return created;
+ }
+ next=await submitFromMain('/side Optional unsent question','Keep parent draft');assert.equal(next.task.chatRelation.kind,'side');assert.equal(next.task.chatRelation.parentTaskId,source.id);assert.equal(next.task.chatRelation.context,'fresh');assert.deepEqual(next.task.messages,[]);await draftIs('Optional unsent question');pass('/side text creates an unsent fresh linked draft');
+ // Slash execution consumes the command prefix, leaving the main draft empty.
+ next=await submitFromMain('/branch','');const fork=next.task;assert.equal(fork.chatRelation.kind,'fork');assert.equal(fork.chatRelation.parentTaskId,source.id);assert.deepEqual(fork.messages.filter(m=>m.role!=='system').map(m=>m.text),source.messages.filter(m=>m.role!=='system').map(m=>m.text));assert(!fork.nativeSession);assert(!fork.goal);assert(!fork.executionReceipts?.length);await page.getByText('Saved conversation',{exact:true}).waitFor();await page.screenshot({animations:'disabled',path:path.join(output,'fork-backlink.png')});assert.equal(await region.getByRole('button',{name:fork.title,exact:true}).count(),1);pass('/branch forks saved conversation context into an independent top-level chat');
+ report.navigationActions=await relationTrace();
+ if(desktop)await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('musebench:action');ipcMain.handle('musebench:action',globalThis.__slashNavigation.original);});
+ else await page.evaluate(()=>{window.musebench.dispatch=window.__slashNavigation.original;});
  await page.getByRole('button',{name:`Forked from ${source.title}`,exact:true}).click();
  const actions=page.getByRole('group',{name:'Response actions',exact:true}).first();await actions.getByRole('button',{name:'Fork from here',exact:true}).click();await page.waitForFunction(id=>window.musebench.getState().then(s=>s.task.id!==id),source.id);next=await state();const firstAnswer=source.messages.findIndex(m=>m.role==='assistant');assert.equal(next.task.chatRelation.messageId,source.messages[firstAnswer].id);assert.deepEqual(next.task.messages.filter(m=>m.role!=='system').map(m=>m.text),source.messages.slice(0,firstAnswer+1).filter(m=>m.role!=='system').map(m=>m.text));pass('Fork from here binds the rendered source and copies only the chosen prefix');
  // Hold the actual menu action while an independent notification changes selection.
@@ -81,5 +156,5 @@ try{
  await page.getByRole('button',{name:'Current chat options',exact:true}).click();await page.getByRole('menuitem',{name:'Fork chat',exact:true}).click();await page.getByText('Native fork release is unknown. Inspect command sample-fork-command.',{exact:true}).waitFor();await page.getByText('Native fork needs inspection',{exact:true}).click();await page.getByText('sample-acquired-child',{exact:true}).waitFor();assert.equal((await state()).tasks.length,beforeError.tasks.length);await page.screenshot({animations:'disabled',path:path.join(output,'unknown-recovery.png')});if(desktop)await app.evaluate(({ipcMain})=>{ipcMain.removeHandler('musebench:action');ipcMain.handle('musebench:action',globalThis.__errorHandler);});else await page.evaluate(()=>{window.musebench=window.__errorBridge;});pass('A simulated native error surfaces with exact recovery command/child identities and no fallback child');
 
  assert.deepEqual(report.errors,[]);report.status='passed';
-}catch(error){report.status='failed';report.error=error.stack;await page?.screenshot({animations:'disabled',path:path.join(output,'failure.png')}).catch(()=>{});console.error(error);process.exitCode=1;}
+}catch(error){report.status='failed';report.error=error.stack;report.commandDiagnostic=await page?.evaluate(async command=>{const s=await window.musebench.getState();return {selectedId:s.task?.id,busy:s.busy,error:s.error??null,command};},slashCommand).catch(()=>null);report.actionSources=await relationTrace().catch(()=>[]);await page?.screenshot({animations:'disabled',path:path.join(output,'failure.png')}).catch(()=>{});console.error(error);process.exitCode=1;}
 finally{await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log('Report: '+output);await app?.close();await browser?.close();await server?.close();}
