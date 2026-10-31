@@ -1,7 +1,7 @@
 import {useCallback,useLayoutEffect,useRef,useState,type RefObject} from 'react';
 
 type Position={anchor:string|null;offset:number;top:number;following:boolean};
-type Session={element:HTMLDivElement;following:boolean;lastTop:number;capture:()=>void;cancelCorrection:()=>void;latest:()=>void};
+type Session={element:HTMLDivElement;following:boolean;lastTop:number;ready:()=>boolean;capture:()=>void;cancelCorrection:()=>void;latest:()=>void};
 const CAPACITY=100,CORRECTION_MS=1200;
 
 // Positions live only for this mounted workspace. The DOM identity is scoped by
@@ -19,7 +19,7 @@ export function useTranscriptPosition(transcript:RefObject<HTMLDivElement|null>,
   current.cancelCorrection();current.following=true;setScrolledUp(false);current.latest();current.capture();
  },[]);
  const onScroll=useCallback(()=>{
-  const current=session.current;if(!current)return;
+  const current=session.current;if(!current||!current.ready())return;
   // Scrollbars/accessibility scrolling may not produce a wheel/key event.
   // A narrower transcript can become shorter on resize. Its browser-clamped
   // bottom is layout, while wheel/key/touch listeners capture upward intent
@@ -33,10 +33,17 @@ export function useTranscriptPosition(transcript:RefObject<HTMLDivElement|null>,
   const cache=positions.current,saved=cache.get(key);
   // Refresh insertion order on visits, evicting the least recently visited chat.
   cache.delete(key);if(saved)cache.set(key,saved);
-  let disposed=false,frame=0,correcting=Boolean(saved&&!saved.following),touchY:number|undefined;
+  let disposed=false,frame=0,correcting=false,awaitingLayout=true,touchY:number|undefined,restoreTarget=saved,deadline:ReturnType<typeof setTimeout>|undefined;
   const previousAnchor=element.style.overflowAnchor; element.style.overflowAnchor='none';
+  const hasLayout=()=>{
+   const visible=element.clientHeight>0&&element.clientWidth>0&&element.getClientRects().length>0;
+   if(!visible)awaitingLayout=true;
+   return visible;
+  };
   const capture=()=>{
-   if(disposed)return;
+   // Narrow docks hide the transcript without changing its chat identity.
+   // Zero geometry must never replace the last visible reading snapshot.
+   if(disposed||!hasLayout()||awaitingLayout)return;
    let anchor:HTMLElement|undefined,offset=0;
    if(!current.following){
     const bounds=element.getBoundingClientRect(),anchors=element.querySelectorAll<HTMLElement>('[data-transcript-anchor]');
@@ -47,21 +54,27 @@ export function useTranscriptPosition(transcript:RefObject<HTMLDivElement|null>,
    cache.set(key,{anchor:anchor?.dataset.transcriptAnchor??null,offset,top:element.scrollTop,following:current.following});
    while(cache.size>CAPACITY)cache.delete(cache.keys().next().value!);
   };
-  const setTop=(top:number)=>{element.scrollTo({top,behavior:'instant'});current.lastTop=element.scrollTop;};
+  const setTop=(top:number)=>{if(!hasLayout())return;element.scrollTo({top,behavior:'instant'});current.lastTop=element.scrollTop;};
   const latest=()=>setTop(element.scrollHeight);
-  const cancelCorrection=()=>{correcting=false;cancelAnimationFrame(frame);frame=0;};
-  const current:Session={element,following:saved?.following??true,lastTop:element.scrollTop,capture,cancelCorrection,latest};session.current=current;
+  const cancelCorrection=()=>{correcting=false;clearTimeout(deadline);cancelAnimationFrame(frame);frame=0;};
+  const current:Session={element,following:saved?.following??true,lastTop:element.scrollTop,ready:()=>hasLayout()&&!awaitingLayout,capture,cancelCorrection,latest};session.current=current;
   const restore=()=>{
-   if(!saved)return;
-   const anchor=[...element.querySelectorAll<HTMLElement>('[data-transcript-anchor]')].find(node=>node.dataset.transcriptAnchor===saved.anchor);
-   setTop(anchor?element.scrollTop+anchor.getBoundingClientRect().top-element.getBoundingClientRect().top-saved.offset:saved.top);
+   const target=restoreTarget;if(!target)return;
+   const anchor=[...element.querySelectorAll<HTMLElement>('[data-transcript-anchor]')].find(node=>node.dataset.transcriptAnchor===target.anchor);
+   setTop(anchor?element.scrollTop+anchor.getBoundingClientRect().top-element.getBoundingClientRect().top-target.offset:target.top);
   };
-  const update=()=>{frame=0;if(disposed)return;if(current.following)latest();else if(correcting)restore();capture();};
+  const update=()=>{
+   frame=0;if(disposed||!hasLayout())return;
+   if(awaitingLayout){
+    awaitingLayout=false;restoreTarget=cache.get(key)??saved;
+    if(!current.following&&restoreTarget){correcting=true;clearTimeout(deadline);deadline=setTimeout(()=>{correcting=false;},CORRECTION_MS);}
+   }
+   if(current.following)latest();else if(correcting)restore();capture();
+  };
   const schedule=()=>{if(!frame&&!disposed)frame=requestAnimationFrame(update);};
   // Layout effects restore before paint. Corrections only react to actual DOM
   // layout changes, never to cloned message-array identity or draft typing.
-  if(current.following)latest();else restore();setScrolledUp(!current.following);capture();schedule();
-  const deadline=setTimeout(()=>{correcting=false;},CORRECTION_MS);
+  setScrolledUp(!current.following);update();schedule();
   const mutation=new MutationObserver(schedule);mutation.observe(element,{subtree:true,childList:true,characterData:true});
   const resize=new ResizeObserver(schedule);resize.observe(element);if(element.firstElementChild)resize.observe(element.firstElementChild);
   const wheel=(event:WheelEvent)=>{cancelCorrection();if(event.deltaY<0)releaseForNavigation();};
