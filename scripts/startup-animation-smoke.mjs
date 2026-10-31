@@ -6,6 +6,7 @@ import {mkdir,mkdtemp,readFile,writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {analyzeFlightSampling,assertFlightCurve,renderFlightCurve} from './startup-motion-analysis.mjs';
+import {assertNativeLaunchHidden} from './startup-native-visibility.mjs';
 
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const variant=process.env.MUSEBENCH_EXECUTABLE?'packaged':'source';
@@ -436,8 +437,8 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
   pass('A compositor animation failure still opens a usable application');
 }
 
-async function launchDesktop({dropCompletion=false}={}){
-  const folder=path.join(output,dropCompletion?'desktop-fail-open':'desktop-cold');await mkdir(folder,{recursive:true});
+async function launchDesktop({dropCompletion=false,earlyReveal=false}={}){
+  const folder=path.join(output,dropCompletion?'desktop-fail-open':earlyReveal?'desktop-early-reveal':'desktop-cold');await mkdir(folder,{recursive:true});
   const env={...process.env,MUSEBENCH_DATA_DIR:path.join(folder,'data'),MUSEBENCH_PROJECTS_DIR:path.join(folder,'projects')};
   delete env.ELECTRON_RUN_AS_NODE;delete env.MUSEBENCH_DEV;
   let entry='.';
@@ -445,10 +446,14 @@ async function launchDesktop({dropCompletion=false}={}){
     // Register fictional HTTPS responses before importing the real application.
     // Nothing touches the installed profile or sends a model request.
     entry=path.join(folder,'entry.mjs');
-    await writeFile(entry,`import {app,session,ipcMain} from 'electron';
+    await writeFile(entry,`import {app,session,ipcMain,BrowserWindow,WebContentsView} from 'electron';
 import childProcess from 'node:child_process';
 import {syncBuiltinESMExports} from 'node:module';
-const fixture=globalThis.__launchFixture={requests:[],nativeFrames:[],droppedCompletions:0};
+const fixture=globalThis.__launchFixture={requests:[],nativeFrames:[],visibilityChanges:[],completions:[],droppedCompletions:0};
+let sequence=0;
+const snapshot=()=>BrowserWindow.getAllWindows().filter(window=>!window.getParentWindow()).flatMap(window=>window.contentView.children.filter(view=>view.webContents&&!view.webContents.isDestroyed()).map(view=>({id:view.webContents.id,url:view.webContents.getURL(),visible:view.getVisible()})));
+const originalSetVisible=WebContentsView.prototype.setVisible;
+WebContentsView.prototype.setVisible=function(...args){const result=originalSetVisible.apply(this,args);fixture.visibilityChanges.push({sequence:++sequence,at:Date.now(),id:this.webContents.id,visible:this.getVisible()});return result;};
 const originalExecFile=childProcess.execFile;
 childProcess.execFile=function(...args){
  if(['where.exe','which'].includes(args[0])&&args[1]?.[0]==='ffmpeg'){
@@ -459,13 +464,14 @@ childProcess.execFile=function(...args){
 };
 syncBuiltinESMExports();
 const originalHandle=ipcMain.handle.bind(ipcMain);
-ipcMain.handle=(name,handler)=>originalHandle(name,${dropCompletion?'true':'false'}&&name==='musebench:launch-complete'?async()=>{fixture.droppedCompletions++;}:handler);
+ipcMain.handle=(name,handler)=>originalHandle(name,name==='musebench:launch-complete'?async(...args)=>{fixture.completions.push({sequence:++sequence,at:Date.now(),views:snapshot()});if(${dropCompletion?'true':'false'}){fixture.droppedCompletions++;return;}return handler(...args);}:handler);
 app.on('browser-window-created',(_event,window)=>{
  if(window.getParentWindow())return;
  window.webContents.on('dom-ready',()=>window.webContents.executeJavaScript(${JSON.stringify(`(${observeLaunch.toString()})();`)}).catch(()=>{}));
  const started=Date.now(),timer=setInterval(()=>{
   if(window.isDestroyed()||Date.now()-started>6500){clearInterval(timer);return;}
-  fixture.nativeFrames.push({at:Date.now(),views:window.contentView.children.filter(view=>view.webContents).map(view=>({id:view.webContents.id,url:view.webContents.getURL(),visible:view.getVisible()}))});
+  fixture.nativeFrames.push({sequence:++sequence,at:Date.now(),views:snapshot()});
+  if(${earlyReveal?'true':'false'}&&!fixture.forcedReveal&&!fixture.completions.length&&snapshot().length)void window.webContents.executeJavaScript(${JSON.stringify("Boolean(document.querySelector('.launch-overlay[data-phase=typing]'))")}).then(active=>{if(active&&!fixture.forcedReveal&&!fixture.completions.length){const view=window.contentView.children.find(view=>view.webContents);if(view){fixture.forcedReveal=true;view.setVisible(true);view.setVisible(false);}}}).catch(()=>{});
  },16);timer.unref();window.once('closed',()=>clearInterval(timer));
 });
 app.whenReady().then(async()=>{
@@ -530,9 +536,7 @@ async function checkDesktop(){
     assert(fixture.requests.some(request=>/^https:\/\/(www\.)?meta\.ai\/$/.test(request.url)),'Official initial chat URL was preloaded');
     assert(fixture.requests.every(request=>request.method==='GET'),'Startup makes no model or write request');
     assert(fixture.nativeFrames.some(frame=>frame.views.length>0&&frame.views.every(view=>!view.visible)));
-    const active=motion.frames.filter(frame=>frame.active);
-    const first=motion.timeOrigin+active[0].at,last=motion.timeOrigin+active.at(-1).at;
-    assert(fixture.nativeFrames.filter(frame=>frame.at>=first&&frame.at<=last).every(frame=>frame.views.every(view=>!view.visible)),'Every sampled native view stays hidden throughout the actual launch animation');
+    report.scenes['desktop-native-visibility']=assertNativeLaunchHidden(fixture);
     pass('Optional FFmpeg discovery runs behind the first window and every native sample remains hidden throughout visible typing and flight');
   }
   await page.screenshot({path:path.join(output,'desktop-settled.png')});
@@ -545,6 +549,12 @@ async function checkDesktop(){
   pass('Renderer reload and second-instance activation do not replay the desktop intro');
   await app.close();app=null;
   if(variant==='source'){
+    ({page}=await launchDesktop({earlyReveal:true}));await settled(page);
+    const earlyReveal=report.scenes['desktop-early-reveal-control']=await app.evaluate(()=>globalThis.__launchFixture);
+    assert.equal(earlyReveal.forcedReveal,true,'Negative control reveals a native view during observed typing');
+    assert.throws(()=>assertNativeLaunchHidden(earlyReveal),/visible before renderer completion/);
+    pass('A native reveal between polling samples during typing is rejected by ordered visibility proof');
+    await app.close();app=null;
     ({page}=await launchDesktop({dropCompletion:true}));
     await settled(page);
     assert((await app.evaluate(()=>globalThis.__launchFixture.droppedCompletions))>0,'Fault fixture drops renderer completion');
