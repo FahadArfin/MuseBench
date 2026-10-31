@@ -487,7 +487,7 @@ export default function App() {
   useNativeControl(async input=>{
     if(navigationBusy||busy)throw Error('Wait for the current operation.');
     setProfileMenuOpen(false);setMobileNav(false);setShelfOpen(false);
-    if(input.target==='settings'){setNativeDestination(current=>({category:(input.section??'general') as SettingsCategory,revision:current.revision+1}));setModal('settings');return {state:{modal:'settings',section:input.section??'general'},selector:'.settings-modal'};}
+    if(input.target==='settings'){const section=input.section==='customize'?'skills':input.section??'general';setNativeDestination(current=>({category:section as SettingsCategory,revision:current.revision+1}));setModal('settings');return {state:{modal:'settings',section},selector:'.settings-modal'};}
     if(input.target==='customize'){setNativeDestination(current=>({...current,revision:current.revision+1}));openCustomize((input.section??'skills') as CustomizeTab);return {state:{modal:'extensions',section:input.section??'skills'},selector:'.extensions-modal'};}
     closeModal();
     if(input.target==='closeDialog')return {state:{modal:null,product,view,personalMode,personalDestination,taskId:showTask?task?.id:null,projectId:project?.id??null},selector:'.app'};

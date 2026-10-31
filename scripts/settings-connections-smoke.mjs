@@ -16,6 +16,7 @@ try{
  if(desktop){const env={...process.env,MUSEBENCH_PARITY_DATA:path.join(output,'profile')};delete env.ELECTRON_RUN_AS_NODE;app=await electron.launch({args:['scripts/preview-parity-electron.mjs'],env});const ready=app.waitForEvent('window');await app.evaluate(({BrowserWindow},url)=>{const w=new BrowserWindow({width:1508,height:1043,useContentSize:true,show:false,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}});void w.loadURL(url);},url);page=await ready;}
  else {browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:1508,height:1043}});}
  page.setDefaultTimeout(10000);page.on('pageerror',e=>report.errors.push(e.message));
+ await page.addInitScript(()=>{let bridge;Object.defineProperty(window,'musebench',{configurable:true,get:()=>bridge,set:value=>{bridge=value;bridge.onNativeRequest=callback=>{window.nativeSettingsRequest=callback;return()=>{window.nativeSettingsRequest=undefined;};};}});});
  await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());await page.goto(url);
  await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.evaluate(()=>{window.connectionCommands=[];const original=window.musebench.personal;window.musebench.personal=async command=>{window.connectionCommands.push(command);return original(command);};});
@@ -55,6 +56,12 @@ try{
  await settings().getByRole('button',{name:'Close dialog'}).focus();await page.keyboard.press('Shift+Tab');assert(await page.evaluate(()=>Boolean(document.activeElement.closest('[role=dialog]'))));await page.keyboard.press('Escape');await settings().waitFor({state:'hidden'});
  await page.getByRole('button',{name:'Open navigation',exact:true}).click();await page.getByRole('button',{name:'Close navigation',exact:true}).waitFor();await open();await category('Connections');await settings().getByRole('button',{name:'Connect Meta AI apps',exact:true}).click();await settings().waitFor({state:'hidden'});await page.getByRole('button',{name:'Close navigation',exact:true}).waitFor({state:'hidden'});
  pass('Search, keyboard focus, light theme, reduced motion and narrow layouts work with opaque content');
+ await resize(1508,1043);
+ for(const [section,heading] of [['customize','Skills'],['skills','Skills'],['connectors','Connectors'],['plugins','Plugins'],['mcp','MCP servers'],['hooks','Hooks']]){
+  const result=await page.evaluate(section=>window.nativeSettingsRequest({id:'settings-'+section,operation:'navigate',args:{target:'settings',section},deadline:Date.now()+3000}),section);
+  assert.equal(result.navigation.committed,true);assert(result.headings.includes('Settings'));assert(result.headings.includes(heading));
+ }
+ pass('Native Settings navigation acknowledges all embedded categories and the legacy Customize alias');
  assert.deepEqual(report.errors,[]);report.status='passed';
 }catch(e){report.status='failed';report.failure=e.stack;await page?.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});console.error(e);process.exitCode=1;}
 finally{await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log('Report: '+output);await app?.close();await browser?.close();await server?.close();}

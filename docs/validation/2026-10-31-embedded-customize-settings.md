@@ -18,3 +18,9 @@ Screenshots inspected: preview-HCY04p/skills-dark.png and preview-61pcBr/skills-
 Independent review identified a busy-state navigation bypass through Setup status → Muse connection. All outward embedded routes now respect the busy guard, and unmount cleanup releases the parent lock. A delayed plugin preparation regression reproduces that route and verifies recovery. Independent re-review confirmed the fix with no remaining actionable P1/P2 findings. Final build passed.
 
 final result: passed
+
+## Installed follow-up: legacy native route
+
+The hash-verified 0.2.293 release was installed with a complete profile backup and no active work. All five direct catalog destinations, General and Connections were inspected through the installed native bridge. Screenshot: `artifacts/desktop-update-settings-293/settings-skills.png`.
+
+The legacy `settings/customize` route visibly opened Skills but timed out: App still expected the old `customize` section while Settings selected `skills`. Reproduced in the full shared-app native request hook (`preview-NSXli3`), then normalized the alias before both navigation and its expected commit. Browser (`preview-Hi78ZR`) and Electron (`desktop-xItqEB`) checks now acknowledge all five categories plus the legacy alias. Build passed; independent re-review and its separate preview run (`preview-4cDZQE`) found no remaining actionable P1/P2 issues. This follow-up requires the next published build; 0.2.293 evidence alone does not prove the correction is installed.
