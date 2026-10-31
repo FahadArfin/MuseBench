@@ -52,6 +52,7 @@ jobs:
             artifacts/startup-animation/**/report.json
             artifacts/catalog-preview/**/report.json
             artifacts/catalog-desktop/**/report.json
+            artifacts/project-mcp/**/report.json
             artifacts/billing-ui/**/report.json
             artifacts/motion/**/report.json
             artifacts/activity-ui/**/report.json

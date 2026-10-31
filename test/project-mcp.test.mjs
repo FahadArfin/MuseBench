@@ -21,6 +21,52 @@ async function fixture(t){
 }
 const server={type:'stdio',command:'node',args:['server.mjs'],env:{REGION:'user',PRIVATE_VALUE:'private-value'},required:true};
 
+test('setting sources follow personal, root and nested declarations per canonical field without exposing values',async t=>{
+ const f=await fixture(t),rootFile=path.join(f.root,'.mcp.json'),nestedFile=path.join(f.workspace,'.mcp.json');
+ await f.put(f.settings,{mcp_servers:{docs:{transport:'stdio',mode:'required',command:'node',args:['private-argument'],env:{REGION:'private-user',TOKEN:'private-token'},enabled:true,startup_timeout_sec:10,enabled_tools:['private-tool']}}});
+ await f.put(rootFile,{mcpServers:{docs:{args:['private-root-argument'],env:{REGION:'private-root',ROOT:'private-root-only'},required:false,startup_timeout_sec:20,enabled_tools:['private-root-tool']}}});
+ await f.put(nestedFile,{mcpServers:{docs:{args:[],env:{REGION:'private-nested'},enabled:false,enabled_tools:[]}}});
+ const shown=await f.inspect(),entry=shown.servers[0],sources=Object.fromEntries(shown.sources.map(({path,revision})=>[path,{path,revision}]));
+ assert.ok(Array.isArray(entry.settingSources),'Each server must explain its effective setting sources');
+ const origins=Object.fromEntries(entry.settingSources.map(origin=>[origin.field,origin]));
+ const expect=(field,file,prior=[])=>assert.deepEqual(origins[field],{field,source:file?sources[file]:null,overrides:prior.map(file=>sources[file])});
+ expect('type',f.settings);expect('command',f.settings);expect('args',nestedFile,[f.settings,rootFile]);
+ expect('env.REGION',nestedFile,[f.settings,rootFile]);expect('env.TOKEN',f.settings);expect('env.ROOT',rootFile);
+ expect('required',rootFile,[f.settings]);expect('enabled',nestedFile,[f.settings]);expect('startup_timeout_sec',rootFile,[f.settings]);expect('enabled_tools',nestedFile,[f.settings,rootFile]);
+ for(const field of ['cwd','framing','tool_timeout_sec'])expect(field,null);
+ assert.equal(origins.transport,undefined);assert.equal(origins.mode,undefined);assert.equal(origins.disabled_tools,undefined);
+ assert.deepEqual(entry.args,[]);assert.equal(entry.enabled,false);assert.equal(entry.required,false);assert.equal(entry.startupTimeout,20);
+ const serialized=JSON.stringify(entry.settingSources);assert(!serialized.includes('private-'));assert(!serialized.includes('value'));
+ const again=await f.inspect();assert.equal(again.revision,shown.revision);assert.deepEqual(again.servers[0].settingSources,entry.settingSources);
+ await f.review.approveProjectMcp(f.workspace,shown.revision,{environment:f.environment});
+ await f.put(nestedFile,{mcpServers:{docs:{args:[],env:{REGION:'private-mutated'},enabled:false,enabled_tools:[]}}});
+ const changed=await f.inspect();assert.equal(changed.reviewed,false);assert.notEqual(changed.revision,shown.revision);
+ assert.notEqual(changed.servers[0].settingSources.find(item=>item.field==='env.REGION').source.revision,origins['env.REGION'].source.revision);
+ assert.deepEqual(entry.settingSources,again.servers[0].settingSources,'The earlier inspected snapshot remains immutable');
+ await assert.rejects(f.review.approveProjectMcp(f.workspace,shown.revision,{environment:f.environment}),/changed/i);
+});
+
+for(const alias of ['canonical','legacy','http'])test(`setting sources preserve ${alias} HTTP aliases and inherited header keys`,async t=>{
+ const f=await fixture(t),rootFile=path.join(f.root,'.mcp.json');
+ const transport=alias==='legacy'?{transport:'streamable_http',mode:'optional'}:{type:alias==='http'?'http':'streamable-http',required:false};
+ await f.put(f.settings,{mcpServers:{docs:{...transport,url:'https://example.invalid/mcp',headers:{Authorization:'private-auth','X.Region':'private-region'}}}});
+ await f.put(rootFile,{mcpServers:{docs:{headers:{Authorization:'private-root-auth'}}}});
+ const shown=await f.inspect(),entry=shown.servers[0],personal=shown.sources[0],root=shown.sources[1];
+ const origin=field=>entry.settingSources?.find(item=>item.field===field);
+ assert.deepEqual(origin('headers.Authorization'),{field:'headers.Authorization',source:{path:root.path,revision:root.revision},overrides:[{path:personal.path,revision:personal.revision}]});
+ assert.deepEqual(origin('headers["X.Region"]'),{field:'headers["X.Region"]',source:{path:personal.path,revision:personal.revision},overrides:[]});
+ assert.equal(origin('type').source.path,f.settings);assert.equal(origin('required').source.path,f.settings);assert.equal(entry.transport,'streamable_http');
+ assert(!JSON.stringify(entry.settingSources).includes('private-'));assert.equal(origin('env'),undefined);
+});
+
+test('inferred transport and absent flags are built-in defaults while explicit empty maps retain their source',async t=>{
+ const f=await fixture(t),file=path.join(f.root,'.mcp.json');await f.put(file,{mcpServers:{docs:{command:'node',env:{}}}});
+ const shown=await f.inspect(),origins=shown.servers[0].settingSources;
+ assert.deepEqual(origins?.find(item=>item.field==='type'),{field:'type',source:null,overrides:[]});
+ for(const field of ['enabled','required'])assert.deepEqual(origins.find(item=>item.field===field),{field,source:null,overrides:[]});
+ assert.equal(origins.find(item=>item.field==='env').source.path,file);
+});
+
 test('project review shows merged sources and instructions without exposing secret values',async t=>{
  const f=await fixture(t);
  await f.put(f.settings,{schema_version:1,mcpServers:{docs:server}});

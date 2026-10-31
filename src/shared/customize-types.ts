@@ -25,8 +25,9 @@ export interface CustomizeResult {integrationPanel?:IntegrationPanelState;integr
 export interface ProjectMcpReview {
  simulation?:boolean;root:string;boundary:string;present:boolean;revision:string;reviewed:boolean;
  sources:{path:string;revision:string;bytes:number}[];instructions:{path:string;text:string}[];
- servers:{name:string;transport:'stdio'|'streamable_http';address:string;args:string[];cwd:string|null;environmentKeys:string[];headerKeys:string[];enabled:boolean;required:boolean;framing:string;startupTimeout:number;toolTimeout:number;toolFiltersPresent:boolean}[];
+ servers:{name:string;transport:'stdio'|'streamable_http';address:string;args:string[];cwd:string|null;environmentKeys:string[];headerKeys:string[];enabled:boolean;required:boolean;framing:string;startupTimeout:number;toolTimeout:number;toolFiltersPresent:boolean;settingSources:ProjectMcpSettingSource[]}[];
 }
+export interface ProjectMcpSettingSource {field:string;source:{path:string;revision:string}|null;overrides:{path:string;revision:string}[]}
 
 export interface ProjectInstructionInspection {
  simulation?:boolean;root:string;checkedAt:string;boundary:{kind:'git'|'filesystem'|'limit'|'unknown';root:string};

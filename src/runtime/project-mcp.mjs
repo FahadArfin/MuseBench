@@ -58,6 +58,27 @@ function merge(previous,next){
  if(!object(previous)||!object(next))return structuredClone(next);
  const result={...previous};for(const [key,value] of Object.entries(next))result[key]=Object.hasOwn(previous,key)?merge(previous[key],value):structuredClone(value);return result;
 }
+// Mirror merge's object inheritance and scalar/array replacement using only
+// source references. Never add provenance to effective values or digest input.
+function mergeSettingOrigins(previous,next,prior,source){
+ if(object(next)&&Object.keys(next).length){
+  const children=object(previous)?{...prior?.children}:{};
+  for(const [key,value] of Object.entries(next))children[key]=mergeSettingOrigins(previous?.[key],value,children[key],source);
+  return{children};
+ }
+ if(object(previous)&&object(next)&&Object.keys(previous).length)return prior;
+ return{source,overrides:prior&&!prior.children?[...prior.overrides,prior.source]:[]};
+}
+function settingSources(entry,origins){
+ const result=[];
+ const visit=(node,field)=>{
+  if(node.children)for(const [key,child] of Object.entries(node.children))visit(child,field+(/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)?'.'+key:'['+JSON.stringify(key)+']'));
+  else result.push({field,source:node.source,overrides:node.overrides});
+ };
+ for(const [field,node] of Object.entries(origins.children??{}))visit(node,field);
+ for(const field of ['type','args','cwd','enabled','required','framing','startup_timeout_sec','tool_timeout_sec'])if(!Object.hasOwn(entry,field))result.push({field,source:null,overrides:[]});
+ return result.sort((a,b)=>a.field<b.field?-1:a.field>b.field?1:0);
+}
 function serverPreview(name,entry){
  const allowed=['type','command','args','env','cwd','framing','url','headers','enabled','required','startup_timeout_sec','tool_timeout_sec','enabled_tools','disabled_tools'];
  if(!name||name.trim()!==name||name.length>200||!object(entry)||Object.keys(entry).some(key=>!allowed.includes(key)))throw Error('MCP configuration contains an unsupported server field.');
@@ -97,15 +118,16 @@ export async function projectMcpSnapshot(folder,{environment=process.env,platfor
  if(!projectSources.length)return{root,boundary,present:false,revision:'absent',sources:[],servers:[],instructions:[]};
  const personal=await source(mcpSettingsPath(environment,platform)),sources=[...(personal?[personal]:[]),...projectSources];
  if(sources.reduce((sum,s)=>sum+s.bytes,0)>2*limit)throw Error('MCP source files exceed the combined review limit.');
- let effective={};if(personal){const user=settingsMcp(personal.doc).servers;validateTree(user);effective=Object.fromEntries(Object.entries(user).map(([name,entry])=>[name,canonicalMcpEntry(entry)]));}
+ let effective={},origins={children:{}};if(personal){const user=settingsMcp(personal.doc).servers;validateTree(user);effective=Object.fromEntries(Object.entries(user).map(([name,entry])=>[name,canonicalMcpEntry(entry)]));origins=mergeSettingOrigins({},effective,origins,{path:personal.path,revision:personal.revision});}
  for(const item of projectSources){
   validateTree(item.doc);
   if(Object.keys(item.doc).some(key=>!['mcpServers','$schema'].includes(key))||!object(item.doc.mcpServers)||item.doc.$schema!==undefined&&typeof item.doc.$schema!=='string')throw Error('This project MCP configuration must use canonical mcpServers.');
   for(const entry of Object.values(item.doc.mcpServers))if(!object(entry)||Object.hasOwn(entry,'transport')||Object.hasOwn(entry,'mode'))throw Error('Project MCP configuration must use canonical server fields.');
+  origins=mergeSettingOrigins(effective,item.doc.mcpServers,origins,{path:item.path,revision:item.revision});
   effective=merge(effective,item.doc.mcpServers);
  }
  if(Object.keys(effective).length>250)throw Error('MCP configuration exceeds 250 servers.');
- const servers=Object.entries(effective).map(([name,entry])=>serverPreview(name,entry));
+ const servers=Object.entries(effective).map(([name,entry])=>({...serverPreview(name,entry),settingSources:settingSources(entry,origins.children[name])}));
  // Bind environment-dependent execution without returning or persisting values.
  const envBinding={},normalize=key=>platform==='win32'?key.toUpperCase():key;
  const environmentValues=new Map();

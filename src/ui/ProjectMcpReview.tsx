@@ -18,6 +18,13 @@ export function ProjectMcpReview({data,busy,disabled,accepted,setAccepted,execut
      {!!server.environmentKeys.length&&<p>Environment names: {server.environmentKeys.join(', ')} <small>(values hidden)</small></p>}
      {!!server.headerKeys.length&&<p>Header names: {server.headerKeys.join(', ')} <small>(values hidden)</small></p>}
      {server.toolFiltersPresent&&<p className="extensions-alert">This file contains tool filters. Muse 1.4.14 enforcement has not been verified; do not rely on them to restrict access.</p>}
+     <details className="project-mcp-setting-sources"><summary>Setting sources ({server.settingSources.length})</summary>
+      <dl>{server.settingSources.map(setting=><div className="project-mcp-setting" key={setting.field}>
+       <dt><code>{setting.field}</code></dt><dd>{setting.source?<><span className="extensions-path">{setting.source.path}</span><small>SHA-256 {setting.source.revision}</small></>:<span>Built-in default</span>}
+        {!!setting.overrides.length&&<details><summary>Earlier declarations ({setting.overrides.length})</summary><ol>{setting.overrides.map(source=><li key={source.path}><span className="extensions-path">{source.path}</span><small>SHA-256 {source.revision}</small></li>)}</ol></details>}
+       </dd>
+      </div>)}</dl>
+     </details>
     </article>)}</div>
     {!data.servers.length&&<p>This project configuration declares no servers.</p>}
     <details className="project-mcp-sources"><summary>Configuration sources ({data.sources.length})</summary>{data.sources.map(source=><p className="extensions-path" key={source.path}>{source.path}<br/>{source.bytes.toLocaleString()} bytes · SHA-256 {source.revision}</p>)}</details>
