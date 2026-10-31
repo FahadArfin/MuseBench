@@ -5,6 +5,15 @@ import {EventEmitter} from 'node:events';
 import {validatePersonalCommand} from '../electron/personal-policy.mjs';
 const adapter=await import('../electron/meta-apps.mjs').catch(()=>({}));
 
+test('observed Meta Apps nested button rows and plain Apps title remain readable',async t=>{
+ const {META_APPS}=await import('../src/shared/meta-apps.mjs');
+ const browser=await chromium.launch({headless:true});t.after(()=>browser.close());const page=await browser.newPage();
+ const rows=META_APPS.map(app=>`<div role="button" tabindex="0"><div><img alt=""><span>${app.title}</span></div><div><button>Connect</button></div></div>`).join('');
+ await page.route('**/*',route=>route.fulfill({contentType:'text/html',body:`<section role="dialog" aria-label="Settings"><div>Apps</div><h3>Unconnected apps</h3>${rows}</section>`}));await page.goto('https://www.meta.ai/');
+ const contents={getURL:()=>page.url(),isDestroyed:()=>false,executeJavaScript:script=>page.evaluate(script)};
+ const result=await adapter.readMetaApps(contents);assert.equal(result.status,'ready');assert.equal(result.items.length,8);assert(result.items.every(row=>row.status==='unconnected'));
+});
+
 test('Meta apps policy accepts only known navigation and provider IDs',()=>{
  assert.deepEqual(validatePersonalCommand({type:'metaApps',action:'refresh'}),{type:'metaApps',action:'refresh'});
  assert.deepEqual(validatePersonalCommand({type:'metaApps',action:'connect',appId:'gmail'}),{type:'metaApps',action:'connect',appId:'gmail'});

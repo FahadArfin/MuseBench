@@ -169,7 +169,19 @@ export async function runMetaSettings(contents,section,{signal}={}){
       if(!enabled(trigger))return false;
       // MuseBench's integrated layout intentionally hides this exact sidebar;
       // no other hidden page control is eligible for a click.
-      if(!current())return false;triggerClicked=true;trigger.click();
+      if(!current())return false;triggerClicked=true;
+      // The observed Meta profile dropdown opens on pointerdown, not click.
+      // Keep this event restricted to its exact harmless navigation trigger.
+      const pointer=new PointerEvent('pointerdown',{bubbles:true,cancelable:true,pointerType:'mouse',button:0,ctrlKey:false});
+      trigger.dispatchEvent(pointer);
+      // A handled pointerdown must never be followed by a second toggle.
+      // Allow its menu/expanded state to settle before a click-only fallback.
+      if(!pointer.defaultPrevented){
+       const opened=()=>trigger.getAttribute('aria-expanded')==='true'||Boolean(settingsDialog())||Array.from(document.querySelectorAll('[role="menu"]')).some(visible);
+       const settleUntil=Math.min(deadline,Date.now()+240);
+       while(current()&&onMeta()&&!opened()&&Date.now()<settleUntil)await new Promise(resolve=>setTimeout(resolve,40));
+       if(current()&&onMeta()&&trigger.isConnected&&enabled(trigger)&&!opened())trigger.click();
+      }
      }
     }
     await new Promise(resolve=>setTimeout(resolve,80));

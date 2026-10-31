@@ -3,6 +3,31 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import * as navigation from '../electron/meta-navigation.mjs';
 
+test('observed pointerdown profile menu opens once without a click retoggling it',{timeout:15000},async t=>{
+ const browser=await chromium.launch({headless:true});t.after(()=>browser.close());const page=await browser.newPage();
+ await page.route('**/*',route=>route.fulfill({contentType:'text/html',body:`<nav data-slot="sidebar" aria-label="Sidebar"><button data-testid="user-menu-button" data-slot="dropdown-menu-trigger" aria-expanded="false">Profile</button></nav><div role="menu" hidden><button role="menuitem">Apps</button></div><script>
+ window.pointerCount=0;window.clickCount=0;
+ const trigger=document.querySelector('nav button'),menu=document.querySelector('[role="menu"]');
+ trigger.onpointerdown=event=>{if(event.pointerType!=='mouse'||event.button!==0||event.ctrlKey)return;window.pointerCount++;event.preventDefault();setTimeout(()=>{trigger.setAttribute('aria-expanded','true');menu.hidden=false;},120);};
+ trigger.onclick=()=>{window.clickCount++;menu.hidden=true;trigger.setAttribute('aria-expanded','false');};
+ menu.querySelector('button').onclick=()=>{menu.hidden=true;const dialog=document.createElement('section');dialog.setAttribute('role','dialog');dialog.setAttribute('aria-label','Apps');dialog.innerHTML='<h2>Unconnected apps</h2>';document.body.append(dialog);};
+ </script>`}));await page.goto('https://www.meta.ai/');
+ const contents={getURL:()=>page.url(),isDestroyed:()=>false,executeJavaScript:script=>page.evaluate(script)};
+ assert.equal(await navigation.runMetaSettings(contents,'apps'),true);assert.deepEqual(await page.evaluate(()=>({pointerCount,clickCount})),{pointerCount:1,clickCount:0});
+ await page.evaluate(()=>{
+  document.querySelector('[role="dialog"]').remove();const trigger=document.querySelector('nav button');trigger.setAttribute('aria-expanded','false');
+  trigger.onpointerdown=()=>{window.pointerCount++;setTimeout(()=>{trigger.setAttribute('aria-expanded','true');document.querySelector('[role="menu"]').hidden=false;},120);};
+ });
+ assert.equal(await navigation.runMetaSettings(contents,'apps'),true,'Delayed expansion without preventDefault also suppresses the fallback click');assert.deepEqual(await page.evaluate(()=>({pointerCount,clickCount})),{pointerCount:2,clickCount:0});
+});
+
+test('cancelling profile pointer fallback never clicks a stale menu trigger',{timeout:10000},async t=>{
+ const browser=await chromium.launch({headless:true});t.after(()=>browser.close());const page=await browser.newPage();
+ await page.route('**/*',route=>route.fulfill({contentType:'text/html',body:`<nav data-slot="sidebar" aria-label="Sidebar"><button data-testid="user-menu-button" data-slot="dropdown-menu-trigger" aria-expanded="false" onclick="window.clickCount++" onpointerdown="window.pointerCount++">Profile</button></nav><script>window.clickCount=0;window.pointerCount=0;</script>`}));await page.goto('https://www.meta.ai/');
+ const contents={getURL:()=>page.url(),isDestroyed:()=>false,executeJavaScript:script=>page.evaluate(script)},controller=new AbortController();
+ const pending=navigation.runMetaSettings(contents,'apps',{signal:controller.signal});await page.waitForFunction(()=>window.pointerCount===1);controller.abort();assert.equal(await pending,false);await page.waitForTimeout(350);assert.equal(await page.evaluate(()=>window.clickCount),0);
+});
+
 test('Meta settings accepts only read-only General and Apps shortcuts on official documents',async()=>{
  assert.equal(typeof navigation.runMetaSettings,'function');
  for(const section of ['upgrade','connect','logout',null,{}])assert.equal(await navigation.runMetaSettings({executeJavaScript(){assert.fail('unsupported action');}},section),false);

@@ -20,6 +20,16 @@ Source: user screenshot `codex-clipboard-3b066c07-b6e2-43c0-a6f1-00dbc6550644.pn
 - Assets: three multicolor Google marks and one Outlook mark bundled with pinned provenance. Four unavailable brand marks use distinct Lucide service-category icons, a deliberate deviation from the reference.
 - Copy: all eight exact service names preserved. Connection availability and preview limitations are explicit; secondary destinations are compact footer actions rather than replacing the app list.
 
-No live provider permission was granted. Fixture routing is not authorization acceptance. Final installed verification is separate from the checks above.
+No live provider permission was granted. Fixture routing is not authorization acceptance.
+
+## Installed verification and live navigation correction
+
+Version 0.2.295 (37ac42b) passed all six CI groups and was installed from its hash-verified published Windows x64 installer. All seven native Settings views passed; the eight app rows rendered in the installed Connections page. A full profile backup preserved 1,516 files (632,923,753 bytes).
+
+The live status read exposed a defect absent from fixtures: Meta's profile dropdown is driven by `pointerdown`; calling `click()` leaves it closed. The same signed-in session's official Apps page displayed all eight apps as unconnected. A bounded diagnostic compared the old action (no menu, two attempts) with a single pointer press on the exact observed profile trigger. The latter opened Settings and read all eight real statuses successfully. No account connection, consent, payment, or model request was made. Before evidence: `artifacts/desktop-update-settings-295/meta-apps-live-probe-before.json`.
+
+The focused correction dispatches pointerdown only on the exact profile navigation trigger. It waits for menu state before a click-only compatibility fallback, and preserves cancellation/origin/deadline checks. The corrected source adapter was exercised in the installed Electron runtime and the same real Meta session: settings opened in 2,074 ms and all eight real statuses were read by 2,079 ms. Evidence: `artifacts/desktop-update-settings-295/meta-apps-live-probe.json`. This verifies read-only provider acceptance; granting app access remains a user action.
+
+Correction verification: full unit suite 2,143 passed, one existing skip, zero failures (`artifacts/meta-apps-pointer-full-tests.log`). Independent review cleared the scoped change, independently passed all ten adapter/navigation tests, and confirmed navigation during the fallback wait cancels without a late click. Existing browser/desktop layout receipts remain applicable because this correction does not change UI files.
 
 final result: passed
