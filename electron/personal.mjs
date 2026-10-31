@@ -128,6 +128,14 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       library: catalog.snapshot(), metaApps:structuredClone(metaApps), metaChats:metaHistorySnapshot(),
     };
   }
+  function setHistoryViewport(entry,enabled){
+    if(!entry.historyReady||entry.historyViewport===enabled||!(entry.key==='meta-history'||entry.key.startsWith('meta-history-chat-')))return;
+    // Hidden WebContentsViews can report 0x0 even after setBounds (Electron #44590).
+    // Keep only these requested history documents in the observed desktop UI.
+    if(enabled)entry.contents.enableDeviceEmulation?.({screenPosition:'desktop',viewSize:{width:1100,height:850},deviceScaleFactor:1,scale:1});
+    else entry.contents.disableDeviceEmulation?.();
+    entry.historyViewport=enabled;
+  }
   function applyLayout() {
     if (closed || window.isDestroyed()) return;
     const bounds = cssBounds && !localContents.isDestroyed() ? clampPersonalBounds(cssBounds, localContents.getZoomFactor(), window.getContentSize()) : null;
@@ -140,10 +148,10 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       if (!alive(entry)) continue;
       if (entry === selected && showSelected) continue;
       if (entry.visible) hiddenFocusedSurface = true;
-      entry.view.setVisible(false); entry.visible = false;
+      setHistoryViewport(entry,true);entry.view.setVisible(false); entry.visible = false;
     }
     if (alive(selected) && bounds) selected.view.setBounds(bounds);
-    if (showSelected) { selected.view.setVisible(true); selected.visible = true; }
+    if (showSelected) { selected.view.setVisible(true); selected.visible = true; setHistoryViewport(selected,false); }
     if (hiddenFocusedSurface && !localContents.isDestroyed()) localContents.focus();
   }
   function publish() { if (!closed) { applyLayout(); onState(snapshot()); scheduleLibrary(); scheduleRefresh(); scheduleWarmup(); } }
@@ -567,7 +575,8 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     contents.setWindowOpenHandler(details => openHandler(entry, ownerSession, details));
     contents.on('did-start-loading', () => { entry.loading = true; publish(); });
     contents.on('did-stop-loading', () => { entry.loading = false; if (entry === current()) warmBlocked = false; publish(); if (entry.visited) accountSync.request(); });
-    contents.on('dom-ready', () => { void present(entry); });
+    contents.on('did-start-navigation', (_event,_url,inPlace,mainFrame) => { if(!inPlace&&mainFrame!==false)entry.historyReady=false; });
+    contents.on('dom-ready', () => { entry.historyReady=true;setHistoryViewport(entry,!entry.visible);void present(entry); });
     const navigated = (_event, url) => {
       if(entry===current())cancelMetaApps();
       entry.documentEpoch++;
@@ -708,8 +717,16 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     return entry;
   }
   async function metaHistoryOwner(entry,owner){
-    const account=await accountReader(entry.contents);
-    return account?.status==='ready'&&typeof account.handle==='string'&&`meta:${createHash('sha256').update(account.handle.toLowerCase()).digest('hex')}`===owner;
+    const end=Date.now()+2000;
+    do{
+      if(closed||!alive(entry))return false;
+      const account=await accountReader(entry.contents);
+      if(account?.status==='ready')return typeof account.handle==='string'&&`meta:${createHash('sha256').update(account.handle.toLowerCase()).digest('hex')}`===owner;
+      if(account?.status==='signed-out')return false;
+      // A hidden view's desktop viewport applies on the next render turn.
+      await new Promise(resolve=>setTimeout(resolve,50));
+    }while(Date.now()<end);
+    return false;
   }
   function metaHistorySnapshot(){
     const owner=accountSync.snapshot()?.accountId;
