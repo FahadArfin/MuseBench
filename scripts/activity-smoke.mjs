@@ -25,7 +25,7 @@ const report={variant,fixture,modelRequests:0,checks:[],errors:[]};let app,page;
 const record=name=>{report.checks.push(name);console.log(`PASS ${name}`);};
 const screenshot=async name=>page.screenshot({path:path.join(fixture,`${name}.png`)});
 const settle=()=>page.evaluate(async()=>{document.body.getBoundingClientRect();await Promise.allSettled(document.getAnimations().filter(a=>a.effect?.getComputedTiming().iterations!==Infinity).map(a=>a.finished));});
-const publishFixture=value=>app.evaluate((_electron,value)=>{globalThis.__activityFixture.state=value;globalThis.__activityFixture.contents.send('musebench:update',value);},value);
+const publishFixture=value=>app.evaluate((_electron,value)=>{globalThis.__activityFixture.state=value;globalThis.__activityFixture.publisher.publish(value);},value);
 try{
  app=await electron.launch({cwd:root,args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});
  const deadline=Date.now()+30000;while(!page&&Date.now()<deadline){page=app.windows().find(p=>!p.isClosed()&&p.url().startsWith('file:')&&/\/dist\/index\.html(?:[?#]|$)/.test(p.url()));if(!page)await new Promise(resolve=>setTimeout(resolve,70));}assert.ok(page,'Local desktop renderer did not open');
@@ -63,13 +63,18 @@ try{
  record('Preview and checks remain standalone tools without plan or review stages');
  // From here the fixture owns the renderer's whole state stream, including
  // refresh replies. Real controller lifecycle assertions run in separate tests.
- await app.evaluate(({app:electronApp,ipcMain,BrowserWindow},{dataDir,state})=>{
+ await app.evaluate(async({app:electronApp,ipcMain,BrowserWindow},{dataDir,state})=>{
    if(electronApp.getPath('userData')!==dataDir)throw Error('Fixture requires an isolated profile');
    const contents=BrowserWindow.getAllWindows().find(w=>/\/dist\/index\.html(?:[?#]|$)/.test(w.webContents.getURL()))?.webContents;if(!contents)throw Error('Local renderer missing');
+   const require=process.getBuiltinModule('node:module').createRequire(electronApp.getAppPath()+'/package.json'),{createRendererStatePublisher}=require('./electron/renderer-state-publisher.mjs');
+   const prior=await ipcMain._invokeHandlers.get('musebench:state')({sender:contents,senderFrame:contents.mainFrame});
    const fixture=globalThis.__activityFixture={state,contents},send=contents.send.bind(contents);
-   contents.send=(channel,...args)=>send(channel,...(channel==='musebench:update'?[fixture.state]:args));
-   ipcMain.removeHandler('musebench:state');ipcMain.handle('musebench:state',()=>structuredClone(fixture.state));
-   ipcMain.removeHandler('musebench:action');ipcMain.handle('musebench:action',(_event,action)=>{if(!['refresh','saveDraft'].includes(action?.type))throw Error('Unexpected action in renderer fixture');return structuredClone(fixture.state);});
+   contents.send=(channel,...args)=>{if(channel!=='musebench:update')send(channel,...args);};
+   const publisher=fixture.publisher=createRendererStatePublisher({readState:()=>structuredClone(fixture.state),send:value=>send('musebench:update',value)});
+   ipcMain.removeHandler('musebench:state');ipcMain.handle('musebench:state',()=>publisher.read());
+   ipcMain.removeHandler('musebench:action');ipcMain.handle('musebench:action',(_event,action)=>{if(!['refresh','saveDraft'].includes(action?.type))throw Error('Unexpected action in renderer fixture');return{snapshot:publisher.read(),result:structuredClone(fixture.state)};});
+   ipcMain.on('musebench:state-ack',(event,value)=>{if(event.sender===contents&&event.senderFrame===contents.mainFrame)publisher.ack(value);});
+   while(publisher.diagnostics.generation<prior.generation)publisher.detach();publisher.attach();
  },{dataDir,state});
  // The following extra rows are explicitly renderer fixtures, not real edits.
  const moreFiles=structuredClone(state);moreFiles.task.changes.push(...Array.from({length:3},(_,i)=>({path:`extra-${i}.txt`,status:'added',additions:1,deletions:0,before:'',after:'fixture\n'})));

@@ -6,6 +6,7 @@ import {createDiscoveryOAuth} from './discovery-oauth.mjs';
 import {createRemoteNetwork} from '../src/runtime/discovery-remote-network.mjs';
 import {validateDiscoveryAuthCommand} from '../src/shared/discovery-auth.mjs';
 import {createBackgroundEngine} from './background-engine.mjs';
+import {createRendererStatePublisher} from './renderer-state-publisher.mjs';
 import {createNativeControlRouter} from './native-control-router.mjs';
 import {createBillingReader} from './billing-reader.mjs';
 import {createCodeBilling} from './code-billing.mjs';
@@ -163,7 +164,7 @@ else {
     sites.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:sites-update',value);});
     spaces.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:spaces-update',value);});
     work.subscribe(publishWork);
-    controller.subscribe(state=>{notifier.observe(state);if(window&&!window.isDestroyed())window.webContents.send('musebench:update',state);});
+    controller.subscribe(state=>{notifier.observe(state);ui?.statePublisher?.publish(state);});
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       {label:'MuseBench',submenu:[{label:'Open project…',accelerator:'CmdOrCtrl+O',click:async()=>{if(updateInstalling||closing||customize?.isBusy())return;await openWindow();pendingIpc++;try{const r=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!r.canceled&&!updateInstalling&&!closing){const next=await controller.dispatch({type:'openProject',path:r.filePaths[0]});if(!next.error&&!window.isDestroyed()){ui?.personal.hide();window.webContents.send('musebench:personal-shortcut','code');}}}finally{pendingIpc--;retryPendingQuit();}}},{type:'separator'},{role:'quit'}]},
       {role:'editMenu'}, {label:'View',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},...(!app.isPackaged?[{role:'toggleDevTools'}]:[])]},
@@ -207,13 +208,18 @@ else {
     const claimLaunch = event => { event.returnValue = trustedSender(event,window.webContents,uiURL) && launch.claim(); };
     ipcMain.on('musebench:launch-claim',claimLaunch);
     let initialNavigation = true;
+    const statePublisher=view.statePublisher=createRendererStatePublisher({readState:()=>controller.getState(),send:value=>window.webContents.send('musebench:update',value)});
+    const stateAck=(event,value)=>{if(trustedSender(event,window.webContents,uiURL))statePublisher.ack(value);};
+    const stateDetach=event=>{if(trustedSender(event,window.webContents,uiURL))statePublisher.detach();};
+    ipcMain.on('musebench:state-ack',stateAck);ipcMain.on('musebench:state-detach',stateDetach);
     window.webContents.on('did-start-navigation',(event,_url,inPlace,isMainFrame)=>{
       if (!(event.isMainFrame ?? isMainFrame) || (event.isInPlace ?? inPlace)) return;
+      statePublisher.detach();
       if (!initialNavigation) launch.complete();
       initialNavigation = false;
     });
-    window.webContents.on('render-process-gone',()=>launch.complete());
-    window.once('closed',()=>{launch.close();ipcMain.removeListener('musebench:launch-claim',claimLaunch);});
+    window.webContents.on('render-process-gone',()=>{launch.complete();statePublisher.detach();});
+    window.once('closed',()=>{launch.close();statePublisher.close();ipcMain.removeListener('musebench:state-ack',stateAck);ipcMain.removeListener('musebench:state-detach',stateDetach);ipcMain.removeListener('musebench:launch-claim',claimLaunch);});
     const handlers=[];
     const handler = (name, fn) => {handlers.push(name);ipcMain.handle(name, async (event,...args) => {
       if (!trustedSender(event,window.webContents,uiURL)) throw Error('Workspace access is restricted to the main MuseBench window.');
@@ -229,7 +235,8 @@ else {
       return result.canceled?null:result.filePaths[0];
     }});
     handler('musebench:open-file',openFileEditor);
-    handler('musebench:state',()=>controller.getState());
+    handler('musebench:state',()=>statePublisher.read());
+    handler('musebench:state-attach',()=>{statePublisher.attach();});
     handler('musebench:window-theme',theme=>updateWindowTheme(window,theme));
     handler('musebench:code-image-import',input=>controller.importImage(input));
     handler('musebench:code-image-read',input=>controller.readImage(input));
@@ -342,7 +349,7 @@ else {
     handler('musebench:dictation',command=>{if(command==='start'&&!window.isFocused())throw Error('Focus MuseBench to start dictation.');return dictation.dispatch(command);});
     handler('musebench:copy-text',text=>{if(typeof text!=='string'||text.length>100000)throw Error('Invalid clipboard text.');return clipboard.writeText(text);});
     handler('musebench:copy-reply',async text=>{const {replyClipboard}=await import('../src/shared/reply-copy.mjs');const value=replyClipboard(text);await clipboard.write([new ClipboardItem({'text/plain':value.text,'text/html':value.html})]);});
-    handler('musebench:action',async action=>{const valid=validateAction(action);if(customize.isBusy()&&!['disconnectMuse','clearError'].includes(valid.type))throw Error('Wait for Customize to finish before starting another operation.');if(['createProject','openProject','selectProject','selectTask','newTask','createDemo','createCommandCopy'].includes(valid.type))await dictation.stop(true);return controller.dispatch(valid);});
+    handler('musebench:action',async action=>{const valid=validateAction(action);if(customize.isBusy()&&!['disconnectMuse','clearError'].includes(valid.type))throw Error('Wait for Customize to finish before starting another operation.');if(['createProject','openProject','selectProject','selectTask','newTask','createDemo','createCommandCopy'].includes(valid.type))await dictation.stop(true);const result=await controller.dispatch(valid);return{snapshot:statePublisher.read(),result};});
     handler('musebench:choose-project', async()=>{const result=await dialog.showOpenDialog(window,{title:'Open a local project',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];});
     handler('musebench:choose-binary',async()=>{const result=await dialog.showOpenDialog(window,{title:'Select your official Muse CLI executable',properties:['openFile'],filters:[{name:'Muse CLI',extensions:process.platform==='win32'?['exe']:['*']}]});return result.canceled?null:result.filePaths[0];});
     handler('musebench:external',async url=>{if(!allowedExternal(url))throw Error('This external link is not supported.');await shell.openExternal(url);});

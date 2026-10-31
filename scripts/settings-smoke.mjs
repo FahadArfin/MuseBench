@@ -16,7 +16,7 @@ const record=name=>{report.checks.push(name);console.log('PASS '+name);};
 async function launch(){
  app=await electron.launch({cwd:root,args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});
  page=await app.firstWindow();page.setDefaultTimeout(10000);page.on('pageerror',error=>report.errors.push(error.message));
- await page.getByRole('button',{name:'New chat',exact:true}).waitFor();await page.setViewportSize({width:1440,height:900});
+ await page.getByRole('button',{name:'Muse Code',exact:true}).click();await page.getByRole('button',{name:'New chat',exact:true}).waitFor();await page.setViewportSize({width:1440,height:900});
 }
 const dialog=()=>page.getByRole('dialog',{name:'Settings',exact:true});
 const category=label=>dialog().getByRole('navigation',{name:'Settings categories'}).getByRole('button',{name:label,exact:true}).click();
@@ -29,10 +29,10 @@ const shot=name=>page.screenshot({path:path.join(output,name+'.png')});
 async function noOverflow(){const value=await dialog().evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth,content:el.querySelector('.settings-content').clientWidth,contentScroll:el.querySelector('.settings-content').scrollWidth}));assert(value.scroll<=value.width+1,JSON.stringify(value));assert(value.contentScroll<=value.content+1,JSON.stringify(value));}
 try{
  await launch();assert.equal((await state()).runtime.binary,null);
- await settings();assert.equal(await dialog().getByRole('navigation').getByRole('button').count(),12);
+ await settings();assert.deepEqual(await dialog().getByRole('navigation').getByRole('button').allTextContents(),['General','Notifications','Voice','Keyboard shortcuts','Muse Code','Memory','Skills','Muse connection','Mobile devices','App control','Account','Usage & billing','Data & privacy','Updates','About']);
  assert.equal(await dialog().getByRole('textbox',{name:'Search settings'}).evaluate(el=>el===document.activeElement),true);
  await page.setViewportSize({width:1819,height:886});await shot('01-general-reference');await noOverflow();
- record('Claude-style dialog has 12 grouped sections, focused search and reference-size layout');
+ record('Settings dialog has all 15 expected grouped sections, focused search and reference-size layout');
  const search=()=>dialog().getByRole('textbox',{name:'Search settings'});
  await search().fill('permission');assert.equal(await dialog().getByRole('navigation').getByRole('button').count(),1);await dialog().getByRole('combobox',{name:'Default approval access'}).waitFor();
  await search().press('ArrowDown');assert.equal(await page.evaluate(()=>document.activeElement.id),'settings-nav-code');
@@ -50,9 +50,9 @@ try{
  await category('Muse Code');await dialog().getByRole('combobox',{name:'Default reasoning effort'}).selectOption('xhigh');await dialog().getByRole('combobox',{name:'Default approval access'}).selectOption('auto');await shot('04-code-defaults');
  await category('Memory');await dialog().getByRole('textbox',{name:'Your instructions'}).fill('Use TypeScript and run relevant tests.\n');await category('General');await category('Memory');assert.equal(await dialog().getByRole('textbox',{name:'Your instructions'}).inputValue(),'Use TypeScript and run relevant tests.\n');await dialog().getByRole('button',{name:'Save instructions'}).click();await until(async()=>(await state()).memories==='Use TypeScript and run relevant tests.');assert.equal(await dialog().getByRole('textbox',{name:'Your instructions'}).inputValue(),'Use TypeScript and run relevant tests.');assert.equal(await dialog().getByRole('button',{name:'Save instructions'}).isDisabled(),true);await shot('05-memory');
  record('Explicit instructions persist in the controller and unsaved edits survive section switches');
- const actual=await state();await app.evaluate(({BrowserWindow},actual)=>BrowserWindow.getAllWindows()[0].webContents.send('musebench:update',{...actual,runtime:{...actual.runtime,status:'blocked',pending:{kind:'approval'}}}),actual);
+ const actual=await state();await app.evaluate(async({BrowserWindow,ipcMain},actual)=>{const contents=BrowserWindow.getAllWindows()[0].webContents,snapshot=await ipcMain._invokeHandlers.get('musebench:state')({sender:contents,senderFrame:contents.mainFrame});contents.send('musebench:update',{...snapshot,state:{...actual,runtime:{...actual.runtime,status:'blocked',pending:{kind:'approval'}}}});},actual);
  await dialog().getByRole('textbox',{name:'Your instructions'}).fill('Draft while waiting');assert.equal(await dialog().getByRole('button',{name:'Save instructions'}).isDisabled(),true);
- await app.evaluate(({BrowserWindow},actual)=>BrowserWindow.getAllWindows()[0].webContents.send('musebench:update',actual),actual);await dialog().getByRole('textbox',{name:'Your instructions'}).fill('Use TypeScript and run relevant tests.');
+ await app.evaluate(async({BrowserWindow,ipcMain},actual)=>{const contents=BrowserWindow.getAllWindows()[0].webContents,snapshot=await ipcMain._invokeHandlers.get('musebench:state')({sender:contents,senderFrame:contents.mainFrame});contents.send('musebench:update',{...snapshot,state:actual});},actual);await dialog().getByRole('textbox',{name:'Your instructions'}).fill('Use TypeScript and run relevant tests.');
  record('Memory save is disabled for a pending-approval state without changing instructions');
 
  await category('Skills');await dialog().getByText('Install or select the official Muse CLI in Connection settings.').waitFor();

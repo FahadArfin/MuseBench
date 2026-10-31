@@ -1,5 +1,21 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const launchActive = process.argv.includes('--musebench-launch-animation') && Boolean(ipcRenderer.sendSync('musebench:launch-claim'));
+// One ordering gate for every Code snapshot. Action results remain independent:
+// callers receive their exact result, while only canonical envelopes update UI.
+const stateConsumers=new Set();let currentState=null,stateGeneration=-1,stateRevision=-1;
+const acceptState=value=>{
+  if(value?.version!==1||!Number.isSafeInteger(value.generation)||!Number.isSafeInteger(value.revision)||!value.state)throw Error('Invalid workspace state delivery.');
+  const newer=value.generation>stateGeneration||value.generation===stateGeneration&&value.revision>stateRevision;
+  if(newer){
+    currentState=value.state;stateGeneration=value.generation;stateRevision=value.revision;
+    for(const callback of stateConsumers)callback(currentState);
+  }
+  // A stale push can follow a newer invoked read. Its state is already
+  // superseded, but its exact delivery still needs releasing in the publisher.
+  if(stateConsumers.size)ipcRenderer.send('musebench:state-ack',{generation:value.generation,revision:value.revision});
+  return currentState;
+};
+ipcRenderer.on('musebench:update',(_event,value)=>{if(stateConsumers.size)acceptState(value);});
 contextBridge.exposeInMainWorld('musebench', Object.freeze({
   launch: Object.freeze({active:launchActive,complete:()=>ipcRenderer.invoke('musebench:launch-complete')}),
   onboarding: command => ipcRenderer.invoke('musebench:onboarding',command),
@@ -80,10 +96,10 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   discardConversationImport: token => ipcRenderer.invoke('musebench:conversation-import',{type:'discard',token}),
   removeImportedConversation: id => ipcRenderer.invoke('musebench:conversation-import',{type:'remove',id}),
   saveCodeDraft: input => ipcRenderer.invoke('musebench:code-draft',input),
-  getState: () => ipcRenderer.invoke('musebench:state'),
+  getState: async () => acceptState(await ipcRenderer.invoke('musebench:state')),
   dictation: command => ipcRenderer.invoke('musebench:dictation', command),
   onDictation: callback => { const listener = (_event, state) => callback(state); ipcRenderer.on('musebench:dictation-update', listener); return () => ipcRenderer.removeListener('musebench:dictation-update', listener); },
-  dispatch: action => ipcRenderer.invoke('musebench:action', action),
+  dispatch: async action => {const reply=await ipcRenderer.invoke('musebench:action',action);acceptState(reply.snapshot);return reply.result;},
   chooseProject: () => ipcRenderer.invoke('musebench:choose-project'),
   openProjectFile: input => ipcRenderer.invoke('musebench:open-file', input),
   chooseBinary: () => ipcRenderer.invoke('musebench:choose-binary'),
@@ -101,8 +117,9 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
     return () => ipcRenderer.removeListener('musebench:personal-shortcut', listener);
   },
   onState: callback => {
-    const listener = (_event, state) => callback(state);
-    ipcRenderer.on('musebench:update', listener);
-    return () => ipcRenderer.removeListener('musebench:update', listener);
+    stateConsumers.add(callback);
+    if(stateConsumers.size===1)void ipcRenderer.invoke('musebench:state-attach').catch(()=>{});
+    let active=true;
+    return () => {if(!active)return;active=false;stateConsumers.delete(callback);if(!stateConsumers.size)ipcRenderer.send('musebench:state-detach');};
   },
 }));

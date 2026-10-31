@@ -70,6 +70,7 @@ jobs:
             artifacts/conversation-import/**/report.json
             artifacts/code-schedules/**/report.json
             artifacts/code-chat-relations/ui-*/report.json
+            artifacts/renderer-state/**/report.json
             artifacts/chat-navigation/**/report.json
             artifacts/sidebar-drag/**/report.json
             artifacts/native-control/report.json

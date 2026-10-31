@@ -174,6 +174,10 @@ export default function App() {
     composer.current?.focus({preventScroll:true});
     return stop;
   },[view,preferences.reducedMotion]);
+  const canonicalState=useRef(state);canonicalState.current=state;
+  const shellDestination=useRef('');shellDestination.current=`${product}:${view}:${modal}:${creating}:${nativeDestination.revision}`;
+  const obsoleteResults=useRef(new WeakSet<AppState>());
+  const currentResult=useCallback((value:AppState)=>!obsoleteResults.current.has(value)&&value.task?.id===canonicalState.current?.task?.id&&value.activeProject?.id===canonicalState.current?.activeProject?.id,[]);
   const task = state?.task, project = state?.activeProject;
   const showTask = Boolean(task && !creating && view!=='project'), busy = pending || Boolean(state?.busy);
   const codeSurface=useRef<HTMLDivElement>(null);
@@ -189,24 +193,29 @@ export default function App() {
   useEffect(() => {
     if (!bridge) return;
     let active = true;
-    bridge.getState().then(value => { if (active) setState(value); }).catch(error => setLocalError(String(error)));
-    const dispose = bridge.onState(value => { if (active) setState(value); });
+    let received=false;
+    const dispose = bridge.onState(value => { if (active) {received=true;canonicalState.current=value;setState(value);} });
+    // Desktop reads pass the same canonical gate as pushes. Preview has the
+    // state-only API, so use its initial read only if no newer push arrived.
+    bridge.getState().then(value => { if (active&&!received) {canonicalState.current=value;setState(value);} }).catch(error => {if(active)setLocalError(String(error));});
     return () => { active = false; dispose(); };
   }, [bridge]);
   const act = useCallback(async (action: Action) => {
     if (!bridge) return null;
     const inspection=action.type==='inspectChild';
+    const destination=shellDestination.current;
     if(!inspection)setPending(true);
-    // Reads publish through onState; a late read reply must not undo navigation.
-    try { const next = await bridge.dispatch(action); if(!inspection)setState(next); if(!next.error&&['forkTask','createSideChat'].includes(action.type)){setCreating(false);setView('chat');setReviewOpen(false);setMobileNav(false);setModal(null);requestAnimationFrame(()=>composer.current?.focus());} return next; }
+    // Results carry action-specific errors/receipts; canonical state arrives
+    // only through onState, including for reads and successful commands.
+    try { const next = await bridge.dispatch(action); if(destination!==shellDestination.current)obsoleteResults.current.add(next); if(next.error)setLocalError(next.error); if(!next.error&&currentResult(next)&&['forkTask','createSideChat'].includes(action.type)){setCreating(false);setView('chat');setReviewOpen(false);setMobileNav(false);setModal(null);requestAnimationFrame(()=>composer.current?.focus());} return next; }
     catch (error) { setLocalError(error instanceof Error ? error.message : String(error)); return null; }
     finally { if(!inspection)setPending(false); }
-  }, [bridge]);
+  }, [bridge,currentResult]);
   const [reviewCapture,setReviewCapture]=useState<{taskId:string;runId:string}|null>(null);
   const openRunChanges=useCallback((runId:string)=>{if(task?.id){setReviewCapture({taskId:task.id,runId});setModal('run-changes');}},[task?.id]);
   const branchResponse = useCallback(async (messageId: string,taskId:string) => {
     const next = await act({ type: 'forkTask', taskId, messageId });
-    if (next && !next.error) { setCreating(false); setView('chat'); setReviewOpen(false); }
+    if (next && !next.error && currentResult(next)) { setCreating(false); setView('chat'); setReviewOpen(false); }
   }, [act]);
   const [customizeQuery,setCustomizeQuery]=useState(''),[shortcutRevision,setShortcutRevision]=useState(0);
   const [customizeTab,setCustomizeTab]=useState<CustomizeTab>('skills');
@@ -237,7 +246,7 @@ export default function App() {
       if (selected) {
         if (keepCreating) draftForTask.current = draft;
         const next = await act({ type: 'openProject', path: selected });
-        if (next && !next.error) {
+        if (next && !next.error && currentResult(next)) {
           setCreating(keepCreating || !next.task); setView(destination); setReviewOpen(false); setMobileNav(false);
           if (keepCreating&&next.activeProject) setDraftFor(next.activeProject.id,null,{text:draft,files:[],mode:messageMode});
           if (next.task?.id === task?.id) draftForTask.current = '';
@@ -249,19 +258,19 @@ export default function App() {
   const navigateTask = async (id: string) => {
     if (navigationBusy) return null;
     const next = await act({ type: 'selectTask', id });
-    if (next && !next.error) { setProduct('code'); setCreating(false); setView('chat'); setReviewOpen(false); setModal(null); setMobileNav(false); }
+    if (next && !next.error && currentResult(next)) { setProduct('code'); setCreating(false); setView('chat'); setReviewOpen(false); setModal(null); setMobileNav(false); }
     return next;
   };
   const navigateProject = async (id: string) => {
     if (navigationBusy) return;
     // Visiting the current project is view navigation only, preserving its selected chat and drafts.
     const next = id === project?.id ? state : await act({ type: 'selectProject', id });
-    if (next && !next.error) { setProduct('code'); if (id !== project?.id) setCreating(!next.task); setView('project'); setReviewOpen(false); setModal(null); setMobileNav(false); }
+    if (next && !next.error && currentResult(next)) { setProduct('code'); if (id !== project?.id) setCreating(!next.task); setView('project'); setReviewOpen(false); setModal(null); setMobileNav(false); }
   };
   const newProjectChat = async (id: string) => {
     if (navigationBusy) return;
     const next = id === project?.id ? state : await act({ type: 'selectProject', id });
-    if (next && !next.error) { newChat(); }
+    if (next && !next.error && currentResult(next)) { newChat(); }
   };
   const useStarter = (prompt: string) => { if (busy || runtimeActive) return; beginNewChat(prompt); };
   useEffect(() => { setStage('changes'); setReviewOpen(false); setThreadsOpen(false);setSelectedRunId(undefined);setSelectedFilePath(undefined); draftForTask.current = ''; setScrolledUp(false); }, [task?.id]);
@@ -272,7 +281,7 @@ export default function App() {
     // While browsing Customize, keep live task events but avoid false busy banners.
     if (!bridge || !task || busy || modal === 'extensions') return;
     let active = true, refreshing = false;
-    const refresh = async () => { if (refreshing) return; refreshing = true; try { const next = await bridge.dispatch({ type: 'refresh' }); if (active) setState(next); } catch (error) { if (active) setLocalError(String(error)); } finally { refreshing = false; } };
+    const refresh = async () => { if (refreshing) return; refreshing = true; try { const next = await bridge.dispatch({ type: 'refresh' }); if (active&&next.error) setLocalError(next.error); } catch (error) { if (active) setLocalError(String(error)); } finally { refreshing = false; } };
     window.addEventListener('focus', refresh); const interval = setInterval(() => { if (!document.hidden) void refresh(); }, 5000);
     return () => { active = false; clearInterval(interval); window.removeEventListener('focus', refresh); };
   }, [bridge, task?.id, busy, runtimeActive, modal]);
@@ -366,29 +375,29 @@ export default function App() {
   const queueMessage = async () => {
     const text=message.trim();if(!text||busy||imageUploads.uploading||!showTask||task?.mode!=='muse'||task.archived)return;
     const next=await act({type:'queueMessage',text,images:codeImages,files:contextFiles,mode:messageMode,runOptions:restoreRunOptions(task.runOptions)});
-    if(next&&!next.error){setMessage('');setContextFiles([]);setCodeImages([]);}
+    if(next&&!next.error&&currentResult(next)){setMessage('');setContextFiles([]);setCodeImages([]);}
   };
   const submitMessage = async () => {
     const text = message.trim(); if (!text || busy || runtimeActive&&!showTask) return;
-    if(runtimeActive&&showTask&&task?.mode==='muse'){if(state?.runtime.steeringSupported&&state.runtime.foregroundActive!==false&&state.runtime.turnId&&!codeImages.length&&!contextFiles.length&&!task.recentContext?.stagedDigest){const next=await act({type:'steerMessage',taskId:task.id,expectedTurnId:state.runtime.turnId,text});if(next&&!next.error)setMessage('');}else await queueMessage();return;}
+    if(runtimeActive&&showTask&&task?.mode==='muse'){if(state?.runtime.steeringSupported&&state.runtime.foregroundActive!==false&&state.runtime.turnId&&!codeImages.length&&!contextFiles.length&&!task.recentContext?.stagedDigest){const next=await act({type:'steerMessage',taskId:task.id,expectedTurnId:state.runtime.turnId,text});if(next&&!next.error&&currentResult(next))setMessage('');}else await queueMessage();return;}
     const slash=parseSlashSubmission(text);if(slash){const entry=findCommand(slash.name);void command(entry?.id??'unknown',entry?slash.args:slash.name,slash.prefix);return;}
     if (!showTask || task?.mode === 'demo') {
       if (!project) { await openFolder('chat'); return; }
       const chatMode = showTask && task?.mode === 'demo' ? 'muse' : mode;
       draftForTask.current = chatMode === 'muse' ? text : '';
       const next = await act({ type: 'newTask', request: text, mode: chatMode, runOptions: showTask ? restoreRunOptions(task?.runOptions) : draftOptions });
-      if (next && !next.error) {
+      if (next && !next.error && currentResult(next)) {
         if(next.activeProject){setDraftFor(next.activeProject.id,null,{text:'',files:[],mode:'chat'});if(next.task)setDraftFor(next.activeProject.id,next.task.id,{text:chatMode==='muse'?text:'',files:chatMode==='muse'?contextFiles:[],images:chatMode==='muse'?codeImages:[],mode:messageMode});}
         if(view==='project')composerOrigin.current=composerShell.current?.getBoundingClientRect()??null;
         setCreating(false); setView('chat'); setStage('changes'); setReviewOpen(false);
         if (chatMode === 'muse') {
           const access=showTask&&task?.mode==='demo'?state.runtime.fullAccess===true:draftFullAccess;
-          const connected=await act({type:'setExecutionAccess',taskId:next.task!.id,fullAccess:access});if(!connected||connected.error)return;setDraftFullAccess(false);
+          const connected=await act({type:'setExecutionAccess',taskId:next.task!.id,fullAccess:access});if(!connected||connected.error||!currentResult(connected))return;setDraftFullAccess(false);
           const sent = await act({ type: 'sendMessage', text, mode: messageMode, images:codeImages, files:contextFiles });
-          if (sent && !sent.error) { draftForTask.current = ''; if(next.task&&next.activeProject)setDraftFor(next.activeProject.id,next.task.id,{text:'',files:[],mode:'chat'}); }
+          if (sent && !sent.error && currentResult(sent)) { draftForTask.current = ''; if(next.task&&next.activeProject)setDraftFor(next.activeProject.id,next.task.id,{text:'',files:[],mode:'chat'}); }
         }
       } else draftForTask.current = '';
-    } else if (canSend) { const next = await act({ type: 'sendMessage', text, mode: messageMode, images:codeImages, files:contextFiles }); if (next && !next.error) {setMessage('');setContextFiles([]);setCodeImages([]);} }
+    } else if (canSend) { const next = await act({ type: 'sendMessage', text, mode: messageMode, images:codeImages, files:contextFiles }); if (next && !next.error && currentResult(next)) {setMessage('');setContextFiles([]);setCodeImages([]);} }
   };
   const submit=async()=>{if(submitting.current||imageUploads.uploading)return;submitting.current=true;try{await submitMessage();}finally{submitting.current=false;}};
   const currentVisit:AppVisit = codeSpaces||(product==='personal'&&personalMode==='work'&&spacesVisible&&!sitesVisible)
@@ -411,8 +420,8 @@ export default function App() {
     },
     restore:async serialized=>{const target=JSON.parse(serialized) as AppVisit;
       if(target.area==='code'){
-        if(target.taskId&&target.taskId!==task?.id){const next=await act({type:'selectTask',id:target.taskId});if(!next||next.error)throw Error(next?.error||'Could not reopen that chat.');}
-        else if(target.projectId&&target.projectId!==project?.id){const next=await act({type:'selectProject',id:target.projectId});if(!next||next.error)throw Error(next?.error||'Could not reopen that project.');}
+        if(target.taskId&&target.taskId!==task?.id){const next=await act({type:'selectTask',id:target.taskId});if(!next||next.error||!currentResult(next))throw Error(next?.error||'Could not reopen that chat.');}
+        else if(target.projectId&&target.projectId!==project?.id){const next=await act({type:'selectProject',id:target.projectId});if(!next||next.error||!currentResult(next))throw Error(next?.error||'Could not reopen that project.');}
         setProduct('code');setView(target.view);if(target.view==='chat'||target.view==='project')setCreating(Boolean(target.creating));
       }else if(target.area==='spaces'){
         if(target.id&&target.id!==spacesState?.activeId)await spacesCommand({type:'select',id:target.id});
@@ -460,7 +469,7 @@ export default function App() {
   const navigateShortcut=(destination:CodeDestination)=>{setProduct('code');setView(destination);setMobileNav(false);setProfileMenuOpen(false);setModal(null);if(destination==='spaces')setSpacesHome(true);if(destination==='sites')setSitesHome(true);};
   const shortcutSelected=codeDestinations.find(item=>item.id===view)?.id??(view==='project'?'projects':view==='chat'?'home':undefined);
   const composerControl=<div ref={composerShell} className="composer-shell">{showTask&&task&&<NativeContextButton task={task} runtime={state.runtime} onOpen={()=>setModal('session')}/>}{showTask&&!!((task?.contextSummary?.omittedMessages??0)+(task?.contextSummary?.truncatedMessages??0))&&<button className="context-chip" onClick={()=>setModal('context')}>Last request: {task!.contextSummary!.omittedMessages} messages omitted · {task!.contextSummary!.truncatedMessages} shortened</button>}{showTask&&task?.queueError&&<p role="alert" className="popover-help">Queue stopped: {task.queueError}</p>}{showTask&&task?.nativeSession?.status==='needs-recovery'&&<button type="button" className="context-chip" onClick={()=>setModal('session')}>Session interrupted · Choose how to continue</button>}<ChatComposer recentContextIncluded={showTask&&!!task?.recentContext?.stagedDigest} onRemoveRecentContext={()=>{if(task)void act({type:'removeRecentContext',projectId:task.projectId,taskId:task.id});}} runtime={showTask?state.runtime:undefined} canSteer={state.runtime.steeringSupported&&state.runtime.foregroundActive!==false&&!codeImages.length&&!contextFiles.length&&!task?.recentContext?.stagedDigest} fullAccess={showTask?state.runtime.fullAccess:draftFullAccess} onFullAccess={value=>{if(showTask&&task)void act({type:'setExecutionAccess',taskId:task.id,fullAccess:value});else setDraftFullAccess(value);}} modelCatalog={state.runtime.modelCatalog} onRefreshModels={async()=>{const next=await act({type:'refreshModels'});if(!next||next.error)throw Error('Model discovery failed.');}} images={codeImages} imageProjectId={project?.id??''} onRemoveImage={id=>setCodeImages(codeImages.filter(image=>image.id!==id))} onAddImages={files=>void imageUploads.add(files)} uploadingImages={imageUploads.uploading} onQueue={showTask&&task?.mode==='muse'&&!task.archived?()=>void queueMessage():undefined} onContext={()=>project?setModal('context'):void openFolder('chat')} onCommand={(id,args,prefix)=>void command(id,args,prefix)} onLoadSkills={loadSkills} skills={skills} skillsStatus={skillsStatus} theme={preferences.theme} model={state.runtime.modelId??''} value={message} onChange={setMessage} inputRef={composer} onSubmit={() => void submit()} onChooseProject={() => void openFolder('chat')} onStop={() => void act({type:'disconnectMuse'})} onConnection={() => setModal('runtime')} onOptions={options => {if(showTask) void act({type:'setRunOptions',runOptions:options}); else setDraftOptions(options);}} options={showTask?restoreRunOptions(task?.runOptions):draftOptions} taskMode={showTask?(task!.mode==='demo'?'muse':task!.mode):mode} onTaskMode={setMode} messageMode={messageMode} onMessageMode={setMessageMode} showTask={showTask} busy={busy} running={runtimeActive} canSend={canSend} enterToSend={preferences.enterToSend} active={product==='code'&&(view==='chat'||view==='project')&&!modal&&!profileMenuOpen&&!mobileNav} context={`${project?.id??''}:${task?.id??''}:${creating}`} /></div>;
-  const createSample = async () => { const next = await act({ type: 'createDemo' }); if (next && !next.error) { setCreating(false); setView('chat'); setMobileNav(false); } };
+  const createSample = async () => { const next = await act({ type: 'createDemo' }); if (next && !next.error && currentResult(next)) { setCreating(false); setView('chat'); setMobileNav(false); } };
   return <AppUpdatesContext.Provider value={{...appUpdates,open:()=>setModal('updates')}}><NavigationHistoryContext.Provider value={navigationHistory}><div className={`app ${preferences.sidebarCollapsed ? 'sidebar-collapsed' : ''} ${mobileNav ? 'nav-open' : ''}`} style={{ '--review-width': `${reviewWidth}px` } as CSSProperties}>
     {mobileNav && <button className="nav-scrim" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
     <aside hidden={product !== 'code'} inert={product !== 'code'} className="sidebar" aria-label="Projects and chats">
@@ -526,8 +535,8 @@ export default function App() {
     {modal==='session'&&task&&<SessionDialog runtime={state.runtime} task={task} projects={state.projects} busy={busy} act={act} onClose={closeModal}/> }
     {modal==='worktrees'&&project&&<WorktreeDialog appState={state} project={project} busy={busy||runtimeActive} act={act} onClose={closeModal} onOpened={()=>{closeModal();setCreating(true);setView('project');}}/>}
     {modal==='context'&&project&&<CodeContext task={showTask?task:null} project={project} taskId={showTask?task!.id:null} text={message} files={contextFiles} onFiles={setContextFiles} act={act} busy={busy||runtimeActive} close={closeModal}/>}
-    {modal==='updates'&&<Modal title="MuseBench update" close={closeModal}><AppUpdatePanel/></Modal>}{modal === 'runtime' && <RuntimeDialog state={state} busy={busy} act={async action=>{const next=await act(action);if(!showTask&&next&&!next.error&&['connectMuse','disconnectMuse'].includes(action.type))setDraftFullAccess(next.runtime.fullAccess===true);return next;}} close={closeModal} onError={setLocalError} />}{modal === 'settings' && <SettingsDialog key={nativeDestination.revision} initialCategory={nativeDestination.category} openCustomize={()=>openCustomize()} state={state} busy={busy||runtimeActive||Boolean(state.runtime.pending)} act={act} openPersonal={destination=>{closeModal();navigatePersonal(destination);}} preferences={preferences} onChange={setPreferences} close={closeModal} openConnection={() => setModal('runtime')} />}{modal === 'history' && <CheckpointDialog state={state} act={act} close={closeModal} />}
-    {modal === 'create-project' && <CreateProject root={state.projectCreationRoot??'Documents/MuseBench'} close={closeModal} onExisting={async()=>{await openFolder();setModal(null);}} onCreate={async details=>{const next=await act({type:'createProject',...details});if(!next||next.error)throw Error(next?.error??'Could not create the project.');setProduct('code');setView('project');setCreating(false);setReviewOpen(false);setMobileNav(false);setModal(null);}}/>}
+    {modal==='updates'&&<Modal title="MuseBench update" close={closeModal}><AppUpdatePanel/></Modal>}{modal === 'runtime' && <RuntimeDialog state={state} busy={busy} act={async action=>{const next=await act(action);if(!showTask&&next&&!next.error&&currentResult(next)&&['connectMuse','disconnectMuse'].includes(action.type))setDraftFullAccess(next.runtime.fullAccess===true);return next;}} close={closeModal} onError={setLocalError} />}{modal === 'settings' && <SettingsDialog key={nativeDestination.revision} initialCategory={nativeDestination.category} openCustomize={()=>openCustomize()} state={state} busy={busy||runtimeActive||Boolean(state.runtime.pending)} act={act} openPersonal={destination=>{closeModal();navigatePersonal(destination);}} preferences={preferences} onChange={setPreferences} close={closeModal} openConnection={() => setModal('runtime')} />}{modal === 'history' && <CheckpointDialog state={state} act={act} close={closeModal} />}
+    {modal === 'create-project' && <CreateProject root={state.projectCreationRoot??'Documents/MuseBench'} close={closeModal} onExisting={async()=>{await openFolder();setModal(null);}} onCreate={async details=>{const next=await act({type:'createProject',...details});if(!next||next.error)throw Error(next?.error??'Could not create the project.');if(!currentResult(next))return;setProduct('code');setView('project');setCreating(false);setReviewOpen(false);setMobileNav(false);setModal(null);}}/>}
     {modal === 'search' && <ChatLibrary projects={state.projects} onProject={id=>void navigateProject(id)} onOpen={id=>void navigateTask(id)} act={act} busy={navigationBusy} close={closeModal} draftTarget={product==='code'&&project&&!navigationBusy&&!task?.archived?{key:`${project.id}:${showTask?task!.id:'new'}`,label:showTask?task!.title:'New chat'}:null} onExcerpt={appendDraftText}/> }
   </div></NavigationHistoryContext.Provider></AppUpdatesContext.Provider>;
 }
