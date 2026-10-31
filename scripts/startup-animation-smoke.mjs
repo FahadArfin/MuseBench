@@ -21,6 +21,7 @@ function observeLaunch(){
   if(window.__launchObservation)return;
   const result=window.__launchObservation={frames:[],fontLoads:[],startedAt:performance.now(),timeOrigin:performance.timeOrigin};
   const loadFont=document.fonts.load.bind(document.fonts);
+  let rejectPreparedReadiness=null;
   const readinessPromises=new WeakSet(),race=Promise.race;
   // Observe the actual font race result, including a rejection. Timing alone
   // cannot tell which queued settlement won at the readiness boundary.
@@ -40,7 +41,7 @@ function observeLaunch(){
     const promise=mode?new Promise((resolve,reject)=>{
       loaded.then(fonts=>{
         timing.preparedRealFace=fonts.length>0&&fonts.every(face=>face.status==='loaded');
-        if(mode==='failed'){timing.rejectedAt=performance.now();reject(Error('Fixture-controlled font readiness failure'));}
+        if(mode==='failed')rejectPreparedReadiness=at=>{timing.preparationObservedAt=at;timing.rejectedAt=performance.now();reject(Error('Fixture-controlled font readiness failure after observed preparation'));};
         else if(mode==='over-budget'){setTimeout(()=>{timing.controlledSettledAt=performance.now();resolve(fonts);},650);}
         else {timing.controlledSettledAt=performance.now();resolve(fonts);}
       },reject);
@@ -73,6 +74,15 @@ function observeLaunch(){
       targetVisible:target?getComputedStyle(target).visibility==='visible':false,targetLettersOpaque:target?[...target.querySelectorAll('.typed-text>span')].every(glyph=>Number(getComputedStyle(glyph).opacity)>.99):false,
       color:style?.color,viewport:{width:innerWidth,height:innerHeight},overflow:document.documentElement.scrollWidth>innerWidth+1,
       inert:Boolean(document.querySelector('.launch-content')?.inert)});
+    // Fixture-only: make target availability follow an observed release frame,
+    // independently of font readiness or the product's mount/layout ordering.
+    const heldTarget=document.querySelector('[data-startup-target-hold]'),last=result.frames.at(-1);
+    if(rejectPreparedReadiness&&last.phase==='preparing'&&last.inert){
+      const rejectReadiness=rejectPreparedReadiness;rejectPreparedReadiness=null;rejectReadiness(last.at);
+    }
+    if(heldTarget&&!last.active&&last.phase===null&&!last.inert){
+      result.targetHoldReleasedAt=performance.now();heldTarget.remove();
+    }
     if(performance.now()-result.appObservedAt<6500)requestAnimationFrame(sample);
   };
   requestAnimationFrame(sample);
@@ -86,7 +96,7 @@ async function until(check,label,timeout=12000){
 const settled=page=>page.waitForFunction(()=>document.querySelector('.launch-content')&&!document.querySelector('.launch-overlay')&&document.documentElement.dataset.launchActive!=='true'&&!document.querySelector('.launch-content').inert);
 const observation=page=>page.evaluate(()=>window.__launchObservation);
 
-async function browserScene(name,{query='?launch=1',readiness,prepareFont=Boolean(readiness),viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,fontDelay=0,fontDelayAfterReadiness=0,rendererDelay=0,skip}={}){
+async function browserScene(name,{query='?launch=1',readiness,lateTarget=false,prepareFont=Boolean(readiness),viewport={width:1440,height:960},reducedMotion='no-preference',preferences={},brokenAnimation=false,slowFirstPaint=0,busyTyping=0,fontDelay=0,fontDelayAfterReadiness=0,rendererDelay=0,skip}={}){
   const page=lastPage=await browser.newPage({viewport,reducedMotion,...(name==='preview-launch'?{recordVideo:{dir:output,size:viewport}}:{})});
   let fontReadinessStarted;
   const fontReadiness=new Promise(resolve=>{fontReadinessStarted=resolve;});
@@ -145,7 +155,7 @@ async function browserScene(name,{query='?launch=1',readiness,prepareFont=Boolea
       };
     }
   },{preferences,brokenAnimation,slowFirstPaint,busyTyping});
-  await page.goto(`${server.resolvedUrls.local[0]}__startup__/index.html${query}${readiness?`&readiness=${readiness}`:''}`,{waitUntil:'domcontentloaded'});
+  await page.goto(`${server.resolvedUrls.local[0]}__startup__/index.html${query}${readiness?`&readiness=${readiness}`:''}${lateTarget?'&lateTarget=1':''}`,{waitUntil:'domcontentloaded'});
   if(name==='preview-launch'&&process.argv.includes('--late-animation-assertion'))await delay(3000);
   if(name==='preview-launch'||name==='light-launch'){
     // The animation can finish before a slow inspector starts polling. Its
@@ -162,6 +172,10 @@ async function browserScene(name,{query='?launch=1',readiness,prepareFont=Boolea
   if(fontDelayAfterReadiness)await page.waitForFunction(()=>{
     const observed=window.__launchObservation,loaded=observed?.fontLoads.find(load=>load.resolvedAt!==undefined);
     return loaded&&observed.frames.at(-1)?.at>loaded.resolvedAt;
+  });
+  if(await page.evaluate(()=>['budget-lost','failed'].includes(window.__launchObservation.gate?.outcome)))await page.waitForFunction(()=>{
+    const observed=window.__launchObservation,since=observed.fontLoads[0]?.requestedAt;
+    return observed.frames.some(frame=>frame.at>=since&&!frame.active&&frame.phase===null&&!frame.inert&&frame.targetVisible);
   });
   const evidence=await observation(page);report.scenes[name]=evidence;
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1),false,`${name}: no horizontal overflow`);
@@ -237,8 +251,11 @@ function checkNoFontMotion(scene,label){
   assert(scene.frames.some(frame=>frame.phase==='preparing'&&frame.inert),`${label}: preparation gates interaction`);
   assert(!scene.frames.some(frame=>frame.rendered||frame.phase==='typing'||frame.phase==='moving'),`${label}: no fallback-font typing or flight`);
   const released=scene.frames.find(frame=>frame.at>=scene.fontLoads[0].requestedAt&&!frame.active&&frame.phase===null);
-  assert(released&&!released.inert&&released.targetVisible,`${label}: visible app is released`);
+  assert(released&&!released.inert,`${label}: launch releases interaction`);
   assert(released.at-scene.fontLoads[0].requestedAt<2100,`${label}: unchanged hard readiness deadline`);
+  const visible=scene.frames.find(frame=>frame.at>=released.at&&!frame.active&&frame.phase===null&&!frame.inert&&frame.targetVisible);
+  assert(visible,`${label}: released app has a visible sidebar target`);
+  return {released,visible};
 }
 
 async function checkInteractive(page){
@@ -261,7 +278,10 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
       if(file==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixture);return;}
       if(file!=='/index.html'&&!/^\/assets\/[a-zA-Z0-9._-]+$/.test(file)){res.statusCode=404;res.end();return;}
       let bytes=await readFile(path.join(root,'dist',file));
-      if(file==='/index.html'){bytes=Buffer.from(bytes.toString().replace('<head>','<head><script src="./fixture.js"></script>'));res.setHeader('Content-Type','text/html');}
+      if(file==='/index.html'){
+        const heldTarget=new URL(req.url,'http://fixture').searchParams.has('lateTarget')?'<style data-startup-target-hold>[data-launch-brand="personal"]{display:none!important}</style>':'';
+        bytes=Buffer.from(bytes.toString().replace('<head>',`<head>${heldTarget}<script src="./fixture.js"></script>`));res.setHeader('Content-Type','text/html');
+      }
       else res.setHeader('Content-Type',file.endsWith('.woff2')?'font/woff2':file.endsWith('.css')?'text/css':'text/javascript');
       res.end(bytes);
     }catch{res.statusCode=404;res.end();}
@@ -286,6 +306,7 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
     assert.equal(load.alreadyLoaded,true,'Controlled readiness starts with the actual face prepared');
     assert.equal(load.count,1,'Controlled readiness uses one actual bundled face');
     assert.equal(load.preparedRealFace,true,'Controlled settlement keeps the real loaded face');
+    if(readiness==='failed')assert(load.preparationObservedAt-load.requestedAt<400,'Controlled rejection requires an observed preparing/inert frame within the unchanged readiness gate');
     assert.equal(scene.gate?.outcome,{ready:'ready','over-budget':'budget-lost',failed:'failed'}[readiness]);
     if(readiness==='ready'){
       assert(load.controlledSettledAt-load.requestedAt<400,'Prepared-face success settles within the unchanged readiness budget');
@@ -299,8 +320,18 @@ window.fetch=async()=>new Response(JSON.stringify({version:1,pages:{}}));`,resol
       assert(scene.frames.some(frame=>frame.at>load.controlledSettledAt&&!frame.inert&&frame.targetVisible),'Late controlled settlement cannot replay launch');
     }
     await checkInteractive(scene.page);await scene.page.close();
-    pass(`Fixture-controlled ${readiness} readiness with the prepared real font satisfies its mandatory motion/interaction contract`);
+    pass(`Fixture-controlled ${readiness==='failed'?'rejection after observed preparation':readiness+' readiness'} with the prepared real font satisfies its mandatory motion/interaction contract`);
   }
+  const lateTarget=await browserScene('controlled-failed-readiness-late-target',{readiness:'failed',lateTarget:true});
+  assert.equal(lateTarget.gate?.outcome,'failed','Controlled late-target rejection requires observed preparation before the unchanged readiness gate wins');
+  assert.equal(lateTarget.fontLoads[0].alreadyLoaded,true);assert.equal(lateTarget.fontLoads[0].count,1);assert.equal(lateTarget.fontLoads[0].preparedRealFace,true);
+  assert(lateTarget.fontLoads[0].preparationObservedAt-lateTarget.fontLoads[0].requestedAt<400,'Late-target rejection observes preparation within the original readiness gate');
+  const {released:lateReleased,visible:lateVisible}=checkNoFontMotion(lateTarget,'controlled late target');
+  assert.equal(lateReleased.target,null,'Controlled release precedes measurable branding');assert.equal(lateReleased.targetVisible,false);
+  assert(lateVisible.at>lateReleased.at,'Visible branding follows a separately recorded release frame');
+  assert(report.scenes['controlled-failed-readiness-late-target'].targetHoldReleasedAt>=lateReleased.at,'Target hold is released by the observed condition');
+  await checkInteractive(lateTarget.page);await lateTarget.page.close();
+  pass('Controlled rejection after observed preparation releases before late branding without fallback motion or replay and retains working controls');
   const overBudget=await browserScene('over-budget-brand-font',{fontDelayAfterReadiness:650,rendererDelay:500});
   const font=overBudget.fontLoads[0];
   assert.equal(font.alreadyLoaded,false,'Over-budget font starts cold');
