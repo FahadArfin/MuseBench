@@ -91,3 +91,95 @@ export async function runMetaAction(contents,action){
   return false;
  }.toString()})(${JSON.stringify(action)})`,true)===true;}catch{return false;}
 }
+
+// Open Meta's own settings UI. These are navigation-only shortcuts: purchases,
+// account changes and connector authorization remain explicit user actions.
+const pendingSettings=new WeakMap();
+let settingsSequence=Date.now()*1000;
+export async function runMetaSettings(contents,section,{signal}={}){
+ if(signal?.aborted||!['general','apps'].includes(section)||!metaDocument(contents))return false;
+ pendingSettings.get(contents)?.cancel();
+ const token=++settingsSequence,deadline=Date.now()+4200;
+ let timer,cancelled=false,resolveCancelled;
+ const cancelledResult=new Promise(resolve=>{resolveCancelled=resolve;});
+ const invalidate=()=>{
+  if(contents.isDestroyed())return;
+  // Retain a tombstone so an execution queued before cancellation cannot start
+  // afterward. An older cancellation never invalidates a newer request.
+  try{void contents.executeJavaScript(`(${function(id){
+   const key=Symbol.for('musebench.metaSettingsNavigation');
+   const current=globalThis[key];
+   if(!current||current.token<=id)globalThis[key]={token:id,active:false};
+  }.toString()})(${token})`).catch(()=>{});}catch{}
+ };
+ const cancel=()=>{if(cancelled)return;cancelled=true;invalidate();resolveCancelled(false);};
+ const onNavigation=(_event,_url,_inPlace,isMainFrame)=>{if(isMainFrame!==false)cancel();};
+ const owner={cancel};pendingSettings.set(contents,owner);
+ signal?.addEventListener('abort',cancel,{once:true});
+ contents.on?.('did-start-navigation',onNavigation);contents.on?.('destroyed',cancel);
+ if(signal?.aborted)cancel();
+ timer=setTimeout(cancel,5000);timer.unref?.();
+ try{
+  if(cancelled)return false;
+  return await Promise.race([contents.executeJavaScript(`(${async function(request,token,deadline){
+   const key=Symbol.for('musebench.metaSettingsNavigation');
+   if(Date.now()>=deadline||globalThis[key]?.token>=token)return false;
+   globalThis[key]={token,active:true};
+   const current=()=>globalThis[key]?.token===token&&globalThis[key]?.active&&Date.now()<deadline;
+   const onMeta=()=>['https://www.meta.ai','https://meta.ai'].includes(location.origin);
+   const label=element=>(element.getAttribute('aria-label')||element.textContent||'').trim();
+   const visible=element=>{
+    if(!element||element.hidden||!element.getClientRects().length)return false;
+    const style=getComputedStyle(element);return style.display!=='none'&&!['hidden','collapse'].includes(style.visibility)&&style.opacity!=='0';
+   };
+   const enabled=element=>element&&!element.disabled&&element.getAttribute('aria-disabled')!=='true';
+   const wanted=request==='apps'?'Apps':'General';
+   const settingsDialog=()=>Array.from(document.querySelectorAll('[role="dialog"]')).find(dialog=>visible(dialog)&&(['Settings',...(request==='apps'?['Apps']:[])].includes(dialog.getAttribute('aria-label'))||Array.from(dialog.querySelectorAll('h1,h2,[role="heading"]')).some(heading=>visible(heading)&&label(heading)==='Settings')));
+   const sectionOpen=dialog=>{
+    const headings=Array.from(dialog.querySelectorAll('h1,h2,h3,[role="heading"]')).filter(heading=>visible(heading)&&!heading.closest('nav,button,[role="tab"]'));
+    if(headings.some(heading=>label(heading)===wanted))return true;
+    if(request==='apps')return headings.some(heading=>['Unconnected apps','Connected apps'].includes(label(heading)));
+    // The live General title is plain text. Its Accounts Center link is the
+    // observed destination marker, scoped to the visible Settings dialog.
+    return Array.from(dialog.querySelectorAll('a[href]')).some(link=>{
+     if(!visible(link)||label(link)!=='Accounts Center')return false;
+     try{const url=new URL(link.getAttribute('href'),location.href);return url.origin==='https://accountscenter.meta.com'&&!url.username&&!url.password;}catch{return false;}
+    });
+   };
+   let triggerClicked=false,menuClicked=false;
+   const clickedTabs=new WeakMap();
+   while(onMeta()&&current()){
+    const dialog=settingsDialog();
+    if(dialog){
+     if(sectionOpen(dialog))return true;
+     const tab=Array.from(dialog.querySelectorAll('button,[role="tab"]')).find(control=>visible(control)&&enabled(control)&&label(control)===wanted);
+     if(!tab)return false;
+     // Hydration can attach the handler after its button appears. Only these two
+     // harmless navigation tabs may be retried, at a bounded interval.
+     const last=clickedTabs.get(tab)||0;
+     if(current()&&Date.now()-last>400){clickedTabs.set(tab,Date.now());tab.click();}
+    }else{
+     // Apps is also an observed direct profile-menu entry on Meta AI.
+     const menus=Array.from(document.querySelectorAll('[role="menu"]')).filter(visible);
+     const entries=menus.flatMap(menu=>Array.from(menu.querySelectorAll('[role="menuitem"]'))).filter(control=>visible(control)&&enabled(control));
+     const item=(request==='apps'&&entries.find(control=>label(control)==='Apps'))||entries.find(control=>label(control)==='Settings');
+     if(item&&!menuClicked&&current()){menuClicked=true;item.click();}
+     else if(!triggerClicked&&!menuClicked){
+      const trigger=document.querySelector('nav[data-slot="sidebar"][aria-label="Sidebar"] [data-testid="user-menu-button"][data-slot="dropdown-menu-trigger"]');
+      if(!enabled(trigger))return false;
+      // MuseBench's integrated layout intentionally hides this exact sidebar;
+      // no other hidden page control is eligible for a click.
+      if(!current())return false;triggerClicked=true;trigger.click();
+     }
+    }
+    await new Promise(resolve=>setTimeout(resolve,80));
+   }
+   return false;
+  }.toString()})(${JSON.stringify(section)},${token},${deadline})`,true),cancelledResult])===true&&!cancelled;
+ }catch{return false;}finally{
+  clearTimeout(timer);invalidate();
+  signal?.removeEventListener('abort',cancel);
+  contents.removeListener?.('did-start-navigation',onNavigation);contents.removeListener?.('destroyed',cancel);
+  if(pendingSettings.get(contents)===owner)pendingSettings.delete(contents);
+ }
+}

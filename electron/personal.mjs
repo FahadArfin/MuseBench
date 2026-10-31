@@ -2,9 +2,9 @@ import {readPersonalAuth} from './personal-auth.mjs';
 import {readMetaAccount} from './personal-account.mjs';
 import {createPersonalAccountSync} from './personal-account-sync.mjs';
 import {readMetaSchedules,activateMetaSchedule,scheduledDocument} from './meta-schedules.mjs';
-import {runMetaAction,dismissMetaSearch,metaNavigationReady} from './meta-navigation.mjs';
+import {runMetaAction,runMetaSettings,dismissMetaSearch,metaNavigationReady} from './meta-navigation.mjs';
 import {readAgentProfile} from './personal-agent.mjs';
-import { allowedPersonalPopupURL, allowedPersonalURL, clampPersonalBounds, personalAuthenticating, personalAvailability, personalOrigin, personalRoute, personalService, personalTarget, validatePersonalCommand } from './personal-policy.mjs';
+import { allowedPersonalPopupURL, allowedPersonalAccountURL, personalAccountOrigin, personalAccountNotice, allowedPersonalURL, clampPersonalBounds, personalAuthenticating, personalAvailability, personalOrigin, personalRoute, personalService, personalTarget, validatePersonalCommand } from './personal-policy.mjs';
 import { applyPersonalPresentation, runPersonalAction, readPersonalToolState } from './personal-presentation.mjs';
 import { createPersonalCatalog } from './personal-catalog.mjs';
 
@@ -32,12 +32,15 @@ const defaultLibraryAdapter = {
 
 // Only the trusted local main frame calls this controller. Remote contents have
 // no preload and never receive project state, credentials, or the local bridge.
-export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, dismiss: dismissMetaSearch, ready: metaNavigationReady }, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 3 }) {
+export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, settings: runMetaSettings, dismiss: dismissMetaSearch, ready: metaNavigationReady }, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 3 }) {
   // Native getters can throw after destruction: cache contents while alive.
   const localContents = window.webContents;
   const entries = new Map(), serviceSessions = new Map(), popups = new Set(), pendingReady = new Set();
   let destination = 'chat', activeEntry = null, requestedVisible = false, launchHeld = false, cssBounds = null, closed = false;
   let compact = true, notice = null, actionEpoch = 0;
+  let browserNotice = null;
+  let browserNoticeDestination = null;
+  let settingsAbort = null;
   let appearance = { theme: 'dark', textSize: 'medium', font: 'system', reducedMotion: false };
   const catalog = createPersonalCatalog();
   let libraryGeneration = 0, libraryEstablished = false, libraryTimer = null, refreshingLibrary = null;
@@ -105,7 +108,8 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       destination, loading: Boolean(entry?.loading || (entry?.initializing && !entry?.initialized)), origin: entry?.origin ?? personalOrigin(personalTarget(destination)),
       error: entry?.error ?? null, canGoBack: Boolean(contents?.navigationHistory.canGoBack()),
       canGoForward: Boolean(contents?.navigationHistory.canGoForward()), visible: Boolean(entry?.visible),
-      available: personalAvailability(), compact, notice,
+      available: personalAvailability(), compact, notice, noticeCanOpenBrowser: Boolean(notice && notice === browserNotice),
+      noticeBrowserDestination: notice && notice === browserNotice ? browserNoticeDestination : null,
       appearance: { ...appearance }, profile: accountSync.snapshot(), agentProfile, schedules: destination==='chat'&&alive(entry)&&scheduledDocument(contents)?schedules:null,
       authenticating: isAuthenticating() || Boolean(personalAuthenticating(entry?.origin) || museAuthPending()),
       authWindowOpen: Boolean(setupLoginWindow && !setupLoginWindow.isDestroyed()) || popups.size > 0,
@@ -203,7 +207,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     },schedules?1500:150);
     scheduleTimer.unref?.();
   }
-  function inform(message) { if (!closed) { notice = message; publish(); } }
+  function inform(message, browserDestination = null) { if (!closed) { notice = message; browserNotice = browserDestination ? message : null; browserNoticeDestination=browserDestination; publish(); } }
   function fail(entry, message) { if (!closed) { entry.error = message; entry.loading = false; publish(); } }
   function hide() { requestedVisible = false; publish(); }
   async function present(entry) {
@@ -337,7 +341,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     }).finally(() => { refreshingLibrary = null; scheduleLibrary(1800); });
     return refreshingLibrary;
   }
-  function cancelActions() { actionEpoch++; for (const finish of pendingReady) if (closed || finish.cancelOnSelection) finish(false); }
+  function cancelActions() { actionEpoch++; settingsAbort?.abort(); settingsAbort=null; for (const finish of pendingReady) if (closed || finish.cancelOnSelection) finish(false); }
   function waitForMuseDocument(entry,meta=false,cancelOnSelection=true) {
     return new Promise(resolve => {
       const contents = entry.contents;
@@ -391,10 +395,10 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     const value = { webSession, owned, dispose: () => webSession.removeListener('will-download', download) };
     serviceSessions.set(service, value); return value;
   }
-  function guardContents(contents, blocked) {
+  function guardContents(contents, blocked, allowed = allowedPersonalURL) {
     const guard = (event, legacyURL, _inPage, legacyMainFrame) => {
       if (!(event.isMainFrame ?? legacyMainFrame ?? true)) return;
-      if (!allowedPersonalURL(event.url ?? legacyURL)) { event.preventDefault(); blocked(); }
+      if (!allowed(event.url ?? legacyURL)) { event.preventDefault(); blocked(event.url ?? legacyURL); }
     };
     contents.on('will-navigate', guard); contents.on('will-redirect', guard);
     contents.on('will-frame-navigate', event => {
@@ -429,10 +433,11 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     return {contents,close};
   }
   function openHandler(entry, ownerSession, details) {
+    const sourceService = entry.slot === 'chat' ? 'chat' : 'bot';
     // Background preparation cannot open authentication or other popup windows.
     if (launchHeld || (entry.speculative && !entry.visited)) return { action: 'deny' };
     if (closed || !alive(entry) || !BrowserWindow || !allowedPersonalPopupURL(details.url, entry.contents.getURL())) {
-      inform('This link cannot open inside MuseBench. You can continue on the official service in your browser.');
+      inform(personalAccountNotice(details.url,sourceService), sourceService);
       return { action: 'deny' };
     }
     if (popups.size) {
@@ -441,7 +446,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       inform('Finish or close the existing account window before opening another.');
       return { action: 'deny' };
     }
-    const origin = personalOrigin(details.url);
+    const origin = personalAccountOrigin(details.url) ?? personalAccountOrigin(entry.contents.getURL());
     return { action: 'allow', outlivesOpener: false, createWindow(options) {
       // Preserve Electron's actual window.open/opener and POST flow. Override
       // remote-controlled preferences before constructing the owned child.
@@ -459,12 +464,14 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
         popup.museAuth = true; cancelActions(); clearLibrary(entry);
       };
       invalidateMuseAccount(details.url);
-      guardContents(contents, () => inform('The account window blocked an unsupported redirect. Your current Muse page is still available.'));
-      contents.setWindowOpenHandler(() => { inform('Complete the current account window before opening another.'); return { action: 'deny' }; });
+      let awaitingAccountURL = details.url === 'about:blank';
+      guardContents(contents, url => inform(personalAccountNotice(url,sourceService), sourceService), url => allowedPersonalAccountURL(url) || (awaitingAccountURL && url === 'about:blank'));
+      contents.setWindowOpenHandler(details => { inform(personalAccountNotice(details.url,sourceService), sourceService); return { action: 'deny' }; });
       popupWindow.on('page-title-updated', event => event.preventDefault());
       const navigated = (_event, url) => {
         invalidateMuseAccount(url);
-        const safeOrigin = personalOrigin(url);
+        const safeOrigin = personalAccountOrigin(url);
+        if (safeOrigin) awaitingAccountURL = false;
         if (safeOrigin) { popup.origin = safeOrigin; if (!popupWindow.isDestroyed()) popupWindow.setTitle(`Meta AI account — ${safeOrigin}`); }
         publish();
       };
@@ -685,6 +692,14 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
         ? await waitForMuseDocument(entry,true)&&!closed&&requestEpoch===actionEpoch&&await metaAdapter.action(entry.contents,'newChat')
         : await initializeTool(entry);
       if(!closed&&requestEpoch===actionEpoch&&!succeeded){compact=false;await presentAll();notice='This Meta AI shortcut is unavailable on the current page. The original navigation is shown so you can continue there.';}
+    } else if (command.type === 'metaSettings') {
+      cancelActions(); const requestEpoch=actionEpoch; notice=null;
+      const requestAbort=new AbortController();settingsAbort=requestAbort;
+      const entry=selectDestination('chat');publish();
+      let succeeded=false;
+      try { if(await waitForMuseDocument(entry,true) && !closed && requestEpoch===actionEpoch) succeeded=await metaAdapter.settings?.(entry.contents,command.section,{signal:requestAbort.signal}); } catch { /* Restore official navigation below. */ }
+      finally { requestAbort.abort();if(settingsAbort===requestAbort)settingsAbort=null; }
+      if(!closed&&requestEpoch===actionEpoch&&!succeeded){compact=false;await presentAll();inform('Open Settings from your Meta AI profile menu to manage your plan or apps. The official navigation is now visible.','chat');}
     } else if (command.type === 'presentation') {
       compact = command.compact; await presentAll();
     } else if (command.type === 'appearance') {
@@ -703,6 +718,10 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
         compact = false; await presentAll();
         notice = 'This shortcut is not available on the current page. The full Muse layout is restored so you can continue using its own controls.';
       }
+    } else if (command.type === 'openNoticeExternal') {
+      // Capture the fixed service that owns the blocked popup, even if the
+      // foreground page changed. Never forward OAuth state or callback URLs.
+      if(notice && notice===browserNotice && ['chat','bot'].includes(browserNoticeDestination))await shell.openExternal(personalTarget(browserNoticeDestination));
     } else if (command.type === 'openExternal') {
       // Never export OAuth callbacks or remote-supplied URLs into the OS shell.
       await shell.openExternal(personalTarget(destination));
@@ -712,12 +731,13 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
         entry.error = null; notice = null;
         const contents = entry.contents;
         if (command.type === 'reload') {
+          cancelActions();
           entry.initialized = null;
           if (allowedPersonalURL(contents.getURL())) { entry.loading = true; entry.awaitingCommit = true; contents.reload(); }
           else load(entry, personalTarget(destination));
           if (entry.tool) void initializeTool(entry);
-        } else if (command.type === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
-        else if (command.type === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward();
+        } else if (command.type === 'back' && contents.navigationHistory.canGoBack()) { cancelActions();contents.navigationHistory.goBack(); }
+        else if (command.type === 'forward' && contents.navigationHistory.canGoForward()) { cancelActions();contents.navigationHistory.goForward(); }
       }
     }
     publish(); return snapshot();

@@ -93,3 +93,4 @@ jobs:
             artifacts/context-history/**/report.json
             artifacts/session-mcp-ui/**/report.json
             artifacts/mobile-settings/**/report.json
+            artifacts/meta-settings/**/report.json

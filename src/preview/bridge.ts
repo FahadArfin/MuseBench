@@ -331,6 +331,7 @@ export function createPreviewBridge():MuseBenchBridge {
    personal.error=null;
    switch(command.type){
     case 'navigate':personal.notice=null;personal.destination=command.destination;personal.library.selectedId=null;selectSnapshot(command.destination);break;
+    case 'metaSettings':personal.destination='chat';personal.notice='Open the desktop app to manage your Meta AI plan and connected apps on Meta’s official settings page. This preview is not signed in.';personal.noticeCanOpenBrowser=false;selectSnapshot('chat');break;
     case 'metaAction':personal.destination='chat';personal.notice=null;selectSnapshot(command.action==='newChat'?'chat':command.action as SnapshotKey);break;
     case 'scheduleAction':personal.notice='This is a read-only desktop snapshot. Use the desktop app to create, edit, or delete real scheduled tasks.';break;
     case 'selectItem':{personal.notice='This snapshot shows the captured page. Open individual account items in the desktop app.';const found=[...personal.library.chats.items,...personal.library.ideas.items,...personal.library.goals.items].find(i=>i.id===command.id);if(found?.main)selectSnapshot('bot');personal.library.selectedId=command.id;personal.destination=found?.kind==='idea'?'ideas':found?.kind==='goal'?'goals':'bot';break;}

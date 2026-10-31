@@ -90,11 +90,27 @@ test('section detection uses only verified service origins and path boundaries',
 test('popup policy requires an official HTTPS opener and target, rejecting credentials and unsafe schemes', () => {
   assert.equal(typeof policy.allowedPersonalPopupURL, 'function');
   assert.equal(policy.allowedPersonalPopupURL('https://auth.meta.com/login/?state=secret', 'https://muse.ai/'), true);
-  for (const target of ['https://evil.example/', 'https://user:password@www.facebook.com/', 'http://auth.muse.ai/', 'javascript:alert(1)', 'about:blank', 'file:///C:/Windows']) assert.equal(policy.allowedPersonalPopupURL(target, 'https://muse.ai/'), false, target);
+  for (const target of ['https://evil.example/', 'https://user:password@www.facebook.com/', 'http://auth.muse.ai/', 'javascript:alert(1)', 'file:///C:/Windows']) assert.equal(policy.allowedPersonalPopupURL(target, 'https://muse.ai/'), false, target);
   assert.equal(policy.allowedPersonalPopupURL('https://www.facebook.com/', 'https://evil.example/'), false);
 });
 
 test('presentation and service action commands accept only bounded documented fields', () => {
   for (const command of [{ type: 'presentation', compact: true }, { type: 'dismissNotice' }, ...['search', 'feed', 'library', 'settings', 'connections', 'whatsapp'].map(action => ({ type: 'serviceAction', action }))]) assert.deepEqual(policy.validatePersonalCommand(command), command);
   for (const command of [{ type: 'presentation', compact: 'true' }, { type: 'presentation', compact: true, script: 'evil' }, { type: 'serviceAction', action: 'eval' }, { type: 'serviceAction', action: 'whatsapp', url: 'https://evil.example' }, { type: 'dismissNotice', token: 'secret' }]) assert.throws(() => policy.validatePersonalCommand(command));
+});
+
+test('account management is allowed only in owned popups, with exact trusted origins', () => {
+  const opener='https://www.meta.ai/';
+  assert.equal(policy.allowedPersonalPopupURL('https://accountscenter.meta.com/',opener),true);
+  assert.equal(policy.allowedPersonalAccountURL?.('https://accountscenter.meta.com/subscriptions'),true);
+  assert.equal(policy.allowedPersonalURL('https://accountscenter.meta.com/'),false,'chat pages keep their narrower boundary');
+  assert.equal(policy.allowedPersonalPopupURL('about:blank',opener),true,'Meta can reserve a popup before asynchronously choosing its URL');
+  for(const url of ['https://accountscenter.meta.com.evil.example/','https://accountscenter.meta.com:9999/','https://user@accountscenter.meta.com/','http://accountscenter.meta.com/','https://accounts.google.com/','about:srcdoc','about:blank#unexpected'])assert.equal(policy.allowedPersonalAccountURL?.(url),false,url);
+  assert.equal(policy.allowedPersonalPopupURL('about:blank','file:///app/index.html'),false);
+  assert.equal(policy.allowedPersonalPopupURL('about:blank','about:blank'),false);
+});
+
+test('Meta settings accepts only navigation sections, never purchases or connection consent',()=>{
+  for(const section of ['general','apps'])assert.deepEqual(policy.validatePersonalCommand({type:'metaSettings',section}),{type:'metaSettings',section});
+  for(const command of [{type:'metaSettings',section:'upgrade'},{type:'metaSettings',section:'apps',url:'https://evil.example'},{type:'metaSettings',section:'apps',connect:true}])assert.throws(()=>policy.validatePersonalCommand(command));
 });

@@ -9,7 +9,7 @@ const npm=(...names)=>names.map(name=>['npm','run',`test:${name}`]);
 export const CI_SUITES={
  unit:[['npm','test']],
  appearance:npm('startup-animation','motion','typography'),
- navigation:npm('preview-parity','browser-preview','onboarding-preview','navigation-cache','preview-annotations'),
+ navigation:[...npm('preview-parity','browser-preview','onboarding-preview','navigation-cache','preview-annotations'),['node','scripts/meta-settings-smoke.mjs'],['node','scripts/meta-settings-smoke.mjs','--desktop']],
  extensions:npm('catalog-preview','catalog-desktop','plugin-tools','integration-panels','billing-preview','billing-desktop','conversation-import','code-schedules'),
  chats:npm('renderer-state','code-chat-relations','app-instructions','context-history','recent-context','chat-organization','code-responsiveness','transcript-render','chat-navigation','transcript-position','chat-history-find','prompt-shelf','response-quote','workspace-focus','profile-identity','session-recovery','update-details'),
  native:[

@@ -10,7 +10,7 @@ const destinations = Object.freeze({
 // sign-in redirects. These are exact origin allowances, not subdomain wildcards.
 const hosts = new Set(['muse.ai', 'auth.muse.ai', 'www.meta.ai', 'meta.ai', 'www.facebook.com', 'www.instagram.com', 'auth.meta.com', 'auth.meta.ai']);
 const authenticationHosts = new Set(['auth.muse.ai', 'www.facebook.com', 'www.instagram.com', 'auth.meta.com', 'auth.meta.ai']);
-const commands = new Set(['prewarm', 'layout', 'navigate', 'back', 'forward', 'reload', 'openExternal', 'presentation', 'appearance', 'serviceAction', 'metaAction', 'scheduleAction', 'dismissNotice', 'refreshLibrary', 'selectItem', 'newMuseChat']);
+const commands = new Set(['prewarm', 'layout', 'navigate', 'back', 'forward', 'reload', 'openExternal', 'openNoticeExternal', 'presentation', 'appearance', 'serviceAction', 'metaAction', 'metaSettings', 'scheduleAction', 'dismissNotice', 'refreshLibrary', 'selectItem', 'newMuseChat']);
 const warmTargets = new Set(['bot', 'ideas', 'goals', 'muse-search', 'muse-feed', 'muse-library', 'meta-chat', 'meta-search', 'meta-media', 'meta-artifacts', 'meta-scheduled', 'meta-vibes']);
 const serviceActions = new Set(['search', 'feed', 'library', 'settings', 'connections', 'whatsapp']);
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
@@ -28,7 +28,23 @@ export function allowedPersonalURL(value) {
 }
 export function personalOrigin(value) { return allowedPersonalURL(value) ? new URL(value).origin : null; }
 export function personalAuthenticating(value) { return allowedPersonalURL(value) && authenticationHosts.has(new URL(value).hostname); }
-export function allowedPersonalPopupURL(value, opener) { return allowedPersonalURL(value) && allowedPersonalURL(opener); }
+// Accounts Center is a separate official account/plan destination. Keep it out
+// of the chat-view allowlist: it belongs in an isolated owned account window.
+export function allowedPersonalAccountURL(value) {
+  if (allowedPersonalURL(value)) return true;
+  if (typeof value !== 'string' || value.length > 16384) return false;
+  try { const url=new URL(value);return url.protocol==='https:'&&!url.username&&!url.password&&!url.port&&url.hostname==='accountscenter.meta.com'; } catch { return false; }
+}
+export function personalAccountOrigin(value) { return allowedPersonalAccountURL(value) ? new URL(value).origin : null; }
+export function allowedPersonalPopupURL(value, opener) {
+  // The service may reserve a blank window synchronously, then navigate it
+  // after loading its account flow. It inherits only the sandboxed remote view.
+  return allowedPersonalAccountURL(opener) && (value === 'about:blank' || allowedPersonalAccountURL(value));
+}
+export function personalAccountNotice(value, service = 'chat') {
+  try { if(new URL(value).hostname==='accounts.google.com')return `Google requires sign-in in your browser. Open ${service==='chat'?'Meta AI':'Muse'} there, connect the app in ${service==='chat'?'Settings → Apps':'Settings → Connectors'} using the same Meta account, then return and refresh.`; } catch { /* No remote URL is included in UI or logs. */ }
+  return 'This account step needs your browser. Open the official service there, finish the step using the same Meta account, then return and refresh.';
+}
 export function personalRoute(value) {
   if (!allowedPersonalURL(value)) return null;
   const url = new URL(value);
@@ -42,7 +58,7 @@ export function personalRoute(value) {
 export function validatePersonalCommand(command) {
   const fail = () => { throw Error('Invalid personal Muse command.'); };
   if (!object(command) || !commands.has(command.type)) fail();
-  const fields = command.type === 'prewarm' ? ['type', 'target'] : command.type === 'scheduleAction' ? ['type','action','id'] : command.type === 'layout' ? ['type', 'visible', 'bounds'] : command.type === 'navigate' ? ['type', 'destination'] : command.type === 'presentation' ? ['type', 'compact'] : command.type === 'appearance' ? ['type', 'appearance'] : ['serviceAction','metaAction'].includes(command.type) ? ['type', 'action'] : command.type === 'selectItem' ? ['type', 'id'] : ['type'];
+  const fields = command.type === 'metaSettings' ? ['type','section'] : command.type === 'prewarm' ? ['type', 'target'] : command.type === 'scheduleAction' ? ['type','action','id'] : command.type === 'layout' ? ['type', 'visible', 'bounds'] : command.type === 'navigate' ? ['type', 'destination'] : command.type === 'presentation' ? ['type', 'compact'] : command.type === 'appearance' ? ['type', 'appearance'] : ['serviceAction','metaAction'].includes(command.type) ? ['type', 'action'] : command.type === 'selectItem' ? ['type', 'id'] : ['type'];
   if (Object.keys(command).some(key => !fields.includes(key))) fail();
   if (command.type === 'prewarm' && !warmTargets.has(command.target)) fail();
   if (command.type === 'navigate' && !owns(destinations, command.destination)) fail();
@@ -54,6 +70,7 @@ export function validatePersonalCommand(command) {
   }
   if(command.type==='scheduleAction'&&(!['edit','options','new'].includes(command.action)||(command.action!=='new'&&!/^[a-f0-9]{24}$/.test(command.id))))fail();
   if(command.type==='metaAction'&&!['newChat','search','media','artifacts','scheduled','vibes'].includes(command.action))fail();
+  if(command.type==='metaSettings'&&!['general','apps'].includes(command.section))fail();
   if (command.type === 'serviceAction' && !serviceActions.has(command.action)) fail();
   if (command.type === 'selectItem' && (typeof command.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(command.id))) fail();
   if (command.type === 'layout') {

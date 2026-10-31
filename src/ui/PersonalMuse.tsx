@@ -308,7 +308,7 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
       </div>
     </header>
     {modeSwitch && <div className="workspace-mode-row">{modeSwitch}</div>}
-    {state?.notice && <div className="personal-notice" role="status"><Info size={14} /><p>{state.notice}</p><button type="button" className="icon-button" aria-label="Dismiss Meta AI notice" onClick={() => void command({ type: 'dismissNotice' })}><X size={14} /></button></div>}
+    {state?.notice && <div className="personal-notice" role="status"><Info size={14} /><p>{state.notice}</p>{state.noticeCanOpenBrowser && state.noticeBrowserDestination && <><button type="button" className="button" onClick={() => void command({ type: 'openNoticeExternal' })}><ExternalLink size={14} />{state.noticeBrowserDestination==='chat'?'Open Meta AI in browser':'Open Muse in browser'}</button>{state.noticeBrowserDestination===state.destination && <button type="button" className="button" onClick={() => void command({ type: 'reload' })}><RefreshCw size={14} />Refresh page</button>}</>}<button type="button" className="icon-button" aria-label="Dismiss Meta AI notice" onClick={() => void command({ type: 'dismissNotice' })}><X size={14} /></button></div>}
     <div className="personal-browser-slot" ref={slot} data-testid="personal-browser-slot">
       {browserPreview.personal?.(state)}
       {!ready ? <div className="personal-browser-message"><Bot size={28} /><h1>Open Meta AI in MuseBench</h1><p>The personal assistant is available in the desktop app.</p></div>
@@ -317,16 +317,20 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
     </div>
     {overlay === 'accounts' && <Modal title="Accounts and connections" className="personal-accounts-modal" close={() => setOverlay(null)}>
       <p className="personal-accounts-intro">Manage your accounts on Meta’s official pages. MuseBench remembers each sign-in on this computer.</p>
-      <div className="personal-account-group" aria-label="Your accounts">
-        <button type="button" className="personal-account-row" aria-label="Meta AI account" onClick={() => perform({ type: 'navigate', destination: 'chat' })}><span className="personal-account-icon"><MessageCircle size={19} /></span><span><strong>Meta AI account</strong><small>Continue with Facebook or the options Meta provides</small></span><ChevronRight size={15} /></button>
+      <div className="personal-account-group" aria-label="Meta AI account">
+        <button type="button" className="personal-account-row" aria-label="Meta AI settings and plan" onClick={() => perform({ type: 'metaSettings', section: 'general' })}><span className="personal-account-icon"><MessageCircle size={19} /></span><span><strong>Meta AI settings &amp; plan</strong><small>Account preferences and Meta AI upgrades / separate from Muse Code billing</small></span><ChevronRight size={15} /></button>
+        <button type="button" className="personal-account-row" aria-label="Meta AI apps" onClick={() => perform({ type: 'metaSettings', section: 'apps' })}><span className="personal-account-icon"><Link2 size={19} /></span><span><strong>Meta AI apps</strong><small>Manage apps such as Gmail, Google Drive, and Outlook</small></span><ChevronRight size={15} /></button>
+      </div>
+      <h3 className="personal-account-section-title">Muse</h3>
+      <div className="personal-account-group" aria-label="Muse account">
         <button type="button" className="personal-account-row" aria-label="Muse account" onClick={() => perform({ type: 'serviceAction', action: 'settings' })}><span className="personal-account-icon"><Bot size={19} /></span><span><strong>Muse account</strong><small>Profile, preferences, and account settings</small></span><ChevronRight size={15} /></button>
       </div>
       <h3 className="personal-account-section-title">Bring Muse with you</h3>
       <div className="personal-account-group" aria-label="Muse connections">
         <button type="button" className="personal-account-row" aria-label="Connect WhatsApp" onClick={() => perform({ type: 'serviceAction', action: 'whatsapp' })}><span className="personal-account-icon"><Smartphone size={19} /></span><span><strong>Connect WhatsApp</strong><small>Pair through Muse’s official messaging settings</small></span><ChevronRight size={15} /></button>
-        <button type="button" className="personal-account-row" aria-label="Connected apps" onClick={() => perform({ type: 'serviceAction', action: 'connections' })}><span className="personal-account-icon"><Link2 size={19} /></span><span><strong>Connected apps</strong><small>Review and manage what Muse can access</small></span><ChevronRight size={15} /></button>
+        <button type="button" className="personal-account-row" aria-label="Muse connections" onClick={() => perform({ type: 'serviceAction', action: 'connections' })}><span className="personal-account-icon"><Link2 size={19} /></span><span><strong>Muse connections</strong><small>Review and manage what Muse can access</small></span><ChevronRight size={15} /></button>
       </div>
-      <p className="personal-account-footnote"><ShieldCheck size={14} /><span>Meta AI and Muse share your browser sign-in. Each service may still ask you to confirm access. Muse CLI sign-in is separate; account permissions and WhatsApp pairing stay with Meta.</span></p>
+      <p className="personal-account-footnote"><ShieldCheck size={14} /><span>Some app providers require sign-in in your browser. Use the same Meta account there, then return and refresh this page. Plan purchases, app permissions, and WhatsApp pairing stay with Meta; Muse Code billing is separate.</span></p>
     </Modal>}
   </section>;
 }

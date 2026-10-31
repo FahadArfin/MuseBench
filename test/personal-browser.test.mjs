@@ -50,6 +50,47 @@ function harness(options = {}) {
 }
 const layout = { type: 'layout', visible: true, bounds: { x: 300, y: 80, width: 700, height: 620 } };
 
+test('reserved account popup preserves opener and session, accepts Accounts Center, and blocks unsupported OAuth without exporting its URL',async t=>{
+ const h=harness();t.after(()=>h.browser.close());await h.browser.dispatch({type:'navigate',destination:'chat'});await h.browser.dispatch(layout);
+ const parent=h.views[0].webContents;const response=parent.openHandler({url:'about:blank'});
+ assert.equal(response.action,'allow');const child=response.createWindow({});
+ assert.equal(h.popups[0].options.webPreferences.session,h.views[0].options.webPreferences.session);
+ assert.equal(h.popups[0].options.webPreferences.preload,undefined);
+ let blocked=false;child.emit('will-navigate',{url:'https://accountscenter.meta.com/subscriptions?state=secret',isMainFrame:true,preventDefault(){blocked=true;}});assert.equal(blocked,false);
+ child.emit('did-navigate',{},'https://accountscenter.meta.com/subscriptions?state=secret');
+ assert.equal(h.popups[0].title,'Meta AI account — https://accountscenter.meta.com');
+ child.emit('will-redirect',{url:'https://accounts.google.com/o/oauth2/auth?state=secret',isMainFrame:true,preventDefault(){blocked=true;}});assert.equal(blocked,true);
+ assert.equal(h.browser.snapshot().noticeCanOpenBrowser,true);assert.match(h.browser.snapshot().notice,/Google.*browser/);
+ assert.deepEqual(h.external,[]);assert.equal(JSON.stringify(h.states).includes('secret'),false);
+ await h.browser.dispatch({type:'openNoticeExternal'});assert.deepEqual(h.external,['https://www.meta.ai/']);
+ await h.browser.dispatch({type:'dismissNotice'});assert.equal(h.browser.snapshot().noticeCanOpenBrowser,false);
+});
+
+test('account browser handoff keeps its originating service after foreground navigation',async t=>{
+ const h=harness();t.after(()=>h.browser.close());await h.browser.dispatch({type:'navigate',destination:'chat'});await h.browser.dispatch(layout);
+ const child=h.views[0].webContents.openHandler({url:'https://accountscenter.meta.com/'}).createWindow({});
+ await h.browser.dispatch({type:'navigate',destination:'bot'});
+ child.emit('will-redirect',{url:'https://accounts.google.com/o/oauth2/auth?state=private',isMainFrame:true,preventDefault(){}});
+ assert.equal(h.browser.snapshot().noticeBrowserDestination,'chat');await h.browser.dispatch({type:'openNoticeExternal'});assert.deepEqual(h.external,['https://www.meta.ai/']);
+ await h.browser.dispatch({type:'dismissNotice'});await h.browser.dispatch({type:'openNoticeExternal'});assert.equal(h.external.length,1);
+ await h.browser.dispatch({type:'openExternal'});assert.equal(h.external[1],'https://muse.ai/','regular menu still opens current service');
+});
+
+test('Meta settings uses the Meta document and preserves the Muse draft',async t=>{
+ const calls=[];const h=harness({metaAdapter:{settings:async(contents,section)=>{calls.push({contents,section});return true;},dismiss:async()=>true}});t.after(()=>h.browser.close());
+ await h.browser.dispatch({type:'navigate',destination:'bot'});await h.browser.dispatch(layout);const muse=h.views[0].webContents;muse.unsentDraft='keep this';
+ await h.browser.dispatch({type:'metaSettings',section:'apps'});assert.equal(calls.length,1);assert.equal(calls[0].contents.getURL(),'https://www.meta.ai/');assert.equal(calls[0].section,'apps');assert.equal(muse.unsentDraft,'keep this');assert.equal(h.browser.snapshot().destination,'chat');
+});
+
+test('leaving Meta settings aborts pending official menu navigation',async t=>{
+ let received,finish;const h=harness({metaAdapter:{settings:async(_contents,_section,{signal})=>{received=signal;return new Promise(resolve=>{finish=resolve;});},dismiss:async()=>true}});t.after(()=>h.browser.close());
+ await h.browser.dispatch({type:'navigate',destination:'chat'});await h.browser.dispatch(layout);
+ const pending=h.browser.dispatch({type:'metaSettings',section:'general'});
+ while(!received)await new Promise(resolve=>setImmediate(resolve));
+ await h.browser.dispatch({type:'navigate',destination:'bot'});assert.equal(received.aborted,true);
+ finish(false);await pending;assert.equal(h.browser.snapshot().destination,'bot');assert.equal(h.browser.snapshot().notice,null);
+});
+
 test('personal sign-in stays busy after its opening command settles until the account window closes',async t=>{
  const h=harness({warmLimit:0});t.after(()=>h.browser.close());
  const onboarding=createOnboarding({getBinary:()=>null,personal:h.browser});

@@ -55,17 +55,20 @@ async function openApp() {
   await resize(1440, 900);
   // The real, dedicated personal sessions are exercised; only their network
   // responses are replaced. Unknown hosts fail closed inside the fixture.
-  await app.evaluate(async ({ session }, websiteFixture) => {
+  await app.evaluate(async ({ session, webContents }, websiteFixture) => {
     globalThis.__personalFixtureRequests = [];
     for (const partition of ['persist:musebench-personal-muse', 'persist:musebench-personal-chat']) {
       const personalSession = session.fromPartition(partition);
       await personalSession.protocol.handle('https', request => {
         const url = new URL(request.url);
         globalThis.__personalFixtureRequests.push({ partition, origin: url.origin, path: url.pathname });
-        if (!['muse.ai', 'auth.muse.ai', 'www.meta.ai', 'meta.ai', 'www.facebook.com', 'www.instagram.com', 'auth.meta.com'].includes(url.hostname)) return new Response('Offline fixture refuses this host', { status: 451 });
+        if (!['muse.ai', 'auth.muse.ai', 'www.meta.ai', 'meta.ai', 'www.facebook.com', 'www.instagram.com', 'auth.meta.com', 'accountscenter.meta.com'].includes(url.hostname)) return new Response('Offline fixture refuses this host', { status: 451 });
         return new Response(websiteFixture, { headers: { 'content-type': 'text/html; charset=utf-8' } });
       });
     }
+    // Startup prewarming may have issued a request before the protocol fixture
+    // was installed. Restart those disposable pages under the fixture handler.
+    for(const contents of webContents.getAllWebContents())if(['https://www.meta.ai/','https://muse.ai/'].includes(contents.getURL())){contents.stop();contents.reload();}
   }, websiteFixture);
 }
 async function resize(width, height) {
@@ -345,7 +348,7 @@ try {
   await page.keyboard.press('Escape');
   await accounts.waitFor({ state: 'hidden' });
   assert.equal((await visibleView()).id, chat.id);
-  for (const [button, expected] of [['Muse account', 'General'], ['Connect WhatsApp', 'Messaging channels'], ['Connected apps', 'Connectors']]) {
+  for (const [button, expected] of [['Muse account', 'General'], ['Connect WhatsApp', 'Messaging channels'], ['Muse connections', 'Connectors']]) {
     await page.getByRole('button', { name: 'Accounts and connections', exact: true }).click();
     await accounts.getByRole('button', { name: button, exact: true }).click();
     await accounts.waitFor({ state: 'hidden' });
@@ -398,6 +401,26 @@ try {
   await remoteEval(bot.id, `window.__fixtureShell.setAttribute('data-hatch-full-page-shell','');delete window.__fixtureShell;`);
   await until(async () => (await compactLayout()).dock === 'none', 'Late shell hydration receives compact layout');
   record('Compact presentation follows late website hydration and leaves unrecognized layouts untouched');
+
+  // Real Chromium window.open lifecycle, with offline account/OAuth fixtures.
+  // This verifies the reserved blank popup behavior, not provider acceptance.
+  await remoteEval(bot.id, `(()=>{const button=document.createElement('button');button.id='fixture-reserved-account';button.textContent='Account fixture';button.onclick=()=>{const child=window.open('about:blank','account-fixture');if(child)setTimeout(()=>{child.location.href='https://accountscenter.meta.com/subscriptions?state=fixture-secret';},150);};document.querySelector('main').prepend(button);})()`);
+  await remoteClick(bot.id, '#fixture-reserved-account');
+  const accountPopup = await popupWindow();
+  await until(async () => (await app.evaluate(({webContents},id)=>webContents.fromId(id).getURL(),accountPopup.id)).startsWith('https://accountscenter.meta.com/'), 'Reserved blank popup reaches official account host');
+  assert.deepEqual(await remoteEval(accountPopup.id,'({opener:Boolean(window.opener),process:typeof window.process,require:typeof window.require,musebench:typeof window.musebench})'),{opener:true,process:'undefined',require:'undefined',musebench:'undefined'});
+  assert.equal(await app.evaluate(({webContents},{child,parent})=>webContents.fromId(child).session===webContents.fromId(parent).session,{child:accountPopup.id,parent:bot.id}),true);
+  await remoteEval(accountPopup.id,`(()=>{const link=document.createElement('a');link.id='fixture-google-signin';link.href='https://accounts.google.com/o/oauth2/auth?state=fixture-secret';link.textContent='Provider fixture';document.querySelector('main').prepend(link);})()`);
+  await remoteClick(accountPopup.id,'#fixture-google-signin');
+  await until(async()=> (await personalState()).noticeCanOpenBrowser,'Unsupported provider sign-in offers browser handoff');
+  assert.match((await personalState()).notice,/Google.*browser/);
+  assert.equal(JSON.stringify(await personalState()).includes('fixture-secret'),false);
+  assert.equal(await app.evaluate(()=>globalThis.__personalFixtureRequests.some(request=>request.origin==='https://accounts.google.com')),false,'OAuth endpoint must not be loaded in embedded browser');
+  await app.evaluate(({BrowserWindow,webContents},id)=>BrowserWindow.fromWebContents(webContents.fromId(id)).close(),accountPopup.id);
+  await until(async()=>!(await personalState()).authWindowOpen,'Account fixture closes');
+  await page.getByRole('button',{name:'Open Muse in browser',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Dismiss Meta AI notice',exact:true}).click();
+  record('Reserved account popup retains opener and isolation; Google OAuth is blocked with a credential-free browser handoff');
 
   await remoteEval(bot.id, `document.querySelector('textarea').value = 'Authentication must preserve this draft';`);
   await remoteClick(bot.id, '#fixture-popup');
@@ -527,6 +550,19 @@ try {
   await remoteClick(restoredBot.id, '#fixture-popup');
   await popupWindow();
   await until(async () => (await personalState()).authWindowOpen, 'Owned authentication popup open before native close');
+  // Sign-in is intentionally a close blocker. Capture the fixture-only notice
+  // instead of opening a modal, and prove the owned flow is preserved.
+  await app.evaluate(({ BrowserWindow, dialog }) => {
+    globalThis.__personalCloseNotices = [];
+    dialog.showMessageBox = async (_window, options) => { globalThis.__personalCloseNotices.push(options.message); return { response: 0 }; };
+    BrowserWindow.getAllWindows().find(window => !window.getParentWindow()).close();
+  });
+  await until(async () => app.evaluate(() => globalThis.__personalCloseNotices.some(message => message.includes('Finish sign-in'))), 'Native close preserves active sign-in');
+  assert.equal(page.isClosed(), false);
+  assert.equal((await personalState()).authWindowOpen, true);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(window => window.getParentWindow()).close());
+  await until(async () => !(await personalState()).authWindowOpen, 'Fixture sign-in window closed before app shutdown');
+  record('Native close preserves an open sign-in window until the user closes that flow');
   const child = app.process();
   let closeTimer;
   const nativeExit = new Promise((resolve, reject) => {
@@ -547,7 +583,7 @@ try {
   page = null;
   assert.equal(report.nativeWindowExit.code, 0, `Native close failed: ${JSON.stringify(report.nativeWindowExit)}`);
   assert.equal(report.mainErrors.length, 0, `Main-process errors: ${JSON.stringify(report.mainErrors)}`);
-  record('Native window close exits cleanly with retained personal views and an owned authentication popup, without main-process errors');
+  record('Native window close exits cleanly with retained personal views after sign-in closes, without main-process errors');
   report.status = 'passed';
   report.completedAt = new Date().toISOString();
 } catch (error) {
@@ -559,7 +595,14 @@ try {
   console.error(error);
   process.exitCode = 1;
 } finally {
-  if (app) await app.close().catch(error => report.errors.push(`Close: ${error.message}`));
+  if (app) {
+    // Only this isolated fixture process is owned by the test. A failed quit
+    // must not hide its evidence or leave an indefinite test process behind.
+    let timer;
+    try { await Promise.race([app.close(), new Promise((_, reject) => { timer = setTimeout(() => reject(Error('Fixture cleanup timed out')), 10000); })]); }
+    catch (error) { report.errors.push(`Close: ${error.message}`); app.process()?.kill(); }
+    finally { clearTimeout(timer); }
+  }
   const serialized = JSON.stringify(report, null, 2);
   await writeFile(path.join(fixture, 'report.json'), serialized);
   await writeFile(path.join(artifacts, `personal-ui${variant === 'packaged' ? '-packaged' : ''}-results.json`), serialized);
