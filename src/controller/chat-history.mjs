@@ -77,23 +77,38 @@ export function createHistoryStore(db){
  }
  function find(input){
   validateHistoryFind(input);const {taskId,query,direction,cursor}=input,forward=direction==='next';
-  const selected=cursor?lookup.get(taskId,cursor.messageId):null;
-  if(cursor){let valid=false;if(selected&&selected.role!=='system')for(const m of literalOccurrences(selected.text,query)){if(m.offset===cursor.offset){valid=true;break;}if(m.offset>cursor.offset)break;}if(!valid)throw Error('Invalid history cursor.');}
   const coverage=readCoverage.get(taskId)?.coverage??'app-received';
-  // Iterate one captured body at a time. Neither message lists nor totals enter the renderer.
-  const candidates=db.prepare(`SELECT seq,message_id,role,text,metadata FROM chat_history WHERE task_id=? AND role!='system' AND instr(history_lower(text),?)>0 ORDER BY seq ${forward?'ASC':'DESC'}`);
-  let fallback=null;
-  const hit=({row,match})=>historyHit({...row,captureTruncated:JSON.parse(row.metadata).captureTruncated},match);
-  for(const row of candidates.iterate(taskId,query.toLowerCase())){
-   let choice=null;const eligible=!cursor||(forward?row.seq>=selected.seq:row.seq<=selected.seq);
-   for(const match of literalOccurrences(row.text,query)){
-    if(forward){fallback??={row,match};if(eligible&&(!cursor||row.seq!==selected.seq||match.offset>cursor.offset))return{hit:hit({row,match}),coverage,wrapped:false};}
-    else{if(!fallback||fallback.row.seq===row.seq)fallback={row,match};if(eligible&&(!cursor||row.seq!==selected.seq||match.offset<cursor.offset))choice=match;}
+  const hit=(row,match)=>historyHit({...row,captureTruncated:JSON.parse(row.metadata).captureTruncated},match);
+  const selected=cursor?lookup.get(taskId,cursor.messageId):null;
+  if(cursor){
+   let valid=false,choice=null;
+   if(selected&&selected.role!=='system')for(const match of literalOccurrences(selected.text,query)){
+    if(match.offset===cursor.offset)valid=true;
+    if(forward&&match.offset>cursor.offset){choice=match;break;}
+    if(!forward&&match.offset<cursor.offset)choice=match;
+    if(!forward&&match.offset>=cursor.offset)break;
    }
-   if(choice)return{hit:hit({row,match:choice}),coverage,wrapped:false};
+   if(!valid)throw Error('Invalid history cursor.');
+   // A same-message step touches no other captured body and needs no SQL text filter.
+   if(choice)return{hit:hit(selected,choice),coverage,wrapped:false};
   }
-  return{hit:fallback?hit(fallback):null,coverage,wrapped:Boolean(cursor&&fallback)};
+  const scan=(boundary='',sequence=[])=>{
+   // The task/sequence index excludes the already-passed range before any text filtering.
+   const candidates=db.prepare(`SELECT message_id,role,text,metadata FROM chat_history WHERE task_id=? ${boundary} AND role!='system' AND instr(history_lower(text),?)>0 ORDER BY seq ${forward?'ASC':'DESC'}`);
+   for(const row of candidates.iterate(taskId,...sequence,query.toLowerCase())){
+    let choice=null;
+    for(const match of literalOccurrences(row.text,query)){choice=match;if(forward)break;}
+    if(choice)return hit(row,choice);
+   }
+   return null;
+  };
+  const following=scan(cursor?`AND seq${forward?'>':'<'}?`:'',cursor?[selected.seq]:[]);
+  if(following||!cursor)return{hit:following,coverage,wrapped:false};
+  // Only exhausted directional ranges trigger a second scan from the wrap boundary.
+  const wrapped=scan(`AND seq${forward?'<=':'>='}?`,[selected.seq]);
+  return{hit:wrapped,coverage,wrapped:Boolean(wrapped)};
  }
+
  function page({taskId,before,messageId,offset=0,limit=20}={}){
   if(typeof taskId!=='string'||!Number.isInteger(limit)||limit<1||limit>50||!Number.isInteger(offset)||offset<0||offset>CAP||before!==undefined&&typeof before!=='string'||messageId!==undefined&&typeof messageId!=='string')throw Error('Invalid history request.');
   const total=count.get(taskId).n;

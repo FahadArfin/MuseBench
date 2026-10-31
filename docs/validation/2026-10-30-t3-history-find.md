@@ -21,3 +21,9 @@ Base: `715de339bb2f64f34683649570d30bc9d2b23315`.
 - `npm.cmd run build` passed TypeScript and production build. Existing Vite large-chunk advisory remains. CI registration tests passed 6/6 after adding the required check and clean report upload path.
 
 The focused command runs both variants in the chats CI group; unit discovery includes the new controller tests. CI uploads only report JSON, excluding fixture profiles and screenshots. Final combined CI, release, installed UI and native provider acceptance remain separate gates. Full baseline suite repetition was deferred according to the scoped task instruction.
+
+## Review corrections
+
+Independent review found two missing guarantees. ChatFind now accepts a saved result only after a successful current read, so rejected queries and stale cursors cannot restore the previous same-owner reader/mark, enable stepping or trigger its navigation effect. The store searches the cursor message and its indexed direction range before considering a separate wrap range, avoiding scans through messages already passed.
+
+The new scan-count regression failed against the prior implementation (all three 4,096-character fixture bodies scanned during a same-message step) and now passes all six next/previous/cross-message/wrap cases. The amended search smoke also reproduced both rejected-query and real stale-cursor failures before the fix, then passed with zero readers/marks and disabled controls on error, plus recovery on a fresh successful query. Final reports: `artifacts/chat-history-find/preview-mVAj3K/report.json` (10 checks), `artifacts/chat-history-find/desktop-t8vHCB/report.json` (9 checks), no renderer errors and zero counted provider admissions. The focused history/latest-read tests passed 23/23; TypeScript/production build and diff checks passed. Existing Vite chunk advisory and cold/no-match synchronous scan limitations remain. Broad unchanged suites were not repeated for this correction.

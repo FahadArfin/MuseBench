@@ -26,8 +26,10 @@ export function ChatFind({active,context,projectId,taskId,transcript,onNavigate}
  const input=useRef<HTMLInputElement>(null),trigger=useRef<HTMLButtonElement>(null),selected=useRef<{messageId:string;occurrence:number;index:number}|null>(null),reveal=useRef(false),navigate=useRef(onNavigate);navigate.current=onNavigate;
  const enabled=active&&open&&mode==='chat'&&scope==='saved'&&!!query&&!!projectId&&!!taskId;
  const saved=useLatestRead<HistoryFindResult|null>({owner:`${context}:${projectId}:${taskId}:${enabled}`,key:JSON.stringify({query,...request}),read:()=>enabled?window.musebench!.findChatHistory({projectId:projectId!,taskId:taskId!,query,...request}):Promise.resolve(null)});
+ // The shared queue retains same-owner values after failure; only a successful current key is accepted here.
+ const acceptedSaved=enabled&&!saved.pending&&!saved.error?saved.value:null;
  const savedReveal=useRef<HistoryFindResult|null>(null);
- useEffect(()=>{if(enabled&&!saved.pending&&saved.value&&saved.value!==savedReveal.current){savedReveal.current=saved.value;if(saved.value.hit)navigate.current?.();}},[enabled,saved.pending,saved.value]);
+ useEffect(()=>{if(acceptedSaved&&acceptedSaved!==savedReveal.current){savedReveal.current=acceptedSaved;if(acceptedSaved.hit)navigate.current?.();}},[acceptedSaved]);
  const close=()=>{setOpen(false);trigger.current?.focus();};
  const reset=()=>{selected.current=null;reveal.current=true;setRequest({direction:'next',serial:0});setError('');};
  useEffect(()=>{if(!active)setOpen(false);},[active]);
@@ -55,12 +57,12 @@ export function ChatFind({active,context,projectId,taskId,transcript,onNavigate}
   return()=>{CSS.highlights.delete('chat-find');CSS.highlights.delete('chat-find-current');};
  },[open,mode,scope,result]);
  const step=(direction:number)=>{
-  if(scope==='saved'){if(!saved.pending&&saved.value?.hit){const {messageId,offset}=saved.value.hit;setRequest(r=>({cursor:{messageId,offset},direction:direction>0?'next':'previous',serial:r.serial+1}));}return;}
+  if(scope==='saved'){if(acceptedSaved?.hit){const {messageId,offset}=acceptedSaved.hit;setRequest(r=>({cursor:{messageId,offset},direction:direction>0?'next':'previous',serial:r.serial+1}));}return;}
   if(!result.hits.length)return;const index=(result.index+direction+result.hits.length)%result.hits.length,hit=result.hits[index];selected.current={...hit,index};setResult({...result,index});revealRange(hit.range);
  };
  const searchWeb=async()=>{if(!query.trim())return;try{await window.musebench!.openExternal(`https://www.google.com/search?q=${encodeURIComponent(query.trim())}`);setError('');}catch(e){setError(String(e));}};
- const hit=!saved.pending?saved.value?.hit:null,canStep=scope==='visible'?!!result.hits.length:!!hit;
- const coverage=saved.value?.coverage==='preview-sample'?'Preview sample · Reload clears sample changes':saved.value?.coverage==='retained-legacy'?'Retained legacy capture · Earlier text may be missing':'App-received capture · Earlier or unseen text may be missing';
+ const hit=acceptedSaved?.hit,canStep=scope==='visible'?!!result.hits.length:!!hit;
+ const coverage=acceptedSaved?.coverage==='preview-sample'?'Preview sample · Reload clears sample changes':acceptedSaved?.coverage==='retained-legacy'?'Retained legacy capture · Earlier text may be missing':'App-received capture · Earlier or unseen text may be missing';
  return <div className="chat-find-anchor">
   <button ref={trigger} className={`icon-button ${open?'active':''}`} aria-label="Search this chat" title="Search this chat · Ctrl+F" aria-expanded={open} onClick={()=>{setOpen(v=>!v);setMode('chat');}}><Search size={16}/></button>
   {open&&<section className="chat-find-popover" aria-label="Quick search" onKeyDown={e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close();}}}>
@@ -73,8 +75,8 @@ export function ChatFind({active,context,projectId,taskId,transcript,onNavigate}
     <button type="button" aria-label="Close search" title="Close · Esc" onClick={close}><X size={15}/></button>
    </form>
    {mode==='chat'&&<div className="chat-find-scopes" role="group" aria-label="Search scope"><button aria-pressed={scope==='visible'} onClick={()=>{reset();setScope('visible');}}>Visible</button><button aria-pressed={scope==='saved'} disabled={!projectId||!taskId} onClick={()=>{reset();setScope('saved');}}>Saved history</button></div>}
-   {query&&<div className="chat-find-status"><span role="status">{mode==='web'?'Press Enter to search Google':scope==='visible'?result.hits.length?`${result.index+1} of ${result.hits.length} visible`:'No visible matches':saved.pending?'Searching saved history…':saved.error?'Saved search unavailable':hit?`Saved match${saved.value?.wrapped?' · Wrapped':''}`:'No matches in captured history'}</span>{mode==='chat'&&<><button aria-label="Previous match" title="Previous · Shift+Enter" disabled={!canStep} onClick={()=>step(-1)}><ChevronUp size={14}/></button><button aria-label="Next match" title="Next · Enter" disabled={!canStep} onClick={()=>step(1)}><ChevronDown size={14}/></button></>}</div>}
-   {enabled&&!saved.pending&&saved.value&&<section className="chat-find-reader" aria-label="Saved text match"><small>{coverage}{hit?.captureTruncated?' · This message capture was truncated':''}</small>{hit&&<><div className="chat-find-source">{hit.role} · Message {hit.messageId} · Offset {hit.offset}</div><pre>{hit.excerpt.slice(0,hit.offset-hit.excerptOffset)}<mark>{hit.excerpt.slice(hit.offset-hit.excerptOffset,hit.offset-hit.excerptOffset+hit.length)}</mark>{hit.excerpt.slice(hit.offset-hit.excerptOffset+hit.length)}</pre></>}</section>}
+   {query&&<div className="chat-find-status"><span role="status">{mode==='web'?'Press Enter to search Google':scope==='visible'?result.hits.length?`${result.index+1} of ${result.hits.length} visible`:'No visible matches':saved.pending?'Searching saved history…':saved.error?'Saved search unavailable':hit?`Saved match${acceptedSaved?.wrapped?' · Wrapped':''}`:'No matches in captured history'}</span>{mode==='chat'&&<><button aria-label="Previous match" title="Previous · Shift+Enter" disabled={!canStep} onClick={()=>step(-1)}><ChevronUp size={14}/></button><button aria-label="Next match" title="Next · Enter" disabled={!canStep} onClick={()=>step(1)}><ChevronDown size={14}/></button></>}</div>}
+   {acceptedSaved&&<section className="chat-find-reader" aria-label="Saved text match"><small>{coverage}{hit?.captureTruncated?' · This message capture was truncated':''}</small>{hit&&<><div className="chat-find-source">{hit.role} · Message {hit.messageId} · Offset {hit.offset}</div><pre>{hit.excerpt.slice(0,hit.offset-hit.excerptOffset)}<mark>{hit.excerpt.slice(hit.offset-hit.excerptOffset,hit.offset-hit.excerptOffset+hit.length)}</mark>{hit.excerpt.slice(hit.offset-hit.excerptOffset+hit.length)}</pre></>}</section>}
    {(error||enabled&&saved.error)&&<p className="chat-find-error" role="alert">{error||saved.error}</p>}
   </section>}
  </div>;

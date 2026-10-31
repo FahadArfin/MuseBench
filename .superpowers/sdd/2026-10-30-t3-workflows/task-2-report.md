@@ -36,3 +36,33 @@ Fixed lookup fixture (not an app benchmark): 161 captured messages, one 18,057-c
 Captured text can omit material unseen by the app or discarded before migration and stops at the existing per-message cap. Matches are over literal stored text; formatted Visible search remains its own DOM scope. Saved search rejects a stale cursor after edits rather than silently jumping; a fresh query recovers. It does not search imported library-only copies or connect to a provider. Full combined suite, independent review, remote CI, release packaging, hash validation and final installed UI are owned by the parent workflow and not claimed here. The task explicitly requested scoped checks rather than repeating the complete suite.
 
 Public validation and T302 roadmap entry are updated. `npm.cmd run test:transcript-position` passed 13/13 checks in both variants, with 0px restoration errors and zero observed provider-capable actions; reports are `artifacts/transcript-position/preview-XdF2OP/report.json` and `artifacts/transcript-position/desktop-tu4Gpb/report.json`. Final combined focused run `node --test test/chat-history-find.test.mjs test/chat-history.test.mjs test/latest-read.test.mjs test/ci-suites.test.mjs` passed 28/28, with zero failures/skips. Final commit ID is reported to the parent separately.
+
+## Review fix round 1 — 30 October 2026
+
+Read the complete independent review in `task-2-review.md` against base `d38a46869c717c2cfd3109765ed98740cb47b8ec`. Both P2 findings were reproduced before production changes.
+
+### Failed saved reads and retained values
+
+The shared latest-read hook deliberately preserves the previous same-owner value after a current read fails. ChatFind previously hid that retained value only while pending. ChatFind now derives one `acceptedSaved` value only when saved mode is enabled and the current read is neither pending nor failed. The hit, reader, coverage, wrap label, stepping handler and explicit-navigation side effect all use this same accepted result. The shared hook's behavior for its other consumers remains unchanged.
+
+The amended App smoke first obtains query A successfully, changes to query B and rejects B at the fixture read boundary. It then recovers with a fresh query, edits only the disposable captured row, and sends Next using the now-stale cursor so the production controller rejects it. Each case records reader/mark counts and both navigation buttons. The capture is restored and a fresh successful query must recover before the existing stale-query/chat-switch/narrow checks continue.
+
+- RED `node scripts/chat-history-find-smoke.mjs`: `artifacts/chat-history-find/preview-vH8R6D/report.json` records both rejected cases showing one preceding reader and mark, with Next/Previous enabled. The expected zero-reader/disabled assertions failed.
+- GREEN `node scripts/chat-history-find-smoke.mjs`: 10 checks passed; report `artifacts/chat-history-find/preview-mVAj3K/report.json` records zero readers/marks and both controls disabled for each rejection, successful fresh-query recovery and no renderer errors.
+- GREEN `node scripts/chat-history-find-smoke.mjs --desktop`: 9 checks passed through the real source App/preload/original production IPC handler; report `artifacts/chat-history-find/desktop-t8vHCB/report.json` records the same rejection/recovery behavior and no renderer errors. Rejection injection runs after the real query call; stale-cursor rejection comes from the real controller after a disposable SQLite capture edit. No personal data was edited.
+
+### Cursor direction ranges
+
+The store now validates the cursor and searches its captured message first. A same-message next/previous returns immediately without touching any other body. If that message has no eligible occurrence, SQLite searches only `seq > selected` for Next or `seq < selected` for Previous, using the existing task/sequence index. Only exhaustion of this range triggers a separate wrap range (`seq <= selected` or `seq >= selected`) from the appropriate boundary. Literal offsets, non-overlap, role exclusion, owner checks, one bounded excerpt, capture coverage and explicit wrap semantics are unchanged.
+
+- RED `node --test test/chat-history-find.test.mjs`: 8 existing tests passed and the new scan-count test failed. Three 4,096-character matching messages were instrumented through the existing SQLite `history_lower` function. Next from `m2:1` touched `['0','1','2']`, rather than no other bodies.
+- GREEN same command: 9/9 passed. The six instrumented cases assert zero SQL text-filter body scans for next/previous within the cursor message; exactly the next or previous body when crossing messages; and exactly the wrap boundary body when wrapping in either direction. Results and wrapped flags are independently asserted as literal fixture expectations. The instrumented function exists only in the disposable test database; no production counters or test hooks were added.
+
+### Focused final verification and limits
+
+- `node --test test/chat-history-find.test.mjs test/chat-history.test.mjs test/latest-read.test.mjs`: 23 passed, zero failures/skips.
+- `npm.cmd run build`: passed native helper check, TypeScript and production build. Existing Vite large-chunk advisory remains.
+- `git diff --check`: passed.
+- Both amended smoke reports retain observed `providerAdmissionActions:0` and injected controller `fakeRuntimeCalls:0`; counter scope remains as documented above. No provider action was admitted, no push/install/subagents were performed.
+
+Cold/no-match searches can still scan eligible capture bodies synchronously, and searching a selected body can traverse its bounded captured text. This fix removes the avoidable restart through already-passed messages; it makes no constant-latency or large-capture benchmark claim. Unchanged broad CI/T301 suites were not repeated; the amended search App smoke still covers visible-find/T301 release behavior, mutation continuity, stale successful query/chat races, narrow layout and safe rendering. Independent re-review and later combined CI/install acceptance remain separate gates.

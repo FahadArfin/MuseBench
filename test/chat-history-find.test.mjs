@@ -50,3 +50,21 @@ test('production preview occurrence contract agrees on Unicode, repeat navigatio
  const initial=findPreviewHistory(messages,{...request,query:'i\u0307'});assert.equal(initial.hit.offset,2);assert.equal(initial.hit.length,1);assert.equal(initial.coverage,'preview-sample');
  const r=findPreviewHistory(messages,request);assert.equal(r.hit.offset,4);const next=findPreviewHistory(messages,{...request,cursor:{messageId:'a',offset:4}});assert.equal(next.hit.offset,9);assert.equal(findPreviewHistory(messages,{...request,direction:'previous'}).hit.messageId,'b');assert.throws(()=>findPreviewHistory(messages,{...request,cursor:{messageId:'a',offset:5}}),/cursor/);
 });
+
+test('cursor navigation scans only its direction range and wraps only after exhausting that range',t=>{
+ const db=new DatabaseSync(':memory:'),store=createHistoryStore(db);t.after(()=>db.close());
+ for(let i=0;i<3;i++)store.put('t',{id:'m'+i,role:'assistant',text:String(i)+'x'.repeat(4095)});
+ let scanned=[];db.function('history_lower',{deterministic:true},text=>{scanned.push(text[0]);return text.toLowerCase();});
+ const cases=[
+  ['next','m2',1,'m2',2,false,[]],
+  ['previous','m0',2,'m0',1,false,[]],
+  ['next','m1',4095,'m2',1,false,['2']],
+  ['previous','m1',1,'m0',4095,false,['0']],
+  ['next','m2',4095,'m0',1,true,['0']],
+  ['previous','m0',1,'m2',4095,true,['2']],
+ ];
+ for(const [direction,messageId,offset,wantId,wantOffset,wrapped,wantScanned] of cases){
+  scanned=[];const r=store.find({taskId:'t',query:'x',direction,cursor:{messageId,offset}});
+  assert.equal(r.hit.messageId,wantId);assert.equal(r.hit.offset,wantOffset);assert.equal(r.wrapped,wrapped);assert.deepEqual(scanned,wantScanned,`${direction} from ${messageId}:${offset} must not scan already-passed bodies`);
+ }
+});
