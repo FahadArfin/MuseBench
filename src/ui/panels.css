@@ -198,6 +198,12 @@
 .command-copy-notice strong, .pending-card > strong { font-size: 12px; font-weight: 600; }
 .command-copy-notice p, .pending-card p { font-size: 12px; line-height: 1.7; color: var(--muted); margin: 10px 0; overflow-wrap: anywhere; }
 .permission-field { margin-top: 14px; }
+.permission-discovery { margin: 12px 0; display: grid; gap: 6px; }
+.permission-discovery > div { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; }
+.permission-discovery dt { color: var(--muted); font-size: 11px; }
+.permission-discovery dd { margin: 0; min-width: 0; }
+.permission-discovery code { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.permission-field > pre:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .permission-field > span { display: block; font-size: 10px; color: var(--muted); margin-bottom: 6px; }
 .permission-field > code, .permission-field > pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.7; margin: 0; }
 .permission-field > pre { max-height: 240px; overflow: auto; background: var(--bg); border: 1px solid var(--border); border-radius: 5px; padding: 10px; }

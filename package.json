@@ -66,6 +66,7 @@
     "test:code-schedules": "node scripts/code-schedules-smoke.mjs && node scripts/code-schedules-smoke.mjs --desktop",
     "test:preview-annotations": "node scripts/preview-target-smoke.mjs && node scripts/preview-annotations-smoke.mjs && node scripts/preview-annotations-smoke.mjs --desktop && node scripts/preview-annotations-app-smoke.mjs",
     "test:tool-discovery": "node scripts/discovery-tools-smoke.mjs && node scripts/discovery-tools-smoke.mjs --desktop",
+    "test:discovery-approvals": "node scripts/discovery-approval-smoke.mjs && node scripts/discovery-approval-smoke.mjs --desktop",
     "test:workspace-analysis": "node scripts/workspace-analysis-smoke.mjs && node scripts/workspace-analysis-smoke.mjs --desktop"
   },
   "dependencies": {

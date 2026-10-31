@@ -25,7 +25,7 @@ const required=[
  'npm run test:catalog-preview','npm run test:catalog-desktop','npm run test:billing-preview',
  'npm run test:billing-desktop','npm run test:preview-parity','node scripts/mobile-settings-smoke.mjs',
  'node scripts/native-control-smoke.mjs','node scripts/native-navigation-smoke.mjs','node scripts/session-mcp-smoke.mjs','node scripts/session-mcp-smoke.mjs --desktop',
- 'npm run test:conversation-import','npm run test:code-schedules','npm run test:preview-annotations','npm run test:workspace-analysis','npm run test:tool-discovery',
+ 'npm run test:conversation-import','npm run test:code-schedules','npm run test:preview-annotations','npm run test:workspace-analysis','npm run test:tool-discovery','npm run test:discovery-approvals',
 ];
 
 test('parallel groups retain every previous check exactly once with real commands',async()=>{
@@ -87,4 +87,13 @@ test('renderer delivery checks run preview and desktop in chats and upload only 
  const paths=shared.jobs.check.steps.filter(step=>step.uses==='actions/upload-artifact@v4').flatMap(step=>String(step.with.path).split('\n'));
  assert.ok(paths.includes('artifacts/renderer-state/**/report.json'));
  assert.ok(!paths.includes('artifacts/renderer-state/**'));
+});
+
+test('discovery approval checks run shared preview and desktop in native with only clean reports',async()=>{
+ assert.equal(packageJson.scripts['test:discovery-approvals'],'node scripts/discovery-approval-smoke.mjs && node scripts/discovery-approval-smoke.mjs --desktop');
+ assert.ok(CI_SUITES.native.some(check=>check.join(' ')==='npm run test:discovery-approvals'));
+ const shared=await workflow('windows-checks');
+ const paths=shared.jobs.check.steps.filter(step=>step.uses==='actions/upload-artifact@v4').flatMap(step=>String(step.with.path).split('\n'));
+ assert.ok(paths.includes('artifacts/discovery-approvals/**/report.json'));
+ assert.ok(!paths.includes('artifacts/discovery-approvals/**'));
 });

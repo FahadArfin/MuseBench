@@ -7,6 +7,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/runtime/index.mjs';
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
+import {permissionDetails} from '../src/ui/permissions.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
 test('ephemeral native hosts never advertise or dispatch a persistent fork',async t=>{const h=await harness(t);h.host.initializeResult.sessionDurability='ephemeral';await h.connect();assert.equal(h.runtime.snapshot().forkSupported,false);await assert.rejects(h.runtime.forkSession({sessionId:'session-one'}));assert.equal(h.calls.some(c=>c.method==='session/fork'),false);});
@@ -521,6 +522,28 @@ test('one-time approval binds the displayed requirement and stays blocked until 
  h.emit({method:'item/completed',params:{sessionId:'session-one',viewCursor:'answer-final',item:{itemId:'answer',kind:'agentMessage',text:'Finished after approval',revision:1,status:'completed',turnId:'turn-one'}}});
  h.emit({method:'turn/completed',params:{sessionId:'session-one',turnId:'turn-one',viewCursor:'turn-final',terminal:'completed'}});
  assert.equal(h.runtime.snapshot().status,'completed');assert.equal(h.runtime.snapshot().messages[0].text,'Finished after approval');
+});
+
+test('discovery attribution preserves native one-time approval and denial routing without a new turn',async t=>{
+ for(const decision of ['approved','denied']){
+  const sources=[{id:'global:docs',revision:'a'.repeat(64)}];
+  const h=await harness(t,{discoveryMcp:async()=>({identity:{sources},config:{transport:'stdio',command:'trusted',args:[],mode:'required'},verify:async()=>{},close:async()=>{}})});
+  h.host.initializeResult.grantedCapabilities=['sessionMcp'];
+  await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,toolDiscovery:{sources,reviewed:true}});
+  await h.runtime.send({text:'Disposable approval fixture'});
+  const request={sessionId:'session-one',turnId:'turn-one',approvalId:'discovery-'+decision,currentRequirementId:{approvalId:'discovery-'+decision,sourceIndex:2},toolName:'mcp__musebench_discovery__discovery_call',rawArgs:JSON.stringify({sourceId:'global:docs',catalogRevision:'b'.repeat(64),tool:'same_tool',arguments:{query:'literal'}}),availableChoices:[{choiceId:'allow-current',scope:'once',decision:'approved'},{choiceId:'deny-current',scope:'once',decision:'denied'}]};
+  await h.request({method:'approval/request',params:request});
+  const snapshot=h.runtime.snapshot(),details=permissionDetails(snapshot.pending,snapshot);
+  assert.equal(details.discovery?.sourceId,'global:docs');assert.equal(details.discovery?.tool,'same_tool');
+  const choice=details.choices.find(row=>row.decision===decision);
+  assert.equal(choice.decisionToken,snapshot.pending.availableChoices.find(row=>row.decision===decision).decisionToken);
+  await h.runtime.decide(choice.decisionToken);
+  await assert.rejects(h.runtime.decide(choice.decisionToken),/pending|submitted/);
+  const commands=h.calls.filter(row=>row.method==='approval/decide');assert.equal(commands.length,1);
+  assert.deepEqual(commands[0].params,{sessionId:'session-one',approvalId:request.approvalId,choiceId:decision==='approved'?'allow-current':'deny-current',requirementId:request.currentRequirementId});
+  assert.equal(h.calls.filter(row=>row.method==='turn/start').length,1);
+  assert.equal(h.calls.some(row=>row.method==='tools/call'),false);
+ }
 });
 
 test('deny alias cannot write a persistent permission rule',async t=>{
