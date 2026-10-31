@@ -10,7 +10,21 @@ export function workspaceLaidOut(element:HTMLElement){
 export function workspaceVisible(element:HTMLElement){
  if(!workspaceLaidOut(element))return false;
  const rect=element.getBoundingClientRect();
- return rect.width>0&&rect.height>0&&rect.bottom>0&&rect.top<innerHeight&&rect.right>0&&rect.left<innerWidth;
+ let left=Math.max(0,rect.left),right=Math.min(innerWidth,rect.right),top=Math.max(0,rect.top),bottom=Math.min(innerHeight,rect.bottom),fixed=getComputedStyle(element).position==='fixed';
+ // A laid-out row can still sit behind its scroller's header/footer. Keep
+ // focus restoration inside every overflow clip, without scrolling to it.
+ for(let ancestor=element.parentElement;ancestor;ancestor=ancestor.parentElement){
+  const style=getComputedStyle(ancestor),bounds=ancestor.getBoundingClientRect();
+  // Viewport-fixed dialogs escape an intervening sidebar scroller. Resume
+  // ancestor clipping only at an actual fixed-position containing block.
+  if(fixed){if(style.transform==='none'&&style.perspective==='none'&&style.filter==='none'&&!/(paint|layout|strict|content)/.test(style.contain)&&!/(transform|perspective|filter)/.test(style.willChange))continue;fixed=false;}
+  const scaleX=ancestor.offsetWidth?bounds.width/ancestor.offsetWidth:1,scaleY=ancestor.offsetHeight?bounds.height/ancestor.offsetHeight:1;
+  if(style.overflowX!=='visible'){const edge=bounds.left+ancestor.clientLeft*scaleX;left=Math.max(left,edge);right=Math.min(right,edge+ancestor.clientWidth*scaleX);}
+  if(style.overflowY!=='visible'){const edge=bounds.top+ancestor.clientTop*scaleY;top=Math.max(top,edge);bottom=Math.min(bottom,edge+ancestor.clientHeight*scaleY);}
+  if(right<=left||bottom<=top)return false;
+  if(style.position==='fixed')fixed=true;
+ }
+ return right>left&&bottom>top;
 }
 export function workspaceFocusBlocked(){
  return [...document.querySelectorAll<HTMLElement>('[role="dialog"],[role="alertdialog"],[role="menu"],#muse-slash-options')].some(workspaceVisible)||document.activeElement?.matches('webview,iframe');
