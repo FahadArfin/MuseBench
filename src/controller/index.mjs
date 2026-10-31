@@ -26,6 +26,7 @@ import {createHistoryStore} from './chat-history.mjs';
 import {createConversationImports} from './conversation-imports.mjs';
 import {createCodeSchedules} from './code-schedules.mjs';
 import {validateScheduleAction} from '../shared/code-schedules.mjs';
+import {createPromptShelf} from './prompt-shelf.mjs';
 import {createDraftStore} from './code-drafts.mjs';
 import {readRuntimeStatus,projectRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
 import {workIdentity,workLabel} from '../shared/work-activity.mjs';
@@ -176,7 +177,7 @@ async function freePort(){const server=net.createServer();await new Promise((res
 export async function createController({dataDir,projectsDir,newProjectsDir,templateDir=fileURLToPath(new URL('../../templates/tea-store',import.meta.url)),runtime,runtimeFactory,discoveryOAuth,checkTimeoutMs=120000,archiveNow=()=>Date.now(),scheduleNow=()=>Date.now(),schedulePollMs=15000}={}){
   if(!dataDir)throw Error('A controller dataDir is required.');await fs.mkdir(dataDir,{recursive:true});dataDir=await fs.realpath(dataDir);
   runtime??=runtimeFactory?.();
-  const imageStore=createImageStore(dataDir);
+  const imageStore=createImageStore(dataDir),imageLeases=new Map(),imageImports=new Map();
   const legacyProjectsDir=path.join(dataDir,'projects');projectsDir=projectsDir??legacyProjectsDir;
   if(!path.isAbsolute(projectsDir))throw Error('Project storage must be an absolute folder.');projectsDir=path.resolve(projectsDir);
   const worktrees=createWorktreeService(dataDir,{storageDir:path.join(projectsDir,'worktrees')});
@@ -202,6 +203,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   state.workflows=Array.isArray(state.workflows)?state.workflows.flatMap(w=>{try{return[validateWorkflow(w)];}catch{return[];}}).slice(0,30):structuredClone(DEFAULT_WORKFLOWS);
   const draftStore=createDraftStore(db,state.drafts&&typeof state.drafts==='object'&&!Array.isArray(state.drafts)?state.drafts:{});
   state.drafts=draftStore.read();
+  const promptShelf=createPromptShelf(db);
   state.memories=typeof state.memories==='string'?state.memories.slice(0,1500):'';
   state.preview=stopped();state.busy=false;state.error=null;state.runtime=runtime?.snapshot?.()??missingRuntime();
   const taskRecords=new Map();
@@ -391,18 +393,31 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     try{await cleanup();state.runtime=runtime?.snapshot?.()??missingRuntime();if(state.runtime.cleanup==='unconfirmed')throw Error('Native shutdown could not be confirmed. Disconnect Muse before switching projects or tasks.');}
     finally{context.navigation=false;saveTask();context.messageBaseline=runtimeMessageIds(state.runtime);}
   };
+  const ownedImages=value=>{
+    const refs=new Map();const visit=item=>{if(!item||typeof item!=='object')return;if(Array.isArray(item.images))for(const image of item.images)if(image?.id)refs.set(image.id,image);for(const [key,child] of Object.entries(item))if(key!=='images')visit(child);};visit(value);return[...refs.values()];
+  };
+  const releaseImages=async(projectId,candidates)=>{
+    const owners=[...taskRecords.values()].filter(task=>task.projectId===projectId),drafts=Object.entries(state.drafts).filter(([key])=>key.startsWith(projectId+':')).map(([,draft])=>draft),shelf=promptShelf.all().filter(row=>row.key.startsWith(projectId+':')).map(row=>row.draft);
+    if(imageImports.get(projectId)>0)return;
+    const pending=[...imageLeases.values()].filter(lease=>lease.projectId===projectId).flatMap(lease=>[...lease.images.values()]);
+    const retained=new Set([...ownedImages([owners,drafts,shelf]),...pending].map(image=>image.id));
+    await imageStore.release(projectId,candidates.filter(image=>!retained.has(image.id)));
+  };
   const deleteArchivedChat=async (id,allowUnarchived=false)=>{
     requireNavigationIdle();if(typeof allowUnarchived!=='boolean')throw Error('Invalid direct-delete choice.');const target=taskRecords.get(id);if(!target)throw Error('Chat not found.');if(!target.archived&&!allowUnarchived)throw Error('Archive this chat before permanently deleting it.');if(contextBusy(contexts.get(id)))throw Error('Stop this chat before deleting it.');
     // A deleted chat's idle connection must not be reused or left unowned.
     const owner=contexts.get(id);if(runtimeFactory&&owner){await owner.runtime?.disconnect?.();if(contextBusy(owner))throw Error('Native shutdown could not be confirmed. Disconnect Muse before deleting this chat.');}
+    const deletedImages=ownedImages([target,state.drafts[draftKey(target.projectId,id)],promptShelf.list(draftKey(target.projectId,id))]);
     const previous={state:structuredClone(state),baseline,records:new Map(taskRecords)};
     if(state.task?.id===id){await navigationCleanup();state.task=null;baseline={};diffCache.clear();state.runtime=missingRuntime();}
     db.exec('BEGIN IMMEDIATE');
     try{
       inbox.deleteTask(id);executions.deleteTask(id);runChanges.deleteTask(id);outputs.deleteTask(id);history.deleteTask(id);db.prepare('DELETE FROM restore_operations WHERE task_id=?').run(id);db.prepare('DELETE FROM tasks WHERE id=?').run(id);db.prepare('DELETE FROM baselines WHERE task_id=?').run(id);db.prepare('DELETE FROM checkpoints WHERE task_id=?').run(id);
       const retained=contexts.get(id);if(retained){retained.unsubscribe?.();retained.unsubscribe=null;retained.task=null;contexts.delete(id);}if(context.task?.id===id)context.task=null;
-      analytics.deleteTask(id);taskRecords.delete(id);delete state.drafts[draftKey(target.projectId,id)];state.checkpoints=state.checkpoints.filter(item=>item.taskId!==id);persist();db.exec('COMMIT');for(const [key,item] of pendingActivity)if(item.taskId===id)pendingActivity.delete(key);inbox.refresh();
+      promptShelf.deleteOwner(draftKey(target.projectId,id));analytics.deleteTask(id);taskRecords.delete(id);delete state.drafts[draftKey(target.projectId,id)];state.checkpoints=state.checkpoints.filter(item=>item.taskId!==id);persist();db.exec('COMMIT');for(const [key,item] of pendingActivity)if(item.taskId===id)pendingActivity.delete(key);inbox.refresh();
     }catch(error){db.exec('ROLLBACK');inbox.refresh();Object.assign(state,previous.state);baseline=previous.baseline;taskRecords.clear();for(const [key,value] of previous.records)taskRecords.set(key,value);state.runtime=runtime?.snapshot?.()??missingRuntime();throw error;}
+    imageLeases.delete(draftKey(target.projectId,id));
+    await releaseImages(target.projectId,deletedImages).catch(()=>{});
     try{db.exec('PRAGMA wal_checkpoint(TRUNCATE)');}catch{/* Logical deletion is committed; SQLite retries checkpointing on close. */}
   };
   const purgeArchived=async()=>{
@@ -482,11 +497,13 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const project=state.projects.find(p=>p.id===action.projectId);
     if(!project||action.taskId!=null&&taskRecords.get(action.taskId)?.projectId!==project.id)throw Error('Draft project or chat is unavailable.');
     if(typeof action.text!=='string'||action.text.length>16000||!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid draft.');
-    const key=draftKey(action.projectId,action.taskId),files=fileReferences(action.files),images=imageReferences(action.images);
+    const key=draftKey(action.projectId,action.taskId),previousImages=state.drafts[key]?.images??[],files=fileReferences(action.files),images=imageReferences(action.images);
     await imageStore.resolve(action.projectId,images);
     const value=!action.text&&!files.length&&!images.length?null:{text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};
     draftStore.write(key,value);
     if(value===null)delete state.drafts[key];else state.drafts[key]=value;
+    for(const image of images)imageLeases.get(key)?.images.delete(image.id);
+    if(previousImages.length)await releaseImages(action.projectId,previousImages).catch(()=>{});
   };
   const saveCodeDraft=input=>{
     if(closing||closed)return Promise.reject(Error('Controller closed.'));
@@ -496,6 +513,42 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     queue=operation.catch(()=>{});
     return operation;
   };
+  const shelfOwner=input=>{
+    if(!input||typeof input.projectId!=='string'||!(input.taskId===null||typeof input.taskId==='string'&&input.taskId))throw Error('Invalid saved prompt owner.');
+    const project=state.projects.find(p=>p.id===input.projectId),task=input.taskId===null?null:taskRecords.get(input.taskId);
+    if(!project||input.taskId!==null&&task?.projectId!==project.id)throw Error('Saved prompt project or chat owner unavailable.');
+    return{key:draftKey(input.projectId,input.taskId),project,task};
+  };
+  const draftPayload=draft=>JSON.stringify({text:draft?.text??'',files:draft?.files??[],images:draft?.images??[],mode:draft?.mode??'chat'});
+  const shelfQueue=operation=>{if(closing||closed)return Promise.reject(Error('Controller closed.'));const next=queue.then(()=>{if(closed)throw Error('Controller closed.');return operation();});queue=next.catch(()=>{});return next;};
+  const listSavedPrompts=input=>shelfQueue(()=>promptShelf.list(shelfOwner(input).key));
+  const shelfChange=(input,kind)=>shelfQueue(async()=>{
+    const {key,project,task}=shelfOwner(input),before=state.drafts[key]??null;
+    if(kind!=='remove'&&(!input.expected||draftPayload(input.expected)!==draftPayload(before)))throw Error('The draft changed. Try saving or restoring again.');
+    if(kind!=='remove'&&task?.recentContext?.stagedDigest)throw Error('Remove or resolve the included recent excerpts before saving or restoring prompts.');
+    let selected;
+    if(kind!=='park'){if(typeof input.id!=='string'||!input.id||input.id.length>200)throw Error('Invalid saved prompt.');selected=promptShelf.list(key).find(row=>row.id===input.id);if(!selected)throw Error('Saved prompt unavailable.');}
+    const validate=async draft=>{
+      if(!draft||typeof draft.text!=='string'||draft.text.length>16000||!['chat','plan'].includes(draft.mode))throw Error('Invalid saved draft.');
+      const files=fileReferences(draft.files),images=imageReferences(draft.images);await imageStore.resolve(project.id,images);await selectedSources(files,project);
+    };
+    if(kind!=='remove'){if(before)await validate(before);if(selected)await validate(selected.draft);}
+    if(kind==='park'&&!before)throw Error('Write a prompt before saving for later.');
+    let next=before;
+    db.exec('SAVEPOINT prompt_shelf_change');
+    try{
+      if(kind==='park'){promptShelf.put(key,before);next=null;}
+      else if(kind==='restore'){if(before)promptShelf.replace(key,input.id,before);else promptShelf.remove(key,input.id);next=selected.draft;}
+      else promptShelf.remove(key,input.id);
+      if(kind!=='remove')draftStore.write(key,next);
+      db.exec('RELEASE prompt_shelf_change');
+    }catch(error){db.exec('ROLLBACK TO prompt_shelf_change; RELEASE prompt_shelf_change');throw error;}
+    // Mutate the mirror only after durable acknowledgement; persist() must never resurrect a rolled-back draft.
+    if(kind!=='remove'){if(next)state.drafts[key]=next;else delete state.drafts[key];}
+    if(kind==='remove')await releaseImages(project.id,selected.draft.images??[]).catch(()=>{});
+    return{draft:next,entries:promptShelf.list(key)};
+  });
+  const parkCodeDraft=input=>shelfChange(input,'park'),restoreSavedPrompt=input=>shelfChange(input,'restore'),removeSavedPrompt=input=>shelfChange(input,'remove');
   const validateBinding=(projectId,taskId)=>{
     if(state.activeProject?.id!==projectId||taskId!=null&&state.task?.id!==taskId)throw Error('The selected project or chat changed. Open context again.');
   };
@@ -525,7 +578,11 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     queue=capture.catch(()=>{});
   };
   const inspectProjectActions=async({projectId,taskId}={})=>{if(typeof projectId!=='string'||typeof taskId!=='string')throw Error('Choose a project and chat first.');validateBinding(projectId,taskId);const root=state.activeProject.root,result=await readProjectActions(root);validateBinding(projectId,taskId);return{...result,projectId,taskId};};
-  const importImage=async ({projectId,taskId=null,...input})=>{validateBinding(projectId,taskId);const ref=await imageStore.import(projectId,input);validateBinding(projectId,taskId);return ref;};
+  const importImage=async ({projectId,taskId=null,...input})=>{
+    validateBinding(projectId,taskId);imageImports.set(projectId,(imageImports.get(projectId)??0)+1);
+    try{const ref=await imageStore.import(projectId,input);validateBinding(projectId,taskId);const key=draftKey(projectId,taskId),lease=imageLeases.get(key)??{projectId,images:new Map()};lease.images.set(ref.id,ref);imageLeases.set(key,lease);return ref;}
+    finally{imageImports.set(projectId,imageImports.get(projectId)-1);}
+  };
   const readImage=async ({projectId,image})=>{if(!state.projects.some(p=>p.id===projectId))throw Error('Project unavailable.');return imageStore.read(projectId,image);};
   const contextAllowed=name=>!name.split('/').some(part=>['.muse','.codex','.config','auth.json','.mcp.json'].includes(part.toLowerCase()));
   const selectedSources=async(files=[],project=state.activeProject)=>{
@@ -985,6 +1042,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           const t=structuredClone(original);
           if(action.section==='project'&&t.projectId!==action.projectId){
             const destination=state.projects.find(p=>p.id===action.projectId),oldKey=draftKey(t.projectId,t.id),draft=state.drafts[oldKey];
+            if(promptShelf.list(oldKey).some(row=>row.draft.files?.length||row.draft.images?.length))throw Error('Remove or restore saved prompt attachments before moving this chat.');
             if(t.nativeSession)throw Error('Start a fresh native session before moving this chat to another project.');if(t.promptQueue?.length||(draft?.files?.length||draft?.images?.length)||t.messages.some(m=>m.images?.length))throw Error('Remove queued messages and draft attachments before moving this chat to another project.');
             if(await canonicalRoot(destination.root)!==destination.root)throw Error('The destination folder changed. Reopen the project.');
             const snap=await snapshot(destination.root);
@@ -995,6 +1053,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
             db.exec('BEGIN IMMEDIATE');
             try{
               db.prepare('UPDATE baselines SET revision=?,json=? WHERE task_id=?').run(snap.revision,JSON.stringify(snap.files),t.id);
+              promptShelf.move(oldKey,draftKey(t.projectId,t.id));
               if(draft){state.drafts[draftKey(t.projectId,t.id)]=draft;delete state.drafts[oldKey];}
               if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,t);db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(t),t.id);
               if(state.task?.id===t.id){state.task=t;state.activeProject=destination;baseline=snap.files;diffCache.clear();}
@@ -1235,6 +1294,6 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     });queue=op.catch(()=>{});return op;
   };
   const archiveTimer=setInterval(()=>{queue=queue.then(async()=>{if(closed||closing)return;if(inbox.prune())emit();await purgeArchived();}).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,discoverySourceBusy:sourceId=>[...new Set([context,...contexts.values()])].some(c=>contextBusy(c)&&c.runtime?.snapshot?.().toolDiscovery?.sources?.some(row=>row.id===sourceId)),discoveryOwnerSnapshot,discoveryAuth,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,readMcpServers,inspectDiscoverySources,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,findChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');if(['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse'].includes(action.type)){discoveryReview=null;discoveryInspectEpoch++;}await handle(action);if(authSourceRef&&['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse','connectMuse'].includes(action.type))await discoveryOAuth?.()?.inspectSource(authSourceRef).catch(()=>{});}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
+  return{getState,discoverySourceBusy:sourceId=>[...new Set([context,...contexts.values()])].some(c=>contextBusy(c)&&c.runtime?.snapshot?.().toolDiscovery?.sources?.some(row=>row.id===sourceId)),discoveryOwnerSnapshot,discoveryAuth,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,listSavedPrompts,parkCodeDraft,restoreSavedPrompt,removeSavedPrompt,readMcpServers,inspectDiscoverySources,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,findChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');if(['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse'].includes(action.type)){discoveryReview=null;discoveryInspectEpoch++;}await handle(action);if(authSourceRef&&['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse','connectMuse'].includes(action.type))await discoveryOAuth?.()?.inspectSource(authSourceRef).catch(()=>{});}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';

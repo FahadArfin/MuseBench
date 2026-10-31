@@ -125,6 +125,9 @@ export interface AppState {activityInbox?:ActivityEvent[];}
 export interface ContextFile {path:string;hash:string;}
 export interface CodeImage {id:string;name:string;mime:string;bytes:number;}
 export interface CodeDraft {images?:CodeImage[];text:string;files:ContextFile[];mode:'chat'|'plan';updatedAt?:string;}
+export interface SavedPrompt {id:string;draft:CodeDraft;}
+export interface PromptShelfOwner {projectId:string;taskId:string|null;}
+export interface PromptShelfResult {draft:CodeDraft|null;entries:SavedPrompt[];}
 export interface QueuedPrompt extends CodeDraft {recentContext?:import('./recent-context.mjs').RecentCapsule;revision?:number;delivery?:'ready'|'sending'|'unknown';requiredChecks?:string[];workflow?:{id:string;title:string;phase:string;index:number;total:number};handoff?:{id:string;sourceTaskId:string;sourceTitle:string};id:string;runOptions:RunOptions;at:string;}
 export interface InstructionSnapshot {version:1;scope:'app-settings';personal:'included'|'empty';project:'included'|'empty';}
 export interface ContextReceipt {instructionSnapshot?:InstructionSnapshot;recentContext?:RecentContextReceipt;version:number;promptHash:string;revision:string|null;historyMode:string;nativeContext:string;messages:{id:string;role:string;truncated:boolean}[];sources:{path:string;hash:string;characters:number}[];instructions:{personal:string|null;project:string|null};characters:number;}
@@ -160,6 +163,10 @@ export interface MuseBenchBridge {
  inspectProjectActions(input:{projectId:string;taskId:string}):Promise<import('./project-actions.mjs').ProjectActionsSnapshot>;
  importCodeImage(input:{projectId:string;taskId:string|null;name:string;dataUrl:string}):Promise<CodeImage>;
  readCodeImage(input:{projectId:string;image:CodeImage}):Promise<string>;
+ listSavedPrompts(input:PromptShelfOwner):Promise<SavedPrompt[]>;
+ parkCodeDraft(input:PromptShelfOwner&{expected:CodeDraft}):Promise<PromptShelfResult>;
+ restoreSavedPrompt(input:PromptShelfOwner&{id:string;expected:CodeDraft}):Promise<PromptShelfResult>;
+ removeSavedPrompt(input:PromptShelfOwner&{id:string}):Promise<PromptShelfResult>;
  saveCodeDraft(input:{images?:CodeImage[];projectId:string;taskId:string|null;text:string;files:ContextFile[];mode:'chat'|'plan'}):Promise<void>;
 }
 

@@ -264,6 +264,10 @@ else {
       return result.canceled?null:controller.prepareConversationImport(result.filePaths[0]);
     });
     handler('musebench:conversation-import',input=>controller.conversationImport(input));
+    handler('musebench:prompt-shelf-list',input=>controller.listSavedPrompts(input));
+    handler('musebench:prompt-shelf-park',input=>controller.parkCodeDraft(input));
+    handler('musebench:prompt-shelf-restore',input=>controller.restoreSavedPrompt(input));
+    handler('musebench:prompt-shelf-remove',input=>controller.removeSavedPrompt(input));
     handler('musebench:code-draft',input=>controller.saveCodeDraft(validateAction({...input,type:'saveDraft'})));
     handler('musebench:mobile-device',command=>mobileHost.command(command));
     const nativeRenderer=createNativeRenderer({window,ipcMain,trusted:event=>trustedSender(event,window.webContents,uiURL)});

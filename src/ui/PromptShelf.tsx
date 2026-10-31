@@ -1,0 +1,10 @@
+import {useEffect,useRef,useState} from 'react';
+import type {SavedPrompt} from '../shared/types';
+import {Modal} from './WorkspacePanels';
+export function PromptShelf({load,operate,locked,close}:{load:()=>Promise<SavedPrompt[]>;operate:(kind:'restore'|'remove',id:string)=>Promise<unknown>;locked:boolean;close:()=>void}){
+ const active=useRef(true);useEffect(()=>{active.current=true;return()=>{active.current=false;};},[]);
+ const [entries,setEntries]=useState<SavedPrompt[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true);
+ useEffect(()=>{let active=true;void load().then(rows=>{if(active){setEntries(rows);setLoading(false);}},error=>{if(active){setError(String(error));setLoading(false);}});return()=>{active=false;};},[]);
+ const change=async(kind:'restore'|'remove',id:string)=>{setError('');try{await operate(kind,id);if(!active.current)return;if(kind==='restore'){close();return;}const rows=await load();if(active.current)setEntries(rows);}catch(error){if(active.current)setError(String(error));}};
+ return <Modal title="Saved prompts" close={close}><p className="popover-help">Save up to 20 prompts for this chat. Restoring swaps your current draft into the saved slot. Nothing is sent.</p>{error&&<p role="alert">{error}</p>}{loading?<p role="status">Loading saved prompts…</p>:<><p role="status">{entries.length} of 20 saved</p>{!entries.length&&<p>No saved prompts yet.</p>}{entries.map((entry,index)=><article key={entry.id} style={{borderBottom:'1px solid var(--border)',padding:'12px 0',overflowWrap:'anywhere'}}><p style={{whiteSpace:'pre-wrap',maxHeight:160,overflow:'auto'}}>{entry.draft.text||'Attachment prompt'}</p><small>{entry.draft.mode==='plan'?'Plan':'Chat'} · {entry.draft.files.length} files · {entry.draft.images?.length??0} screenshots</small><div className="modal-actions"><button disabled={locked} onClick={()=>void change('restore',entry.id)} aria-label={`Restore saved prompt ${index+1}`}>Restore</button><button disabled={locked} onClick={()=>void change('remove',entry.id)} aria-label={`Delete saved prompt ${index+1}`}>Delete</button></div></article>)}</>}</Modal>;
+}
