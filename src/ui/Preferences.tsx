@@ -1,7 +1,7 @@
 import {useContext} from 'react';
 import {AppUpdatesContext} from './AppUpdates';
 import {useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction} from 'react';
-import {Link2, SlidersHorizontal, Bell, BookOpen, Brain, Check, Code2, CreditCard, Database, Info, Keyboard, Mic, Monitor, Moon, Search, Settings2, ShieldCheck, Sun, Terminal, User, X} from 'lucide-react';
+import {Link2, Plug, Puzzle, Bell, BookOpen, Brain, Check, Code2, CreditCard, Database, Info, Keyboard, Mic, Monitor, Moon, Search, Settings2, ShieldCheck, Sun, Terminal, User, X} from 'lucide-react';
 import {Modal} from './WorkspacePanels';
 import {SettingsServicePanel} from './SettingsServicePanel';
 import {BackgroundSettings} from './BackgroundSettings';
@@ -11,7 +11,8 @@ import {REASONING_LEVELS} from '../shared/run-options.mjs';
 import type {Action, AppState, PersonalDestination} from '../shared/types';
 import './preferences.css';
 import './settings-surfaces.css';
-import {SettingsCustomize, SettingsConnections, type AccountSettingsCommand} from './SettingsConnections';
+import {SettingsConnections, type AccountSettingsCommand} from './SettingsConnections';
+import {CustomizeDialog} from './CustomizeDialog';
 import type {CustomizeTab} from '../shared/customize-types';
 import {useSurfaceMotion} from './useSurfaceMotion';
 export type {Preferences} from './preferences.mjs';
@@ -52,19 +53,22 @@ export function SettingRow({title, description, children}: {title: string; descr
 function Toggle({label, value, change}: {label: string; value: boolean; change: (value:boolean) => void}) {
   return <button type="button" role="switch" aria-label={label} aria-checked={value} className={`preference-toggle ${value ? 'on' : ''}`} onClick={() => change(!value)}><span>{value && <Check size={10}/>}</span></button>;
 }
-const icons = {customize:SlidersHorizontal,connections:Link2,general:Settings2,notifications:Bell,voice:Mic,shortcuts:Keyboard,code:Code2,memory:Brain,skills:BookOpen,connection:Terminal,mobile:Monitor,control:Terminal,account:User,billing:CreditCard,data:Database,updates:Info,about:Info};
+const icons = {customize:BookOpen,connectors:Link2,plugins:Puzzle,mcp:Plug,hooks:Terminal,connections:Link2,general:Settings2,notifications:Bell,voice:Mic,shortcuts:Keyboard,code:Code2,memory:Brain,skills:BookOpen,connection:Terminal,mobile:Monitor,control:Terminal,account:User,billing:CreditCard,data:Database,updates:Info,about:Info};
 const effortNames:Record<string,string>={none:'None',minimal:'Minimal',low:'Low',medium:'Medium',high:'High',xhigh:'Extra high',max:'Max',ultra:'Ultra'};
-type Props={initialCategory?:SettingsCategory;openCustomize:(tab?:CustomizeTab)=>void;openAccountSettings:(command:AccountSettingsCommand)=>void;preferences:Preferences;onChange:Dispatch<SetStateAction<Preferences>>;close:()=>void;openConnection:()=>void;state:AppState;busy:boolean;act:(action:Action)=>Promise<AppState|null>;openPersonal:(destination:PersonalDestination)=>void};
+type Props={initialCategory?:SettingsCategory;customizeRunning:boolean;onCustomizeChanged:()=>void;openAccountSettings:(command:AccountSettingsCommand)=>void;preferences:Preferences;onChange:Dispatch<SetStateAction<Preferences>>;close:()=>void;openConnection:()=>void;state:AppState;busy:boolean;act:(action:Action)=>Promise<AppState|null>;openPersonal:(destination:PersonalDestination)=>void};
 
-export function SettingsDialog({preferences, onChange, close, openConnection, state, busy, act, openPersonal,openCustomize,openAccountSettings,initialCategory='general'}:Props) {
+export function SettingsDialog({preferences, onChange, close, openConnection, state, busy, act, openPersonal,customizeRunning,onCustomizeChanged,openAccountSettings,initialCategory='general'}:Props) {
   const {state:appUpdate}=useContext(AppUpdatesContext);
-  const [category,setCategory]=useState<SettingsCategory>(initialCategory),[query,setQuery]=useState('');
+  const [category,setCategory]=useState<SettingsCategory>(initialCategory==='customize'?'skills':initialCategory),[query,setQuery]=useState('');
+  const [customizeBusy,setCustomizeBusy]=useState(false);
   const [memory,setMemory]=useState(state.memories??''),[memoryMessage,setMemoryMessage]=useState(''),[saving,setSaving]=useState(false);
   const content=useRef<HTMLDivElement>(null);
   const categories=findSettings(query);
   const selected=categories.find(item=>item.id===category)??categories[0];
   const active=selected?.id;
-  useSurfaceMotion(content,active??'empty');
+  const catalogTab=active&&['skills','connectors','plugins','mcp','hooks'].includes(active)?active as CustomizeTab:undefined;
+  const openCustomize=(tab:CustomizeTab='skills')=>{if(!customizeBusy){setQuery('');setCategory(tab);}};
+  useSurfaceMotion(content,active??'empty',!catalogTab);
   useEffect(()=>{content.current?.scrollTo(0,0);},[active]);
   const update = <K extends keyof Preferences>(key:K, value:Preferences[K]) => onChange(current => ({...current,[key]:value}));
   async function saveMemory(){
@@ -72,27 +76,27 @@ export function SettingsDialog({preferences, onChange, close, openConnection, st
     try {const next=await act({type:'setMemories',text:memory});if(next&&!next.error){setMemory(next.memories??'');setMemoryMessage('Instructions saved. Future Muse Code requests will use them.');}else setMemoryMessage('Could not save instructions. Please try again.');}
     finally {setSaving(false);}
   }
-  return <Modal title="Settings" className="settings-modal" close={close}>
+  return <Modal title="Settings" className={`settings-modal${catalogTab?' settings-with-catalog':''}`} close={()=>{if(!customizeBusy)close();}}>
     <div className="settings-layout">
       <div className="settings-sidebar">
-        <div className="settings-search"><Search size={15}/><input data-autofocus aria-label="Search settings" placeholder="Search" value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='ArrowDown'){e.preventDefault();document.getElementById(`settings-nav-${categories[0]?.id}`)?.focus();}}}/>{query&&<button className="icon-button" aria-label="Clear settings search" onClick={()=>setQuery('')}><X size={13}/></button>}</div>
+        <div className="settings-search"><Search size={15}/><input data-autofocus disabled={customizeBusy} aria-label="Search settings" placeholder="Search" value={query} onChange={e=>setQuery(e.target.value)} onKeyDown={e=>{if(e.key==='ArrowDown'){e.preventDefault();document.getElementById(`settings-nav-${categories[0]?.id}`)?.focus();}}}/>{query&&<button className="icon-button" disabled={customizeBusy} aria-label="Clear settings search" onClick={()=>setQuery('')}><X size={13}/></button>}</div>
         <nav className="settings-nav" aria-label="Settings categories" onKeyDown={e=>{
-          if(!['ArrowDown','ArrowUp','Home','End'].includes(e.key)||(e.target as HTMLElement).tagName!=='BUTTON')return;
+          if(customizeBusy||!['ArrowDown','ArrowUp','Home','End'].includes(e.key)||(e.target as HTMLElement).tagName!=='BUTTON')return;
           e.preventDefault();const index=categories.findIndex(item=>`settings-nav-${item.id}`===(e.target as HTMLElement).id);
           const next=e.key==='Home'?0:e.key==='End'?categories.length-1:(index+(e.key==='ArrowDown'?1:-1)+categories.length)%categories.length;
           const item=categories[next];if(item){setCategory(item.id);document.getElementById(`settings-nav-${item.id}`)?.focus();}
         }}>
           {['Preferences','Customize','Coding','Account & data'].map(group=>{
-            const items=categories.filter(item=>item.group===group);return items.length>0&&<div className="settings-nav-group" key={group}><p className="settings-nav-label">{group}</p>{items.map(({id,label})=>{const Icon=icons[id];return <button type="button" id={`settings-nav-${id}`} key={id} className={active===id?'active':''} aria-current={active===id?'page':undefined} onClick={()=>setCategory(id)}><Icon size={16}/><span>{label}</span></button>;})}</div>;
+            const items=categories.filter(item=>item.group===group);return items.length>0&&<div className="settings-nav-group" key={group}><p className="settings-nav-label">{group}</p>{items.map(({id,label})=>{const Icon=icons[id];return <button type="button" disabled={customizeBusy} id={`settings-nav-${id}`} key={id} className={active===id?'active':''} aria-current={active===id?'page':undefined} onClick={()=>setCategory(id)}><Icon size={16}/><span>{label}</span></button>;})}</div>;
           })}
           {!categories.length&&<p className="settings-nav-empty">No matching sections</p>}
         </nav>
         <span className="settings-version">MuseBench <span>{appUpdate.version}</span></span>
       </div>
-      <div className="settings-content" ref={content} aria-label={selected?`${selected.label} settings`:'Settings search results'}>
+      <div className={`settings-content${catalogTab?' settings-catalog-content':''}`} ref={content} aria-label={selected?`${selected.label} settings`:'Settings search results'}>
         {!active?<div className="settings-empty"><Search size={24}/><h3>No settings found</h3><p>Try “theme”, “approvals”, “microphone” or “export”.</p><button className="settings-action" onClick={()=>setQuery('')}>Clear search</button></div>:<>
         {query&&<p className="settings-search-summary" role="status">{categories.length} matching {categories.length===1?'section':'sections'}</p>}
-        {active==='customize'&&<SettingsCustomize openCustomize={openCustomize}/>}
+        {catalogTab&&<CustomizeDialog embedded onTabChange={tab=>{setQuery('');setCategory(tab);}} activeTab={catalogTab} initialTab={catalogTab} running={customizeRunning} onBusyChange={setCustomizeBusy} close={close} onChanged={onCustomizeChanged} onConnection={()=>{if(!customizeBusy)setCategory('connection');}} onMetaApps={()=>{if(!customizeBusy)openAccountSettings({type:'metaSettings',section:'apps'});}} onPersonal={action=>{if(!customizeBusy)openAccountSettings({type:'serviceAction',action});}}/>}
         {active==='connections'&&<SettingsConnections openCustomize={openCustomize} openAccountSettings={openAccountSettings}/>}
         {active==='general'&&<>
           <section className="settings-section" aria-labelledby="appearance-heading"><h3 id="appearance-heading">Appearance</h3>
@@ -119,7 +123,7 @@ export function SettingsDialog({preferences, onChange, close, openConnection, st
         </section><section className="settings-section"><h3>Execution</h3><SettingRow title="Sandbox" description="Muse checks its native sandbox before running project commands."><span className="settings-badge"><ShieldCheck size={14}/>Always enabled</span></SettingRow><SettingRow title="Model"><span>{state.runtime.modelId||'Muse provider default'}</span></SettingRow><p className="settings-note">Use the composer to change a chat’s options. Plan mode is optional.</p></section></>}
         {active==='memory'&&<section className="settings-section"><h3>Memory</h3><p className="settings-description">Save instructions for future Muse Code requests across your projects. For example, your preferred language, test command or coding style.</p><label className="settings-editor-label" htmlFor="settings-memory">Your instructions</label><textarea className="settings-editor" id="settings-memory" disabled={saving} value={memory} onChange={e=>{setMemory(e.target.value);setMemoryMessage('');}} maxLength={1500} placeholder="Use TypeScript. Explain significant changes and run relevant tests."/><div className="settings-editor-footer"><span>{busy?'Wait for the current operation to finish. ':''}{memory.length} / 1,500 · {memory===(state.memories??'')?'Saved':'Unsaved changes'}</span><button className="settings-action" disabled={busy||saving||memory===(state.memories??'')} onClick={()=>void saveMemory()}>{saving?'Saving…':'Save instructions'}</button></div>{memoryMessage&&<p className="settings-note" role="status">{memoryMessage}</p>}<p className="settings-note">Instructions stay local until included in a request you send to Muse. Every request includes the current personal and project app settings. Clear the field and save so your next request explicitly replaces earlier personal settings with an empty scope. Saving sends nothing and does not erase native history or guarantee compliance. Repository rules, skills, direct requests, objectives and permission policy keep their own scope. Muse AI bot and Meta AI Chat manage their own memories.</p></section>}
         {active==='shortcuts'&&<section className="settings-section"><h3>Keyboard shortcuts</h3><p className="settings-description">Move around your workspace without leaving the keyboard.</p>{[['Search and commands',['Ctrl','K']],['New chat',['Ctrl','N']],['Toggle sidebar',['Ctrl','B']],['Open settings',['Ctrl',',']],['Next workspace area',['F6']],['Previous workspace area',['Shift','F6']],['Browser workspace fallback',['Ctrl','F6']],['Focus chat row',['↑','↓','Home','End']],['Rename focused chat',['F2']],['Send message',['Ctrl','Enter']],['Close a dialog',['Escape']]].map(([label,keys])=><div className="shortcut-row" key={String(label)}><span>{label as string}</span><span>{(keys as string[]).map(key=><kbd key={key}>{key}</kbd>)}</span></div>)}<p className="settings-note">Type / in the Muse Code composer to browse commands. {preferences.enterToSend?'Enter to send is also enabled; Shift+Enter adds a line.':'Enter adds a new line.'}</p></section>}
-        {['voice','skills','connection','mobile','control','account','billing','data','updates','about'].includes(active)&&<SettingsServicePanel key={active} openCustomize={openCustomize} category={active} state={state} openConnection={openConnection} openPersonal={openPersonal}/>}
+        {['voice','connection','mobile','control','account','billing','data','updates','about'].includes(active)&&<SettingsServicePanel key={active} openCustomize={openCustomize} category={active} state={state} openConnection={openConnection} openPersonal={openPersonal}/>}
         </>}
       </div>
     </div>

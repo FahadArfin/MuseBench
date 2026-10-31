@@ -17,6 +17,11 @@
 .settings-modal .settings-search {border-radius:10px;background:var(--bg);}
 .settings-modal .settings-action {border-radius:9px;}
 .settings-modal .preference-control select {border-radius:8px;}
+.settings-modal.settings-with-catalog {width:min(1180px,calc(100vw - 48px));}
+.settings-content.settings-catalog-content {display:flex;flex-direction:column;min-height:0;padding:0;overflow:hidden;scrollbar-gutter:auto;}
+.settings-catalog-content>.settings-search-summary {margin:16px 24px 0;flex-shrink:0;}
+.settings-catalog-content .extensions-content {background:var(--bg);}
+.settings-nav button:disabled {opacity:.5;cursor:default;}
 .settings-destination-list {border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--surface);}
 .settings-destination {display:flex;align-items:center;gap:12px;padding:16px;width:100%;min-height:68px;text-align:left;}
 .settings-destination+.settings-destination {border-top:1px solid var(--border);}

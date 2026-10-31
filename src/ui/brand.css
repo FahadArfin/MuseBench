@@ -61,8 +61,8 @@
 .toolbar-button[aria-expanded="true"] > svg { color: var(--accent); }
 
 .extensions-tabs button[aria-selected="true"],
-.extensions-modal .catalog-view-tabs .button.primary,
-.extensions-modal .catalog-sources button.active,
+:is(.extensions-modal,.extensions-embedded) .catalog-view-tabs .button.primary,
+:is(.extensions-modal,.extensions-embedded) .catalog-sources button.active,
 .project-chat-tabs button[aria-pressed="true"],
 .usage-tabs button[aria-selected="true"],
 .analytics-segments button[aria-pressed="true"] {

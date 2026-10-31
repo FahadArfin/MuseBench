@@ -1,4 +1,4 @@
-export const NATIVE_SETTINGS=['customize','connections','general','notifications','voice','shortcuts','code','memory','skills','connection','mobile','control','account','billing','data','updates','about'];
+export const NATIVE_SETTINGS=['customize','connectors','plugins','mcp','hooks','connections','general','notifications','voice','shortcuts','code','memory','skills','connection','mobile','control','account','billing','data','updates','about'];
 export const NATIVE_CUSTOMIZE=['skills','connectors','plugins','mcp','hooks'];
 const schema=(properties={},required=[])=>({type:'object',properties,required,additionalProperties:false});
 const read={readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false};

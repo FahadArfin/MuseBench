@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import {SETTINGS_CATEGORIES,findSettings} from '../src/ui/settings-catalog.mjs';
 import {validateNativeCall} from '../src/shared/native-control.mjs';
 test('Customize and account Connections are searchable and native navigable without conflating CLI connection',()=>{
- for(const [query,id] of [['Customize','customize'],['plugins','customize'],['hooks','customize'],['Meta AI apps','connections'],['Gmail','connections']])assert(findSettings(query).some(item=>item.id===id),query);
- for(const section of ['customize','connections'])assert.doesNotThrow(()=>validateNativeCall('navigate',{target:'settings',section}));
+ for(const [query,id] of [['Customize','skills'],['plugins','plugins'],['hooks','hooks'],['Meta AI apps','connections'],['Gmail','connections']])assert(findSettings(query).some(item=>item.id===id),query);
+ assert.deepEqual(SETTINGS_CATEGORIES.filter(item=>item.group==='Customize').map(item=>item.id),['skills','connectors','plugins','mcp','hooks','connections']);
+ for(const section of ['customize','skills','connectors','plugins','mcp','hooks','connections'])assert.doesNotThrow(()=>validateNativeCall('navigate',{target:'settings',section}));
  assert(findSettings('CLI').some(item=>item.id==='connection'));
 });
 test('settings search matches controls and synonyms across groups, and has a real empty state',()=>{

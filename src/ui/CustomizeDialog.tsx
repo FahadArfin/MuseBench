@@ -22,8 +22,8 @@ import {SkillContextDetails,SkillContextSummary} from './SkillContext';
 const tabs=[{id:'skills',label:'Skills',icon:BookOpen},{id:'connectors',label:'Connectors',icon:Link2},{id:'plugins',label:'Plugins',icon:Puzzle},{id:'mcp',label:'MCP servers',icon:Plug},{id:'hooks',label:'Hooks',icon:Terminal}] as const;
 const descriptions={hooks:'Reviewed commands for events in this project.',skills:'Teach Muse the workflows you use every day.',connectors:'Bring your apps and tools into your workflow.',plugins:'Add reusable bundles of skills and tools to Muse Code.',mcp:'Connect Muse Code to tools through Model Context Protocol.'};
 const accessNote='Plugin tools and MCP servers use their own permissions. Local programs run as your Windows account; remote services can receive data sent to their tools. They are outside the project shell sandbox. The Muse coding sandbox stays enabled.';
-type Props={onMetaApps?:()=>void;initialTab?:CustomizeTab;initialQuery?:string;close:()=>void;onChanged:()=>void;onConnection:()=>void;onPersonal:(action:PersonalServiceAction)=>void;running:boolean};
-export function CustomizeDialog({initialTab='skills',initialQuery='',onMetaApps,close,onChanged,onConnection,onPersonal,running}:Props){
+type Props={embedded?:boolean;activeTab?:CustomizeTab;onTabChange?:(tab:CustomizeTab)=>void;onBusyChange?:(busy:boolean)=>void;onMetaApps?:()=>void;initialTab?:CustomizeTab;initialQuery?:string;close:()=>void;onChanged:()=>void;onConnection:()=>void;onPersonal:(action:PersonalServiceAction)=>void;running:boolean};
+export function CustomizeDialog({embedded=false,activeTab,onTabChange,onBusyChange,initialTab='skills',initialQuery='',onMetaApps,close,onChanged,onConnection,onPersonal,running}:Props){
  const [tab,setTab]=useState<CustomizeTab>(initialTab),[query,setQuery]=useState(initialQuery),[state,setState]=useState<CustomizeState>(),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const catalogCache=useRef(new Map<string,CatalogPage>());
  const [source,setSource]=useState<'recommended'|'community'>('recommended');
@@ -39,6 +39,9 @@ export function CustomizeDialog({initialTab='skills',initialQuery='',onMetaApps,
  const content=useRef<HTMLDivElement>(null);
  useSurfaceMotion(content,`${tab}:${view}:${managedItem?.id??''}:${form??''}`);
  const disabled=busy||running;
+ useEffect(()=>{onBusyChange?.(busy&&operationType.current!=='refresh');},[busy,onBusyChange]);
+ useEffect(()=>()=>onBusyChange?.(false),[onBusyChange]);
+ useEffect(()=>{if(activeTab&&activeTab!==tab)selectTab(activeTab,false);},[activeTab,busy]);
  useEffect(()=>{alive.current=true;void execute({type:'refresh'});return()=>{alive.current=false;operation.current++;};},[]);
  async function execute(command:CustomizeCommand){
   const ticket=++operation.current;operationType.current=command.type;setBusy(true);setError('');setNotice('');
@@ -52,7 +55,7 @@ export function CustomizeDialog({initialTab='skills',initialQuery='',onMetaApps,
   }catch(err){if(alive.current&&ticket===operation.current)setError(String(err instanceof Error?err.message:err).replace(/^Error invoking remote method '[^']+': Error: /,''));}
   finally{if(alive.current&&ticket===operation.current)setBusy(false);}
  }
- function selectTab(next:CustomizeTab){if(busy)return;setTab(next);setShowProjectMcp(false);setProjectMcp(undefined);setQuery('');setManagedItem(null);setPluginMcp(undefined);setForm(null);setPrepared(null);setConfirm(null);setError('');setNotice('');setReviewed(false);}
+ function selectTab(next:CustomizeTab,notify=true){if(busy&&operationType.current!=='refresh')return;setTab(next);if(notify)onTabChange?.(next);setShowProjectMcp(false);setProjectMcp(undefined);setQuery('');setManagedItem(null);setPluginMcp(undefined);setForm(null);setPrepared(null);setConfirm(null);setError('');setNotice('');setReviewed(false);}
  function openForm(next:'skill'|'mcp'){setForm(next);setName('');setDescription('');setInstructions('');setAddress('');setArgs('[]');setReviewed(false);setError('');}
  function ask(title:string,description:string,command:CustomizeCommand,reviewCode?:string){setConfirm({title,description,command,reviewCode,inventory:command.type==='reviewPlugins'?state?.plugins:undefined});setReviewed(false);setError('');}
  const matches=(...values:string[])=>values.join(' ').toLowerCase().includes(query.trim().toLowerCase());
@@ -75,13 +78,12 @@ export function CustomizeDialog({initialTab='skills',initialQuery='',onMetaApps,
  </div></details>;
  function saveServer(){try{const server:ServerSetup=transport==='streamable_http'?{name,transport,url:address}:{name,transport,command:address,args:JSON.parse(args)};void execute({type:'saveServer',server,reviewed:true});}catch{setError('Arguments must be a JSON array, for example ["server.mjs"].');}}
  const back=()=>{setShowProjectMcp(false);setForm(null);setPrepared(null);setConfirm(null);setError('');setReviewed(false);};
- return <Modal title="Customize" close={()=>{if(!busy||operationType.current==='refresh')close();}} className="extensions-modal">
-  <div className="extensions-layout">
-  <aside className="extensions-sidebar" aria-label="Customize navigation">
+ const layout=<div className={`extensions-layout${embedded?' extensions-embedded':''}`}>
+  {!embedded&&<aside className="extensions-sidebar" aria-label="Customize navigation">
    <div className="extensions-tabs" role="tablist" aria-orientation="vertical" aria-label="Customize sections" ref={tabsRef} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(event.key))return;event.preventDefault();const i=tabs.findIndex(item=>item.id===tab),next=event.key==='Home'?0:event.key==='End'?tabs.length-1:(i+(['ArrowRight','ArrowDown'].includes(event.key)?1:-1)+tabs.length)%tabs.length;selectTab(tabs[next].id);tabsRef.current?.querySelectorAll<HTMLButtonElement>('[role=tab]')[next]?.focus();}}>{tabs.map(item=><button key={item.id} role="tab" id={`customize-tab-${item.id}`} aria-controls="customize-content" aria-selected={tab===item.id} tabIndex={tab===item.id?0:-1} disabled={busy} onClick={()=>selectTab(item.id)}><item.icon size={16}/>{item.label}</button>)}</div>
 
-  </aside>
-  <div ref={content} className="extensions-content" role="tabpanel" id="customize-content" aria-labelledby={`customize-tab-${tab}`}>
+  </aside>}
+  <div ref={content} className="extensions-content" role={embedded?'region':'tabpanel'} id="customize-content" aria-labelledby={embedded?`settings-nav-${tab}`:`customize-tab-${tab}`}>
    {running&&<p className="extensions-alert">A task is running. You can browse; setup will be available when it finishes.</p>}
    {error&&<div className="extensions-alert error" role="alert">{error}</div>}
    {notice&&<div className="extensions-alert success" role="status"><Check size={15}/>{notice}</div>}
@@ -114,8 +116,8 @@ export function CustomizeDialog({initialTab='skills',initialQuery='',onMetaApps,
     </>}
    </>}
   </div>
-  </div>
- </Modal>;
+  </div>;
+ return embedded?layout:<Modal title="Customize" close={()=>{if(!busy||operationType.current==='refresh')close();}} className="extensions-modal">{layout}</Modal>;
 }
 function Review({checked,onChange,disabled}:{checked:boolean;onChange:(value:boolean)=>void;disabled:boolean}){return <div className="extensions-review"><ShieldCheck size={19}/><div><strong>Review extension access</strong><p>{accessNote}</p><label className="extensions-consent"><input type="checkbox" checked={checked} disabled={disabled} onChange={event=>onChange(event.target.checked)}/>I trust this extension and approve its access.</label></div></div>;}
 function Empty({title,detail}:{title:string;detail:string}){return <div className="extensions-empty"><Puzzle size={28} strokeWidth={1.3}/><h4>{title}</h4><p>{detail}</p></div>;}

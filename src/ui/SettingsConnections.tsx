@@ -1,23 +1,9 @@
-import {BookOpen, ChevronRight, Link2, MessageCircle, Plug, Puzzle, Settings2, Terminal} from 'lucide-react';
+import {ChevronRight, Link2, MessageCircle, Plug, Settings2} from 'lucide-react';
 import type {CustomizeTab} from '../shared/customize-types';
 import type {PersonalCommand} from '../shared/types';
 
 export type AccountSettingsCommand = Extract<PersonalCommand, {type:'metaSettings'|'serviceAction'}>;
 type Props = {openCustomize:(tab?:CustomizeTab)=>void;openAccountSettings:(command:AccountSettingsCommand)=>void};
-const categories = [
-  {id:'skills',label:'Skills',description:'Teach Muse repeatable workflows.',icon:BookOpen},
-  {id:'connectors',label:'Connectors',description:'Bring your apps and tools into coding tasks.',icon:Link2},
-  {id:'plugins',label:'Plugins',description:'Discover bundles of skills and tools.',icon:Puzzle},
-  {id:'mcp',label:'MCP servers',description:'Manage local and remote tool servers.',icon:Plug},
-  {id:'hooks',label:'Hooks',description:'Review commands for project events.',icon:Terminal},
-] as const;
-
-export function SettingsCustomize({openCustomize}:Pick<Props,'openCustomize'>){
-  return <section className="settings-section"><h3>Customize</h3><p className="settings-description">Skills, apps and tools for your Muse Code workspace.</p><div className="settings-destination-list">
-    {categories.map(({id,label,description,icon:Icon})=><button key={id} type="button" className="settings-destination" aria-label={`Open ${label}`} onClick={()=>openCustomize(id)}><Icon size={19}/><span><strong>{label}</strong><small>{description}</small></span><ChevronRight size={16}/></button>)}
-  </div><p className="settings-note">Each section includes its catalog and installed tools. Manage Meta AI chat apps in Connections.</p></section>;
-}
-
 export function SettingsConnections({openCustomize,openAccountSettings}:Props){
   return <section className="settings-section"><h3>Connections</h3><p className="settings-description">Choose which service you want to connect. Each service manages its own app access.</p>
     <div className="settings-destination-list">

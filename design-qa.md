@@ -197,3 +197,9 @@ Compared the user's Codex Changes reference with artifacts/compact-file-changes.
 Current scoped comparison and visual evidence: docs/validation/2026-10-31-settings-customize-polish.md. Source and implementation were inspected together at 1508 x 1043. Compact production density and opaque content are intentional. No unresolved P0/P1/P2 findings. Browser and isolated Electron interactions passed, including the corrected narrow navigation overlay.
 
 final result: passed
+
+## 2026-10-31 Full Customize pages embedded in Settings
+
+Replaced the launcher page with Skills, Connectors, Plugins, MCP servers and Hooks directly in Settings navigation. The full catalogs reuse the existing compact design and blue selection states, without a second sidebar or dialog. Wide and 390px layouts, dark/light themes, reduced motion and setup interactions passed in browser and isolated Electron. Independent review's busy navigation issue was fixed and rechecked. Evidence: docs/validation/2026-10-31-embedded-customize-settings.md. Provider authorization was not exercised.
+
+final result: passed
