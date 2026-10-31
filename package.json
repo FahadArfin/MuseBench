@@ -60,6 +60,7 @@
     "test:work-activity": "node scripts/work-activity-smoke.mjs && node scripts/work-activity-smoke.mjs --desktop",
     "test:connection-diagnostics": "node scripts/connection-diagnostics-smoke.mjs && node scripts/connection-diagnostics-smoke.mjs --desktop",
     "test:update-details": "node scripts/update-details-smoke.mjs && node scripts/update-details-smoke.mjs --desktop",
+    "test:response-quote": "node scripts/response-quote-smoke.mjs && node scripts/response-quote-smoke.mjs --desktop",
     "test:prompt-shelf": "node scripts/prompt-shelf-smoke.mjs && node scripts/prompt-shelf-smoke.mjs --desktop",
     "test:chat-history-find": "node scripts/chat-history-find-smoke.mjs && node scripts/chat-history-find-smoke.mjs --desktop",
     "test:transcript-position": "node scripts/transcript-position-smoke.mjs && node scripts/transcript-position-smoke.mjs --desktop",

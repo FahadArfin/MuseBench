@@ -9,3 +9,4 @@
 .response-action-menu small{display:block;padding:6px 8px;font-size:10px;color:var(--muted)}
 .response-action-status{flex-basis:100%;font-size:11px;margin-top:3px}
 @media(max-width:480px){.response-action-menu{left:24px}}
+.quote-staging{min-width:0}.quote-source{max-height:300px;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);font-size:12px;overflow-wrap:anywhere}.quote-source header{display:flex;align-items:center;gap:12px}.quote-source header strong{margin-right:auto}.quote-source small{display:block;color:var(--muted);margin:6px 0}.quote-source p{margin:8px 0}.quote-source pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:110px;overflow:auto;font-size:11px}.quote-source-pages{display:flex;gap:12px}.quote-source-pages button{font-size:12px;text-decoration:underline}.quote-staging>.context-chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

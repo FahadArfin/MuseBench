@@ -75,6 +75,7 @@ jobs:
             artifacts/transcript-position/**/report.json
             artifacts/chat-history-find/**/report.json
             artifacts/prompt-shelf/**/report.json
+            artifacts/response-quote/**/report.json
             artifacts/renderer-state/**/report.json
             artifacts/chat-navigation/**/report.json
             artifacts/sidebar-drag/**/report.json
