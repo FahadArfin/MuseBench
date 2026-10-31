@@ -1,0 +1,32 @@
+import {useEffect,useLayoutEffect,useRef,useState,type ReactNode} from 'react';
+import {ChevronLeft,ChevronRight,Copy,ExternalLink,FolderOpen,Share2,Terminal,Code2,AppWindow} from 'lucide-react';
+import type {ChatToolCommand,ChatToolResult,Task} from '../shared/types';
+import {Modal} from './WorkspacePanels';
+import './chat-menu-tools.css';
+
+function Submenu({label,icon,children,onOpen}:{label:string;icon:ReactNode;children:ReactNode;onOpen?:()=>void}){
+ const [open,setOpen]=useState(false),anchor=useRef<HTMLButtonElement>(null),popup=useRef<HTMLDivElement>(null);
+ useLayoutEffect(()=>{if(!open||!anchor.current||!popup.current)return;const box=anchor.current.getBoundingClientRect(),size=popup.current.getBoundingClientRect();popup.current.style.left=`${Math.max(8,Math.min(innerWidth-size.width-8,box.right+size.width+8<innerWidth?box.right+4:box.left-size.width-4))}px`;popup.current.style.top=`${Math.max(8,Math.min(innerHeight-size.height-8,box.top))}px`;popup.current.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();},[open,children]);
+ useEffect(()=>{if(!open)return;const outside=(event:PointerEvent)=>{if(!popup.current?.contains(event.target as Node)&&!anchor.current?.contains(event.target as Node))setOpen(false);};document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[open]);
+ const show=()=>{setOpen(true);onOpen?.();};
+ return <div className="chat-tools-submenu"><button ref={anchor} role="menuitem" aria-haspopup="menu" aria-expanded={open} onClick={()=>open?setOpen(false):show()} onKeyDown={event=>{if(event.key==='ArrowRight'){event.preventDefault();event.stopPropagation();show();}}}>{icon}{label}<ChevronRight size={14}/></button>{open&&<div ref={popup} className="chat-tools-flyout" role="menu" aria-label={label} onKeyDown={event=>{if(event.key==='Tab')return;event.stopPropagation();const buttons=[...popup.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')],index=buttons.indexOf(document.activeElement as HTMLButtonElement);if(['Escape','ArrowLeft'].includes(event.key)){event.preventDefault();setOpen(false);anchor.current?.focus();}else if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){event.preventDefault();buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();}}}><button className="chat-tools-back" role="menuitem" onClick={()=>{setOpen(false);anchor.current?.focus();}}><ChevronLeft size={14}/>Back</button>{children}</div>}</div>;
+}
+export function useChatMenuTools(task:Task){
+ const [notice,setNotice]=useState(''),[error,setError]=useState(''),[pending,setPending]=useState(false),[apps,setApps]=useState<NonNullable<ChatToolResult['apps']>>([]),[share,setShare]=useState<{taskId:string;token:string;markdown:string}|null>(null);
+ const current=useRef(task.id);current.current=task.id;
+ useEffect(()=>{setShare(null);setError('');setNotice('');},[task.id]);
+ useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(''),3500);return()=>clearTimeout(timer);},[notice]);
+ const perform=async(command:Omit<ChatToolCommand,'taskId'>,message?:string)=>{
+  const id=task.id;setPending(true);setError('');
+  try{if(!window.musebench?.chatTools)throw Error('This action is unavailable in this app version.');const result=await window.musebench.chatTools({...command,taskId:id});if(current.current!==id)return null;if(message&&result.status!=='cancelled')setNotice(message);return result;}catch(e){if(current.current===id)setError(e instanceof Error?e.message:String(e));return null;}finally{if(current.current===id)setPending(false);}
+ };
+ const items=<>
+  <div className="chat-menu-separator" role="separator"/>
+  <button role="menuitem" disabled={pending} onClick={()=>void perform({type:'preview'}).then(result=>{if(result?.token&&result.markdown!==undefined)setShare({taskId:task.id,token:result.token,markdown:result.markdown});})}><Share2 size={16}/>Share</button>
+  <Submenu label="Copy" icon={<Copy size={16}/>}><button role="menuitem" disabled={pending} title="Opens this chat in MuseBench on this computer" onClick={()=>void perform({type:'copy',format:'link'},'Chat link copied')}><Copy size={15}/>Copy chat link</button><button role="menuitem" disabled={pending} onClick={()=>void perform({type:'copy',format:'markdown'},'Markdown copied')}><Copy size={15}/>Copy as Markdown</button><button role="menuitem" disabled={pending} onClick={()=>void perform({type:'copy',format:'directory'},'Working directory copied')}><FolderOpen size={15}/>Copy working directory</button></Submenu>
+  <Submenu label="Open with" icon={<ExternalLink size={16}/>} onOpen={()=>{setApps([]);void perform({type:'apps'}).then(result=>{if(result?.apps)setApps(result.apps);});}}>{apps.length?apps.map(app=><button role="menuitem" key={app.id} disabled={pending||!app.available} title={app.available?'Open the project folder':`${app.label} is not available`} onClick={()=>void perform({type:'open',app:app.id},`Opened in ${app.label}`)}>{app.id==='explorer'?<FolderOpen size={15}/>:['terminal','gitbash','wsl'].includes(app.id)?<Terminal size={15}/>:app.id==='vscode'?<Code2 size={15}/>:<AppWindow size={15}/>} {app.label}</button>):<span className="chat-tools-loading">Checking applications…</span>}</Submenu>
+  {(notice||error)&&<p className="chat-tools-notice" role={error?'alert':'status'}>{error||notice}</p>}
+ </>;
+ const overlay=share&&current.current===share.taskId?<Modal title="Share chat" className="chat-share-dialog" close={()=>{if(!pending)setShare(null);}}><p>Copy the conversation or save it as a Markdown file. Attached images and project files are not included; image comments are included as text.</p><textarea aria-label="Shared transcript preview" readOnly value={share.markdown}/>{error&&<p role="alert" className="chat-action-error">{error}</p>}{notice&&<p role="status">{notice}</p>}<div className="chat-dialog-actions"><button className="button" disabled={pending} onClick={()=>setShare(null)}>Close</button><button className="button" disabled={pending} onClick={()=>void perform({type:'copy',format:'markdown',token:share.token},'Transcript copied')}>Copy transcript</button><button className="button primary" disabled={pending} onClick={()=>void perform({type:'share',token:share.token},'Transcript saved')}>Save Markdown…</button></div></Modal>:null;
+ return{items,overlay};
+}

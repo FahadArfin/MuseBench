@@ -11,7 +11,7 @@ import {CI_SUITES,runChecks} from '../scripts/run-ci-suite.mjs';
 const workflow=async name=>yaml.load(await readFile(new URL(`../.github/workflows/${name}.yml`,import.meta.url),'utf8'));
 const packageJson=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
 // Union of release + validation at ccf56e2. This baseline prevents a speedup
-// accidentally omitting an expensive check. New coverage is added deliberately.
+// accidentally omitting an expensive check. The removed Quote UI is replaced by image annotation and chat menu coverage.
 const required=[
  'node scripts/discovery-oauth-smoke.mjs','node scripts/discovery-oauth-smoke.mjs --desktop','node scripts/discovery-oauth-recovery-smoke.mjs','node scripts/discovery-oauth-recovery-smoke.mjs --desktop','node scripts/discovery-oauth-protection.mjs --local-fixture',
  'npm run test:app-instructions','npm run test:background-engine','npm run test:recent-context','npm run test:context-history','npm run test:integration-panels',
@@ -21,7 +21,7 @@ const required=[
  'npm run test:work-activity','npm run test:project-actions','npm run test:run-changes',
  'npm run test:connection-diagnostics','npm run test:update-details','npm run test:plugin-tools',
  'npm run test:renderer-state','npm run test:code-chat-relations','npm run test:chat-organization','npm run test:code-responsiveness','npm run test:transcript-render','npm run test:chat-navigation',
- 'npm run test:transcript-position','npm run test:chat-history-find','npm run test:prompt-shelf','npm run test:response-quote','npm run test:workspace-focus','npm run test:navigation-cache','npm run test:browser-preview','npm run test:onboarding-preview',
+ 'npm run test:transcript-position','npm run test:chat-history-find','npm run test:prompt-shelf','npm run test:image-annotations','npm run test:chat-menu-tools','npm run test:workspace-focus','npm run test:navigation-cache','npm run test:browser-preview','npm run test:onboarding-preview',
  'npm run test:catalog-preview','npm run test:catalog-desktop','npm run test:billing-preview',
  'npm run test:billing-desktop','npm run test:preview-parity','node scripts/mobile-settings-smoke.mjs',
  'node scripts/native-control-smoke.mjs','node scripts/native-navigation-smoke.mjs','node scripts/session-mcp-smoke.mjs','node scripts/session-mcp-smoke.mjs --desktop',

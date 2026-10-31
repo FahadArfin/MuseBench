@@ -108,6 +108,8 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   onDictation: callback => { const listener = (_event, state) => callback(state); ipcRenderer.on('musebench:dictation-update', listener); return () => ipcRenderer.removeListener('musebench:dictation-update', listener); },
   dispatch: async action => {const reply=await ipcRenderer.invoke('musebench:action',action);acceptState(reply.snapshot);return reply.result;},
   chooseProject: () => ipcRenderer.invoke('musebench:choose-project'),
+  chatTools: input => ipcRenderer.invoke('musebench:chat-tools',input),
+  onChatLink: listener => {const receive=(_event,id)=>listener(id);ipcRenderer.on('musebench:chat-link',receive);void ipcRenderer.invoke('musebench:chat-link-ready').catch(()=>{});return()=>ipcRenderer.removeListener('musebench:chat-link',receive);},
   openProjectFile: input => ipcRenderer.invoke('musebench:open-file', input),
   chooseBinary: () => ipcRenderer.invoke('musebench:choose-binary'),
   openExternal: url => ipcRenderer.invoke('musebench:external', url),

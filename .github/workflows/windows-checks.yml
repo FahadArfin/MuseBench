@@ -67,6 +67,8 @@ jobs:
             artifacts/discovery-approvals/**/report.json
             artifacts/reply-copy/**/report.json
             artifacts/response-actions/**/report.json
+            artifacts/image-annotations/**/report.json
+            artifacts/chat-menu-tools/**/report.json
             artifacts/plugin-tools-ui/**/report.json
             artifacts/project-actions/**/report.json
             artifacts/run-changes/**/report.json
@@ -77,7 +79,6 @@ jobs:
             artifacts/transcript-render/**/report.json
             artifacts/chat-history-find/**/report.json
             artifacts/prompt-shelf/**/report.json
-            artifacts/response-quote/**/report.json
             artifacts/workspace-focus/**/report.json
             artifacts/renderer-state/**/report.json
             artifacts/chat-navigation/**/report.json

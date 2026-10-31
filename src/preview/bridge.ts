@@ -1,3 +1,4 @@
+import {chatLink,chatMarkdown} from '../shared/chat-menu-tools.mjs';
 import {findPreviewHistory} from '../shared/history-find.mjs';
 import {META_APPS,unknownMetaApps} from '../shared/meta-apps.mjs';
 import {mainChat,resolveRequestOrigin} from '../shared/chat-relations.mjs';
@@ -70,6 +71,7 @@ function channel<T>(get:()=>T){
 }
 
 export function createPreviewBridge():MuseBenchBridge {
+ let sharedChat:{taskId:string;token:string;markdown:string}|null=null;
  let discoveryReviewOwner:string|null=null;
  const discoveryFixture={id:'global:preview-docs',name:'Sample documentation',revision:'a'.repeat(64),address:'Sample executable (preview)',environmentKeys:['DOCS_TOKEN'],eligible:true,reason:'Preview sample. Startup at most 30s; calls at most 300s; stops with this connection.'};
  const remoteDiscoveryFixture={id:'global:preview-remote',name:'Remote documentation',revision:'b'.repeat(64),transport:'streamable-http' as const,address:'https://docs.example.invalid/private/${DOCS_PATH}',resolvedOrigin:'https://docs.example.invalid',headerKeys:['Authorization'],environmentKeys:['DOCS_PATH','DOCS_TOKEN'],eligible:true,reason:'Preview remote sample. No network requests. Startup at most 30s; calls at most 300s.'};
@@ -306,6 +308,14 @@ export function createPreviewBridge():MuseBenchBridge {
   prepareRunFeedback:async input=>{input=validateRunFeedback(input);const view=runChangeView(input),file=view.files.find(file=>file.path===input.path);if(!file||input.revision!==view.revision||input.end>sourceLineCount(file[input.side]))throw Error('Choose captured lines in this sample.');return{text:'Sample review feedback for '+JSON.stringify(input.path)+' · '+input.side+' lines '+input.start+'–'+input.end+'\n\n'+input.note};},
   importCodeImage:async input=>{const match=/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/.exec(input.dataUrl);if(!match||input.dataUrl.length>11200000)throw Error('Choose an image up to 8 MB.');const bytes=Uint8Array.from(atob(match[2]),c=>c.charCodeAt(0));const id=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))).map(b=>b.toString(16).padStart(2,'0')).join('');imageData.set(input.projectId+id,input.dataUrl);return{id,name:input.name,mime:match[1],bytes:bytes.length};},
   readCodeImage:async input=>{const data=imageData.get(input.projectId+input.image.id);if(!data)throw Error('Screenshot unavailable');return data;},
+  chatTools:async input=>{
+   if(state.task?.id!==input.taskId)throw Error('The chat changed. Open its menu again.');
+   if(input.type==='apps')return{status:'ready',apps:([{id:'vscode',label:'VS Code'},{id:'visualstudio',label:'Visual Studio'},{id:'explorer',label:'File Explorer'},{id:'terminal',label:'Terminal'},{id:'gitbash',label:'Git Bash'},{id:'wsl',label:'WSL'}] as const).map(app=>({...app,available:false}))};
+   if(input.type==='preview'){sharedChat={taskId:input.taskId,token:crypto.randomUUID(),markdown:chatMarkdown(state.task,state.task.messages)};return{status:'ready',...sharedChat};}
+   if(input.type==='copy'){let value;if(input.format==='link')value=chatLink(input.taskId);else if(input.format==='directory')value=state.activeProject?.root??'';else if(input.token){if(!sharedChat||sharedChat.token!==input.token)throw Error('Reopen the share preview.');value=sharedChat.markdown;}else value=chatMarkdown(state.task,state.task.messages);await navigator.clipboard.writeText(value);return{status:'copied'};}
+   if(input.type==='share'){if(!sharedChat||sharedChat.token!==input.token||sharedChat.taskId!==input.taskId)throw Error('Reopen the share preview.');const url=URL.createObjectURL(new Blob([sharedChat.markdown],{type:'text/markdown;charset=utf-8'})),link=document.createElement('a');link.href=url;link.download='MuseBench-chat.md';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return{status:'saved'};}
+   throw Error('Open with is available in the desktop app.');
+  },
   getState:code.read,onState:code.on,dispatch,openProjectFile:desktop,chooseProject:desktop,chooseBinary:desktop,openExternal:async(url:string)=>{const u=new URL(url);const catalogLink=CURATED_EXTENSIONS.some(item=>item.homepage===u.href||item.provenance.url===u.href);if(u.protocol!=='https:'||u.username||u.password||(!catalogLink&&(u.origin!=='https://www.google.com'||u.pathname!=='/search'||!u.searchParams.get('q'))))return desktop();window.open(u.href,'_blank','noopener,noreferrer');},
   configureNotifications:async()=>({supported:false}),dictation:async command=>{if(['status','refresh','cancel','stop'].includes(command))return copy(dictation);return desktop();},onDictation:()=>()=>{},
   readPromptShelf:async input=>{const key=shelfOwner(input);return{draft:copy(state.drafts?.[key]??null),entries:copy(savedPrompts[key]??[])};},

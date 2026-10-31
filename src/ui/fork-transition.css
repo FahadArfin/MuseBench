@@ -1,0 +1,4 @@
+.fork-transition{display:flex;align-items:center;gap:10px;padding:12px 15px;margin:10px 24px 0;flex-shrink:0;border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:10px;background:var(--surface);font-size:12px;color:var(--text)}
+.fork-transition>svg{color:var(--accent);flex-shrink:0}
+.fork-transition strong,.fork-transition span{display:block;line-height:1.6}
+.fork-transition span{color:var(--muted);font-size:11px}

@@ -1,4 +1,4 @@
-// Shared production account UI in browser and Electron. No provider requests.
+// Shared production provider notice UI in browser and Electron. No provider requests.
 import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,writeFile} from 'node:fs/promises';
 import path from 'node:path';
@@ -19,12 +19,7 @@ try{
  server=createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?js:html);});await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}/`;
  if(desktop){const env={...process.env,MUSEBENCH_PARITY_DATA:path.join(output,'profile')};delete env.ELECTRON_RUN_AS_NODE;app=await electron.launch({args:['scripts/preview-parity-electron.mjs'],env});const created=app.waitForEvent('window');await app.evaluate(({BrowserWindow},url)=>{const window=new BrowserWindow({width:900,height:900,useContentSize:true,show:false,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}});void window.loadURL(url);},url);page=await created;}else{browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:900,height:900}});}
  page.on('pageerror',error=>report.errors.push(error.message));page.setDefaultTimeout(6000);await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());await page.goto(url);
- const trigger=page.getByRole('button',{name:'Accounts and connections',exact:true}),dialog=page.getByRole('dialog',{name:'Accounts and connections',exact:true});
- for(const [name,expected] of [['Meta AI settings and plan',{type:'metaSettings',section:'general'}],['Meta AI apps',{type:'metaSettings',section:'apps'}],['Muse account',{type:'serviceAction',action:'settings'}],['Muse connections',{type:'serviceAction',action:'connections'}],['Connect WhatsApp',{type:'serviceAction',action:'whatsapp'}]]){
-  await trigger.click();await dialog.waitFor();await dialog.getByText('Account preferences and Meta AI upgrades / separate from Muse Code billing',{exact:true}).waitFor();await dialog.getByRole('button',{name,exact:true}).click();await dialog.waitFor({state:'hidden'});assert.deepEqual(await page.evaluate(()=>window.settingsFixture.commands.filter(c=>!['layout','navigate'].includes(c.type)).at(-1)),expected);
- }
- pass('Meta AI settings and apps have separate bounded commands; Muse settings and connections remain distinct');
- await trigger.click();await dialog.screenshot({path:path.join(output,'accounts.png')});await page.keyboard.press('Escape');await dialog.waitFor({state:'hidden'});
+ await page.screenshot({path:path.join(output,'workspace.png')});
  await page.evaluate(()=>window.settingsFixture.patch({notice:'This provider requires sign-in in your browser. Return here and refresh afterward.',noticeCanOpenBrowser:true,noticeBrowserDestination:'chat'}));
  await page.getByRole('button',{name:'Open Meta AI in browser',exact:true}).click();assert.equal(await page.evaluate(()=>window.settingsFixture.commands.at(-1).type),'openNoticeExternal');
  await page.getByRole('button',{name:'Refresh page',exact:true}).click();assert.equal(await page.evaluate(()=>window.settingsFixture.commands.at(-1).type),'reload');
@@ -33,6 +28,6 @@ try{
  pass('Blocked account flow offers source-specific browser action after switching service; refresh applies only to the matching service');
  if(desktop)await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows()[0].setContentSize(460,800));else await page.setViewportSize({width:460,height:800});
  for(const name of ['Open Meta AI in browser','Refresh page','Dismiss Meta AI notice']){const box=await page.getByRole('button',{name,exact:true}).boundingBox();assert(box&&box.x>=0&&box.x+box.width<=461,'Notice controls stay within a narrow workspace');}
- await page.screenshot({path:path.join(output,'narrow-notice.png')});await page.getByRole('button',{name:'Dismiss Meta AI notice'}).click();await trigger.click();const bounds=await dialog.boundingBox();assert(bounds&&bounds.x>=0&&bounds.x+bounds.width<=461,'Account dialog fits narrow workspace');await dialog.screenshot({path:path.join(output,'narrow-accounts.png')});
- pass('Account dialog and actionable notice fit a narrow workspace');assert.deepEqual(report.errors,[]);report.status='passed';
+ await page.screenshot({path:path.join(output,'narrow-notice.png')});await page.getByRole('button',{name:'Dismiss Meta AI notice'}).click();
+ pass('Actionable notice fits a narrow workspace');assert.deepEqual(report.errors,[]);report.status='passed';
 }catch(error){report.status='failed';report.failure=error.stack;await page?.screenshot({path:path.join(output,'failure.png')}).catch(()=>{});console.error(error);process.exitCode=1;}finally{await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log('Report: '+output);await app?.close();await browser?.close();if(server)await new Promise(resolve=>server.close(resolve));}

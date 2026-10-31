@@ -5,9 +5,8 @@ import {NavigationButtons} from './NavigationHistory';
 import {useContext} from 'react';
 import {BrowserPreviewContext} from './BrowserPreviewContext';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject, type ReactNode } from 'react';
-import { Plus, CalendarDays, Images, Shapes, Clapperboard, ArrowLeft, ArrowRight, Bot, ChevronDown, ChevronRight, ExternalLink, Globe2, Info, Library, Lightbulb, Link2, LoaderCircle, MessageCircle, MessagesSquare, MoreHorizontal, Newspaper, PanelLeft, PanelLeftClose, RefreshCw, Search, Settings2, ShieldCheck, Smartphone, SquarePen, Target, Terminal, UserRound, X, type LucideIcon } from 'lucide-react';
+import { Plus, CalendarDays, Images, Shapes, Clapperboard, ArrowLeft, ArrowRight, Bot, ChevronDown, ChevronRight, ExternalLink, Globe2, Info, Library, Lightbulb, LoaderCircle, MessageCircle, MessagesSquare, MoreHorizontal, Newspaper, PanelLeft, PanelLeftClose, RefreshCw, Search, Settings2, ShieldCheck, SquarePen, Target, Terminal, X, type LucideIcon } from 'lucide-react';
 import type { PersonalCommand, PersonalDestination, PersonalLibrary, PersonalLibraryGroup, PersonalServiceAction, PersonalState, PersonalWarmTarget } from '../shared/types';
-import { Modal } from './WorkspacePanels';
 import './personal-muse.css';
 
 export type MuseProduct = 'code' | 'personal';
@@ -209,7 +208,7 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
   const slot = useRef<HTMLDivElement>(null);
   const lastLayout = useRef('');
   const initialNavigation = useRef(false);
-  const [overlay, setOverlay] = useState<'more' | 'accounts' | null>(null);
+  const [overlay, setOverlay] = useState<'more' | null>(null);
   const moreTrigger = useRef<HTMLButtonElement>(null);
   const moreMenu = useRef<HTMLDivElement>(null);
   const moreId = useId();
@@ -291,7 +290,6 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
       <div className="topbar-actions"><UpdateToolbar/>
         {signingIn ? <span className="personal-auth-status" role="status"><ShieldCheck size={14} /><span>{state?.authWindowOpen ? 'Finish sign-in in the opened window' : 'Signing in with Meta'}</span></span> : <>
           {<button type="button" className={`icon-button personal-presentation-toggle ${compact ? 'selected' : ''}`} aria-label={destination==='chat'?'Use integrated Meta AI layout':'Use integrated Muse layout'} aria-pressed={compact} title={compact ? 'Show original website navigation' : 'Use integrated navigation'} disabled={!ready} onClick={() => void command({ type: 'presentation', compact: !compact })}>{compact ? <PanelLeftClose size={16} /> : <PanelLeft size={16} />}</button>}
-          <button type="button" className="personal-accounts-trigger" aria-label="Accounts and connections" title="Accounts and connections" aria-haspopup="dialog" disabled={!ready} onClick={() => setOverlay(overlay === 'accounts' ? null : 'accounts')}><UserRound size={15} /><span>Accounts</span></button>
         </>}
         <div className="personal-more">
           <button ref={moreTrigger} type="button" className="icon-button" aria-label="More Meta AI options" title="More options" aria-haspopup="menu" aria-expanded={overlay === 'more'} aria-controls={moreId} onClick={() => setOverlay(overlay === 'more' ? null : 'more')} onKeyDown={event => { if (event.key === 'ArrowDown') { event.preventDefault(); setOverlay('more'); } }}><MoreHorizontal size={19} /></button>
@@ -315,22 +313,5 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
         : error ? <div className="personal-browser-message" role="alert"><Globe2 size={28} /><h1>Unable to open {label}</h1><p>{error}</p><div><button type="button" className="button" onClick={() => void command({ type: 'reload' })}><RefreshCw size={14} />Try again</button><button type="button" className="button" onClick={() => void command({ type: 'openExternal' })}><ExternalLink size={14} />Open in browser</button></div></div>
           : !state?.visible && !covered ? <div className="personal-browser-message" role="status"><LoaderCircle size={24} className="spin" /><p>{state?.loading ? `Opening ${label}…` : `Connecting to ${label}…`}</p></div> : null}
     </div>
-    {overlay === 'accounts' && <Modal title="Accounts and connections" className="personal-accounts-modal" close={() => setOverlay(null)}>
-      <p className="personal-accounts-intro">Manage your accounts on Meta’s official pages. MuseBench remembers each sign-in on this computer.</p>
-      <div className="personal-account-group" aria-label="Meta AI account">
-        <button type="button" className="personal-account-row" aria-label="Meta AI settings and plan" onClick={() => perform({ type: 'metaSettings', section: 'general' })}><span className="personal-account-icon"><MessageCircle size={19} /></span><span><strong>Meta AI settings &amp; plan</strong><small>Account preferences and Meta AI upgrades / separate from Muse Code billing</small></span><ChevronRight size={15} /></button>
-        <button type="button" className="personal-account-row" aria-label="Meta AI apps" onClick={() => perform({ type: 'metaSettings', section: 'apps' })}><span className="personal-account-icon"><Link2 size={19} /></span><span><strong>Meta AI apps</strong><small>Manage apps such as Gmail, Google Drive, and Outlook</small></span><ChevronRight size={15} /></button>
-      </div>
-      <h3 className="personal-account-section-title">Muse</h3>
-      <div className="personal-account-group" aria-label="Muse account">
-        <button type="button" className="personal-account-row" aria-label="Muse account" onClick={() => perform({ type: 'serviceAction', action: 'settings' })}><span className="personal-account-icon"><Bot size={19} /></span><span><strong>Muse account</strong><small>Profile, preferences, and account settings</small></span><ChevronRight size={15} /></button>
-      </div>
-      <h3 className="personal-account-section-title">Bring Muse with you</h3>
-      <div className="personal-account-group" aria-label="Muse connections">
-        <button type="button" className="personal-account-row" aria-label="Connect WhatsApp" onClick={() => perform({ type: 'serviceAction', action: 'whatsapp' })}><span className="personal-account-icon"><Smartphone size={19} /></span><span><strong>Connect WhatsApp</strong><small>Pair through Muse’s official messaging settings</small></span><ChevronRight size={15} /></button>
-        <button type="button" className="personal-account-row" aria-label="Muse connections" onClick={() => perform({ type: 'serviceAction', action: 'connections' })}><span className="personal-account-icon"><Link2 size={19} /></span><span><strong>Muse connections</strong><small>Review and manage what Muse can access</small></span><ChevronRight size={15} /></button>
-      </div>
-      <p className="personal-account-footnote"><ShieldCheck size={14} /><span>Some app providers require sign-in in your browser. Use the same Meta account there, then return and refresh this page. Plan purchases, app permissions, and WhatsApp pairing stay with Meta; Muse Code billing is separate.</span></p>
-    </Modal>}
   </section>;
 }

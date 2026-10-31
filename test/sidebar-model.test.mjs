@@ -17,7 +17,7 @@ test('grouping reads project membership once per task instead of once per projec
 test('equivalent copies ignore project instruction bodies but detect every sidebar task field',()=>{
  const before={projects:[{...projects[0],instructions:'old',lessons:[]}],tasks:[task('one','a')],orders:{projects:['a'],recents:['one']}};
  const clone=()=>structuredClone(before);const after=clone();after.projects[0].instructions='new';assert.equal(sameSidebarData(before,after),true);
- for(const [key,value] of Object.entries({id:'two',projectId:'b',title:'Renamed',mode:'muse',createdAt:'later',updatedAt:'later',acceptedRevision:'hash',pinned:true,archived:true,archivedAt:'now',runtimeBusy:true,runtimeStatus:'running'})){const changed=clone();changed.tasks[0][key]=value;assert.equal(sameSidebarData(before,changed),false,key);}
+ for(const [key,value] of Object.entries({id:'two',projectId:'b',title:'Renamed',mode:'muse',createdAt:'later',updatedAt:'later',acceptedRevision:'hash',pinned:true,archived:true,archivedAt:'now',runtimeBusy:true,runtimeStatus:'running',runtimeComplete:true})){const changed=clone();changed.tasks[0][key]=value;assert.equal(sameSidebarData(before,changed),false,key);}
  for(const key of ['id','name','root']){const changed=clone();changed.projects[0][key]='changed';assert.equal(sameSidebarData(before,changed),false,key);}
  const changed=clone();changed.orders.recents=['two'];assert.equal(sameSidebarData(before,changed),false);delete changed.orders.recents;assert.equal(sameSidebarData(before,changed),false);
 });

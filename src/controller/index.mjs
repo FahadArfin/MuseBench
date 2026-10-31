@@ -274,7 +274,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const summaries=observations=>[...taskRecords.values()].reverse().filter(t=>state.projects.some(p=>p.id===t.projectId)).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)).map(t=>{
     const owner=contexts.get(t.id),status=observations?.get(owner)??readRuntimeStatus(owner?.runtime);
-    return{id:t.id,projectId:t.projectId,title:t.title,chatRelation:restoreChatRelation(t.chatRelation,t.id),forkedFrom:t.forkedFrom,mode:t.mode,createdAt:t.createdAt,updatedAt:t.updatedAt,acceptedRevision:t.acceptedRevision,runtimeBusy:!!owner&&(owner.pending||runtimeStatusBusy(status)),runtimeStatus:status.status,pinned:t.pinned===true,archived:t.archived===true,archivedAt:t.archivedAt??null};
+    return{id:t.id,projectId:t.projectId,title:t.title,chatRelation:restoreChatRelation(t.chatRelation,t.id),forkedFrom:t.forkedFrom,mode:t.mode,createdAt:t.createdAt,updatedAt:t.updatedAt,acceptedRevision:t.acceptedRevision,runtimeBusy:!!owner&&(owner.pending||runtimeStatusBusy(status)),runtimeStatus:status.status,runtimeComplete:t.runtimeComplete===true,pinned:t.pinned===true,archived:t.archived===true,archivedAt:t.archivedAt??null};
   });
   const activityRow=(owner,status,identity=owner.workIdentity)=>{
     const task=owner.task;if(!task||!owner.pending&&!runtimeStatusBusy(status))return null;
@@ -398,14 +398,15 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     finally{context.navigation=false;saveTask();context.messageBaseline=runtimeMessageIds(state.runtime);}
   };
   const ownedImages=value=>{
-    const refs=new Map();const visit=item=>{if(!item||typeof item!=='object')return;if(Array.isArray(item.images))for(const image of item.images)if(image?.id)refs.set(image.id,image);for(const [key,child] of Object.entries(item))if(key!=='images')visit(child);};visit(value);return[...refs.values()];
+    const refs=new Map();const visit=item=>{if(!item||typeof item!=='object')return;if(Array.isArray(item.images))for(const image of item.images)if(image?.id){refs.set(image.id,image);if(image.annotation?.source?.id)refs.set(image.annotation.source.id,image.annotation.source);}for(const [key,child] of Object.entries(item))if(key!=='images')visit(child);};visit(value);return[...refs.values()];
   };
   const releaseImages=async(projectId,candidates)=>{
     const owners=[...taskRecords.values()].filter(task=>task.projectId===projectId),drafts=Object.entries(state.drafts).filter(([key])=>key.startsWith(projectId+':')).map(([,draft])=>draft),shelf=promptShelf.all().filter(row=>row.key.startsWith(projectId+':')).map(row=>row.draft);
     if(imageImports.get(projectId)>0)return;
     const pending=[...imageLeases.values()].filter(lease=>lease.projectId===projectId).flatMap(lease=>[...lease.images.values()]);
     const retained=new Set([...ownedImages([owners,drafts,shelf]),...pending].map(image=>image.id));
-    await imageStore.release(projectId,candidates.filter(image=>!retained.has(image.id)));
+    const expanded=new Map(candidates.flatMap(image=>[image,...(image.annotation?.source?[image.annotation.source]:[])]).map(image=>[image.id,image]));
+    await imageStore.release(projectId,[...expanded.values()].filter(image=>!retained.has(image.id)));
   };
   const deleteArchivedChat=async (id,allowUnarchived=false)=>{
     requireNavigationIdle();if(typeof allowUnarchived!=='boolean')throw Error('Invalid direct-delete choice.');const target=taskRecords.get(id);if(!target)throw Error('Chat not found.');if(!target.archived&&!allowUnarchived)throw Error('Archive this chat before permanently deleting it.');if(contextBusy(contexts.get(id)))throw Error('Stop this chat before deleting it.');
@@ -798,7 +799,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           const durable=runtimeState.durableSessions===true?prepareNativeSession(t.nativeSession,project.root,runtimeState):null;
           const targetSession=durable?.session.id??recentSessionId(t,runtime.snapshot?.()??runtimeState);
           const recentContext=action.fromQueue?(action.recentContext?validateRecentContext(action.recentContext,t,targetSession):null):action.userAuthored===true?stagedRecentContext(t,targetSession):null;
-          const prepared=composeChatContext({task:t,project:project,memories:state.memories,text:action.text,attachments,recentContext,history:durable?durable.history:runtimeState.transport!=='msp'||!runtimeState.sessionSeeded,nativeSession:runtimeState.transport==='msp'?!!runtimeState.sessionSeeded:!!durable&&!durable.history});
+          const prepared=composeChatContext({task:t,project:project,memories:state.memories,text:action.text,images,attachments,recentContext,history:durable?durable.history:runtimeState.transport!=='msp'||!runtimeState.sessionSeeded,nativeSession:runtimeState.transport==='msp'?!!runtimeState.sessionSeeded:!!durable&&!durable.history});
           const beforePreparation=recentContext?structuredClone(Object.fromEntries(['nativeSession','recentContext','messages','runs','contextSummary','skillReceipts','nativeUsage','runtimeComplete','acceptedRevision'].map(key=>[key,t[key]]))):null;
           if(durable)t.nativeSession=durable.session;
           t.skillReceipts=[];t.nativeUsage=null;t.runtimeComplete=false;t.acceptedRevision=null;context.pending=true;

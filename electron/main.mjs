@@ -1,3 +1,5 @@
+import {createChatMenuTools} from './chat-menu-tools.mjs';
+import {chatLinkTask} from '../src/shared/chat-menu-tools.mjs';
 import {createDiscoveryMcpConfig} from './discovery-mcp-config.mjs';
 import {createDiscoveryOAuthStore} from './discovery-oauth-store.mjs';
 import {createDiscoveryOAuthFlow} from './discovery-oauth-flow.mjs';
@@ -63,12 +65,14 @@ const sessionDurability = createSessionDurability({ app });
 const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
+let pendingChatLink=process.argv.map(chatLinkTask).find(Boolean)??null,deliverChatLink;
 let window, ui, openWindow, background, closeOwned, ownedWorkBusy, controller, customize, codeBilling, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0, opening=null, pendingQuit=false;
 const retryPendingQuit=()=>{if(pendingQuit&&!opening&&pendingIpc===0){pendingQuit=false;setImmediate(()=>app.quit());}};
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance',()=>{void openWindow?.().catch(startupFailed);});
+  app.on('second-instance',(_event,args)=>{pendingChatLink=args.map(chatLinkTask).find(Boolean)??pendingChatLink;void openWindow?.().then(()=>deliverChatLink?.()).catch(startupFailed);});
+  app.on('open-url',(event,url)=>{const id=chatLinkTask(url);if(id){event.preventDefault();pendingChatLink=id;void openWindow?.().then(()=>deliverChatLink?.()).catch(startupFailed);}});
   app.on('activate',()=>{void openWindow?.().catch(startupFailed);});
   app.whenReady().then(async () => {
     const helperPath = app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchJob.exe') : path.join(root,'native','bin','MuseBenchJob.exe');
@@ -236,6 +240,13 @@ else {
       return result.canceled?null:result.filePaths[0];
     }});
     handler('musebench:open-file',openFileEditor);
+    const chatTools=createChatMenuTools({getState:()=>controller.getState(),readHistory:input=>controller.readChatHistory(input),clipboard,openPath:folder=>shell.openPath(folder),save:async title=>{const result=await dialog.showSaveDialog(window,{title:'Share chat as Markdown',defaultPath:title+'.md',filters:[{name:'Markdown',extensions:['md']}]});return result.canceled?null:result.filePath;}});
+    handler('musebench:chat-tools',chatTools);
+    let chatLinkReady=false;
+    deliverChatLink=()=>{if(chatLinkReady&&pendingChatLink&&!window.isDestroyed()){const id=pendingChatLink;pendingChatLink=null;window.webContents.send('musebench:chat-link',id);}};
+    handler('musebench:chat-link-ready',()=>{chatLinkReady=true;deliverChatLink();});
+    window.on('closed',()=>{chatLinkReady=false;});
+
     handler('musebench:state',()=>statePublisher.read());
     handler('musebench:state-attach',()=>{statePublisher.attach();});
     handler('musebench:window-theme',theme=>updateWindowTheme(window,theme));

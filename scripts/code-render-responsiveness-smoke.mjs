@@ -86,9 +86,9 @@ try{
  const tail=page.locator('.assistant-message').last();await tail.getByRole('button',{name:'Copy message',exact:true}).click();
  checks.streamedResponseCopyCorrect=await page.evaluate(()=>window.__codeRenderFixture.copies.at(-1).includes('const streamed = true;'));
  checks.draftRetained=await page.getByRole('textbox',{name:'Message Muse',exact:true}).inputValue()==='Preserve draft while streaming';
- await history.getByRole('button',{name:'Response feedback',exact:true}).click();await history.getByRole('menuitemradio',{name:'Helpful',exact:true}).click();
+ await history.getByRole('button',{name:'Like response',exact:true}).click();
  await page.evaluate(()=>window.__codeRenderFixture.touch());
- checks.feedbackSurvivesSnapshot=await history.getByRole('button',{name:'Response feedback',exact:true}).getAttribute('title')==='Helpful · Saved on this device';
+ checks.feedbackSurvivesSnapshot=await history.getByRole('button',{name:'Like response',exact:true}).getAttribute('aria-pressed')==='true';
  await history.getByRole('button',{name:'Fork from here',exact:true}).click();
  await page.waitForFunction(()=>document.querySelectorAll('.assistant-message').length===1);
  checks.branchUsesCurrentMessage=await page.evaluate(()=>window.__codeRenderFixture.actions.some(action=>action.type==='forkTask'&&action.taskId==='render-a'&&action.messageId==='render-message-1'));
@@ -98,7 +98,7 @@ try{
  await activity.getByRole('button',{name:/Worked for/}).click();
  await page.evaluate(()=>window.__codeRenderFixture.select('render-b'));
  await page.getByRole('heading',{name:'Answer b 1',exact:true}).waitFor();
- checks.otherChatFeedbackIsolated=await history.getByRole('button',{name:'Response feedback',exact:true}).getAttribute('title')==='Response feedback';
+ checks.otherChatFeedbackIsolated=await history.getByRole('button',{name:'Like response',exact:true}).getAttribute('aria-pressed')==='false';
  checks.otherChatDetailsCollapsed=await activity.getByRole('button',{name:/Worked for/}).getAttribute('aria-expanded')==='false';
  await history.getByRole('button',{name:'Copy message',exact:true}).click();
  checks.otherChatResponseCopyCorrect=await page.evaluate(()=>window.__codeRenderFixture.copies.at(-1).startsWith('### Answer b 1'));

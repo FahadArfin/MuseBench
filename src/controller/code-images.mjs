@@ -33,7 +33,7 @@ export function createImageStore(dataDir){
    const ref={id:hash(bytes),name,mime,bytes:bytes.length},file=path.join(await directory(projectId),`${ref.id}.${extensions[mime]}`);
    try{await writeFile(file,bytes,{flag:'wx'});}catch(error){if(error.code!=='EEXIST')throw error;await fileFor(projectId,ref);}return ref;
   },
-  async release(projectId,refs){for(const ref of imageReferences(refs)){const file=path.join(await directory(projectId),`${ref.id}.${extensions[ref.mime]}`);try{const info=await lstat(file);if(info.isFile()&&!info.isSymbolicLink())await unlink(file);}catch(error){if(error.code!=='ENOENT')throw error;}}},
+  async release(projectId,refs){const validated=refs.map(ref=>imageReferences([ref])[0]);for(const ref of validated){const file=path.join(await directory(projectId),`${ref.id}.${extensions[ref.mime]}`);try{const info=await lstat(file);if(info.isFile()&&!info.isSymbolicLink())await unlink(file);}catch(error){if(error.code!=='ENOENT')throw error;}}},
   async resolve(projectId,refs){return Promise.all(imageReferences(refs).map(async ref=>(await fileFor(projectId,ref)).file));},
   async read(projectId,value){const [ref]=imageReferences([value]);const {bytes}=await fileFor(projectId,ref);return`data:${ref.mime};base64,${bytes.toString('base64')}`;}
  };

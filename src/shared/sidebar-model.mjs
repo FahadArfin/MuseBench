@@ -25,7 +25,7 @@ export function sidebarCollections(projects,tasks,orders){
 // Keep this projection aligned with the sidebar and its chat action menu.
 // Bridge snapshots are immutable; heavy project instructions are not UI data here.
 const projectFields=['id','name','root'];
-const taskFields=['id','projectId','title','mode','createdAt','updatedAt','acceptedRevision','pinned','archived','archivedAt','runtimeBusy','runtimeStatus'];
+const taskFields=['id','projectId','title','mode','createdAt','updatedAt','acceptedRevision','pinned','archived','archivedAt','runtimeBusy','runtimeStatus','runtimeComplete'];
 const sameList=(a,b,fields)=>a===b||a.length===b.length&&a.every((row,i)=>row===b[i]||fields.every(key=>row[key]===b[i][key]));
 const relationFields=['kind','parentTaskId','parentTitle','context','createdAt','messageId'];
 const sameRelations=(a,b)=>a===b||a.length===b.length&&a.every((row,i)=>row.chatRelation===b[i].chatRelation||relationFields.every(key=>row.chatRelation?.[key]===b[i].chatRelation?.[key]));

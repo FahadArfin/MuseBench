@@ -1,5 +1,5 @@
 import {memo,useEffect,useLayoutEffect,useMemo,useRef,useState,type DragEvent,type KeyboardEvent} from 'react';
-import {ChevronRight,FolderOpen,MoreHorizontal,Pin,Plus,Search} from 'lucide-react';
+import {ChevronRight,FolderOpen,MoreHorizontal,Pin,Plus,Search,LoaderCircle} from 'lucide-react';
 import type {Action,Project,TaskSummary} from '../shared/types';
 import {sidebarKey} from '../shared/sidebar-order.mjs';
 import {sameSidebarData,sidebarCollections,projectChatRelations} from '../shared/sidebar-model.mjs';
@@ -27,6 +27,10 @@ function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,bu
  const [closedSides,setClosedSides]=useState<Set<string>>(new Set());
  const {open,rename,isOpen,overlay}=useChatActions({tasks,busy,active,act});
  const selected=tasks.find(t=>t.id===selectedId);
+ const [clickedRow,setClickedRow]=useState<{id:string;key:string}|null>(null);
+ const projectRowKey=`${sidebarKey('project',selected?.projectId)}:${selectedId}`;
+ const collectionRowKey=`${selected?.pinned?'pinned':'recents'}:${selectedId}`;
+ const selectedRowKey=clickedRow&&clickedRow.id===selectedId&&[projectRowKey,collectionRowKey].includes(clickedRow.key)?clickedRow.key:projectRowKey;
  const relationIndex=useMemo(()=>createChatRelationIndex(tasks),[tasks]);
  const selectedMainId=selected?.chatRelation?.kind==='side'?relationIndex.main(selected).id:null;
  useEffect(()=>{if(!selectedMainId)return;setClosedSides(before=>{if(!before.has(selectedMainId))return before;const next=new Set(before);next.delete(selectedMainId);return next;});},[selectedId,selectedMainId]);
@@ -70,10 +74,11 @@ function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,bu
  };
  const row=(chat:TaskSummary,section:Move['section'],items:TaskSummary[],destinationId?:string,sideCount=0)=>{
    const props=dropProps(section,destinationId,chat.id);
+   const rowKey=`${sidebarKey(section,destinationId)}:${chat.id}`;
    return <div {...props} className={`sidebar-chat ${sideCount?'has-side-chats':''} ${props.className}`} key={chat.id} draggable={!busy} onDragStart={event=>start(event,'chat',chat.id)} onDragEnd={finish}>
      {!!sideCount&&<button className="side-chat-toggle" aria-label={`${closedSides.has(chat.id)?'Expand':'Collapse'} side chats of ${chat.title}`} aria-expanded={!closedSides.has(chat.id)} aria-controls={`side-chats-${chat.id}`} onClick={()=>setClosedSides(before=>{const next=new Set(before);if(next.has(chat.id))next.delete(chat.id);else next.add(chat.id);return next;})}><ChevronRight size={12} className={closedSides.has(chat.id)?'':'rotated'}/></button>}
-     <button className={`chat-row ${chat.id===selectedId&&!overview?'selected':''}`} title={`${chat.title}${chat.pinned?' · Pinned':''} · Drag to move, or Alt+Shift+Up/Down to reorder`} aria-label={chat.title} aria-description={chat.pinned?'Pinned chat. Drag to move or Alt+Shift+arrows to reorder.':'Drag to move or Alt+Shift+arrows to reorder.'} disabled={busy} onClick={()=>{if(!suppressClick.current)onChat(chat.id);}} onContextMenu={event=>open(chat,event)} onKeyDown={event=>{if(keyboardMove(event,'chat',chat.id,section,items,destinationId))return;keyboardNavigate(event,chat);}}>
-       {chat.pinned&&!chat.archived&&<Pin size={12} className="chat-pinned-icon" aria-hidden="true"/>}<span>{chat.title}</span>{chat.runtimeStatus&&['running','starting','submitting','connecting','checking-permissions'].includes(chat.runtimeStatus)&&<span className="chat-running" role="status" aria-label="Chat running">●</span>}
+     <button className={`chat-row ${chat.id===selectedId&&rowKey===selectedRowKey&&!overview?'selected':''}`} title={`${chat.title}${chat.pinned?' · Pinned':''} · Drag to move, or Alt+Shift+Up/Down to reorder`} aria-label={chat.title} aria-description={chat.pinned?'Pinned chat. Drag to move or Alt+Shift+arrows to reorder.':'Drag to move or Alt+Shift+arrows to reorder.'} disabled={busy} onClick={()=>{if(!suppressClick.current){setClickedRow({id:chat.id,key:rowKey});onChat(chat.id);}}} onContextMenu={event=>open(chat,event)} onKeyDown={event=>{if(keyboardMove(event,'chat',chat.id,section,items,destinationId))return;keyboardNavigate(event,chat);}}>
+       {chat.pinned&&!chat.archived&&<Pin size={12} className="chat-pinned-icon" aria-hidden="true"/>}<span>{chat.title}</span>{chat.runtimeStatus&&['running','starting','submitting','connecting','checking-permissions'].includes(chat.runtimeStatus)&&<LoaderCircle size={13} className="chat-running spin" role="status" aria-label="Chat running"/>}{!chat.runtimeBusy&&(chat.runtimeStatus==='completed'||chat.runtimeComplete)&&<span className="chat-response-ready" role="status" aria-label="Response ready"/>}
      </button>
      <button className="chat-options icon-button" aria-label={`Chat options for ${chat.title}`} aria-haspopup="menu" aria-expanded={isOpen(chat.id)} disabled={busy} onClick={event=>open(chat,event)}><MoreHorizontal size={14}/></button>
    </div>;

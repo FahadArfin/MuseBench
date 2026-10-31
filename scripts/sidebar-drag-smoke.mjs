@@ -40,9 +40,13 @@ try{
  await pinned.getByRole('button',{name:'Alpha one',exact:true}).waitFor();
  await drag(beta.getByRole('button',{name:'Beta one',exact:true}),pinned.getByRole('button',{name:'Alpha one',exact:true}));
  await until(async()=>(await pinned.locator('.chat-row').allTextContents()).join(',')==='Beta one,Alpha one');pass('Dropping into an empty Pinned section pins chats; subsequent drops set their order');
+ for(const region of [alpha,pinned,alpha]){const clicked=region.getByRole('button',{name:'Alpha one',exact:true});await clicked.click();await until(async()=>(await state()).task.id===chats[0].id&&!(await state()).busy);assert.equal(await side.locator('.chat-row.selected').count(),1,'Only the clicked occurrence is highlighted');assert.match(await clicked.getAttribute('class'),/selected/);}
+ pass('Project and Pinned highlight only the clicked occurrence of the same chat');
  await drag(pinned.getByRole('button',{name:'Alpha one',exact:true}),recent.getByRole('button',{name:'Alpha two',exact:true}));
  await until(async()=>!(await state()).tasks.find(t=>t.id===chats[0].id).pinned);
  assert.equal(await pinned.getByRole('button',{name:'Alpha one',exact:true}).count(),0);pass('Moving a pinned chat to Recents unpins and positions it');
+ for(const region of [recent,alpha,recent]){const clicked=region.getByRole('button',{name:'Alpha one',exact:true});await clicked.click();await until(async()=>(await state()).task.id===chats[0].id&&!(await state()).busy);assert.equal(await side.locator('.chat-row.selected').count(),1);assert.match(await clicked.getAttribute('class'),/selected/);}
+ pass('Switching between Recents and Project transfers the highlight without duplicating it');
  await alpha.getByRole('button',{name:'Alpha one',exact:true}).focus();await page.keyboard.press('Alt+Shift+ArrowDown');
  await until(async()=>(await alpha.locator('.chat-row').allTextContents()).join(',')==='Alpha two,Alpha one');pass('Alt+Shift+arrow keys reorder focused chats');
  await drag(alpha.getByRole('button',{name:'Alpha one',exact:true}),projectButton('Beta'));

@@ -1,3 +1,4 @@
+import {useChatMenuTools} from './ChatMenuTools';
 import {ArrowUpLeft,GitBranch,MoreHorizontal} from 'lucide-react';
 import {useMemo} from 'react';
 import type {Action,Task,TaskSummary} from '../shared/types';
@@ -6,8 +7,9 @@ import {useChatActions} from './useChatActions';
 import './chat-sidebar.css';
 
 export function CurrentChatOptions({task,tasks,busy,active,act}:{task:Task;tasks:TaskSummary[];busy:boolean;active:boolean;act:(action:Action)=>Promise<unknown>}){
- const {open,isOpen,overlay}=useChatActions({tasks,busy,active,act});
- return <><button className="icon-button current-chat-options" aria-label="Current chat options" title="Chat options" aria-haspopup="menu" aria-expanded={isOpen(task.id)} disabled={busy} onClick={event=>open(task,event)}><MoreHorizontal size={17}/></button>{overlay}</>;
+ const tools=useChatMenuTools(task);
+ const {open,isOpen,overlay}=useChatActions({tasks,busy,active,act,extraItems:tools.items});
+ return <><button className="icon-button current-chat-options" aria-label="Current chat options" title="Chat options" aria-haspopup="menu" aria-expanded={isOpen(task.id)} disabled={busy} onClick={event=>open(task,event)}><MoreHorizontal size={17}/></button>{overlay}{tools.overlay}</>;
 }
 
 export function ChatRelation({task,tasks,busy,onParent}:{task:Task;tasks:TaskSummary[];busy:boolean;onParent:(id:string)=>void}){

@@ -1,3 +1,4 @@
+import {imageAnnotationNotes} from './image-annotations.mjs';
 export const CONTEXT_LIMIT=64000;
 export const FILE_CONTEXT_LIMIT=24000;
 export function fileReferences(value=[]){
@@ -7,7 +8,7 @@ export function fileReferences(value=[]){
 export function restoreSourceSnapshots(value){
  if(!Array.isArray(value)||value.length>8)return[];let size=0;return value.filter(item=>{if(!item||typeof item.path!=='string'||typeof item.hash!=='string'||typeof item.text!=='string')return false;size+=JSON.stringify(item).length;return size<=FILE_CONTEXT_LIMIT;}).map(({path,hash,text})=>({path,hash,text}));
 }
-export function composeChatContext({task,project,memories='',text='',attachments=[],history=true,nativeSession=false,recentContext=null}){
+export function composeChatContext({task,project,memories='',text='',images=[],attachments=[],history=true,nativeSession=false,recentContext=null}){
  if(typeof text!=='string'||text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
  attachments=[...attachments].sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
  const instructionSnapshot={version:1,scope:'app-settings',personal:memories?'included':'empty',project:project?.instructions?'included':'empty'};
@@ -21,14 +22,15 @@ export function composeChatContext({task,project,memories='',text='',attachments
   attachments.length?`Selected source snapshots (JSON data; verify the current files before editing):\n${JSON.stringify(attachments.map(({path,hash,text})=>({path,hash,text})))}`:'',
   recentContext?.section??'',
  ].filter(Boolean);
- const ending=`\n\nCurrent request:\n${text}`;
+ const notes=imageAnnotationNotes(images);
+ const ending=`\n\nCurrent request:\n${text}${notes?"\n\n"+notes:""}`;
  const previous=history?(task?.messages??[]).filter(m=>['user','assistant'].includes(m.role)&&m.text):[];
  const selected=[],includedSources=[];let room=CONTEXT_LIMIT-parts.join('\n\n').length-ending.length-150,truncatedMessages=0;
  if(room<0)throw Error('Selected context is too large. Remove a file or shorten your request.');
  for(let i=previous.length-1;i>=0;i--){
   const message=previous[i],run=task?.runs?.find(r=>r.promptId===(message.turnId??message.id));
   const outcome=run?.status??message.outcome;
-  const entry={role:message.role,text:message.text,...(message.sources?.length?{historicalSourceSnapshots:restoreSourceSnapshots(message.sources)}:{}),...(outcome&&outcome!=='completed'?{outcome}:{} )};
+  const entry={role:message.role,text:message.text+(imageAnnotationNotes(message.images)?"\n\n"+imageAnnotationNotes(message.images):""),...(message.sources?.length?{historicalSourceSnapshots:restoreSourceSnapshots(message.sources)}:{}),...(outcome&&outcome!=='completed'?{outcome}:{} )};
   let encoded=JSON.stringify(entry);
   if(encoded.length+2>room){
    // Keep an explicit suffix of the nearest message when a complete message will not fit.

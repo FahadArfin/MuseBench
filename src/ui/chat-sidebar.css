@@ -28,7 +28,9 @@
 .sidebar-drop-end.sidebar-drop-target{border-color:#3989fa;background:color-mix(in srgb,#3989fa 12%,transparent)}
 .sidebar-move-announcement{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 
-.chat-row .chat-running{flex:0 0 auto;color:var(--accent);font-size:10px;margin-left:auto}
+.chat-row .chat-running,.chat-row .chat-response-ready{flex:0 0 auto;color:#69aaff;margin-left:auto}
+.chat-row .chat-response-ready{width:6px;height:6px;border-radius:50%;background:currentColor}
+:root[data-theme="light"] .chat-row .chat-running,:root[data-theme="light"] .chat-row .chat-response-ready{color:#1769c2}
 .sidebar-chat.has-side-chats .chat-row{padding-left:22px}
 .side-chat-toggle{position:absolute;left:0;top:4px;width:22px;height:24px;display:grid;place-items:center;color:var(--muted);z-index:1}
 .side-chat-toggle svg{transition:transform var(--motion-duration-fast,160ms) ease}

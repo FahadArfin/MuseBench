@@ -1,11 +1,11 @@
-import {useEffect,useLayoutEffect,useRef,useState,type MouseEvent,type KeyboardEvent} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState,type MouseEvent,type KeyboardEvent,type ReactNode} from 'react';
 import {createPortal} from 'react-dom';
 import {Archive,ArchiveRestore,GitBranch,MessageSquarePlus,Pencil,Pin,PinOff,Trash2} from 'lucide-react';
 import type {Action,TaskSummary} from '../shared/types';
 import {Modal} from './WorkspacePanels';
 import './chat-sidebar.css';
 
-export function useChatActions({tasks,busy,active,act}:{tasks:TaskSummary[];busy:boolean;active:boolean;act:(action:Action)=>Promise<unknown>}){
+export function useChatActions({tasks,busy,active,act,extraItems}:{tasks:TaskSummary[];busy:boolean;active:boolean;act:(action:Action)=>Promise<unknown>;extraItems?:ReactNode}){
  const [context,setContext]=useState<{id:string;x:number;y:number;trigger:HTMLElement}|null>(null);
  const [dialog,setDialog]=useState<{kind:'edit'|'delete';task:TaskSummary}|null>(null),[title,setTitle]=useState(''),[error,setError]=useState(''),[saving,setSaving]=useState(false);
  const menu=useRef<HTMLDivElement>(null);const target=tasks.find(t=>t.id===context?.id);
@@ -40,6 +40,7 @@ export function useChatActions({tasks,busy,active,act}:{tasks:TaskSummary[];busy
  {target.archived?<button role="menuitem" onClick={()=>change({type:'setTaskFlags',id:target.id,archived:false})}><ArchiveRestore size={16}/>Restore</button>:<button role="menuitem" onClick={()=>change({type:'setTaskFlags',id:target.id,pinned:!target.pinned})}>{target.pinned?<PinOff size={16}/>:<Pin size={16}/>} {target.pinned?'Unpin':'Pin'}</button>}
  <button role="menuitem" onClick={()=>showDialog('edit')}><Pencil size={16}/>Edit details</button>
  <div className="chat-menu-separator" role="separator"/>
+ {extraItems}
  {!target.archived&&<button role="menuitem" onClick={()=>change({type:'setTaskFlags',id:target.id,archived:true})}><Archive size={16}/>Archive</button>}
  <button role="menuitem" className="danger" onClick={()=>showDialog('delete')}><Trash2 size={16}/>Delete</button>
  </div>,document.body)}

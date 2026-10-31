@@ -67,12 +67,12 @@ try{
  assert.equal(await composer().inputValue(),task.request);
  assert.equal(await page.getByRole('button',{name:'Open plan',exact:true}).count(),0);
  record('Draft settings persist; missing Muse keeps the request retryable without a plan gate');
- await page.getByRole('button',{name:'Approval access',exact:true}).click();await page.getByRole('menuitemradio',{name:/No prompts/}).click();
- await until(async()=>(await state()).task.runOptions.approval==='never');
+ await page.getByRole('button',{name:'Approval access',exact:true}).click();await page.getByRole('menuitemradio',{name:/Auto-review/}).click();
+ await until(async()=>(await state()).task.runOptions.approval==='auto');
  await page.getByRole('button',{name:'New chat',exact:true}).click();
  assert.match(await page.getByRole('button',{name:'Approval access',exact:true}).innerText(),/Ask for approval/);
  await page.locator('.project-chats').getByRole('button',{name:task.title,exact:false}).click();
- await until(async()=>/No prompts/.test(await page.getByRole('button',{name:'Approval access',exact:true}).innerText()));
+ await until(async()=>/Auto-review/.test(await page.getByRole('button',{name:'Approval access',exact:true}).innerText()));
  assert.equal((await state()).task.runOptions.reasoning,'xhigh');
  record('Approval choices persist per chat and new chats begin with Ask for approval');
  await page.setViewportSize({width:390,height:844});await shot('04-composer-narrow');
@@ -86,8 +86,8 @@ try{
  record('Composer and all popovers fit 390px and desktop layouts in light and dark themes');
  await app.close();app=null;await launch();
  await until(async()=>(await state()).task?.id===task.id);
- assert.deepEqual((await state()).task.runOptions,{reasoning:'xhigh',approval:'never'});
- assert.match(await page.getByRole('button',{name:'Approval access',exact:true}).innerText(),/No prompts/);
+ assert.deepEqual((await state()).task.runOptions,{reasoning:'xhigh',approval:'auto'});
+ assert.match(await page.getByRole('button',{name:'Approval access',exact:true}).innerText(),/Auto-review/);
  assert.equal(report.errors.length,0);
  record('Restart restores reasoning and access choices with no renderer errors');
  report.status='passed';

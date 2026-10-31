@@ -3,10 +3,4 @@
 .response-actions>.icon-button:hover,.response-actions>.icon-button[aria-expanded=true]{background:var(--surface-hover);color:var(--text)}
 .response-actions>.icon-button.selected{color:var(--accent)}
 .response-actions time{margin-left:5px;color:var(--muted);font-size:11px;white-space:nowrap}
-.response-action-menu{position:absolute;bottom:calc(100% + 5px);left:78px;z-index:30;min-width:184px;max-width:calc(100vw - 100px);padding:5px;border:1px solid var(--border);border-radius:12px;background:var(--surface-hover);box-shadow:0 5px 18px #0003;color:var(--text)}
-.response-action-menu button{display:flex;align-items:center;gap:9px;width:100%;padding:9px 8px;border-radius:7px;font-size:12px;text-align:left;white-space:nowrap}
-.response-action-menu button:hover,.response-action-menu button:focus-visible{background:var(--surface);outline:none}.response-action-menu [aria-checked=true]{color:var(--accent)}
-.response-action-menu small{display:block;padding:6px 8px;font-size:10px;color:var(--muted)}
 .response-action-status{flex-basis:100%;font-size:11px;margin-top:3px}
-@media(max-width:480px){.response-action-menu{left:24px}}
-.quote-staging{min-width:0}.quote-source{max-height:300px;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);font-size:12px;overflow-wrap:anywhere}.quote-source header{display:flex;align-items:center;gap:12px}.quote-source header strong{margin-right:auto}.quote-source small{display:block;color:var(--muted);margin:6px 0}.quote-source p{margin:8px 0}.quote-source pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:110px;overflow:auto;font-size:11px}.quote-source-pages{display:flex;gap:12px}.quote-source-pages button{font-size:12px;text-decoration:underline}.quote-staging>.context-chip{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
