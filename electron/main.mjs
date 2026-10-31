@@ -71,7 +71,7 @@ const retryPendingQuit=()=>{if(pendingQuit&&!opening&&pendingIpc===0){pendingQui
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance',(_event,args)=>{pendingChatLink=args.map(chatLinkTask).find(Boolean)??pendingChatLink;void openWindow?.().then(()=>deliverChatLink?.()).catch(startupFailed);});
+  app.on('second-instance',(_event,args)=>{pendingChatLink=(Array.isArray(args)?args:[]).map(chatLinkTask).find(Boolean)??pendingChatLink;void openWindow?.().then(()=>deliverChatLink?.()).catch(startupFailed);});
   app.on('open-url',(event,url)=>{const id=chatLinkTask(url);if(id){event.preventDefault();pendingChatLink=id;void openWindow?.().then(()=>deliverChatLink?.()).catch(startupFailed);}});
   app.on('activate',()=>{void openWindow?.().catch(startupFailed);});
   app.whenReady().then(async () => {
