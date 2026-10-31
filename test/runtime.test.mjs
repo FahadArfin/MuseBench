@@ -9,6 +9,11 @@ import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/run
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 import {permissionDetails} from '../src/ui/permissions.mjs';
 
+test('disconnect discards the live catalog before a billing source can change',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.refreshModels();assert.ok(h.runtime.snapshot().modelCatalog);
+ await h.runtime.disconnect();assert.equal(h.runtime.snapshot().modelCatalog,undefined);
+});
+
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
 test('native retry observation stays nonterminal, clears across connection replacement, and never dispatches work',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Fixture only'});

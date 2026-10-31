@@ -209,11 +209,11 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   if(closing){await closing;return snapshot();}
   if(!owner&&!connecting&&state.cleanup==='unconfirmed')return snapshot();
   interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Disconnected before compaction was confirmed.');syncCompaction();
-  const token=++epoch;connecting=false;sending=false;forkPending=false;deciding=false;blockedReason=null;clearPending();
+  const token=++epoch;connecting=false;sending=false;forkPending=false;deciding=false;blockedReason=null;nativeCatalog=null;clearPending();
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('disconnected');adapter=null;
   closing=Promise.resolve().then(release);
   childReads.clear();
-  update({status:'unavailable',reason,fullAccess:false,sessionSeeded:false,sessionId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:'pending',childInspections:[]});
+  update({status:'unavailable',reason,fullAccess:false,sessionSeeded:false,sessionId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:'pending',childInspections:[],modelCatalog:undefined});
   const cleanup=await closing;closing=null;
   if(token===epoch)update({cleanup,childrenBusy:cleanup==='unconfirmed',...(cleanup==='unconfirmed'?{reason:'Muse shutdown could not be confirmed. Check the native process before reconnecting.'}:{})});
   return snapshot();

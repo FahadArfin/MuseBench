@@ -7,6 +7,11 @@ import {join} from 'node:path';
 import {createExecRuntime} from '../src/runtime/exec.mjs';
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 
+test('exec disconnect discards the live catalog before a billing source can change',async t=>{
+ const h=await harness(t,{loadModels:async()=>({source:'providerCatalog',models:[]})});await h.connect();await h.runtime.refreshModels();assert.ok(h.runtime.snapshot().modelCatalog);
+ await h.runtime.disconnect();assert.equal(h.runtime.snapshot().modelCatalog,undefined);
+});
+
 const ready='backend=windows_elevated\nstatus=ready\nrunner_trusted=true\nrunner_version_matches=true\nsandbox_users_ready=true\ncapabilities_ready=true\nrestricted_network_required=true\nwfp_ready=true\n';
 const unmanaged='Enterprise configuration status\nGeneration: sha256:123\nSources:\n  plane=defaults source_class=system_file state=absent\n  plane=policy source_class=system_file state=absent\n  plane=defaults source_class=windows_machine_policy state=absent\n  plane=policy source_class=windows_machine_policy state=absent\n';
 function records({terminal='completed',text='Done',reason=null,model=true,shellResult=null}={}) {

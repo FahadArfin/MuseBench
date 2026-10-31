@@ -10,6 +10,7 @@ import {createRendererStatePublisher} from './renderer-state-publisher.mjs';
 import {createNativeControlRouter} from './native-control-router.mjs';
 import {createBillingReader} from './billing-reader.mjs';
 import {createCodeBilling} from './code-billing.mjs';
+import {createNativeModelDiscovery} from '../src/runtime/models.mjs';
 import {createBillingPayments} from './billing-payments.mjs';
 import {createOnboarding} from './onboarding.mjs';
 import {userProfile} from '../src/shared/platform.mjs';
@@ -85,7 +86,7 @@ else {
     // New working copies have their own location; saved originals stay put.
     const projectsDir = projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride
       : process.platform === 'win32' ? path.join(path.parse(dataDir).root,'MuseBenchWorkspaces',createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0,12)) : undefined;
-    controller = await createController({ dataDir, projectsDir, newProjectsDir: projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride : path.join(app.getPath('documents'),'MuseBench'), templateDir: path.join(root,'templates','tea-store'), runtimeFactory,discoveryOAuth:()=>discoveryOAuth });
+    controller = await createController({ dataDir, projectsDir, newProjectsDir: projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride : path.join(app.getPath('documents'),'MuseBench'), templateDir: path.join(root,'templates','tea-store'), runtimeFactory,discoverModels:createNativeModelDiscovery({credentials:codeBilling.credentials}),discoveryOAuth:()=>discoveryOAuth });
     // Windows can redirect the app's known Roaming folder under its package
     // identity. Anchor Work's strict path checks to that trusted physical root.
     const workDataDir=await workDataDirectory(dataDir);

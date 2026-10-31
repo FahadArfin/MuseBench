@@ -30,3 +30,12 @@ test('native usage errors and timeouts cannot expose provider responses or leave
  const value=await readNativeAccount({binary:'fixture.exe',environment:{},refreshUsage:true,spawn:f.spawn});assert.equal(value.usageUnavailable,true);assert.ok(!JSON.stringify(value).includes('private-fixture'));assert.equal(f.closed,1);
  const slow=fixture({initialize:()=>new Promise(()=>{})});await assert.rejects(readNativeAccount({binary:'fixture.exe',environment:{},spawn:slow.spawn,timeoutMs:10}),/unavailable/);assert.equal(slow.closed,1);
 });
+test('native account cleanup failures are typed and cleanup cannot hang indefinitely',async()=>{
+ for(const close of [async()=>{throw Error('private close failure');},()=>new Promise(resolve=>setTimeout(resolve,100))]){
+  await assert.rejects(readNativeAccount({binary:'fixture.exe',environment:{},closeTimeoutMs:10,spawn:()=>({initialize:async()=>{throw Error('private initialize error');},close})}),error=>error.code==='ACCOUNT_CLEANUP'&&!error.message.includes('private'));
+ }
+});
+test('a timed-out account initialization cannot issue late credential queries',async()=>{
+ let finish,requests=0;const pending=readNativeAccount({binary:'fixture.exe',environment:{},timeoutMs:10,spawn:()=>({initialize:()=>new Promise(resolve=>{finish=resolve;}),close:async()=>{}})});
+ await assert.rejects(pending,/unavailable/);finish({initializeResult:{serverInfo:{version:TARGET.hostVersion},schema:{fingerprint:TARGET.fingerprint}},connection:{request:async()=>{requests++;return{state:'accountLogin'};}}});await new Promise(resolve=>setImmediate(resolve));assert.equal(requests,0);
+});

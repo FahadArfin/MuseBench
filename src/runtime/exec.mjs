@@ -280,7 +280,7 @@ export function createExecRuntime({credentials,loadModels=readNativeModels,durab
   if(state.cleanup==='unconfirmed')return snapshot();
   ++epoch;connecting=false;if(modelRead){try{await modelRead;}catch(error){if(error.code==='CATALOG_CLEANUP'){update({cleanup:'unconfirmed',permissionVerified:false,status:'unavailable'});return snapshot();}}}const previous=owner;
   if(previous)previous.stopped=true;
-  update({fullAccess:false,sandboxReadiness:null,shellEnabled:false,shellUnavailableReason:null,permissionDescription:fileDescription,permissionArguments:[],status:'unavailable',reason:'Disconnected. Connect again to verify the native runtime.',sessionId:null,permissionVerified:false,permissionProfile:null,pending:null,liveVerified:false,cleanup:'pending'});
+  update({fullAccess:false,sandboxReadiness:null,shellEnabled:false,shellUnavailableReason:null,permissionDescription:fileDescription,permissionArguments:[],status:'unavailable',reason:'Disconnected. Connect again to verify the native runtime.',sessionId:null,permissionVerified:false,permissionProfile:null,pending:null,liveVerified:false,cleanup:'pending',modelCatalog:undefined});
   closing=release(previous);const cleanup=await closing;closing=null;
   if(cleanup!=='unconfirmed')owner=null;
   update({cleanup,...(cleanup==='unconfirmed'?{reason:'Native shutdown could not be confirmed. Check the process before restarting MuseBench.'}:{})});return snapshot();

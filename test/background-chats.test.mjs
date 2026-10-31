@@ -33,12 +33,12 @@ test('background chats own events, queues and stops while navigation remains ind
 async function fixture(t){
  const dir=await mkdtemp(path.join(tmpdir(),'muse-lifecycle-')),project=path.join(dir,'project');await mkdir(project);const runtimes=[];
  const factory=()=>{const r=runtime(),connect=r.connect;r.connect=async options=>{assert.equal(r.snapshot().permissionVerified,false,'must not reconnect a verified runtime');await connect(options);};r.refreshModels=async()=>{};runtimes.push(r);return r;};
- const c=await createController({dataDir:path.join(dir,'data'),runtimeFactory:factory});t.after(async()=>{await c.close();await rm(dir,{recursive:true,force:true});});
+ const c=await createController({dataDir:path.join(dir,'data'),runtimeFactory:factory,discoverModels:async()=>({source:'providerCatalog',models:[]})});t.after(async()=>{await c.close();await rm(dir,{recursive:true,force:true});});
  const act=async action=>{const s=await c.dispatch(action);assert.equal(s.error,null);return s;};await act({type:'openProject',path:project});const s=await act({type:'newTask',mode:'muse',request:'First'});return{c,act,runtimes,id:s.task.id};
 }
 test('desktop model discovery action crosses the IPC boundary',()=>{assert.deepEqual(validateAction({type:'refreshModels'}),{type:'refreshModels'});});
-test('loading models before the first prompt retains the workspace connection',async t=>{
- const {act,runtimes}=await fixture(t);await act({type:'refreshModels'});await act({type:'sendMessage',text:'Use the selected model'});assert.equal(runtimes.reduce((n,r)=>n+r.sent.length,0),1);
+test('loading models before the first prompt leaves session connection to the prompt',async t=>{
+ const {act,runtimes}=await fixture(t);const state=await act({type:'refreshModels'});assert.equal(state.runtime.permissionVerified,false);assert.equal(state.task.nativeSession,undefined);assert.ok(runtimes.every(r=>r.sent.length===0));await act({type:'sendMessage',text:'Use the selected model'});assert.equal(runtimes.reduce((n,r)=>n+r.sent.length,0),1);
 });
 test('inactive retained chats preserve pin, archive and sidebar changes when reopened',async t=>{
  const {act,id}=await fixture(t);let s=await act({type:'newTask',mode:'muse',request:'Second'});const second=s.task.id;
