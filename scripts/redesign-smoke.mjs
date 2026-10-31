@@ -219,6 +219,8 @@ try {
 
   dialog = await settings();
   const enterToSend = dialog.getByRole('switch', { name: 'Enter to send', exact: true });
+  assert.equal(await enterToSend.getAttribute('aria-checked'), 'true');
+  await enterToSend.click();
   assert.equal(await enterToSend.getAttribute('aria-checked'), 'false');
   await enterToSend.click();
   assert.equal(await enterToSend.getAttribute('aria-checked'), 'true');

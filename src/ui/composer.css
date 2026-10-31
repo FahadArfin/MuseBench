@@ -63,7 +63,10 @@
 .dictation-status > span:nth-child(2),.dictation-status.failed > span { flex: 1; }
 .dictation-status button { margin-left: auto; text-decoration: underline; }
 .dictation-status.failed { color: #d7897f; }
-.listening-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef7d77; }
+.dictation-track { flex: 1; min-width: 0; display: flex; align-items: center; padding: 0 3px; }
+.dictation-dots { width: 100%; height: 4px; background: radial-gradient(circle, var(--muted) 1px, transparent 1.5px) 0 center / 6px 4px repeat-x; animation: dictation-pulse 1.2s ease-in-out infinite; }
+@keyframes dictation-pulse { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .dictation-dots { animation: none; } }
 @media(max-width:700px) {
  .composer-region { padding-left: 14px; padding-right: 14px; }
  .access-chip,.reasoning-chip { padding: 4px; gap: 4px; font-size: 10px; }
@@ -79,3 +82,7 @@
 .model-settings-summary>div{display:grid;grid-template-columns:94px minmax(0,1fr);gap:8px;padding:4px 0}
 .model-settings-summary dt{color:var(--muted)}.model-settings-summary dd{margin:0;overflow-wrap:anywhere}.model-settings-summary small{display:block;color:var(--muted);font-size:10px}
 .reasoning-chip strong{max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.compact-model-label { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; vertical-align: middle; }
+.compact-model-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compact-model-label .contributor-badge { display: inline-flex; flex-shrink: 0; align-items: center; color: var(--accent); overflow: visible; }

@@ -53,6 +53,7 @@ import {PromptTimeline} from './PromptTimeline';
 import {useWorkspaceFocus} from './useWorkspaceFocus';
 import {useTranscriptPosition} from './useTranscriptPosition';
 import {restoreRunOptions} from '../shared/run-options.mjs';
+import {DEFAULT_CHAT_MODEL} from '../shared/models.mjs';
 import type {RunOptions} from '../shared/types';
 import { ProjectOverview } from './ProjectOverview';
 import {ProfileMenu,type ProfileAction} from './ProfileMenu';
@@ -167,8 +168,8 @@ export default function App() {
     return () => narrow.removeEventListener('change', closeDesktopOverlay);
   }, []);
   const [draftFullAccess,setDraftFullAccess]=useState(false);
-  const [draftOptions,setDraftOptions] = useState<RunOptions>(()=>({reasoning:preferences.defaultReasoning,approval:preferences.defaultApproval}));
-  useEffect(()=>{setDraftOptions({reasoning:preferences.defaultReasoning,approval:preferences.defaultApproval});},[preferences.defaultReasoning,preferences.defaultApproval]);
+  const [draftOptions,setDraftOptions] = useState<RunOptions>(()=>({model:DEFAULT_CHAT_MODEL,reasoning:preferences.defaultReasoning,approval:preferences.defaultApproval}));
+  useEffect(()=>{setDraftOptions({model:DEFAULT_CHAT_MODEL,reasoning:preferences.defaultReasoning,approval:preferences.defaultApproval});},[preferences.defaultReasoning,preferences.defaultApproval]);
   const [mode, setMode] = useState<'muse' | 'manual'>('muse');
   const [query, setQuery] = useState('');
   const [pending, setPending] = useState(false);
@@ -250,7 +251,7 @@ export default function App() {
     if (request.type === 'selectItem' || request.type === 'newMuseChat' || request.type==='metaAction') setMobileNav(false);
     void personalCommand(request);
   };
-  const beginNewChat = (initial?:string) => { if (navigationBusy) return; if(initial!==undefined){if(project)setDraftFor(project.id,null,{text:initial,files:[],mode:'chat'});else setMessage(initial);} setProduct('code'); setCreating(true); setView('chat'); setReviewOpen(false); setDraftOptions({reasoning:preferences.defaultReasoning,approval:preferences.defaultApproval}); setMobileNav(false); setModal(null); setTimeout(() => composer.current?.focus(), 0); };
+  const beginNewChat = (initial?:string) => { if (navigationBusy) return; if(initial!==undefined){if(project)setDraftFor(project.id,null,{text:initial,files:[],mode:'chat'});else setMessage(initial);} setProduct('code'); setCreating(true); setView('chat'); setReviewOpen(false); setDraftOptions({model:DEFAULT_CHAT_MODEL,reasoning:preferences.defaultReasoning,approval:preferences.defaultApproval}); setMobileNav(false); setModal(null); setTimeout(() => composer.current?.focus(), 0); };
   const newChat=()=>beginNewChat();
   const toggleSidebar = () => { if(mobileNav){setMobileNav(false);return;} setPreferences(p => ({ ...p, sidebarCollapsed: !p.sidebarCollapsed })); };
   const revealSidebar = () => { setPreferences(p => ({ ...p, sidebarCollapsed: false })); setMobileNav(window.matchMedia('(max-width: 700px)').matches); };

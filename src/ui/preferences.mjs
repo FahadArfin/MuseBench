@@ -6,7 +6,7 @@ export const DEFAULT_PREFERENCES = Object.freeze({
   textSize: 'medium',
   font: 'system',
   reducedMotion: false,
-  enterToSend: false,
+  enterToSend: true,
   sidebarCollapsed: false,
   transcriptWidth: 'narrow',
   defaultReasoning: 'high',

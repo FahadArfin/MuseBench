@@ -3,3 +3,6 @@ export interface NativeModel {id:string;label:string;description:string;efforts:
 export interface NativeModelCatalog {source:string;models:NativeModel[];}
 export function normalizeModels(value:unknown):NativeModelCatalog;
 export function modelForOptions(catalog:NativeModelCatalog|undefined,options:RunOptions):NativeModel;
+
+export const DEFAULT_CHAT_MODEL: string;
+export function modelDisplayLabel(id:string):string;

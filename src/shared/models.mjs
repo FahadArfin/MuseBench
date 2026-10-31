@@ -1,4 +1,6 @@
 import {REASONING_LEVELS} from './run-options.mjs';
+export const DEFAULT_CHAT_MODEL = 'muse-spark-1.3';
+export function modelDisplayLabel(id){return displayName({modelId:id});}
 function displayName(row){
  const label=typeof row.displayLabel==='string'?row.displayLabel.trim().slice(0,200):'';
  if(label&&label!==row.modelId)return label;

@@ -8,7 +8,7 @@ test('missing, malformed and unavailable saved preferences use dark defaults wit
   }
   assert.deepEqual(readPreferences({getItem: () => { throw new Error('storage unavailable'); }}), DEFAULT_PREFERENCES);
   assert.deepEqual(readPreferences(null), DEFAULT_PREFERENCES);
-  assert.equal(DEFAULT_PREFERENCES.enterToSend, false);
+  assert.equal(DEFAULT_PREFERENCES.enterToSend, true);
   assert.equal(DEFAULT_PREFERENCES.theme, 'dark');
 });
 

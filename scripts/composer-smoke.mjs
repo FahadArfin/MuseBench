@@ -1,3 +1,4 @@
+import {waitForDesktopRenderer} from './electron-window.mjs';
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
 import {mkdir,mkdtemp,writeFile} from 'node:fs/promises';
@@ -15,7 +16,7 @@ const report={variant,modelRequests:0,microphoneCaptured:false,checks:[],errors:
 const fixturePath=path.join(output,'synthetic-dictation.wav');
 execFileSync(path.join(process.env.SystemRoot??'C:\\Windows','System32/WindowsPowerShell/v1.0/powershell.exe'),['-NoProfile','-NonInteractive','-Command','Add-Type -AssemblyName System.Speech; $speechFixture = New-Object System.Speech.Synthesis.SpeechSynthesizer; try { $speechFixture.SetOutputToWaveFile($env:MUSEBENCH_SYNTHETIC_WAV); $speechFixture.Speak("Please explain this project and add a test.") } finally { $speechFixture.Dispose() }'],{windowsHide:true,timeout:15000,env:{...process.env,MUSEBENCH_SYNTHETIC_WAV:fixturePath}});
 const record=name=>{report.checks.push(name);console.log('PASS '+name);};
-async function launch(){app=await electron.launch({cwd:root,args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});page=await app.firstWindow();page.setDefaultTimeout(10000);page.on('pageerror',e=>report.errors.push(e.message));await page.getByRole('button',{name:'Reasoning effort',exact:true}).waitFor();await page.setViewportSize({width:1440,height:900});}
+async function launch(){app=await electron.launch({cwd:root,args:process.env.MUSEBENCH_EXECUTABLE?[]:['.'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env});page=await waitForDesktopRenderer(app);page.setDefaultTimeout(10000);page.on('pageerror',e=>report.errors.push(e.message));await page.getByRole('button',{name:'Muse Code',exact:true}).click();await page.getByRole('button',{name:'Reasoning effort',exact:true}).waitFor();await page.setViewportSize({width:1440,height:900});}
 const state=()=>page.evaluate(()=>window.musebench.getState());
 const composer=()=>page.getByRole('textbox',{name:'Message Muse',exact:true});
 async function until(test){const limit=Date.now()+15000;while(Date.now()<limit){if(await test())return;await new Promise(r=>setTimeout(r,60));}throw Error('Condition timed out');}
@@ -61,7 +62,7 @@ try{
  await until(async()=>(await state()).activeProject?.root===projectRoot);
  await page.getByRole('button',{name:'Create task',exact:true}).click();
  await until(async()=>Boolean((await state()).task));const task=(await state()).task;
- assert.deepEqual(task.runOptions,{reasoning:'xhigh',approval:'auto'});assert.equal(task.planApproved,false);assert.equal(task.runtimeComplete,false);
+ assert.deepEqual(task.runOptions,{model:'muse-spark-1.3',reasoning:'xhigh',approval:'auto'});assert.equal(task.planApproved,false);assert.equal(task.runtimeComplete,false);
  await until(async()=>!(await state()).busy && Boolean((await state()).error));
  assert(!(await page.getByRole('button',{name:'Send message',exact:true}).isDisabled()));
  assert.equal(await composer().inputValue(),task.request);
@@ -71,12 +72,13 @@ try{
  await until(async()=>(await state()).task.runOptions.approval==='auto');
  await page.getByRole('button',{name:'New chat',exact:true}).click();
  assert.match(await page.getByRole('button',{name:'Approval access',exact:true}).innerText(),/Ask for approval/);
- await page.locator('.project-chats').getByRole('button',{name:task.title,exact:false}).click();
+ await page.locator('.project-chats').getByRole('button',{name:task.title,exact:true}).click();
  await until(async()=>/Auto-review/.test(await page.getByRole('button',{name:'Approval access',exact:true}).innerText()));
  assert.equal((await state()).task.runOptions.reasoning,'xhigh');
- record('Approval choices persist per chat and new chats begin with Ask for approval');
+ record('Approval choices persist per chat and new chats begin with Ask for approval');await page.getByRole('button',{name:'Dismiss error',exact:true}).click();
  await page.setViewportSize({width:390,height:844});await shot('04-composer-narrow');
  for(const name of ['Approval access','Reasoning effort','Add to chat']){
+  const notice=page.getByRole('button',{name:'Dismiss error',exact:true});if(await notice.isVisible())await notice.click();
   await page.getByRole('button',{name,exact:true}).click();
   const box=await page.locator('.composer-popover').boundingBox();assert(box.x>=0&&box.x+box.width<=391);
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await shot('05-narrow-'+name.replaceAll(' ','-'));await page.keyboard.press('Escape');
@@ -86,7 +88,7 @@ try{
  record('Composer and all popovers fit 390px and desktop layouts in light and dark themes');
  await app.close();app=null;await launch();
  await until(async()=>(await state()).task?.id===task.id);
- assert.deepEqual((await state()).task.runOptions,{reasoning:'xhigh',approval:'auto'});
+ assert.deepEqual((await state()).task.runOptions,{model:'muse-spark-1.3',reasoning:'xhigh',approval:'auto'});
  assert.match(await page.getByRole('button',{name:'Approval access',exact:true}).innerText(),/Auto-review/);
  assert.equal(report.errors.length,0);
  record('Restart restores reasoning and access choices with no renderer errors');

@@ -65,7 +65,7 @@ try{
  await dispatch({type:'newTask',request:'Existing chat settings fixture',mode:'manual',runOptions:{reasoning:'low',approval:'ask'}});const existing=(await state()).task.id;
  await settings();await category('Muse Code');assert.deepEqual((await state()).task.runOptions,{reasoning:'low',approval:'ask'});await close();
  await page.keyboard.press('Control+n');assert.match(await page.getByRole('button',{name:'Reasoning effort',exact:true}).innerText(),/Extra high/);assert.match(await page.getByRole('button',{name:'Approval access',exact:true}).innerText(),/Auto-review/);
- await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('New defaults fixture');await page.getByRole('button',{name:'Create task',exact:true}).click();await until(async()=>Boolean((await state()).task?.id!==(existing)&&(await state()).task));await until(async()=>!(await state()).busy);assert.deepEqual((await state()).task.runOptions,{reasoning:'xhigh',approval:'auto'});await dispatch({type:'clearError'});
+ await page.getByRole('textbox',{name:'Message Muse',exact:true}).fill('New defaults fixture');await page.getByRole('button',{name:'Create task',exact:true}).click();await until(async()=>Boolean((await state()).task?.id!==(existing)&&(await state()).task));await until(async()=>!(await state()).busy);assert.deepEqual((await state()).task.runOptions,{model:'muse-spark-1.3',reasoning:'xhigh',approval:'auto'});await dispatch({type:'clearError'});
  await dispatch({type:'selectTask',id:existing});assert.deepEqual((await state()).task.runOptions,{reasoning:'low',approval:'ask'});
  record('New chats use saved reasoning/access defaults; existing chats retain their own options');
  await settings();await category('Data & privacy');
