@@ -1,0 +1,24 @@
+.settings-connections-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:24px}
+.settings-connections-heading .settings-description{margin-bottom:0}
+.settings-connections-heading>.icon-button{flex-shrink:0;margin-top:-2px}
+.settings-app-group{margin:0 0 22px}
+.settings-app-group h4{font-size:13px;font-weight:400;color:var(--muted);margin:0 0 8px}
+.settings-app-list{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:4px 16px}
+.settings-app-row{display:flex;align-items:center;gap:12px;min-height:49px;padding:8px 0}
+.settings-app-row+.settings-app-row{border-top:1px solid var(--border)}
+.settings-app-name{flex:1;min-width:0;font-size:13px;font-weight:500;line-height:1.4}
+.settings-app-icon{width:32px;height:32px;border-radius:8px;background:#fff;display:grid;place-items:center;color:#1877f2;flex-shrink:0}
+.settings-app-icon img{display:block;width:25px;height:25px;object-fit:contain}
+.settings-app-icon.app-opentable{color:#fff;background:#da3743}
+.settings-app-icon.app-outlook-calendar,.settings-app-icon.app-outlook-people{color:#fff;background:#0078d4}
+.settings-app-logo-mask{width:25px;height:25px;background:#0078d4}
+.settings-app-connect{padding:7px 10px;border-radius:8px;font-size:13px;font-weight:500;flex-shrink:0;color:var(--text)}
+.settings-app-connect:hover{background:var(--surface-hover);color:var(--accent)}
+.settings-app-connect:disabled{opacity:.45;cursor:wait}
+.settings-app-connected{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:11px}
+.settings-app-status{color:var(--muted);font-size:12px;line-height:1.5;margin:0 0 8px}
+.settings-connections-links{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:24px;border-top:1px solid var(--border);padding-top:16px}
+.settings-connections-links button{font-size:12px;color:var(--muted);padding:4px 0;text-align:left}
+.settings-connections-links button:hover{color:var(--accent)}
+@media(max-width:480px){.settings-app-list{padding:4px 10px}.settings-app-row{gap:9px}.settings-app-connected span{display:none}.settings-app-connect{padding:7px 5px}.settings-app-name{font-size:12px}}
+@media(forced-colors:active){.settings-app-list,.settings-app-icon{border:1px solid CanvasText}.settings-app-connect{border:1px solid ButtonText}}

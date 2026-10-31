@@ -1,4 +1,5 @@
 import {findPreviewHistory} from '../shared/history-find.mjs';
+import {META_APPS,unknownMetaApps} from '../shared/meta-apps.mjs';
 import {mainChat,resolveRequestOrigin} from '../shared/chat-relations.mjs';
 import {discoverySelection,discoveryIdentity,sameDiscovery} from '../shared/tool-discovery.mjs';
 import {safeAuthState,validateDiscoveryAuthCommand} from '../shared/discovery-auth.mjs';
@@ -330,6 +331,7 @@ export function createPreviewBridge():MuseBenchBridge {
    if(command.type==='prewarm'){prewarmSnapshot(command.target);return copy(personal);}
    personal.error=null;
    switch(command.type){
+    case 'metaApps':personal.metaApps={status:'unavailable',items:unknownMetaApps(),message:'Browser preview - Open the desktop app to check your real Meta AI connections.'};if(command.action==='connect'){personal.destination='chat';personal.notice=`Connect ${META_APPS.find(app=>app.id===command.appId)?.title??'this app'} in the desktop app. This preview does not authorize any account access.`;selectSnapshot('chat');}break;
     case 'navigate':personal.notice=null;personal.destination=command.destination;personal.library.selectedId=null;selectSnapshot(command.destination);break;
     case 'metaSettings':personal.destination='chat';personal.notice='Open the desktop app to manage your Meta AI plan and connected apps on Meta’s official settings page. This preview is not signed in.';personal.noticeCanOpenBrowser=false;selectSnapshot('chat');break;
     case 'metaAction':personal.destination='chat';personal.notice=null;selectSnapshot(command.action==='newChat'?'chat':command.action as SnapshotKey);break;

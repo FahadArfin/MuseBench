@@ -1,3 +1,5 @@
+import {readMetaApps,connectMetaApp} from './meta-apps.mjs';
+import {META_APPS,unknownMetaApps} from '../src/shared/meta-apps.mjs';
 import {readPersonalAuth} from './personal-auth.mjs';
 import {readMetaAccount} from './personal-account.mjs';
 import {createPersonalAccountSync} from './personal-account-sync.mjs';
@@ -32,7 +34,7 @@ const defaultLibraryAdapter = {
 
 // Only the trusted local main frame calls this controller. Remote contents have
 // no preload and never receive project state, credentials, or the local bridge.
-export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, settings: runMetaSettings, dismiss: dismissMetaSearch, ready: metaNavigationReady }, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 3 }) {
+export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, settings: runMetaSettings, dismiss: dismissMetaSearch, ready: metaNavigationReady }, metaAppsAdapter = {read:readMetaApps,connect:connectMetaApp}, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 3 }) {
   // Native getters can throw after destruction: cache contents while alive.
   const localContents = window.webContents;
   const entries = new Map(), serviceSessions = new Map(), popups = new Set(), pendingReady = new Set();
@@ -41,6 +43,8 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   let browserNotice = null;
   let browserNoticeDestination = null;
   let settingsAbort = null;
+  let metaAppsAbort=null,metaAppsRefresh=null;
+  let metaApps={status:'idle',items:unknownMetaApps()};
   let appearance = { theme: 'dark', textSize: 'medium', font: 'system', reducedMotion: false };
   const catalog = createPersonalCatalog();
   let libraryGeneration = 0, libraryEstablished = false, libraryTimer = null, refreshingLibrary = null;
@@ -113,7 +117,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       appearance: { ...appearance }, profile: accountSync.snapshot(), agentProfile, schedules: destination==='chat'&&alive(entry)&&scheduledDocument(contents)?schedules:null,
       authenticating: isAuthenticating() || Boolean(personalAuthenticating(entry?.origin) || museAuthPending()),
       authWindowOpen: Boolean(setupLoginWindow && !setupLoginWindow.isDestroyed()) || popups.size > 0,
-      library: catalog.snapshot(),
+      library: catalog.snapshot(), metaApps:structuredClone(metaApps),
     };
   }
   function applyLayout() {
@@ -226,6 +230,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   }
   function clearLibrary(preserveEntry = null) {
     accountSync.invalidate();
+    cancelMetaApps();metaApps={status:'idle',items:unknownMetaApps()};
     knownLogin='unknown';
     warmBlocked = true; stopWarmup(); warmHints.clear(); warmAttempted.clear();
     libraryGeneration++; libraryEstablished = false; selectedDocument = null; agentProfile = null; catalog.reset();
@@ -341,8 +346,52 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     }).finally(() => { refreshingLibrary = null; scheduleLibrary(1800); });
     return refreshingLibrary;
   }
-  function cancelActions() { actionEpoch++; settingsAbort?.abort(); settingsAbort=null; for (const finish of pendingReady) if (closed || finish.cancelOnSelection) finish(false); }
-  function waitForMuseDocument(entry,meta=false,cancelOnSelection=true) {
+  function cancelActions() { actionEpoch++; cancelMetaApps(); settingsAbort?.abort(); settingsAbort=null; for (const finish of pendingReady) if (closed || finish.cancelOnSelection) finish(false); }
+  function cancelMetaApps(){
+    metaAppsAbort?.abort();metaAppsAbort=null;
+    if(metaApps.status==='loading')metaApps={status:'idle',items:unknownMetaApps()};
+  }
+  async function refreshMetaApps(){
+    if(metaAppsRefresh&&metaAppsAbort&&!metaAppsAbort.signal.aborted)return metaAppsRefresh;
+    cancelMetaApps();
+    if(closed||isAuthenticating()||museAuthPending()){
+      metaApps={status:'unavailable',items:unknownMetaApps(),message:'Finish signing in to Meta AI, then refresh.'};publish();return;
+    }
+    const controller=new AbortController();metaAppsAbort=controller;
+    const generation=libraryGeneration,epoch=actionEpoch;
+    let document,timer;
+    const valid=()=>!closed&&!controller.signal.aborted&&metaAppsAbort===controller&&generation===libraryGeneration&&epoch===actionEpoch;
+    metaApps={status:'loading',items:unknownMetaApps()};publish();
+    const work=Promise.resolve().then(async()=>{
+      try{
+        // A disposable official document preserves all foreground chats and
+        // drafts. Popups and non-Meta redirects are denied during this read.
+        if(!valid())return;
+        document=openAccountDocument('https://www.meta.ai/',controller.signal);
+        const contents=document.contents;
+        if(!await waitForMuseDocument({contents},true,true,true)||!valid())return;
+        const opened=await metaAdapter.settings?.(contents,'apps',{signal:controller.signal});
+        if(!opened||!valid())return;
+        const result=await metaAppsAdapter.read(contents,{signal:controller.signal});
+        if(!valid()||result?.status!=='ready'||!Array.isArray(result.items))return;
+        metaApps={status:'ready',updatedAt:new Date().toISOString(),items:META_APPS.map(({id})=>{
+          const rows=result.items.filter(row=>row?.id===id);
+          return {id,status:rows.length===1&&['connected','unconnected'].includes(rows[0].status)?rows[0].status:'unknown'};
+        })};
+      }catch{/* A DOM failure never creates an authorization claim. */}
+    });
+    const abortResult=new Promise(resolve=>controller.signal.addEventListener('abort',resolve,{once:true}));
+    const task=Promise.race([work,abortResult,new Promise(resolve=>{timer=setTimeout(()=>{controller.abort();resolve();},8500);})]).finally(()=>{
+      clearTimeout(timer);document?.close();
+      if(metaAppsAbort===controller){
+        if(metaApps.status==='loading')metaApps={status:'unavailable',items:unknownMetaApps(),message:'Could not read Meta AI apps. Open Meta AI, sign in if needed, then refresh.'};
+        controller.abort();metaAppsAbort=null;publish();
+      }
+      if(metaAppsRefresh===task)metaAppsRefresh=null;
+    });
+    metaAppsRefresh=task;return task;
+  }
+  function waitForMuseDocument(entry,meta=false,cancelOnSelection=true,loaded=false) {
     return new Promise(resolve => {
       const contents = entry.contents;
       let timer;
@@ -356,6 +405,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       const inspect = () => {
         if (closed || !alive(entry) || entry.error) { finish(false); return; }
         if (entry.awaitingCommit) return;
+        if (loaded && contents.isLoadingMainFrame?.()) return;
         const url = contents.getURL();
         if (!url || url === 'about:blank') return;
         finish(meta?['https://www.meta.ai','https://meta.ai'].includes(personalOrigin(url)):personalOrigin(url) === 'https://muse.ai');
@@ -509,6 +559,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     contents.on('did-stop-loading', () => { entry.loading = false; if (entry === current()) warmBlocked = false; publish(); if (entry.visited) accountSync.request(); });
     contents.on('dom-ready', () => { void present(entry); });
     const navigated = (_event, url) => {
+      if(entry===current())cancelMetaApps();
       entry.documentEpoch++;
       {
         const authentication = personalAuthenticating(url);
@@ -692,6 +743,23 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
         ? await waitForMuseDocument(entry,true)&&!closed&&requestEpoch===actionEpoch&&await metaAdapter.action(entry.contents,'newChat')
         : await initializeTool(entry);
       if(!closed&&requestEpoch===actionEpoch&&!succeeded){compact=false;await presentAll();notice='This Meta AI shortcut is unavailable on the current page. The original navigation is shown so you can continue there.';}
+    } else if (command.type === 'metaApps' && command.action==='refresh') {
+      await refreshMetaApps();
+    } else if (command.type === 'metaApps') {
+      cancelActions();const requestEpoch=actionEpoch;notice=null;
+      const requestAbort=new AbortController();settingsAbort=requestAbort;
+      const entry=selectDestination('chat');publish();let succeeded=false;
+      try{
+        if(await waitForMuseDocument(entry,true)&&!closed&&requestEpoch===actionEpoch&&await metaAdapter.settings?.(entry.contents,'apps',{signal:requestAbort.signal})){
+          if(!requestAbort.signal.aborted&&requestEpoch===actionEpoch)succeeded=await metaAppsAdapter.connect(entry.contents,command.appId,{signal:requestAbort.signal});
+        }
+      }catch{/* Keep the official controls available below. */}
+      finally{requestAbort.abort();if(settingsAbort===requestAbort)settingsAbort=null;}
+      // Starting authorization is not proof that the app was connected.
+      if(!closed&&requestEpoch===actionEpoch){
+        metaApps={status:'idle',items:unknownMetaApps()};
+        if(!succeeded){compact=false;await presentAll();inform('This app could not be selected safely. Use its Connect button in Meta AI Settings → Apps.','chat');}
+      }
     } else if (command.type === 'metaSettings') {
       cancelActions(); const requestEpoch=actionEpoch; notice=null;
       const requestAbort=new AbortController();settingsAbort=requestAbort;

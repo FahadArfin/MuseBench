@@ -1,3 +1,4 @@
+import {META_APPS} from '../src/shared/meta-apps.mjs';
 // Only destinations verified on the official services belong here. Personal
 // website authentication is independent of the locally installed Muse CLI.
 const destinations = Object.freeze({
@@ -10,7 +11,7 @@ const destinations = Object.freeze({
 // sign-in redirects. These are exact origin allowances, not subdomain wildcards.
 const hosts = new Set(['muse.ai', 'auth.muse.ai', 'www.meta.ai', 'meta.ai', 'www.facebook.com', 'www.instagram.com', 'auth.meta.com', 'auth.meta.ai']);
 const authenticationHosts = new Set(['auth.muse.ai', 'www.facebook.com', 'www.instagram.com', 'auth.meta.com', 'auth.meta.ai']);
-const commands = new Set(['prewarm', 'layout', 'navigate', 'back', 'forward', 'reload', 'openExternal', 'openNoticeExternal', 'presentation', 'appearance', 'serviceAction', 'metaAction', 'metaSettings', 'scheduleAction', 'dismissNotice', 'refreshLibrary', 'selectItem', 'newMuseChat']);
+const commands = new Set(['prewarm', 'layout', 'navigate', 'back', 'forward', 'reload', 'openExternal', 'openNoticeExternal', 'presentation', 'appearance', 'serviceAction', 'metaAction', 'metaSettings', 'metaApps', 'scheduleAction', 'dismissNotice', 'refreshLibrary', 'selectItem', 'newMuseChat']);
 const warmTargets = new Set(['bot', 'ideas', 'goals', 'muse-search', 'muse-feed', 'muse-library', 'meta-chat', 'meta-search', 'meta-media', 'meta-artifacts', 'meta-scheduled', 'meta-vibes']);
 const serviceActions = new Set(['search', 'feed', 'library', 'settings', 'connections', 'whatsapp']);
 const owns = (object, key) => Object.prototype.hasOwnProperty.call(object, key);
@@ -58,7 +59,7 @@ export function personalRoute(value) {
 export function validatePersonalCommand(command) {
   const fail = () => { throw Error('Invalid personal Muse command.'); };
   if (!object(command) || !commands.has(command.type)) fail();
-  const fields = command.type === 'metaSettings' ? ['type','section'] : command.type === 'prewarm' ? ['type', 'target'] : command.type === 'scheduleAction' ? ['type','action','id'] : command.type === 'layout' ? ['type', 'visible', 'bounds'] : command.type === 'navigate' ? ['type', 'destination'] : command.type === 'presentation' ? ['type', 'compact'] : command.type === 'appearance' ? ['type', 'appearance'] : ['serviceAction','metaAction'].includes(command.type) ? ['type', 'action'] : command.type === 'selectItem' ? ['type', 'id'] : ['type'];
+  const fields = command.type === 'metaApps' ? (command.action==='connect'?['type','action','appId']:['type','action']) : command.type === 'metaSettings' ? ['type','section'] : command.type === 'prewarm' ? ['type', 'target'] : command.type === 'scheduleAction' ? ['type','action','id'] : command.type === 'layout' ? ['type', 'visible', 'bounds'] : command.type === 'navigate' ? ['type', 'destination'] : command.type === 'presentation' ? ['type', 'compact'] : command.type === 'appearance' ? ['type', 'appearance'] : ['serviceAction','metaAction'].includes(command.type) ? ['type', 'action'] : command.type === 'selectItem' ? ['type', 'id'] : ['type'];
   if (Object.keys(command).some(key => !fields.includes(key))) fail();
   if (command.type === 'prewarm' && !warmTargets.has(command.target)) fail();
   if (command.type === 'navigate' && !owns(destinations, command.destination)) fail();
@@ -70,6 +71,7 @@ export function validatePersonalCommand(command) {
   }
   if(command.type==='scheduleAction'&&(!['edit','options','new'].includes(command.action)||(command.action!=='new'&&!/^[a-f0-9]{24}$/.test(command.id))))fail();
   if(command.type==='metaAction'&&!['newChat','search','media','artifacts','scheduled','vibes'].includes(command.action))fail();
+  if(command.type==='metaApps'&&(!['refresh','connect'].includes(command.action)||(command.action==='connect'&&!META_APPS.some(app=>app.id===command.appId))))fail();
   if(command.type==='metaSettings'&&!['general','apps'].includes(command.section))fail();
   if (command.type === 'serviceAction' && !serviceActions.has(command.action)) fail();
   if (command.type === 'selectItem' && (typeof command.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(command.id))) fail();

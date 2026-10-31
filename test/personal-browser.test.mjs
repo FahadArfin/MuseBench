@@ -45,7 +45,7 @@ function harness(options = {}) {
     dismiss: async contents => { dismissals.push(contents); return true; },
   };
   const libraryAdapter = options.libraryAdapter ?? { prepare: async () => false, read: async () => ({ status: 'unavailable', items: [] }), activate: async () => false };
-  const browser = implementation.createPersonalBrowser({ window, BrowserWindow: Popup, WebContentsView: View, session, shell: { openExternal: async url => { external.push(url); } }, onState: value => states.push(value), onShortcut: value => shortcuts.push(value), presentation, libraryAdapter, metaAdapter, accountReader:options.accountReader ?? null, accountTiming:options.accountTiming ?? {}, ...(options.authReader === undefined ? {} : { authReader: options.authReader }), ...(options.warmupDelay === undefined ? {} : { warmupDelay: options.warmupDelay }), ...(options.warmLimit === undefined ? {} : { warmLimit: options.warmLimit }) });
+  const browser = implementation.createPersonalBrowser({ window, BrowserWindow: Popup, WebContentsView: View, session, shell: { openExternal: async url => { external.push(url); } }, onState: value => states.push(value), onShortcut: value => shortcuts.push(value), presentation, libraryAdapter, metaAdapter, ...(options.metaAppsAdapter?{metaAppsAdapter:options.metaAppsAdapter}:{}), accountReader:options.accountReader ?? null, accountTiming:options.accountTiming ?? {}, ...(options.authReader === undefined ? {} : { authReader: options.authReader }), ...(options.warmupDelay === undefined ? {} : { warmupDelay: options.warmupDelay }), ...(options.warmLimit === undefined ? {} : { warmLimit: options.warmLimit }) });
   return { browser, views, sessions, states, external, shortcuts, window, popups, presentations, actions, presentation, libraryAdapter, metaAdapter, metaActions, dismissals };
 }
 const layout = { type: 'layout', visible: true, bounds: { x: 300, y: 80, width: 700, height: 620 } };
@@ -1237,4 +1237,38 @@ test('mandatory sign-in uses the same isolated session and closes only after a r
  popup.webContents.executeJavaScript=async()=> 'required';assert.equal((await h.browser.checkLogin()).status,'required');assert.equal(popup.destroyed,false);
  await h.browser.openLogin();assert.equal(h.popups.length,1);
  popup.webContents.executeJavaScript=async()=> 'ready';assert.equal((await h.browser.checkLogin()).status,'ready');assert.equal(popup.destroyed,true);h.browser.close();
+});
+
+
+test('Meta apps refresh uses a disposable official document without changing the current chat or draft',async t=>{
+ const calls=[];const h=harness({warmLimit:0,metaAdapter:{settings:async(c,s)=>{calls.push([c,s]);return true;},dismiss:async()=>true},metaAppsAdapter:{read:async()=>({status:'ready',items:[{id:'gmail',status:'connected'},{id:'evil',status:'connected'}]}),connect:async()=>true}});t.after(()=>h.browser.close());
+ await h.browser.dispatch({type:'navigate',destination:'bot'});await h.browser.dispatch(layout);const before=h.views[0];before.webContents.draft='preserve';
+ const result=await h.browser.dispatch({type:'metaApps',action:'refresh'});
+ assert.equal(result.metaApps.status,'ready');assert.equal(result.metaApps.items.length,8);assert.equal(result.metaApps.items.find(x=>x.id==='gmail').status,'connected');assert.equal(result.destination,'bot');assert.equal(before.webContents.draft,'preserve');assert.equal(h.views.length,1);assert.equal(h.popups.length,1);assert.equal(h.popups[0].destroyed,true);assert.equal(h.popups[0].shown,undefined);assert.equal(calls[0][1],'apps');assert.equal(calls[0][0].getURL(),'https://www.meta.ai/');
+});
+
+test('Meta apps navigation cancels pending reads and never publishes stale account status',async t=>{
+ let finish,signal;const h=harness({warmLimit:0,metaAdapter:{settings:async()=>true,dismiss:async()=>true},metaAppsAdapter:{read:async(_c,o)=>{signal=o.signal;return new Promise(r=>{finish=r;});},connect:async()=>true}});t.after(()=>h.browser.close());
+ const pending=h.browser.dispatch({type:'metaApps',action:'refresh'});while(!finish)await new Promise(r=>setImmediate(r));
+ await h.browser.dispatch({type:'navigate',destination:'bot'});assert.equal(signal.aborted,true);finish({status:'ready',items:[{id:'gmail',status:'connected'}]});await pending;
+ assert.notEqual(h.browser.snapshot().metaApps.status,'ready');assert.equal(h.popups[0].destroyed,true);
+});
+
+test('Meta app connect opens exact selected official app but does not infer authorization success',async t=>{
+ const calls=[];const h=harness({warmLimit:0,metaAdapter:{settings:async()=>true,dismiss:async()=>true},metaAppsAdapter:{read:async()=>({status:'ready',items:[]}),connect:async(c,id)=>{calls.push({c,id});return true;}}});t.after(()=>h.browser.close());
+ const result=await h.browser.dispatch({type:'metaApps',action:'connect',appId:'gmail'});assert.equal(result.destination,'chat');assert.equal(calls[0].id,'gmail');assert.equal(calls[0].c,h.views[0].webContents);assert.equal(result.metaApps.items.find(x=>x.id==='gmail').status,'unknown');
+});
+
+
+test('Meta app refresh deduplicates focus events and clears on authentication boundaries',async t=>{
+ let finish,calls=0;const h=harness({warmLimit:0,metaAdapter:{settings:async()=>true,dismiss:async()=>true},metaAppsAdapter:{read:async()=>{calls++;return new Promise(r=>{finish=r;});}}});t.after(()=>h.browser.close());
+ await h.browser.dispatch({type:'navigate',destination:'chat'});
+ const a=h.browser.dispatch({type:'metaApps',action:'refresh'}),b=h.browser.dispatch({type:'metaApps',action:'refresh'});while(!finish)await new Promise(r=>setImmediate(r));assert.equal(calls,1);
+ await h.views[0].webContents.loadURL('https://auth.meta.com/login');finish({status:'ready',items:[{id:'gmail',status:'connected'}]});await Promise.all([a,b]);assert.equal(h.browser.snapshot().metaApps.status,'idle');assert.equal(h.browser.snapshot().metaApps.items.find(x=>x.id==='gmail').status,'unknown');assert.equal(h.popups[0].destroyed,true);
+});
+
+test('Meta apps timeout and close settle unresponsive adapters without leaving hidden documents',{timeout:15000},async t=>{
+ const h=harness({warmLimit:0,metaAdapter:{settings:async()=>new Promise(()=>{}),dismiss:async()=>true}});t.after(()=>h.browser.close());
+ const start=Date.now();const result=await h.browser.dispatch({type:'metaApps',action:'refresh'});assert.equal(result.metaApps.status,'unavailable');assert(Date.now()-start<10000);assert.equal(h.popups[0].destroyed,true);
+ const pending=h.browser.dispatch({type:'metaApps',action:'refresh'});await new Promise(r=>setImmediate(r));h.browser.close();await pending;assert.equal(h.popups[1].destroyed,true);
 });

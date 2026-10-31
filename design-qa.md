@@ -203,3 +203,9 @@ final result: passed
 Replaced the launcher page with Skills, Connectors, Plugins, MCP servers and Hooks directly in Settings navigation. The full catalogs reuse the existing compact design and blue selection states, without a second sidebar or dialog. Wide and 390px layouts, dark/light themes, reduced motion and setup interactions passed in browser and isolated Electron. Independent review's busy navigation issue was fixed and rechecked. Evidence: docs/validation/2026-10-31-embedded-customize-settings.md. Provider authorization was not exercised.
 
 final result: passed
+
+## 2026-10-31 Meta app rows in Settings Connections
+
+Replaced service launcher cards with the user's eight-row Apps list, inside the existing Settings shell. Source and implementation were inspected together; compact row spacing, aligned Connect actions, solid reading surface and narrow layout passed. Bundled Google/Outlook icons retain source provenance; remaining services use distinct library glyphs. Browser and Electron checks cover all app routes and honest unavailable/connected states. Two provider-page adapter review findings were corrected and independently rechecked. Evidence and comparison details: docs/validation/2026-10-31-settings-connected-apps.md. No provider authorization was granted during verification.
+
+final result: passed

@@ -1,0 +1,46 @@
+[
+  {
+    "license": {
+      "title": "CC0",
+      "spdx": "CC0-1.0",
+      "url": "https://raw.githubusercontent.com/gilbarbara/logos/master/LICENSE.txt"
+    },
+    "sha256": "dbbdb08fb53fb1e14d895e143389213b604f0649afdfa4a9ece31b2ba6d5f57e",
+    "source": "https://raw.githubusercontent.com/iconify/icon-sets/ff91f5f9c3b1ffad7f3e91f7f7f8c739edd57544/json/logos.json",
+    "revision": "ff91f5f9c3b1ffad7f3e91f7f7f8c739edd57544",
+    "name": "google-drive-2020"
+  },
+  {
+    "license": {
+      "title": "CC0",
+      "spdx": "CC0-1.0",
+      "url": "https://raw.githubusercontent.com/gilbarbara/logos/master/LICENSE.txt"
+    },
+    "sha256": "482996399c19486ef8102faa98ffbb887bfcacd63f3c48ab26660b5f9695ceab",
+    "source": "https://raw.githubusercontent.com/iconify/icon-sets/ff91f5f9c3b1ffad7f3e91f7f7f8c739edd57544/json/logos.json",
+    "revision": "ff91f5f9c3b1ffad7f3e91f7f7f8c739edd57544",
+    "name": "google-gmail-2020"
+  },
+  {
+    "license": {
+      "title": "CC0",
+      "spdx": "CC0-1.0",
+      "url": "https://raw.githubusercontent.com/gilbarbara/logos/master/LICENSE.txt"
+    },
+    "sha256": "7c4b9f4b22afe3ed3e52847759290177b9cc87aaea2a2b3f8f690cf9d34429a9",
+    "source": "https://raw.githubusercontent.com/iconify/icon-sets/ff91f5f9c3b1ffad7f3e91f7f7f8c739edd57544/json/logos.json",
+    "revision": "ff91f5f9c3b1ffad7f3e91f7f7f8c739edd57544",
+    "name": "google-calendar-2020"
+  },
+  {
+    "license": {
+      "title": "CC0 1.0",
+      "spdx": "CC0-1.0",
+      "url": "https://github.com/simple-icons/simple-icons/blob/develop/LICENSE.md"
+    },
+    "sha256": "57c79c51cc98d8c189807085f60a1e37b8b3c74740991d71be716dc1d624981c",
+    "source": "https://raw.githubusercontent.com/iconify/icon-sets/ff91f5f9c3b1ffad7f3e91f7f7f8c739edd57544/json/simple-icons.json",
+    "revision": "ff91f5f9c3b1ffad7f3e91f7f7f8c739edd57544",
+    "name": "microsoftoutlook"
+  }
+]
