@@ -136,6 +136,8 @@ export interface ImportConversation {id:string;title:string;format:string;messag
 export interface ConversationImportPreview {token:string;sourceName:string;sourceDigest:string;expiresAt:string;conversations:ImportConversation[];skippedConversations:number;textBytes:number;simulation?:boolean;}
 export interface ConversationImportConfirmation {imported:number;skipped:number;ids:string[];preview:ConversationImportPreview;}
 export interface ChatSearchResult extends TaskSummary {projectName:string;snippet:string;messageId?:string;offset?:number;at?:string|null;imported?:ImportedProvenance;}
+export interface HistoryFindInput {projectId:string;taskId:string;query:string;cursor?:{messageId:string;offset:number};direction:'next'|'previous';}
+export interface HistoryFindResult {hit:{messageId:string;role:string;offset:number;length:number;excerptOffset:number;excerpt:string;captureTruncated:boolean}|null;coverage:string;wrapped:boolean;}
 export interface HistoryPage {messages:(Omit<Message,'at'>&{at:string|null;textLength:number;offset:number;captureTruncated?:boolean})[];total:number;before:string|null;coverage:string;}
 export interface McpInventory {sessionId:string;readAt:string;servers:{name:string;source:'settings'|'plugin'|'session'|'unknown';transport:'stdio'|'streamableHttp'|'unknown';oauth:'loggedIn'|'loggedOut'|'notSupported'|'unknown'}[];omitted:number;simulation?:boolean;}
 export interface RuntimeState {connectionEpoch?:number;}
@@ -145,6 +147,7 @@ export interface MuseBenchBridge {
  onDiscoveryAuthUpdate(callback:(event:{taskId:string;sourceId:string})=>void):()=>void;
  readMcpServers(input:{taskId:string;sessionId:string}):Promise<McpInventory>;
  inspectCodeContext(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[]}):Promise<CodeContextResult>;
+ findChatHistory(input:HistoryFindInput):Promise<HistoryFindResult>;
  readChatHistory(input:{taskId:string;before?:string;messageId?:string;offset?:number;limit?:number}):Promise<HistoryPage>;
  searchChats(input:{query:string;includeArchived:boolean}):Promise<ChatSearchResult[]>;
  previewConversationImport():Promise<ConversationImportPreview|null>;

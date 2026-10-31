@@ -253,6 +253,7 @@ else {
     handler('musebench:checkpoint',input=>controller.inspectCheckpoint(input));
     handler('musebench:semantic-navigation',input=>controller.semanticNavigate(input));
     handler('musebench:captured-output',input=>controller.readCapturedOutput(input));
+    handler('musebench:chat-history-find',input=>controller.findChatHistory(input));
     handler('musebench:chat-history',input=>controller.readChatHistory(input));
     handler('musebench:discovery-sources',input=>controller.inspectDiscoverySources(input));
     handler('musebench:discovery-auth',input=>controller.discoveryAuth(validateDiscoveryAuthCommand(input)));

@@ -1,3 +1,4 @@
+import {validateHistoryFind,literalOccurrences,historyHit} from '../shared/history-find.mjs';
 import {literalIndex} from '../shared/literal-search.mjs';
 // App-received history is independent of the bounded renderer/context window.
 // This cannot recover messages discarded before migration or unseen native tools.
@@ -74,6 +75,25 @@ export function createHistoryStore(db){
   if(!row)return null;const offset=Math.max(0,literalIndex(row.text,needle)-50);
   return{messageId:row.message_id,snippet:row.text.slice(offset,offset+240),offset,at:JSON.parse(row.metadata).at};
  }
+ function find(input){
+  validateHistoryFind(input);const {taskId,query,direction,cursor}=input,forward=direction==='next';
+  const selected=cursor?lookup.get(taskId,cursor.messageId):null;
+  if(cursor){let valid=false;if(selected&&selected.role!=='system')for(const m of literalOccurrences(selected.text,query)){if(m.offset===cursor.offset){valid=true;break;}if(m.offset>cursor.offset)break;}if(!valid)throw Error('Invalid history cursor.');}
+  const coverage=readCoverage.get(taskId)?.coverage??'app-received';
+  // Iterate one captured body at a time. Neither message lists nor totals enter the renderer.
+  const candidates=db.prepare(`SELECT seq,message_id,role,text,metadata FROM chat_history WHERE task_id=? AND role!='system' AND instr(history_lower(text),?)>0 ORDER BY seq ${forward?'ASC':'DESC'}`);
+  let fallback=null;
+  const hit=({row,match})=>historyHit({...row,captureTruncated:JSON.parse(row.metadata).captureTruncated},match);
+  for(const row of candidates.iterate(taskId,query.toLowerCase())){
+   let choice=null;const eligible=!cursor||(forward?row.seq>=selected.seq:row.seq<=selected.seq);
+   for(const match of literalOccurrences(row.text,query)){
+    if(forward){fallback??={row,match};if(eligible&&(!cursor||row.seq!==selected.seq||match.offset>cursor.offset))return{hit:hit({row,match}),coverage,wrapped:false};}
+    else{if(!fallback||fallback.row.seq===row.seq)fallback={row,match};if(eligible&&(!cursor||row.seq!==selected.seq||match.offset<cursor.offset))choice=match;}
+   }
+   if(choice)return{hit:hit({row,match:choice}),coverage,wrapped:false};
+  }
+  return{hit:fallback?hit(fallback):null,coverage,wrapped:Boolean(cursor&&fallback)};
+ }
  function page({taskId,before,messageId,offset=0,limit=20}={}){
   if(typeof taskId!=='string'||!Number.isInteger(limit)||limit<1||limit>50||!Number.isInteger(offset)||offset<0||offset>CAP||before!==undefined&&typeof before!=='string'||messageId!==undefined&&typeof messageId!=='string')throw Error('Invalid history request.');
   const total=count.get(taskId).n;
@@ -84,5 +104,5 @@ export function createHistoryStore(db){
   const older=rows.length&&hasOlder.get(taskId,rows[0].seq);
   return{messages,total,before:!messageId&&older?rows[0].message_id:null,coverage:readCoverage.get(taskId)?.coverage??'app-received'};
  }
- return{put,sync,search,page,remove:(task,id)=>db.prepare('DELETE FROM chat_history WHERE task_id=? AND message_id=?').run(task,id),deleteTask(task){db.prepare('DELETE FROM chat_history WHERE task_id=?').run(task);db.prepare('DELETE FROM history_coverage WHERE task_id=?').run(task);}};
+ return{put,sync,search,find,page,remove:(task,id)=>db.prepare('DELETE FROM chat_history WHERE task_id=? AND message_id=?').run(task,id),deleteTask(task){db.prepare('DELETE FROM chat_history WHERE task_id=?').run(task);db.prepare('DELETE FROM history_coverage WHERE task_id=?').run(task);}};
 }
