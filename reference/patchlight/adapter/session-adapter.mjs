@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import {compatibility} from './compatibility.mjs';
 import {terminalReason} from './diagnostics.mjs';
 import {normalizeContextUsage,validContextSourceRange} from '../../../src/shared/native-context-usage.mjs';
+import {observeNativeRetry} from '../../../src/shared/native-retry.mjs';
 
 const usable = new Set(['idle','completed','failed','cancelled']);
 const halted = new Set(['unavailable','uncertain','closed','blocked']);
@@ -26,7 +27,7 @@ export class MuseSessionAdapter {
   this.#durable=initializeResult?.sessionDurability===undefined||initializeResult.sessionDurability==='durable';
   this.#connection=connection;this.#timeout=timeoutMs;this.#maxEvents=maxEvents;this.#maxText=maxText;
   const gate=compatibility({sdkVersion,initializeResult,fullAccess});
-  this.#state={status:gate.available&&connection?'ready':'unavailable',reason:connection?gate.reason:'runtime-unavailable',sessionId:null,turnId:null,mode:null,planReadOnlyEnforced:false,tests:'not-run',outcome:null,liveVerified:false,contextUsage:null};
+  this.#state={status:gate.available&&connection?'ready':'unavailable',reason:connection?gate.reason:'runtime-unavailable',sessionId:null,turnId:null,mode:null,planReadOnlyEnforced:false,tests:'not-run',outcome:null,liveVerified:false,contextUsage:null,nativeRetry:null};
   if(this.#state.status==='unavailable')return;
   if(!['command','mintCommandId','onNotification','onServerRequest','onProtocolError'].every(k=>typeof connection[k]==='function')){this.disconnect('invalid-sdk-connection');return;}
   connection.onNotification(frame=>this.#receive(frame));
@@ -48,7 +49,7 @@ export class MuseSessionAdapter {
   if(item?.kind!=='toolCall'||!this.#observeToolItem||!this.#state.ownedTurnIds?.includes(item.turnId))return;
   try{this.#observeToolItem(structuredClone(item),{rootTurnId:this.#state.rootTurnId,ownedTurnIds:[...this.#state.ownedTurnIds]});}catch{/* Observation cannot change admission or native lifecycle. */}
  }
- #halt(status,reason){this.#epoch++;this.#state.status=status;this.#state.reason=reason;this.#state.outcome='unknown';this.#buffer=[];this.#emit();}
+ #halt(status,reason){this.#epoch++;this.#state.status=status;this.#state.reason=reason;this.#state.outcome='unknown';this.#state.nativeRetry=null;this.#buffer=[];this.#emit();}
  disconnect(reason='connection-lost'){if(this.#state.status!=='closed')this.#halt('unavailable',reason);}
  async #bounded(work){let timer;try{return await Promise.race([work,new Promise((_,reject)=>timer=setTimeout(()=>reject(Error('Command timeout; outcome uncertain')),this.#timeout))]);}finally{clearTimeout(timer);}}
  async open(workspaceRoot,{sessionId=null}={}){
@@ -114,7 +115,7 @@ export class MuseSessionAdapter {
    return {type:'image',mediaType:i.mediaType,base64Data:i.base64Data};
   });
   const epoch=++this.#epoch;
-  this.#state.status='submitting';this.#state.mode=mode;this.#state.outcome=null;this.#state.turnId=null;this.#state.rootTurnId=null;this.#state.ownedTurnIds=[];this.#state.reason=null;
+  this.#state.status='submitting';this.#state.mode=mode;this.#state.outcome=null;this.#state.turnId=null;this.#state.rootTurnId=null;this.#state.ownedTurnIds=[];this.#state.reason=null;this.#state.nativeRetry=null;
   this.#messages.clear();this.#seen.clear();this.#buffer=[];this.#emit();
   if(this.#epoch!==epoch||this.#state.status!=='submitting')throw Error('Turn submission was interrupted before dispatch');
   let commandId;
@@ -146,7 +147,8 @@ export class MuseSessionAdapter {
   if(method==='approval/requested'||method==='userInput/requested'){
    this.#state.pending=structuredClone(p);this.#halt('blocked',method==='approval/requested'?'approval-ui-unavailable':'input-ui-unavailable');return;
   }
-  const recognized=['session/contextUsage','turn/started','turn/completed','item/started','item/updated','item/delta','item/completed'];
+  const retryNotice=method==='turn/modelRetryScheduled'||method==='turn/retryScheduled';
+  const recognized=['session/contextUsage','turn/started','turn/completed','turn/modelRetryScheduled','turn/retryScheduled','item/started','item/updated','item/delta','item/completed'];
   if(!recognized.includes(method))return;
   if(method==='item/updated'&&!messageKinds.has(p.item?.kind)&&!(this.#observeToolItem&&p.item?.kind==='toolCall')&&!(this.#observeContextItem&&p.item?.kind==='compaction'))return;
   if(!str(p.viewCursor)){this.disconnect('missing-event-cursor');return;}
@@ -158,9 +160,9 @@ export class MuseSessionAdapter {
   const cursorHash=digest(p.viewCursor),payloadHash=digest(payload);
   if(this.#sessionSeen.has(cursorHash)){if(this.#sessionSeen.get(cursorHash)!==payloadHash)this.disconnect('conflicting-event-cursor');return;}
   if(this.#sessionSeen.size>=this.#maxSessionEvents){this.disconnect('session-event-limit');return;}
-  if(this.#seen.has(p.viewCursor)){if(this.#seen.get(p.viewCursor)!==payload)this.disconnect('conflicting-event-cursor');return;}
+  if(this.#seen.has(p.viewCursor)){if(this.#seen.get(p.viewCursor)!==payloadHash)this.disconnect('conflicting-event-cursor');return;}
   if(this.#seen.size>=this.#maxEvents){this.disconnect('event-limit');return;}
-  this.#seen.set(p.viewCursor,payload);
+  this.#seen.set(p.viewCursor,payloadHash);
   this.#sessionSeen.set(cursorHash,payloadHash);
   this.#state.viewCursor=p.viewCursor;
   if(method==='session/contextUsage'){
@@ -177,6 +179,14 @@ export class MuseSessionAdapter {
     if(this.#state.ownedTurnIds.length>=128){this.disconnect('continuation-limit');return;}
     this.#state.ownedTurnIds.push(p.turnId);this.#state.turnId=p.turnId;this.#state.status='running';this.#state.outcome=null;this.#state.reason=null;
    }
+   if(retryNotice){
+    // A scheduled backoff never changes lifecycle, work admission or command IDs.
+    if(this.#state.status!=='running')return;
+    const reading=observeNativeRetry(method,p);
+    if(!reading){this.disconnect('malformed-retry-notice');return;}
+    this.#state.nativeRetry=reading;this.#emit();return;
+   }
+   this.#state.nativeRetry=null;
    if(method==='turn/completed'){
     if(!terminals.has(p.terminal)){this.disconnect('unsupported-terminal');return;}
     if(terminals.has(this.#state.outcome)&&this.#state.outcome!==p.terminal){this.disconnect('conflicting-terminal');return;}
@@ -188,17 +198,19 @@ export class MuseSessionAdapter {
    if(!item||item.status!=='inProgress'||typeof p.delta!=='string'){this.disconnect('unusable-text-delta');return;}
    if(item.text.length+p.delta.length>this.#maxText){this.disconnect('text-limit');return;}
    item.text+=p.delta;
+   this.#state.nativeRetry=null;
   }else{
    const item=p.item;
    if(!item||!str(item.kind)){this.disconnect('malformed-item');return;}
-   if(item.kind==='toolCall'&&this.#observeToolItem){this.#projectTool(item);this.#emit();return;}
-   if(item.kind==='compaction'&&this.#observeContextItem){this.#observeContextItem(item);return;}
+   if(item.kind==='toolCall'&&this.#observeToolItem){this.#projectTool(item);if(item.turnId===this.#state.turnId)this.#state.nativeRetry=null;this.#emit();return;}
+   if(item.kind==='compaction'&&this.#observeContextItem){if(item.turnId===this.#state.turnId)this.#state.nativeRetry=null;this.#observeContextItem(item);this.#emit();return;}
    if(!messageKinds.has(item.kind))return;
    if(!str(item.itemId)||typeof item.text!=='string'||item.text.length>this.#maxText||!Number.isInteger(item.revision)||item.revision<1||item.turnId!==this.#state.turnId){this.disconnect('malformed-message');return;}
    const old=this.#messages.get(item.itemId);
    if(old&&old.revision>=item.revision)return;
    if(method==='item/completed'&&item.status!=='completed'){this.disconnect('unsupported-message-status');return;}
    this.#messages.set(item.itemId,{id:item.itemId,kind:item.kind,text:item.text,revision:item.revision,status:item.status,phase:item.messagePhase??'finalAnswer'});
+   this.#state.nativeRetry=null;
   }
   this.#emit();
  }

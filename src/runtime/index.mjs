@@ -171,7 +171,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const listeners=new Set();
  const snapshot=()=>structuredClone({...state,connectionEpoch:epoch});
  const emit=()=>{for(const fn of listeners){try{fn(snapshot());}catch{/* A renderer observer is never a protocol authority. */}}};
- const update=patch=>{state={...state,...patch,pendingRequests:pendingView()};if(state.contextUsage&&(!state.permissionVerified||state.sessionId!==state.contextUsage.sessionId))state.contextUsage={...state.contextUsage,connected:false};emit();};
+ const update=patch=>{state={...state,...patch,pendingRequests:pendingView()};if(state.status!=='running'||!state.permissionVerified||!state.sessionId)state.nativeRetry=null;if(state.contextUsage&&(!state.permissionVerified||state.sessionId!==state.contextUsage.sessionId))state.contextUsage={...state.contextUsage,connected:false};emit();};
  // Child observations and foreground completion must agree on restart settlement.
  const childWorkSettled=(item,target,foregroundTerminal=false)=>{
   if(!item||item.revision<=target.revision)return false;
@@ -195,7 +195,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const childrenBusy=childrenActive||awaitingChildReport;
   const status=terminalUnavailable?s.status:blockedReason?'blocked':connecting&&s.status==='idle'?'checking-permissions':terminal&&childrenBusy?'running':s.status;
   const contextUsage=restoreContextUsage(s.contextUsage);if(contextUsage)contextUsage.connected=!terminalUnavailable&&state.permissionVerified&&s.sessionId===contextUsage.sessionId;
-  state={...state,contextUsage};
+  state={...state,contextUsage,nativeRetry:s.nativeRetry??null};
   update({status,activity:workspaceActivity.snapshot(),childrenBusy,childWorkPending:childWork.size,foregroundActive:s.status==='running',rootTurnId:s.rootTurnId,ownedTurnIds:s.ownedTurnIds,ownedRunIds:s.ownedTurnIds,reason:terminalUnavailable?s.reason:blockedReason??s.reason,sessionId:s.sessionId,turnId:s.turnId,runId:s.turnId,nativeSessionId:s.sessionId,inputAccepted:!!s.turnId,sessionSeeded:state.sessionSeeded||!!s.turnId||s.restoration?.status==='restored',restoration:s.restoration??null,restoringRequests:restoreAwaiting.size,restoredMessages:s.restoredMessages??[],viewCursor:s.viewCursor,cleanup:terminalUnavailable&&owner?'unconfirmed':['completed','failed','cancelled'].includes(status)?'confirmed':undefined,liveVerified:state.liveVerified||status==='completed',messages:s.messages,pending:displayPending(pending,pendingRevision),permissionVerified:terminalUnavailable?false:state.permissionVerified});
  };
  const release=async()=>{

@@ -62,6 +62,7 @@ jobs:
             artifacts/remote-oauth/recovery-ui/**/report.json
             artifacts/remote-oauth/protection/**/report.json
             artifacts/native-failure-ui/**/report.json
+            artifacts/native-retry/**/report.json
             artifacts/native-question-ui/**/report.json
             artifacts/discovery-approvals/**/report.json
             artifacts/reply-copy/**/report.json

@@ -36,6 +36,7 @@ import {customizeBlocked} from '../shared/customize-policy.mjs';
 import {CustomizeDialog} from './CustomizeDialog';
 import type {CustomizeTab} from '../shared/customize-types';
 import {RunActivity,WorkThreads,ChangedFiles} from './WorkActivity';
+import {NativeRetryStatus} from './NativeRetryStatus';
 import {CommandDialog,type CommandView} from './CommandDialog';
 import {findCommand,parseSlashSubmission,type MuseSkill} from '../shared/slash-commands.mjs';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
@@ -519,6 +520,7 @@ export default function App() {
           <PromptTimeline transcript={transcript} active={showTask&&product==='code'&&view==='chat'&&!modal&&!profileMenuOpen&&!mobileNav} context={task?.id??''} onNavigate={releaseForNavigation} />
           <div className="composer-region">{scrolledUp && showTask && <button className="jump-latest icon-button" title="Jump to latest" aria-label="Jump to latest" onClick={jumpToLatest}><ArrowDown size={16} /></button>}
             {showTask && task?.mode === 'muse' && !runtimeActive && !connected && <div className="composer-notice"><Terminal size={13} /><span>{['blocked','uncertain','failed','error'].includes(state.runtime.status) ? 'Muse needs attention before continuing.' : 'Send a message to connect to Muse.'}</span><button onClick={() => setModal('runtime')}>Connection settings</button></div>}
+            {showTask&&<NativeRetryStatus runtime={state.runtime}/>}
             {showTask&&task?.goal&&<div className="goal-notice"><Target size={13}/><span>{task.goal.status==='paused'?'Paused: ':''}{task.goal.objective}</span>{task.goal.driver?.armed&&<button onClick={()=>void act({type:'pauseGoalContinuation'})}>Stop continuation</button>}<button onClick={()=>showCommand('goal')}>Edit goal</button></div>}
             {showTask&&task?.archived&&<div className="chat-archived-banner">Archived chat<button className="text-link" onClick={()=>void act({type:'setTaskFlags',id:task.id,archived:false})}>Restore to continue</button></div>}
             {showTask&&!!task?.promptQueue?.length&&<PromptQueue key={task.id} items={task.promptQueue} busy={busy} running={runtimeActive} paused={task.queuePaused!==false}

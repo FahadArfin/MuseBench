@@ -10,6 +10,14 @@ import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 import {permissionDetails} from '../src/ui/permissions.mjs';
 
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
+test('native retry observation stays nonterminal, clears across connection replacement, and never dispatches work',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Fixture only'});
+ const event={method:'turn/modelRetryScheduled',params:{sessionId:'session-one',turnId:'turn-one',viewCursor:'retry-runtime',attempt:1,nextAttempt:2,maxAttempts:4,retryDelayMs:2500,sourceRange:{stream:{id:'session-one',kind:'session'},first:{id:'record',sequence:1},last:{id:'record',sequence:1}},errorKind:'private-error'}};
+ const before=structuredClone(h.calls);h.emit(event);assert.deepEqual(h.runtime.snapshot().nativeRetry,{kind:'model',attempt:1,nextAttempt:2,maxAttempts:4,retryDelayMs:2500});assert.equal(h.runtime.snapshot().status,'running');assert.equal(h.runtime.statusSnapshot().status,'running');assert.deepEqual(h.calls,before);
+ await assert.rejects(h.runtime.send({text:'Must stay busy'}));assert.deepEqual(h.calls,before);
+ const oldNotify=h.notificationCallback();await h.runtime.disconnect();assert.equal(h.runtime.snapshot().nativeRetry,null);await h.connect();assert.equal(h.runtime.snapshot().nativeRetry,null);oldNotify(event);assert.equal(h.runtime.snapshot().nativeRetry,null);
+ assert.equal(h.calls.filter(c=>c.method==='turn/start').length,1);assert.equal(h.runtime.snapshot().liveVerified,false);
+});
 test('ephemeral native hosts never advertise or dispatch a persistent fork',async t=>{const h=await harness(t);h.host.initializeResult.sessionDurability='ephemeral';await h.connect();assert.equal(h.runtime.snapshot().forkSupported,false);await assert.rejects(h.runtime.forkSession({sessionId:'session-one'}));assert.equal(h.calls.some(c=>c.method==='session/fork'),false);});
 test('fork verifies current configuration and blocks concurrent native work before command admission',async t=>{
  let revision='before';const h=await harness(t,{verifyConfiguration:async()=>({executionRevision:revision})});await h.connect();revision='changed';await assert.rejects(h.runtime.forkSession({sessionId:'session-one'}),/Reconnect|configuration/);assert.equal(h.calls.filter(c=>c.method==='session/fork').length,0);
@@ -219,7 +227,7 @@ async function harness(t,options={}) {
  const sdk={EXPECTED_SCHEMA_FINGERPRINT:pin,spawnMspConnection:spec=>{calls.push({method:'spawn',spec});return {initialize:async params=>{calls.push({method:'initialize',params});return host;},close:host.close};}};
  const runtime=createRuntime({environment:{PATH:'',HOME:profile,USERPROFILE:profile,SystemRoot:'C:\\Windows',META_API_KEY:'must-not-cross',MUSE_EXPERIMENTAL_SDK_ENABLED:'on'},loadSdk:async()=>({sdk,sdkVersion:'1.4.14'}),probeVersion:async()=>options.version??'1.4.14',timeoutMs:100,...options});
  t.after(()=>runtime.close());
- return {runtime,root,profile,binary,calls,host,sdk,session,emit:frame=>notification(frame),protocolError:error=>protocolError(error),request:frame=>serverRequest(frame),exit:resolveExit,connect:()=>runtime.connect({binary,workspaceRoot:root})};
+ return {runtime,root,profile,binary,calls,host,sdk,session,notificationCallback:()=>notification,emit:frame=>notification(frame),protocolError:error=>protocolError(error),request:frame=>serverRequest(frame),exit:resolveExit,connect:()=>runtime.connect({binary,workspaceRoot:root})};
 }
 
 for(const platform of ['win32','linux','darwin'])test(`${platform}: direct interactive startup rejects unreviewed project MCP even with Full access`,async t=>{
