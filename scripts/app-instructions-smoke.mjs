@@ -9,7 +9,7 @@ import {waitForDesktopRenderer} from './electron-window.mjs';
 
 const desktop=process.argv.includes('--desktop'),executablePath=desktop?process.env.MUSEBENCH_EXECUTABLE:undefined,variant=desktop?(executablePath?'installed':'desktop'):'preview';
 await mkdir('artifacts/app-instructions',{recursive:true});const output=await mkdtemp(path.resolve('artifacts/app-instructions',variant+'-'));
-const report={variant,executablePath:executablePath??null,status:'running',checks:[],errors:[],modelRequests:0};let server,browser,app,page;
+const report={variant,executablePath:executablePath??null,status:'running',checks:[],errors:[]};let server,browser,app,page;
 const pass=label=>{report.checks.push(label);console.log('PASS '+label);};
 const expected=(personal,project)=>({version:1,scope:'app-settings',personal,project});
 try{

@@ -10,7 +10,7 @@ import {extractFile} from '@electron/asar';
 import {chromium,_electron as electron} from 'playwright';
 const desktop=process.argv.includes('--desktop'),installed=desktop&&!!process.env.MUSEBENCH_EXECUTABLE,variant=installed?'installed':desktop?'desktop-source':'browser-source';
 await mkdir('artifacts/discovery-approvals',{recursive:true});const output=await mkdtemp(path.resolve('artifacts/discovery-approvals',variant+'-'));
-const report={variant,checks:[],errors:[],providerCalls:0,rendererDigest:null};let server,app,browser,page;
+const report={variant,checks:[],errors:[],rendererDigest:null};let server,app,browser,page;
 const pass=name=>{report.checks.push(name);console.log('PASS '+name);};
 const fixture=`import {createPreviewBridge} from './src/preview/bridge.ts';
 const bridge=createPreviewBridge(),read=bridge.getState,on=bridge.onState,dispatch=bridge.dispatch,listeners=new Set();
