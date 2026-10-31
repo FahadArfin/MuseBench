@@ -22,6 +22,7 @@ const commands=()=>page.evaluate(()=>window.__catalogCommands);
 try{
  await page.goto('http://127.0.0.1:4325/preview.html');
  await page.waitForFunction(()=>Boolean(window.musebench));
+ await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.evaluate(()=>{
   window.__catalogCommands=[];const original=window.musebench.customize;
   window.musebench.customize=async command=>{

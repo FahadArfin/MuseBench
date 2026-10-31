@@ -286,7 +286,7 @@ export function PersonalWorkspace({ active, obscured, destination, state, comman
       <div className="personal-header-context">
       <button type="button" className="icon-button mobile-toggle" aria-label="Open navigation" onClick={onNavigationOpen}><PanelLeft size={17} /></button>
       {collapsed && <button type="button" className="icon-button collapsed-toggle" aria-label="Show sidebar" onClick={onToggleSidebar}><PanelLeft size={17} /></button>}
-      <NavigationButtons/><div className="breadcrumbs"><strong>{label}</strong>{state?.loading && <LoaderCircle size={13} className="spin personal-header-loading" aria-label="Loading page" />}</div>
+      <NavigationButtons/>{state?.loading && <LoaderCircle size={13} className="spin personal-header-loading" aria-label="Loading page" />}
       </div>
       <div className="topbar-actions"><UpdateToolbar/>
         {signingIn ? <span className="personal-auth-status" role="status"><ShieldCheck size={14} /><span>{state?.authWindowOpen ? 'Finish sign-in in the opened window' : 'Signing in with Meta'}</span></span> : <>

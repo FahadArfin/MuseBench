@@ -85,6 +85,7 @@ try{
   });
  },{dataDir,projectsDir,entries:CURATED_EXTENSIONS});
  await page.getByRole('group',{name:'Choose workspace',exact:true}).waitFor();
+ await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.getByRole('button',{name:'Customize',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Customize',exact:true});
  const ready=async()=>{await dialog.locator('.catalog-card').first().waitFor();await page.waitForFunction(()=>!document.querySelector('.extension-catalog [role="status"]'));};

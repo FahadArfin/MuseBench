@@ -77,6 +77,29 @@ class ObservedView {
     return view;
   }
 }
+// Exercise production defaults before the opt-in cache/prewarm stress checks.
+const startupReads = [];
+const startupController = createPersonalBrowser({
+  window, BrowserWindow, WebContentsView: ObservedView,
+  session: { fromPartition: () => isolatedSession }, accountReader: null,
+  shell: { openExternal: async () => { throw Error('External navigation is disabled in this fixture.'); } },
+  authReader: async () => 'ready', warmupDelay: 40,
+  libraryAdapter: { prepare: async () => true, read: async (_contents, section) => {
+    startupReads.push(section); return { status: 'ready', items: [] };
+  }, activate: async () => false },
+});
+startupController.preloadInitial();
+await startupController.dispatch({ type: 'layout', visible: true, bounds: { x: 0, y: 0, width: 950, height: 700 } });
+for (const target of ['bot', 'ideas', 'meta-media']) await startupController.dispatch({ type: 'prewarm', target });
+await new Promise(resolve => setTimeout(resolve, 1200));
+const startupViews = window.contentView.children.filter(view => view.webContents && !view.webContents.isDestroyed());
+state.startup = {
+  remotePages: startupViews.length,
+  remoteRendererProcesses: new Set(startupViews.map(view => view.webContents.getOSProcessId())).size,
+  totalRenderers: app.getAppMetrics().filter(metric => metric.type === 'Tab').length,
+  collectionReads: startupReads.length,
+};
+startupController.close();
 const controller = createPersonalBrowser({
   window, BrowserWindow, WebContentsView: ObservedView,
   session: { fromPartition: () => isolatedSession },
@@ -213,6 +236,12 @@ try {
     if (boot.error) throw Error(`Isolated controller boot: ${boot.error}`);
     return boot.ready;
   }, 'Isolated controller boot');
+  const startup = (await counters()).startup;
+  assert.equal(startup.remotePages, 1, 'Production defaults must create only the selected remote page');
+  assert.equal(startup.remoteRendererProcesses, 1, 'Unused tools must not allocate native renderers');
+  assert.equal(startup.collectionReads, 0, 'Meta startup must not read hidden Muse collections');
+  report.startup = startup;
+  pass('Default desktop startup and hover hints keep one remote page without hidden Muse collection readers', startup);
   await dispatch({ type: 'layout', visible: true, bounds: { x: 0, y: 0, width: 950, height: 700 } });
   const chat = await navigate('chat');
   const chatState = await preserve(chat, 'main chat');

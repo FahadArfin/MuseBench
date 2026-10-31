@@ -34,7 +34,7 @@ const defaultLibraryAdapter = {
 
 // Only the trusted local main frame calls this controller. Remote contents have
 // no preload and never receive project state, credentials, or the local bridge.
-export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, settings: runMetaSettings, dismiss: dismissMetaSearch, ready: metaNavigationReady }, metaAppsAdapter = {read:readMetaApps,connect:connectMetaApp}, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 3 }) {
+export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, settings: runMetaSettings, dismiss: dismissMetaSearch, ready: metaNavigationReady }, metaAppsAdapter = {read:readMetaApps,connect:connectMetaApp}, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 0 }) {
   // Native getters can throw after destruction: cache contents while alive.
   const localContents = window.webContents;
   const entries = new Map(), serviceSessions = new Map(), popups = new Set(), pendingReady = new Set();
@@ -54,9 +54,11 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   let extraEntrySequence = 0, setupLoginWindow = null, knownLogin = 'unknown';
   const warmHints = new Set(), warmAttempted = new Set();
   let warmTimer = null, warming = false, warmBlocked = false;
-  const warmCapacity = Math.max(0, Math.min(3, Number.isFinite(warmLimit) ? warmLimit : 3));
+  // Keep unvisited tools lazy: each hidden remote page can need a renderer.
+  const warmCapacity = Math.max(0, Math.min(3, Number.isFinite(warmLimit) ? warmLimit : 0));
   const alive = entry => Boolean(entry && !entry.contents.isDestroyed());
   const current = () => activeEntry;
+  const libraryVisible = () => requestedVisible && alive(current()) && current().slot !== 'chat';
   const accountSync = createPersonalAccountSync({
     ...accountTiming,
     read: accountReader ?? readMetaAccount,
@@ -157,7 +159,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     });
   }
   function scheduleWarmup() {
-    if (closed || !requestedVisible || museAuthPending() || !alive(current())) { stopWarmup(true); return; }
+    if (!warmCapacity || closed || !requestedVisible || museAuthPending() || !alive(current())) { stopWarmup(true); return; }
     if (warming || warmTimer || warmBlocked || current().loading || current().initializing || !warmCandidates().length) return;
     warmTimer = setTimeout(() => { warmTimer = null; void warmNext(); }, Math.max(0, warmupDelay));
     warmTimer.unref?.();
@@ -244,7 +246,8 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   const museAuthPending = () => [...popups].some(popup => popup.museAuth) || [...entries.values()].some(entry => entry.museAuth);
   const ownsMuseAuth = entry => Boolean(entry.museAuth || [...popups].some(popup => popup.museAuth && popup.opener === entry));
   function scheduleLibrary(delay = 250) {
-    if (closed || !requestedVisible || museAuthPending()) { clearTimeout(libraryTimer); libraryTimer = null; return; }
+    // Muse collection readers are useful only with the Muse sidebar visible.
+    if (closed || !libraryVisible() || museAuthPending()) { clearTimeout(libraryTimer); libraryTimer = null; return; }
     if (libraryTimer || refreshingLibrary) return;
     libraryTimer = setTimeout(() => {
       libraryTimer = null;
@@ -274,7 +277,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     finally { expired = true; clearTimeout(timer); }
   }
   async function refreshLibrary(force = false) {
-    if (closed || museAuthPending() || (!requestedVisible && !force)) return;
+    if (closed || museAuthPending() || (!force && !libraryVisible())) return;
     if (refreshingLibrary) return refreshingLibrary;
     const generation = libraryGeneration;
     const read = async (entry, section) => {
@@ -321,7 +324,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     refreshingLibrary = Promise.resolve().then(async () => {
       const bot = collectionEntry('chats');
       const status = await read(bot, 'chats');
-      if (closed || generation !== libraryGeneration) return;
+      if (closed || generation !== libraryGeneration || (!force && !libraryVisible())) return;
       if (status === 'ready') { libraryEstablished = true; warmBlocked = false; }
       // The provider's side-chat menu can change independently of its Ideas
       // and Goals pages. A confirmed signed-in root is enough to read those
@@ -342,7 +345,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
           }
         } else if (auth === 'required') { catalog.reset('signed-out'); agentProfile = null; publish(); }
       }
-      if (libraryEstablished) await Promise.all(['ideas', 'goals'].map(section => read(collectionEntry(section), section)));
+      if (libraryEstablished && (force || libraryVisible())) await Promise.all(['ideas', 'goals'].map(section => read(collectionEntry(section), section)));
     }).finally(() => { refreshingLibrary = null; scheduleLibrary(1800); });
     return refreshingLibrary;
   }
@@ -699,7 +702,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     const command = validatePersonalCommand(value);
     if (closed) throw Error('The personal Muse browser is closed.');
     if (command.type === 'prewarm') {
-      if (requestedVisible && !museAuthPending()) { warmHints.delete(command.target); warmHints.add(command.target); warmBlocked = false; scheduleWarmup(); }
+      if (warmCapacity && requestedVisible && !museAuthPending()) { warmHints.delete(command.target); warmHints.add(command.target); warmBlocked = false; scheduleWarmup(); }
       return snapshot();
     }
     if (command.type === 'layout') {

@@ -17,6 +17,7 @@ try{
  }else{browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:1200,height:980}});await page.goto(url);}
  page.setDefaultTimeout(12000);page.on('pageerror',error=>report.errors.push(error.message));
  await page.waitForFunction(()=>!!window.musebench);
+ await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.evaluate(()=>{const original=window.musebench.customize;window.__toolCalls=[];window.musebench.customize=async command=>{window.__toolCalls.push(command);if(command.type==='inspectPluginMcp'&&window.__failInspection)throw Error('Fixture inspection unavailable');const result=await original(command);if(command.type==='inspectPluginMcp'&&window.__holdInspection)await new Promise(resolve=>{window.__releaseInspection=resolve});if(result.pluginMcp&&window.__multilineCommand)result.pluginMcp.servers.find(item=>item.title==='imported-check').command=[window.__multilineCommand];if(result.pluginMcp&&window.__unknownTool)result.pluginMcp.servers.push({stableId:'plugin:preview-tools:future:unsupported',title:'Future tool',kind:'future',supported:false,enabled:false,reviewed:false,reason:'This capability needs setup in the official Muse CLI.'});return result;};});
  await page.evaluate(()=>{window.__chatRefreshCalls=0;const original=window.musebench.dispatch;window.musebench.dispatch=async action=>{if(action.type==='refresh')window.__chatRefreshCalls++;return original(action);};window.dispatchEvent(new Event('focus'));});
  await page.waitForFunction(()=>window.__chatRefreshCalls>0);

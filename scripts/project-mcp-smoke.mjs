@@ -33,6 +33,7 @@ try{
  }
  page.setDefaultTimeout(12000);
  page.on('pageerror',error=>report.errors.push(error.message));
+ await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.getByRole('button',{name:'Customize',exact:true}).click();const dialog=page.getByRole('dialog',{name:'Customize'});
  await dialog.getByRole('tab',{name:'MCP servers',exact:true}).click();
  assert.equal(await dialog.locator('.project-mcp-review').count(),0);

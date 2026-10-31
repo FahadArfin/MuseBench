@@ -50,6 +50,53 @@ function harness(options = {}) {
 }
 const layout = { type: 'layout', visible: true, bounds: { x: 300, y: 80, width: 700, height: 620 } };
 
+test('default Meta startup and hover hints do not start unused tool or Muse collection pages', async t => {
+  const reads = [];
+  const h = harness({ authReader: async () => 'ready', warmupDelay: 5, libraryAdapter: {
+    prepare: async () => true,
+    read: async (_contents, section) => { reads.push(section); return { status: 'ready', items: [] }; },
+    activate: async () => false,
+  } });
+  t.after(() => h.browser.close());
+  h.browser.preloadInitial();
+  await h.browser.dispatch(layout);
+  for (const target of ['bot', 'ideas', 'meta-media']) await h.browser.dispatch({ type: 'prewarm', target });
+  await new Promise(resolve => setTimeout(resolve, 400));
+  assert.equal(h.views.length, 1, 'only the selected Meta document should have a renderer');
+  assert.deepEqual(reads, [], 'the hidden Muse sidebar must not start collection readers');
+  assert.equal(h.actions.length + h.metaActions.length, 0);
+  const meta = h.views[0].webContents;
+  meta.unsentDraft = 'Keep the open chat';
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
+  const bot = h.views.find(view => view.visible).webContents;
+  await h.browser.dispatch({ type: 'refreshLibrary' });
+  assert(reads.includes('chats') && reads.includes('ideas') && reads.includes('goals'));
+  await h.browser.dispatch({ type: 'navigate', destination: 'chat' });
+  assert.equal(h.views.find(view => view.visible).webContents, meta);
+  assert.equal(meta.unsentDraft, 'Keep the open chat');
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
+  assert.equal(h.views.find(view => view.visible).webContents, bot);
+  assert.equal(bot.loads.length, 1, 'explicitly opened pages must remain cached');
+});
+
+test('switching to Meta during a Muse background read defers unopened collection pages', async t => {
+  let finishRead;
+  const h = harness({ authReader: async () => 'ready', warmLimit: 0, libraryAdapter: {
+    prepare: async () => true,
+    read: async (_contents, section) => section === 'chats' ? new Promise(resolve => { finishRead = resolve; }) : { status: 'ready', items: [] },
+    activate: async () => false,
+  } });
+  t.after(() => h.browser.close());
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
+  await h.browser.dispatch(layout);
+  await until(() => finishRead, 'visible Muse should read its sidebar');
+  await h.browser.dispatch({ type: 'navigate', destination: 'chat' });
+  finishRead({ status: 'ready', items: [] });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(h.views.length, 2, 'finishing an old read must not create hidden Ideas and Goals pages');
+  assert.equal(h.browser.snapshot().destination, 'chat');
+});
+
 test('reserved account popup preserves opener and session, accepts Accounts Center, and blocks unsupported OAuth without exporting its URL',async t=>{
  const h=harness();t.after(()=>h.browser.close());await h.browser.dispatch({type:'navigate',destination:'chat'});await h.browser.dispatch(layout);
  const parent=h.views[0].webContents;const response=parent.openHandler({url:'about:blank'});
@@ -493,11 +540,11 @@ for (const { label, authStatus, navigationReady, shouldWarm, shouldCheckNavigati
 });
 
 test('warmup does not run for signed-out pages or after the workspace hides', async t => {
-  const signedOut = harness({ authReader: async () => 'required', warmupDelay: 5 }); t.after(() => signedOut.browser.close());
+  const signedOut = harness({ authReader: async () => 'required', warmupDelay: 5, warmLimit: 3 }); t.after(() => signedOut.browser.close());
   await signedOut.browser.dispatch(layout);
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.equal(signedOut.views.length, 1); assert.equal(signedOut.actions.length + signedOut.metaActions.length, 0);
-  const hidden = harness({ authReader: async () => 'ready', warmupDelay: 20 }); t.after(() => hidden.browser.close());
+  const hidden = harness({ authReader: async () => 'ready', warmupDelay: 20, warmLimit: 3 }); t.after(() => hidden.browser.close());
   await hidden.browser.dispatch(layout); await hidden.browser.dispatch({ type: 'layout', visible: false });
   await new Promise(resolve => setTimeout(resolve, 40));
   assert.equal(hidden.views.length, 1); assert.equal(hidden.actions.length + hidden.metaActions.length, 0);
@@ -548,6 +595,7 @@ test('verified sign-in clears a retained sign-in message even when side-chat met
   let signedIn=false;
   const adapter={prepare:async()=>false,read:async(_contents,section)=>!signedIn?{status:'signed-out',items:[]}:section==='chats'?{status:'unavailable',items:[]}:{status:'ready',items:[libraryItem(section)]}};
   const h=harness({libraryAdapter:adapter,authReader:async()=>signedIn?'ready':'required',warmLimit:0}); t.after(()=>h.browser.close());
+  await h.browser.dispatch({type:'navigate',destination:'bot'});
   await h.browser.dispatch(layout); t.mock.timers.tick(250); await microtasks();
   assert.equal(h.browser.snapshot().library.chats.status,'signed-out');
   signedIn=true; t.mock.timers.tick(1800); await microtasks(); await microtasks();
@@ -577,6 +625,7 @@ test('automatic collection polling expires repeated loading and keeps the error 
   const h=libraryHarness(); t.after(()=>h.browser.close());
   const original=h.libraryAdapter.read;
   h.libraryAdapter.read=(contents,section)=>section==='chats'?original(contents,section):{status:'loading',items:[]};
+  await h.browser.dispatch({type:'navigate',destination:'bot'});
   await h.browser.dispatch(layout);
   t.mock.timers.tick(250); await microtasks();
   assert.equal(h.browser.snapshot().library.ideas.status,'loading');
@@ -771,12 +820,17 @@ test('an explicitly selected idea survives refresh when the official preview doe
   h.browser.close();
 });
 
-test('visible personal workspace refreshes the native library and hiding or closing stops polling', async t => {
+test('visible Muse sidebar refreshes its library and switching to Meta, hiding or closing stops polling', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const h = libraryHarness(); let reads = 0; const read = h.libraryAdapter.read;
   h.libraryAdapter.read = (...args) => { reads++; return read(...args); };
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
   await h.browser.dispatch(layout); t.mock.timers.tick(250); await microtasks();
   assert.equal(h.browser.snapshot().library.ideas.items.length, 1);
+  await h.browser.dispatch({ type: 'navigate', destination: 'chat' }); const beforeMeta = reads;
+  t.mock.timers.tick(10000); await microtasks(); assert.equal(reads, beforeMeta);
+  await h.browser.dispatch({ type: 'navigate', destination: 'bot' });
+  t.mock.timers.tick(250); await microtasks(); assert(reads > beforeMeta);
   await h.browser.dispatch({ type: 'layout', visible: false }); const previous = reads;
   t.mock.timers.tick(10000); await microtasks(); assert.equal(reads, previous);
   h.browser.close(); t.mock.timers.tick(10000); await microtasks(); assert.equal(reads, previous);

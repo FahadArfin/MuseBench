@@ -7,6 +7,7 @@ const browser=await chromium.launch({headless:true});const page=await browser.ne
 await mkdir('artifacts/customize-refinement',{recursive:true});
 try{
  await page.goto('http://127.0.0.1:4337/preview.html');
+ await page.getByRole('button',{name:'Muse Code',exact:true}).click();
  await page.getByRole('button',{name:'Customize',exact:true}).click();
  const dialog=page.getByRole('dialog',{name:'Customize'});const rows=dialog.locator('.catalog-card');await rows.first().waitFor();
  await page.evaluate(()=>{
