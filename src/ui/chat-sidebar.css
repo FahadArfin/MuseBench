@@ -44,3 +44,5 @@
 .fork-recovery p{margin:7px 0;line-height:1.5}.fork-recovery dl{display:grid;grid-template-columns:auto 1fr;gap:4px 10px}.fork-recovery dd{margin:0;overflow-wrap:anywhere}
 @media(prefers-reduced-motion:reduce){.side-chat-toggle svg{transition:none}}
 [data-reduced-motion=true] .side-chat-toggle svg{transition:none}
+
+.chat-row:focus-visible { outline-offset: -2px; }

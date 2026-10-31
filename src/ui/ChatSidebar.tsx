@@ -8,6 +8,7 @@ import {SidebarSection} from './SidebarSection';
 import {MotionDisclosure} from './MotionDisclosure';
 import {useChatActions} from './useChatActions';
 import './chat-sidebar.css';
+import {workspaceFocusBlocked,workspaceLaidOut} from './useWorkspaceFocus';
 
 type Move=Extract<Action,{type:'moveSidebarItem'}>;
 type Props={orders?:Record<string,string[]>;projects:Project[];tasks:TaskSummary[];selectedId?:string;projectId?:string;overview:boolean;busy:boolean;active:boolean;onProject:(id:string)=>void;onChat:(id:string)=>void;onNew:(id:string)=>void;onFolder:()=>void;onSearch:()=>void;act:(action:Action)=>Promise<unknown>};
@@ -24,7 +25,7 @@ const MemoSidebar=memo(SidebarContents,(a,b)=>a.selectedId===b.selectedId&&a.pro
 function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,busy,active,onProject,onChat,onNew,onFolder,onSearch,act}:Props){
  const [closed,setClosed]=useState<Set<string>>(new Set());
  const [closedSides,setClosedSides]=useState<Set<string>>(new Set());
- const {open,isOpen,overlay}=useChatActions({tasks,busy,active,act});
+ const {open,rename,isOpen,overlay}=useChatActions({tasks,busy,active,act});
  const selected=tasks.find(t=>t.id===selectedId);
  const relationIndex=useMemo(()=>createChatRelationIndex(tasks),[tasks]);
  const selectedMainId=selected?.chatRelation?.kind==='side'?relationIndex.main(selected).id:null;
@@ -53,11 +54,25 @@ function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,bu
    if(next>=0&&next<items.length)void move({type:'moveSidebarItem',kind,id,section,projectId:destinationId,beforeId:items[event.key==='ArrowUp'?next:next+1]?.id});
    return true;
  };
+ const keyboardNavigate=(event:KeyboardEvent<HTMLButtonElement>,chat:TaskSummary)=>{
+   if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10'){open(chat,event);return;}
+   if(event.altKey||event.ctrlKey||event.metaKey||event.shiftKey||workspaceFocusBlocked())return;
+   if(event.key==='F2'){event.preventDefault();rename(chat);return;}
+   if(!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return;
+   event.preventDefault();
+   const area=event.currentTarget.closest('[data-workspace-area]');
+   const rows=[...area?.querySelectorAll<HTMLButtonElement>('.chat-row:not(:disabled)')??[]].filter(workspaceLaidOut),at=rows.indexOf(event.currentTarget);
+   const next=rows[event.key==='Home'?0:event.key==='End'?rows.length-1:Math.max(0,Math.min(rows.length-1,at+(event.key==='ArrowDown'?1:-1)))];
+   next?.focus({preventScroll:true});
+   // Reveal only the sidebar scroller, never the conversation or document.
+   const scroll=next?.closest('.sidebar-scroll');
+   if(next&&scroll){const row=next.getBoundingClientRect(),bounds=scroll.getBoundingClientRect();if(row.top<bounds.top)scroll.scrollTop-=bounds.top-row.top;else if(row.bottom>bounds.bottom)scroll.scrollTop+=row.bottom-bounds.bottom;}
+ };
  const row=(chat:TaskSummary,section:Move['section'],items:TaskSummary[],destinationId?:string,sideCount=0)=>{
    const props=dropProps(section,destinationId,chat.id);
    return <div {...props} className={`sidebar-chat ${sideCount?'has-side-chats':''} ${props.className}`} key={chat.id} draggable={!busy} onDragStart={event=>start(event,'chat',chat.id)} onDragEnd={finish}>
      {!!sideCount&&<button className="side-chat-toggle" aria-label={`${closedSides.has(chat.id)?'Expand':'Collapse'} side chats of ${chat.title}`} aria-expanded={!closedSides.has(chat.id)} aria-controls={`side-chats-${chat.id}`} onClick={()=>setClosedSides(before=>{const next=new Set(before);if(next.has(chat.id))next.delete(chat.id);else next.add(chat.id);return next;})}><ChevronRight size={12} className={closedSides.has(chat.id)?'':'rotated'}/></button>}
-     <button className={`chat-row ${chat.id===selectedId&&!overview?'selected':''}`} title={`${chat.title}${chat.pinned?' · Pinned':''} · Drag to move, or Alt+Shift+Up/Down to reorder`} aria-label={chat.title} aria-description={chat.pinned?'Pinned chat. Drag to move or Alt+Shift+arrows to reorder.':'Drag to move or Alt+Shift+arrows to reorder.'} disabled={busy} onClick={()=>{if(!suppressClick.current)onChat(chat.id);}} onContextMenu={event=>open(chat,event)} onKeyDown={event=>{if(keyboardMove(event,'chat',chat.id,section,items,destinationId))return;if(event.key==='ContextMenu'||event.shiftKey&&event.key==='F10')open(chat,event);}}>
+     <button className={`chat-row ${chat.id===selectedId&&!overview?'selected':''}`} title={`${chat.title}${chat.pinned?' · Pinned':''} · Drag to move, or Alt+Shift+Up/Down to reorder`} aria-label={chat.title} aria-description={chat.pinned?'Pinned chat. Drag to move or Alt+Shift+arrows to reorder.':'Drag to move or Alt+Shift+arrows to reorder.'} disabled={busy} onClick={()=>{if(!suppressClick.current)onChat(chat.id);}} onContextMenu={event=>open(chat,event)} onKeyDown={event=>{if(keyboardMove(event,'chat',chat.id,section,items,destinationId))return;keyboardNavigate(event,chat);}}>
        {chat.pinned&&!chat.archived&&<Pin size={12} className="chat-pinned-icon" aria-hidden="true"/>}<span>{chat.title}</span>{chat.runtimeStatus&&['running','starting','submitting','connecting','checking-permissions'].includes(chat.runtimeStatus)&&<span className="chat-running" role="status" aria-label="Chat running">●</span>}
      </button>
      <button className="chat-options icon-button" aria-label={`Chat options for ${chat.title}`} aria-haspopup="menu" aria-expanded={isOpen(chat.id)} disabled={busy} onClick={event=>open(chat,event)}><MoreHorizontal size={14}/></button>

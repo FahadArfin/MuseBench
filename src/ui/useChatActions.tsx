@@ -17,7 +17,8 @@ export function useChatActions({tasks,busy,active,act}:{tasks:TaskSummary[];busy
  useEffect(()=>{if(!context)return;const outside=(event:PointerEvent)=>{if(!menu.current?.contains(event.target as Node))closeMenu();};const dismiss=()=>setContext(null);document.addEventListener('pointerdown',outside);window.addEventListener('resize',dismiss);window.addEventListener('scroll',dismiss,true);return()=>{document.removeEventListener('pointerdown',outside);window.removeEventListener('resize',dismiss);window.removeEventListener('scroll',dismiss,true);};},[context]);
  const open=(chat:TaskSummary,event:MouseEvent<HTMLElement>|KeyboardEvent<HTMLElement>)=>{event.preventDefault();event.stopPropagation();if(busy)return;const rect=event.currentTarget.getBoundingClientRect(),pointer='clientX'in event&&!(event.type==='click'&&event.detail===0);setContext({id:chat.id,trigger:event.currentTarget,x:pointer?event.clientX:rect.left+16,y:pointer?event.clientY:rect.bottom});};
  const change=(action:Action)=>{closeMenu(true);void act(action);};
- const showDialog=(kind:'edit'|'delete')=>{if(!target)return;setDialog({kind,task:target});setTitle(target.title);setError('');closeMenu(true);};
+ const beginDialog=(kind:'edit'|'delete',task:TaskSummary)=>{setDialog({kind,task});setTitle(task.title);setError('');};
+ const showDialog=(kind:'edit'|'delete')=>{if(!target)return;beginDialog(kind,target);closeMenu(true);};
  const closeDialog=()=>{if(!saving){setDialog(null);setError('');}};
  const submit=async()=>{
    if(!dialog||busy||saving)return;
@@ -32,7 +33,8 @@ export function useChatActions({tasks,busy,active,act}:{tasks:TaskSummary[];busy
    finally{setSaving(false);}
  };
  const key=(event:KeyboardEvent)=>{if(event.key==='Escape'||event.key==='Tab'){event.preventDefault();closeMenu(true);return;}if(!['ArrowUp','ArrowDown','Home','End'].includes(event.key))return;event.preventDefault();const buttons=[...menu.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')],at=buttons.indexOf(document.activeElement as HTMLButtonElement);buttons[event.key==='Home'?0:event.key==='End'?buttons.length-1:(at+(event.key==='ArrowDown'?1:-1)+buttons.length)%buttons.length]?.focus();};
- return {open,isOpen:(id:string)=>context?.id===id,overlay:<>
+ const rename=(chat:TaskSummary)=>{if(!active||busy)return;beginDialog('edit',chat);};
+ return {open,rename,isOpen:(id:string)=>context?.id===id,overlay:<>
  {context&&target&&active&&createPortal(<div ref={menu} className="chat-context-menu" role="menu" aria-label={`Options for ${target.title}`} style={{left:context.x,top:context.y}} onKeyDown={key}>
  {!target.archived&&<><button role="menuitem" disabled={target.runtimeBusy} title="Carry conversation context into an independent chat" onClick={()=>change({type:'forkTask',taskId:target.id})}><GitBranch size={16}/>Fork chat</button><button role="menuitem" title="Fresh context linked to the main chat" onClick={()=>change({type:'createSideChat',taskId:target.id})}><MessageSquarePlus size={16}/>New side chat</button><div className="chat-menu-separator" role="separator"/></>}
  {target.archived?<button role="menuitem" onClick={()=>change({type:'setTaskFlags',id:target.id,archived:false})}><ArchiveRestore size={16}/>Restore</button>:<button role="menuitem" onClick={()=>change({type:'setTaskFlags',id:target.id,pinned:!target.pinned})}>{target.pinned?<PinOff size={16}/>:<Pin size={16}/>} {target.pinned?'Unpin':'Pin'}</button>}
