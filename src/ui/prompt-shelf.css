@@ -1,0 +1,5 @@
+.prompt-shelf-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:12px}
+.prompt-shelf-actions .button{min-height:40px;min-width:88px;padding:9px 16px}
+.prompt-shelf-actions .prompt-shelf-delete{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 50%,var(--border));background:transparent}
+.prompt-shelf-actions .prompt-shelf-delete:hover:not(:disabled){background:color-mix(in srgb,var(--danger) 12%,var(--surface))}
+.draft-recovery{padding:12px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px}

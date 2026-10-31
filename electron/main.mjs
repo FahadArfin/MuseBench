@@ -264,6 +264,8 @@ else {
       return result.canceled?null:controller.prepareConversationImport(result.filePaths[0]);
     });
     handler('musebench:conversation-import',input=>controller.conversationImport(input));
+    handler('musebench:prompt-shelf-read',input=>controller.readPromptShelf(input));
+    handler('musebench:code-draft-transfer',input=>controller.transferCodeDraft(input));
     handler('musebench:prompt-shelf-list',input=>controller.listSavedPrompts(input));
     handler('musebench:prompt-shelf-park',input=>controller.parkCodeDraft(input));
     handler('musebench:prompt-shelf-restore',input=>controller.restoreSavedPrompt(input));

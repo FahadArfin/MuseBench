@@ -163,6 +163,8 @@ export interface MuseBenchBridge {
  inspectProjectActions(input:{projectId:string;taskId:string}):Promise<import('./project-actions.mjs').ProjectActionsSnapshot>;
  importCodeImage(input:{projectId:string;taskId:string|null;name:string;dataUrl:string}):Promise<CodeImage>;
  readCodeImage(input:{projectId:string;image:CodeImage}):Promise<string>;
+ readPromptShelf(input:PromptShelfOwner):Promise<PromptShelfResult>;
+ transferCodeDraft(input:PromptShelfOwner&{targetTaskId:string;expected:CodeDraft}):Promise<PromptShelfResult>;
  listSavedPrompts(input:PromptShelfOwner):Promise<SavedPrompt[]>;
  parkCodeDraft(input:PromptShelfOwner&{expected:CodeDraft}):Promise<PromptShelfResult>;
  restoreSavedPrompt(input:PromptShelfOwner&{id:string;expected:CodeDraft}):Promise<PromptShelfResult>;

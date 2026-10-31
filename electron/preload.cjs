@@ -96,6 +96,8 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   confirmConversationImport: input => ipcRenderer.invoke('musebench:conversation-import',{...input,type:'confirm'}),
   discardConversationImport: token => ipcRenderer.invoke('musebench:conversation-import',{type:'discard',token}),
   removeImportedConversation: id => ipcRenderer.invoke('musebench:conversation-import',{type:'remove',id}),
+  readPromptShelf: input => ipcRenderer.invoke('musebench:prompt-shelf-read',input),
+  transferCodeDraft: input => ipcRenderer.invoke('musebench:code-draft-transfer',input),
   listSavedPrompts: input => ipcRenderer.invoke('musebench:prompt-shelf-list',input),
   parkCodeDraft: input => ipcRenderer.invoke('musebench:prompt-shelf-park',input),
   restoreSavedPrompt: input => ipcRenderer.invoke('musebench:prompt-shelf-restore',input),
