@@ -31,5 +31,5 @@ test('duplex owner EOF kills the real child and grandchild before any replacemen
  const owner=spawn(process.execPath,['--input-type=module','-e',script],{stdio:'ignore',windowsHide:true});let records=[];
  try{for(let i=0;i<100;i++){try{records=(await readFile(log,'utf8')).trim().split('\n').map(JSON.parse);}catch{}if(records.some(r=>r.kind==='grandchild'))break;await new Promise(resolve=>setTimeout(resolve,20));}assert.equal(records.filter(r=>r.kind==='grandchild').length,1);owner.kill('SIGKILL');
  for(let i=0;i<150;i++){if(records.every(row=>{try{process.kill(row.pid,0);return false;}catch{return true;}}))break;await new Promise(resolve=>setTimeout(resolve,20));}for(const row of records)assert.throws(()=>process.kill(row.pid,0));
- }finally{owner.kill();for(const row of records){try{process.kill(row.pid,'SIGKILL');}catch{}}await rm(root,{recursive:true,force:true});}
+ }finally{owner.kill();for(const row of records){try{process.kill(row.pid,'SIGKILL');}catch{}}await rm(root,{recursive:true,force:true,maxRetries:5,retryDelay:100});}
 });

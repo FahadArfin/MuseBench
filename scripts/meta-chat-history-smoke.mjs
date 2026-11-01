@@ -77,7 +77,7 @@ try{
  pass('Local pin controls persist a chat under its confirmed account without disturbing the original draft');
  await pinned.getByRole('button',{name:'Unpin Tea notes in MuseBench',exact:true}).click();
  await until(async()=>!(await state()).metaChats.items.find(row=>row.title==='Tea notes')?.localPinned,'local unpin saved');
- assert.equal(await pinned.getByRole('button',{name:'Tea notes',exact:true}).count(),0);
+ await pinned.getByRole('button',{name:'Tea notes',exact:true}).waitFor({state:'detached'});
  await recents.getByRole('button',{name:'Pin Tea notes in MuseBench',exact:true}).click();
  await until(async()=>(await state()).metaChats.items.find(row=>row.title==='Tea notes')?.localPinned,'pin restored for isolation check');
  await page.screenshot({path:path.join(output,'sidebar.png')});
@@ -85,7 +85,7 @@ try{
  await app.evaluate(()=>{globalThis.metaHistoryFixture.hideTea=true;});
  await page.evaluate(()=>window.musebench.personal({type:'metaChats',action:'refresh'}));
  assert.equal((await state()).metaChats.items.find(row=>row.title==='Tea notes')?.recent,false);
- assert.equal(await recents.getByRole('button',{name:'Tea notes',exact:true}).count(),0);
+ await recents.getByRole('button',{name:'Tea notes',exact:true}).waitFor({state:'detached'});
  await pinned.getByRole('button',{name:'Tea notes',exact:true}).click();
  await until(()=>app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(window=>!window.getParentWindow()).contentView.children.some(view=>view.webContents&&view.getVisible()&&view.webContents.getURL()==='https://www.meta.ai/conversation/tea')),'saved pin opens after leaving recents');
  pass('Saved pins remain visible and open their validated conversation after leaving provider Recents');

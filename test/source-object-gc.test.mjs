@@ -109,7 +109,9 @@ test('restart retains durable evidence and reclaims abandoned object and capture
 
 test('GC never unlinks hard links, directories or their contents',async t=>{
  const f=await fixture(t);await mkdir(f.directory);const outside=path.join(f.base,'outside');await writeFile(outside,'outside evidence');const id=digest('outside evidence');await link(outside,path.join(f.directory,id));const child=path.join(f.directory,digest('directory'));await mkdir(child);await writeFile(path.join(child,'nested'),'keep');f.advance();
- const result=await collect(f);assert.equal(result.deleted,0);assert.ok(result.unsafe>=2);assert.equal(await readFile(outside,'utf8'),'outside evidence');assert.equal(await readFile(path.join(f.directory,id),'utf8'),'outside evidence');assert.equal(await readFile(path.join(child,'nested'),'utf8'),'keep');
+ let unsafe=0,done=false;
+ for(let slice=0;slice<16&&!done;slice++){const result=await collect(f,[],{maxEntries:1});assert.equal(result.deleted,0);unsafe+=result.unsafe;done=result.done;}
+ assert.equal(done,true,'Bounded passes must finish inspecting the fixture');assert.ok(unsafe>=2);assert.equal(await readFile(outside,'utf8'),'outside evidence');assert.equal(await readFile(path.join(f.directory,id),'utf8'),'outside evidence');assert.equal(await readFile(path.join(child,'nested'),'utf8'),'keep');
 });
 
 test('GC never follows object symbolic links',async t=>{
