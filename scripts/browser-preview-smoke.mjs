@@ -56,6 +56,7 @@ try {
  await page.getByRole('button',{name:'Profile menu',exact:true}).click();await page.getByRole('menu',{name:'Your profile',exact:true}).getByText('Alex Morgan',{exact:true}).waitFor();await page.keyboard.press('Escape');await page.keyboard.press('Control+b');
  await page.screenshot({path:'artifacts/browser-preview/code.png'});
  const queued=page.getByRole('region',{name:'Queued prompts'}),composer=page.getByRole('textbox',{name:'Message Muse',exact:true});
+ const editQueued=async index=>{await queued.getByRole('button',{name:`More actions for queued prompt ${index}`,exact:true}).click();await page.getByRole('menuitem',{name:`Edit queued prompt ${index}`,exact:true}).click();};
  for(const text of ['Polish the toolbar','Check keyboard navigation','Review the mobile layout']){await composer.fill(text);await composer.press('Alt+Enter');await composer.waitFor();assert.equal(await composer.inputValue(),'');}
  assert.equal(await queued.locator('li').count(),3);
  assert.equal(await queued.locator('header').count(),0);assert.equal(await queued.getByRole('button',{name:'Run queue',exact:true}).count(),1);
@@ -67,8 +68,18 @@ try {
  assert.deepEqual(await queued.locator('.queued-text').allTextContents(),['Polish the toolbar','Review the mobile layout','Check keyboard navigation']);
  await page.screenshot({path:'artifacts/browser-preview/prompt-queue.png'});
  await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1));await page.screenshot({path:'artifacts/browser-preview/prompt-queue-narrow.png'});await page.setViewportSize({width:1440,height:960});
- await composer.fill('Keep my current draft');await queued.getByRole('button',{name:'Edit queued prompt 2',exact:true}).click();const queueEditor=queued.getByRole('textbox',{name:'Edit queued message',exact:true});assert.equal(await queueEditor.inputValue(),'Review the mobile layout');assert.equal(await composer.inputValue(),'Keep my current draft');assert.equal(await queued.locator('li').count(),3);await queueEditor.fill('Review the tablet layout');await queued.getByRole('button',{name:'Save',exact:true}).click();assert.equal(await composer.inputValue(),'Keep my current draft');assert.match((await queued.locator('.queued-text').allTextContents())[1],/tablet/);
- await queued.getByRole('button',{name:'Edit queued prompt 2',exact:true}).click();await queueEditor.fill('Discard this edit');await queueEditor.press('Escape');assert.match((await queued.locator('.queued-text').allTextContents())[1],/tablet/);await queued.getByRole('button',{name:'Send queued prompt 2 now',exact:true}).click();assert.equal(await queued.locator('li').count(),2);assert.equal(await composer.inputValue(),'Keep my current draft');await composer.fill('');
+ await composer.fill('Keep my current draft');await editQueued(2);const queueEditor=queued.getByRole('textbox',{name:'Edit queued message',exact:true});assert.equal(await queueEditor.inputValue(),'Review the mobile layout');assert.equal(await composer.inputValue(),'Keep my current draft');assert.equal(await queued.locator('li').count(),3);await queueEditor.fill('Review the tablet layout');await queued.getByRole('button',{name:'Save',exact:true}).click();assert.equal(await composer.inputValue(),'Keep my current draft');assert.match((await queued.locator('.queued-text').allTextContents())[1],/tablet/);
+ await editQueued(2);await queueEditor.fill('Discard this edit');await queueEditor.press('Escape');assert.match((await queued.locator('.queued-text').allTextContents())[1],/tablet/);await queued.getByRole('button',{name:'Send queued prompt 2 now',exact:true}).click();assert.equal(await queued.locator('li').count(),2);assert.equal(await composer.inputValue(),'Keep my current draft');await composer.fill('');
+ const queueParent=await page.evaluate(()=>window.musebench.getState());
+ await composer.fill('Preserve the parent draft');await queued.getByRole('button',{name:'More actions for queued prompt 1',exact:true}).click();await page.getByRole('menuitem',{name:'Open in side chat',exact:true}).click();
+ await page.waitForFunction(id=>window.musebench.getState().then(s=>s.task.id!==id),queueParent.task.id);
+ await page.waitForFunction(()=>document.querySelector('[aria-label="Message Muse"]')?.value==='Polish the toolbar');
+ const queueSide=await page.evaluate(()=>window.musebench.getState());assert.equal(queueSide.task.chatRelation.kind,'side');assert.equal(queueSide.task.messages.filter(m=>m.role!=='system').length,0);
+ await page.evaluate(id=>window.musebench.dispatch({type:'selectTask',id}),queueParent.task.id);await page.waitForFunction(()=>document.querySelector('[aria-label="Message Muse"]')?.value==='Preserve the parent draft');
+ assert.equal(await queued.locator('li').count(),1);await queued.getByRole('button',{name:'More actions for queued prompt 1',exact:true}).click();await page.getByRole('menuitem',{name:'Turn off queuing',exact:true}).click();
+ await page.waitForFunction(()=>window.musebench.getState().then(s=>s.task.queueEnabled===false&&s.task.queuePaused===true));assert.equal(await page.getByRole('button',{name:'Queue message',exact:true}).count(),0);assert.equal(await queued.locator('li').count(),1);
+ await composer.fill('Send normally with queuing turned off');await composer.press('Enter');await page.getByText('Send normally with queuing turned off',{exact:true}).waitFor();assert.equal(await queued.locator('li').count(),1);
+ await page.getByRole('button',{name:'Add to chat',exact:true}).click();await page.getByRole('button',{name:'Turn on queuing',exact:true}).click();await page.getByRole('button',{name:'Queue message',exact:true}).waitFor();
  while(await queued.count())await queued.getByRole('button',{name:'Remove queued prompt 1',exact:true}).click();
  await page.reload();await page.getByRole('button',{name:'Muse Code',exact:true}).click();await page.getByRole('textbox',{name:'Message Muse',exact:true}).waitFor();
 
@@ -77,7 +88,7 @@ try {
  await page.getByRole('button',{name:'Remove screen.png',exact:true}).waitFor();
  await composer.fill('Review this screenshot');await composer.press('Alt+Enter');
  await page.getByText('Review this screenshot · 1 screenshot',{exact:true}).waitFor();
- await queued.getByRole('button',{name:'Edit queued prompt 1',exact:true}).click();
+ await editQueued(1);
  await queued.getByText('0 files · 1 screenshots · Draft unchanged',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Remove screen.png',exact:true}).count(),0);assert.equal(await composer.inputValue(),'');
  await page.screenshot({path:'artifacts/browser-preview/screenshot-attachment.png'});
  await queueEditor.fill('Review the revised screenshot');await queued.getByRole('button',{name:'Save',exact:true}).click();assert.match(await queued.locator('.queued-text').innerText(),/1 screenshot/);await queued.getByRole('button',{name:'Remove queued prompt 1',exact:true}).click();

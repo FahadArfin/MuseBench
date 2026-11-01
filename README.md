@@ -26,6 +26,8 @@ npm.cmd start
 
 For development: `npm.cmd run dev`. To produce a Windows application directory: `npm.cmd run package`.
 
+For authorized Windows releases, use the [release procedure](docs/RELEASING.md), including `npm.cmd run release:preflight` before publication.
+
 ## Coding workspace
 
 The interface follows the supplied Codex and Claude desktop references: project overviews, nested saved chats, a conversation with Markdown/code blocks, a bottom composer, and an optional resizable Review panel. The research and evidence behind the design are in [FRONTEND-RESEARCH.md](docs/FRONTEND-RESEARCH.md).

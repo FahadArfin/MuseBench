@@ -209,3 +209,27 @@ final result: passed
 Replaced service launcher cards with the user's eight-row Apps list, inside the existing Settings shell. Source and implementation were inspected together; compact row spacing, aligned Connect actions, solid reading surface and narrow layout passed. Bundled Google/Outlook icons retain source provenance; remaining services use distinct library glyphs. Browser and Electron checks cover all app routes and honest unavailable/connected states. Two provider-page adapter review findings were corrected and independently rechecked. Evidence and comparison details: docs/validation/2026-10-31-settings-connected-apps.md. No provider authorization was granted during verification.
 
 final result: passed
+
+
+## 2026-11-01 Compact Code prompt queue
+
+Source: user-supplied codex-clipboard-3a6802d1-8f7f-44ae-8c62-70f4c975aab1.png (837 x 131). Compared the source and the focused implementation capture together in output/playwright/queue-layout/comparison.png. The comparison preserves CSS-pixel density; the reference queue is approximately 710px wide and the implementation queue 720px. Existing MuseBench composer content and height remain outside the visual change.
+
+The queue uses compact single-line rows, ellipsis for long prompts, a muted inset surface, direct Send/delete actions and a three-dot Edit message menu. The user's earlier play/pause requirement is retained inline. Send keeps its existing behavior and label instead of claiming unsupported live steering.
+
+Initial finding: the existing context-history chip separated the queue from the input. Moved the shared queue inside the composer shell, below context/recovery notices. Recaptured and compared the revised queue attached directly above the input; no unresolved P0/P1/P2 findings remain in scope.
+
+Verified in the in-app browser: keyboard menu opening, Escape restores trigger focus, queued edit/save preserves the main draft, keyboard reordering, deletion and sending. A 390px iframe of the real preview confirms the row and portaled menu fit. Evidence: output/playwright/queue-layout/desktop.png, queue-preview.png and narrow-menu.png. Full browser preview smoke passed (artifacts/queue-layout-browser-smoke.log); typecheck passed. Both app surfaces consume this shared component; the installed desktop was not restarted. No live provider requests were made.
+
+final result: passed
+
+
+## 2026-11-01 Queue overflow actions
+
+The queue menu now contains Edit message, Open in side chat, and Turn off queuing, matching the requested option order and existing compact menu styling. Arrow keys and Home/End navigate all enabled items; Escape returns focus to the trigger. Visual evidence: output/playwright/queue-menu/three-options.png and menu-preview.png.
+
+Open in side chat transfers the exact queued request into an unsent draft with its files, images, conversation mode and model options. The source queue is held; no model request is started. Stale, unknown-delivery and workflow/review-bound prompts cannot bypass their original guards. Turning off queuing is saved per chat, pauses existing requests without clearing them, and prevents new queue additions. Normal Send/Steer remains available when supported. Queuing can be enabled again from the queue menu or Add to chat.
+
+Verification: 43 controller/chat-relation tests passed (artifacts/queue-menu-green.log), followed by 4 focused checks for plan-mode transfer and unknown-delivery protection (artifacts/queue-menu-additional.log). Browser smoke covers the actual menu actions, parent draft retention, side-chat draft and queue off/on flow (artifacts/queue-menu-browser.log). Typecheck and diff checks passed. Storage-write failure preserves the original queued work; a working parent continues when a side draft is opened. Only offline fixtures were used; no installed app restart, publish or real provider request occurred.
+
+final result: passed

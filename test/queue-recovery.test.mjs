@@ -19,6 +19,44 @@ async function fixture(t){
 }
 const bound=(f,item)=>({taskId:f.binding.taskId,id:item.id,expectedRevision:item.revision??0});
 
+test('turning off queuing preserves pending work across restart and rejects new queued input',async t=>{
+ const f=await fixture(t),item=await f.add(),draft=f.c.getState().drafts[f.key];
+ let s=await f.act({type:'setQueuing',taskId:f.binding.taskId,enabled:false});
+ assert.equal(s.task.queueEnabled,false);assert.equal(s.task.queuePaused,true);assert.equal(s.task.queueHold,true);
+ assert.deepEqual(s.task.promptQueue,[item]);assert.deepEqual(s.drafts[f.key],draft);
+ assert.match((await f.c.dispatch({type:'queueMessage',text:'Do not queue this'})).error,/queuing.*off/i);
+ await f.reopen();s=f.c.getState();assert.equal(s.task.queueEnabled,false);assert.deepEqual(s.task.promptQueue,[item]);
+ assert.ok((await f.c.dispatch({type:'setQueuing',taskId:'another-chat',enabled:true})).error);
+ await f.act({type:'setQueuing',taskId:f.binding.taskId,enabled:true});await f.add('Queue again');
+ assert.equal(f.c.getState().task.promptQueue.length,2);assert.equal(f.runtime.sent.length,0);
+});
+
+test('queued side chat moves the exact prompt into an unsent durable draft with its attachments and options',async t=>{
+ const f=await fixture(t),initial=await f.add('Side investigation');const item=(await f.act({type:'editQueued',...bound(f,initial),text:initial.text,mode:'plan'})).task.promptQueue[0],remaining=await f.add('Stay here'),draft=f.c.getState().drafts[f.key];
+ let s=await f.act({type:'openQueuedSideChat',...bound(f,item)});const child=s.task.id,key=f.binding.projectId+':'+child;
+ assert.notEqual(child,f.binding.taskId);assert.equal(s.task.chatRelation.kind,'side');assert.equal(s.task.messages.length,0);
+ assert.deepEqual(s.task.runOptions,item.runOptions);assert.equal(s.drafts[key].text,item.text);assert.equal(s.drafts[key].mode,item.mode);
+ assert.deepEqual(s.drafts[key].files,item.files);assert.deepEqual(s.drafts[key].images,item.images);assert.deepEqual(s.drafts[f.key],draft);
+ await f.act({type:'selectTask',id:f.binding.taskId});s=f.c.getState();assert.deepEqual(s.task.promptQueue,[remaining]);assert.equal(s.task.queuePaused,true);assert.equal(s.task.queueHold,true);
+ await f.reopen();s=await f.act({type:'selectTask',id:child});assert.equal(s.drafts[key].text,item.text);assert.equal(f.runtime.sent.length,0);
+});
+
+test('stale queued side-chat actions and forged queue settings are rejected without creating chats',async t=>{
+ const f=await fixture(t),item=await f.add(),before=f.c.getState();
+ await f.act({type:'editQueued',...bound(f,item),text:'Changed after opening the menu',mode:'plan'});
+ const s=await f.c.dispatch({type:'openQueuedSideChat',...bound(f,item)});assert.match(s.error,/changed/i);assert.equal(s.task.id,before.task.id);assert.equal(s.tasks.length,before.tasks.length);
+ for(const action of [{type:'openQueuedSideChat',...bound(f,item),text:'forged replacement'},{type:'setQueuing',taskId:f.binding.taskId,enabled:'false'},{type:'setQueuing',taskId:f.binding.taskId,enabled:false,extra:true}])assert.throws(()=>validateAction(action));
+});
+
+test('a failed side-chat draft write leaves the original queued prompt and composer durable',async t=>{
+ const f=await fixture(t),item=await f.add(),draft=f.c.getState().drafts[f.key];
+ const db=new DatabaseSync(path.join(f.dataDir,'musebench.sqlite'));
+ try{db.exec("CREATE TRIGGER reject_side_draft BEFORE INSERT ON code_drafts BEGIN SELECT RAISE(FAIL,'fixture draft write failed'); END");}finally{db.close();}
+ const failed=await f.c.dispatch({type:'openQueuedSideChat',...bound(f,item)});assert.match(failed.error,/draft write failed/);
+ let s=await f.act({type:'selectTask',id:f.binding.taskId});assert.deepEqual(s.task.promptQueue,[item]);assert.deepEqual(s.drafts[f.key],draft);
+ await f.reopen();s=f.c.getState();assert.deepEqual(s.task.promptQueue,[item]);assert.deepEqual(s.drafts[f.key],draft);assert.equal(f.runtime.sent.length,0);
+});
+
 test('queue edit pauses delivery, preserves attachments/options and never replaces the composer draft',async t=>{
  const f=await fixture(t),item=await f.add(),draft=f.c.getState().drafts[f.key];await f.act({type:'beginQueueEdit',...bound(f,item)});
  const s=await f.act({type:'editQueued',...bound(f,item),text:'Edited request',mode:'plan'}),changed=s.task.promptQueue[0];
@@ -38,7 +76,7 @@ test('known source rejection leaves request ready and preserves the unrelated dr
 });
 test('unknown dispatch cannot be replayed by edit, Send now, resume or restart',async t=>{
  const f=await fixture(t),item=await f.add(),draft=f.c.getState().drafts[f.key];f.runtime.fail=true;let s=await f.c.dispatch({type:'sendQueued',...bound(f,item)});assert.match(s.error,/lost/);assert.equal(s.task.promptQueue[0].delivery,'unknown');assert.deepEqual(s.drafts[f.key],draft);
- for(const action of [{type:'sendQueued',...bound(f,item)},{type:'editQueued',...bound(f,item),text:'retry',mode:'chat'},{type:'resumeQueue'}])assert.match((await f.c.dispatch(action)).error,/unknown/i);
+ for(const action of [{type:'openQueuedSideChat',...bound(f,item)},{type:'sendQueued',...bound(f,item)},{type:'editQueued',...bound(f,item),text:'retry',mode:'chat'},{type:'resumeQueue'}])assert.match((await f.c.dispatch(action)).error,/unknown/i);
  assert.equal(f.runtime.sent.length,1);await f.reopen();s=f.c.getState();assert.equal(s.task.promptQueue[0].delivery,'unknown');assert.deepEqual(s.drafts[f.key],draft);assert.match((await f.c.dispatch({type:'resumeQueue'})).error,/unknown/i);assert.equal(f.runtime.sent.length,1);
 });
 test('a persisted sending entry restores as unknown without automatic dispatch',async t=>{

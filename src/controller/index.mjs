@@ -39,7 +39,7 @@ import {restoreNativeSession,prepareNativeSession,settleNativeSession} from '../
 import {createWorktreeService} from './worktrees.mjs';
 import {createImageStore} from './code-images.mjs';
 import {imageReferences} from '../shared/code-images.mjs';
-import {moveQueuedPrompt,queuedPrompt,editQueuedPrompt} from '../shared/queued-prompts.mjs';
+import {moveQueuedPrompt,queuedPrompt,editQueuedPrompt,queuedSideChatPrompt} from '../shared/queued-prompts.mjs';
 import {planSidebarMove} from '../shared/sidebar-order.mjs';
 import {projectDetails} from '../shared/create-project.mjs';
 import {projectGit} from '../shared/project-git.mjs';
@@ -1246,6 +1246,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'deleteWorkflow':state.workflows=state.workflows.filter(w=>w.id!==action.id);break;
       case 'queueWorkflow':{
         const t=requireTask();if(t.id!==action.taskId)throw Error('The selected chat changed. Reopen Workflows.');if(t.archived||t.mode!=='muse')throw Error('Open an active Muse chat.');
+        if(t.queueEnabled===false)throw Error('Queuing is turned off for this chat. Turn it on before adding prompts.');
         if(typeof action.id!=='string'||!action.id||action.id.length>200)throw Error('Invalid workflow request.');
         const w=state.workflows.find(w=>w.id===action.workflowId);if(!w)throw Error('Workflow no longer exists.');
         const digest=hash(JSON.stringify({workflow:w,objective:action.objective})),receipt=t.workflowReceipts?.find(r=>r.id===action.id);
@@ -1259,6 +1260,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(typeof action.id!=='string'||!action.id||action.id.length>200)throw Error('Invalid handoff identity.');
         const target=contexts.get(action.targetTaskId)?.task??taskRecords.get(action.targetTaskId);
         if(!target||target.id===source.id||target.mode!=='muse')throw Error('Choose another Muse chat.');if(target.archived)throw Error('Restore the archived recipient first.');
+        if(target.queueEnabled===false)throw Error('Queuing is turned off for the recipient chat.');
         const files=fileReferences(action.files),digest=hash(JSON.stringify({source:source.id,target:target.id,text:action.text,files})),receipt=target.handoffReceipts?.find(r=>r.id===action.id);
         if(receipt){if(receipt.digest!==digest)throw Error('This handoff identity was already used for different context.');break;}
         if((target.promptQueue??[]).length>=5)throw Error('The recipient queue already holds five prompts.');
@@ -1269,6 +1271,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         saveRecord(target);break;
       }
       case 'queueMessage':{pauseGoalDriver(state.task?.goal?.driver,'Queued user input takes priority');
+        if(requireTask().queueEnabled===false)throw Error('Queuing is turned off for this chat. Send a message or turn queuing back on.');
         const t=requireTask();if(t.mode!=='muse'||t.archived)throw Error('Open an active Muse chat to queue a request.');if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
         if(!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid conversation mode.');if((t.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');const files=fileReferences(action.files),images=imageReferences(action.images);await selectedSources(files);await imageStore.resolve(t.projectId,images);
         const recentContext=stagedRecentContext(t,recentSessionId(t,context.runtime?.snapshot?.()));
@@ -1282,12 +1285,14 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'sendQueued':{const t=requireTask(),item=queuedPrompt(t,action);requireNavigationIdle();await deliverQueued(t,item,context);break;}
       case 'removeQueued':{const t=requireTask();if(action.taskId!==undefined)queuedPrompt(t,action,{allowUnknown:true});t.promptQueue=(t.promptQueue??[]).filter(q=>q.id!==action.id);break;}
       case 'pauseQueue':{const t=requireTask();t.queuePaused=true;t.queueHold=true;break;}
+      case 'setQueuing':{const t=requireTask();if(t.id!==action.taskId||t.archived||typeof action.enabled!=='boolean')throw Error('Open the original active chat to change queuing.');t.queueEnabled=action.enabled;if(!action.enabled){t.queuePaused=true;t.queueHold=true;}break;}
       case 'resumeQueue':{
         const t=requireTask();if(t.archived)throw Error('Restore this archived chat first.');const item=t.promptQueue?.[0];if(!item)break;queuedPrompt(t,{taskId:t.id,id:item.id,expectedRevision:item.revision??0});requireNavigationIdle();await deliverQueued(t,item,context,{runQueue:true});break;
       }
+      case 'openQueuedSideChat':
       case 'createSideChat':
       case 'forkTask':{
-        const side=action.type==='createSideChat',sourceId=action.taskId??(!side?state.task?.id:null);
+        const side=action.type!=='forkTask',queuedItem=action.type==='openQueuedSideChat'?queuedSideChatPrompt(requireTask(),action):null,sourceId=action.taskId??(!side?state.task?.id:null);
         if(typeof sourceId!=='string'||!sourceId||sourceId.length>200)throw Error('Choose an exact source chat.');
         const source=contexts.get(sourceId)?.task??taskRecords.get(sourceId),project=state.projects.find(p=>p.id===source?.projectId);
         if(!source||source.archived||!project)throw Error('The source chat is unavailable or archived.');
@@ -1296,6 +1301,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(!row||row.revision!==source.baselineRevision)throw Error('The source chat baseline is unavailable.');
         if(await canonicalRoot(project.root)!==project.root)throw Error('The source workspace changed. Reopen the project.');
         requireSwitchable();
+        if(queuedItem){await selectedSources(fileReferences(queuedItem.files),project);await imageStore.resolve(project.id,imageReferences(queuedItem.images));source.queuePaused=true;source.queueHold=true;}
         const original=structuredClone(source),parent=side?mainChat(original,[...taskRecords.values()]):original;
         let selected,index=original.messages.length,cut;
         if(!side&&action.messageId!==undefined){index=original.messages.findIndex(m=>m.id===action.messageId&&['user','assistant'].includes(m.role));if(index<0)throw Error('Choose a source prompt or response to fork from.');selected=original.messages[index];if(selected.role==='assistant')index++;}
@@ -1322,15 +1328,21 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           if(forkReceipt.status!=='released'||!forkReceipt.childSessionId)throw Error('The native fork has no confirmed independent release.');
         }
         if(state.activeProject?.id!==project.id)await selectProject(project,null);
-        await startTask(side?'Side chat':original.request,original.mode==='demo'?'manual':original.mode,original.runOptions);
+        await startTask(side?'Side chat':original.request,original.mode==='demo'?'manual':original.mode,queuedItem?.runOptions??original.runOptions);
         const child=state.task;child.requestOrigin=side?'placeholder':!native&&original.mode!=='muse'&&resolveRequestOrigin(original)==='initial'?'initial':'history';child.title=`${side?'Side chat':'Fork'} - ${original.title}`.slice(0,100);child.chatRelation={kind:side?'side':'fork',parentTaskId:parent.id,parentTitle:parent.title,context:side?'fresh':native?'native':'retained',createdAt:now(),...(!side&&selected?{messageId:selected.id}:{})};
-        if(side){child.messages=[];if(action.text)state.drafts[draftKey(child.projectId,child.id)]={text:action.text,files:[],images:[],mode:'chat',updatedAt:now()};}
+        if(side){child.messages=[];if(queuedItem||action.text)state.drafts[draftKey(child.projectId,child.id)]={text:queuedItem?.text??action.text,files:queuedItem?.files??[],images:queuedItem?.images??[],mode:queuedItem?.mode??'chat',updatedAt:now()};}
         else{
           child.forkedFrom=original.id;
           child.messages=original.messages.slice(0,index).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,contextTruncated:m.contextTruncated===true,at:m.at,sources:m.sources,files:m.files,images:m.images,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));
           if(native){child.nativeSession={...original.nativeSession,id:forkReceipt.childSessionId,seeded:true,status:'ready'};child.forkReceipts=[forkReceipt];message('system','Native conversation fork. Its saved history resumes independently after normal connection and tool review.');}
           else message('system','Saved conversation context copied through the selected point. Current project files are unchanged.');
           if(selected?.role==='user')state.drafts[draftKey(child.projectId,child.id)]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:now()};
+        }
+        if(queuedItem){
+          const pending=source.promptQueue,key=draftKey(child.projectId,child.id);
+          db.exec('SAVEPOINT queued_side_chat');
+          try{source.promptQueue=pending.filter(item=>item.id!==queuedItem.id);saveRecord(source);persist();db.exec('RELEASE queued_side_chat');}
+          catch(error){db.exec('ROLLBACK TO queued_side_chat; RELEASE queued_side_chat');source.promptQueue=pending;taskRecords.set(source.id,structuredClone(source));delete state.drafts[key];invalidatePersistence();throw error;}
         }
         break;
       }
