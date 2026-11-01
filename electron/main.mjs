@@ -265,6 +265,7 @@ else {
     window.once('closed',()=>previewAnnotations.close());
     handler('musebench:code-context',input=>controller.inspectContext(input));
     handler('musebench:checkpoint',input=>controller.inspectCheckpoint(input));
+    handler('musebench:source-diff',input=>controller.inspectSourceDiff(input));
     handler('musebench:semantic-navigation',input=>controller.semanticNavigate(input));
     handler('musebench:captured-output',input=>controller.readCapturedOutput(input));
     handler('musebench:chat-history-find',input=>controller.findChatHistory(input));

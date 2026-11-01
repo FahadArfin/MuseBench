@@ -81,6 +81,7 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   commandInfo: type => ipcRenderer.invoke('musebench:command-info', type),
   inspectCodeContext: input => ipcRenderer.invoke('musebench:code-context',input),
   inspectCheckpoint: input => ipcRenderer.invoke('musebench:checkpoint',input),
+  inspectSourceDiff: input => ipcRenderer.invoke('musebench:source-diff',input),
   semanticNavigate: input => ipcRenderer.invoke('musebench:semantic-navigation',input),
   readCapturedOutput: input => ipcRenderer.invoke('musebench:captured-output',input),
   findChatHistory: input => ipcRenderer.invoke('musebench:chat-history-find',input),

@@ -6,7 +6,7 @@ const token=file=>hash(JSON.stringify([file.path,file.beforeHash,file.afterHash]
 const own=(files,name)=>Object.hasOwn(files??{},name)?files[name]:undefined;
 function baseline(snapshot){
  let bytes=0;const files=Object.create(null);
- for(const [name,file] of Object.entries(snapshot.files)){const size=Buffer.byteLength(file.text??''),keep=!file.binary&&size<=FILE_LIMIT&&bytes+size<=TEXT_LIMIT;if(keep)bytes+=size;files[name]={hash:file.hash,binary:!!file.binary,...(keep?{text:file.text??''}:{})};}
+ for(const [name,file] of Object.entries(snapshot.files)){const size=Buffer.byteLength(file.text??''),keep=!file.binary&&typeof file.text==='string'&&size<=FILE_LIMIT&&bytes+size<=TEXT_LIMIT;if(keep)bytes+=size;files[name]={hash:file.hash,binary:!!file.binary,...(keep?{text:file.text}:{})};}
  return files;
 }
 export function createRunChangeStore(db){
@@ -28,7 +28,7 @@ export function createRunChangeStore(db){
   finish(taskId,runId,snapshot,currentRoot){
    const saved=get(taskId,runId);if(saved?.status!=='pending')return;if(currentRoot!==saved.root){unavailable(taskId,runId,'The project folder changed before capture completed.');return;}
    const before=saved.baseline,after=snapshot.files,names=[...new Set([...Object.keys(before),...Object.keys(after)])].sort().filter(name=>own(before,name)?.hash!==own(after,name)?.hash);let bytes=0;
-   const files=names.slice(0,MAX_DIFFS).map(name=>{const a=own(before,name),b=own(after,name),binary=!!(a?.binary||b?.binary),size=Buffer.byteLength(a?.text??'')+Buffer.byteLength(b?.text??''),omitted=!binary&&(a&&a.text===undefined||b&&Buffer.byteLength(b.text??'')>FILE_LIMIT||size+bytes>TEXT_LIMIT);if(!omitted&&!binary)bytes+=size;const left=omitted||binary?'':a?.text??'',right=omitted||binary?'':b?.text??'',diff=computeFileDiff(left,right);return{path:name,status:!a?'added':!b?'deleted':'modified',beforeHash:a?.hash??null,afterHash:b?.hash??null,before:left,after:right,binary,omitted:!!omitted,additions:diff.additions,deletions:diff.deletions,approximate:diff.approximate};});
+   const files=names.slice(0,MAX_DIFFS).map(name=>{const a=own(before,name),b=own(after,name),binary=!!(a?.binary||b?.binary),size=Buffer.byteLength(a?.text??'')+Buffer.byteLength(b?.text??''),omitted=!binary&&(a&&a.text===undefined||b&&(typeof b.text!=='string'||Buffer.byteLength(b.text)>FILE_LIMIT)||size+bytes>TEXT_LIMIT);if(!omitted&&!binary)bytes+=size;const left=omitted||binary?'':a?.text??'',right=omitted||binary?'':b?.text??'',diff=computeFileDiff(left,right);return{path:name,status:!a?'added':!b?'deleted':'modified',beforeHash:a?.hash??null,afterHash:b?.hash??null,before:left,after:right,binary,omitted:!!omitted,additions:diff.additions,deletions:diff.deletions,approximate:diff.approximate};});
    const revision=hash(JSON.stringify(names.map(name=>[name,own(before,name)?.hash??null,own(after,name)?.hash??null])));put({taskId,runId,root:saved.root,status:'complete',createdAt:saved.createdAt,capturedAt:new Date().toISOString(),revision,files,omittedFiles:Math.max(0,names.length-MAX_DIFFS),reviewed:{}});
   },
   unavailable,read,

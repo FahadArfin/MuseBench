@@ -31,6 +31,8 @@
     "pretest": "node -e \"require('electron')\" && node scripts/build-native.mjs",
     "test": "node --test --test-concurrency=4 test/*.test.mjs reference/patchlight/adapter/test/*.test.mjs",
     "test:ui": "node scripts/smoke.mjs",
+    "test:source-diff": "node scripts/source-diff-smoke.mjs",
+    "test:large-repository": "node scripts/large-repository-smoke.mjs",
     "test:live": "node scripts/live-smoke.mjs",
     "package": "npm run build && electron-builder --win --dir",
     "doctor": "node scripts/doctor.mjs",

@@ -33,14 +33,21 @@ function browserStorage() {
 }
 
 export function readPreferences(storage = browserStorage()) {
-  try { return normalizePreferences(JSON.parse(storage?.getItem(PREFERENCES_KEY) ?? 'null')); }
+  try {
+    const saved = JSON.parse(storage?.getItem(PREFERENCES_KEY) ?? 'null');
+    const preferences = normalizePreferences(saved);
+    // Earlier releases persisted the old newline default. Upgrade it once;
+    // writes below mark subsequent explicit opt-outs as intentional.
+    if (saved?.enterToSendVersion !== 1) preferences.enterToSend = true;
+    return preferences;
+  }
   catch { return {...DEFAULT_PREFERENCES}; }
 }
 
 export function writePreferences(preferences, storage = browserStorage()) {
   try {
     if (!storage) return false;
-    storage.setItem(PREFERENCES_KEY,JSON.stringify(normalizePreferences(preferences)));
+    storage.setItem(PREFERENCES_KEY,JSON.stringify({...normalizePreferences(preferences),enterToSendVersion:1}));
     return true;
   } catch { return false; }
 }

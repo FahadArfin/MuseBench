@@ -59,3 +59,16 @@ test('storage failures leave preferences usable and theme follows system only wh
   assert.equal(resolveTheme('dark',false),'dark');
   assert.equal(resolveTheme('light',true),'light');
 });
+
+test('legacy Enter preference upgrades once and later explicit opt-outs survive reload', () => {
+  let saved=JSON.stringify({theme:'light',enterToSend:false,defaultApproval:'auto'});
+  const storage={getItem:()=>saved,setItem:(_key,value)=>{saved=value;}};
+  const upgraded=readPreferences(storage);
+  assert.equal(upgraded.enterToSend,true);
+  assert.equal(upgraded.theme,'light');
+  assert.equal(upgraded.defaultApproval,'auto');
+  writePreferences(upgraded,storage);
+  assert.equal(readPreferences(storage).enterToSend,true);
+  writePreferences({...upgraded,enterToSend:false},storage);
+  assert.equal(readPreferences(storage).enterToSend,false);
+});

@@ -13,6 +13,7 @@ export const CI_SUITES={
  extensions:npm('catalog-preview','catalog-desktop','plugin-tools','integration-panels','billing-preview','billing-desktop','conversation-import','code-schedules'),
  chats:npm('renderer-state','code-chat-relations','app-instructions','context-history','recent-context','chat-organization','code-responsiveness','transcript-render','chat-navigation','transcript-position','chat-history-find','prompt-shelf','image-annotations','chat-menu-tools','workspace-focus','profile-identity','session-recovery','update-details'),
  native:[
+  ...npm('source-diff'),
   ['node','scripts/discovery-oauth-smoke.mjs'],['node','scripts/discovery-oauth-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-recovery-smoke.mjs'],['node','scripts/discovery-oauth-recovery-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-protection.mjs','--local-fixture'],
   ['node','scripts/mobile-settings-smoke.mjs'],['node','scripts/native-control-smoke.mjs'],['node','scripts/native-navigation-smoke.mjs'],
   ['node','scripts/session-mcp-smoke.mjs'],['node','scripts/session-mcp-smoke.mjs','--desktop'],

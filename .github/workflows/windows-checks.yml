@@ -96,3 +96,4 @@ jobs:
             artifacts/mobile-settings/**/report.json
             artifacts/meta-settings/**/report.json
             artifacts/settings-connections/**/report.json
+            artifacts/source-diff/**/report.json

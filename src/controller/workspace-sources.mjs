@@ -13,7 +13,7 @@ export async function workspaceSourcePaths(root,excludedPatterns=[]){
  env.GIT_OPTIONAL_LOCKS='0';
  const flags=excludedPatterns.map(pattern=>'--exclude='+pattern.replace(/[a-z]/gi,letter=>`[${letter.toLowerCase()}${letter.toUpperCase()}]`));
  const pathspecs=excludedPatterns.flatMap(pattern=>[`:(exclude,icase,glob)**/${pattern}`,`:(exclude,icase,glob)**/${pattern}/**`]);
- const options={env,windowsHide:true,timeout:5000,maxBuffer:2*1024*1024};
+ const options={env,windowsHide:true,timeout:30000,maxBuffer:32*1024*1024};
  let stdout,caseInsensitive;
  try{
   const [listing,casing]=await Promise.all([

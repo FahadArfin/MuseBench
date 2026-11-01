@@ -43,7 +43,12 @@ export function Modal({ title, children, close, className = '' }: { title: strin
   return <div className="modal-scrim" onMouseDown={event => { if (event.target === event.currentTarget) close(); }}><div ref={ref} role="dialog" aria-modal="true" aria-label={title} tabIndex={-1} className={`modal ${className}`}><div className="modal-heading"><h2>{title}</h2><button className="icon-button" aria-label="Close dialog" onClick={close}><X size={18} /></button></div>{children}</div></div>;
 }
 
-export function Diff({ file, taskId }: { file: FileChange; taskId: string }) {
+export function Diff({ file:source, taskId }: { file: FileChange; taskId: string }) {
+  const identity=JSON.stringify([taskId,source.path,source.revision,source.beforeHash,source.afterHash,source.checkpointId]),owner=useRef(identity);owner.current=identity;
+  const [loaded,setLoaded]=useState<{identity:string;file:FileChange}|null>(null),[loading,setLoading]=useState(false);
+  const file=loaded?.identity===identity?loaded.file:source;
+  useEffect(()=>{setLoading(false);setLoaded(null);},[identity]);
+  useEffect(()=>()=>{owner.current='';},[]);
   const [collapsed, setCollapsed] = useState(false);
   const contentId = useId();
   const [opening, setOpening] = useState(false);
@@ -64,19 +69,20 @@ export function Diff({ file, taskId }: { file: FileChange; taskId: string }) {
     finally { setOpening(false); }
   };
   const unavailable = file.status === 'deleted';
+  const load=async()=>{setLoading(true);setError('');try{if(!window.musebench||!source.revision)throw Error('Open this comparison in your editor.');const result=await window.musebench.inspectSourceDiff({taskId,path:source.path,revision:source.revision,beforeHash:source.beforeHash??null,afterHash:source.afterHash??null,checkpointId:source.checkpointId});if(owner.current===identity)setLoaded({identity,file:result});}catch(error){if(owner.current===identity)setError(error instanceof Error?error.message:String(error));}finally{if(owner.current===identity)setLoading(false);}};
   return <section className="diff" data-file-path={file.path} aria-label={`Changes in ${file.path}`}>
     <div className="diff-toolbar">
       <button className="diff-file-toggle" aria-expanded={!collapsed} aria-controls={contentId} onClick={() => setCollapsed(!collapsed)} title={file.path}>
         <ChevronRight className="diff-disclosure" size={13}/><FileCode2 size={14}/><span>{file.path}</span>
       </button>
       <div className="diff-file-actions">
-        {file.binary ? <span className="diff-file-kind">Binary</span> : <span className="diff-counts"><span className="additions">{file.approximate?'~':''}+{file.additions}</span><span className="deletions">−{file.deletions}</span></span>}
+        {file.binary||file.omitted ? <span className="diff-file-kind">{file.binary?'Binary':'On demand'}</span> : <span className="diff-counts"><span className="additions">{file.approximate?'~':''}+{file.additions}</span><span className="deletions">−{file.deletions}</span></span>}
         <button className="icon-button" disabled={opening || unavailable} aria-label={`Open ${file.path} in editor`} title={unavailable?'Deleted file': 'Open in preferred editor (VS Code by default)'} onClick={() => void open('preferred')}><ExternalLink size={14}/></button>
         {!unavailable && <details className="diff-editor-menu" ref={menu} onBlur={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node))event.currentTarget.open=false;}}><summary className="icon-button" aria-label={`Choose editor for ${file.path}`} title="Choose editor"><ChevronDown size={12}/></summary><div><button disabled={opening} onClick={()=>void open('vscode')}>Open in VS Code</button><button disabled={opening} onClick={()=>void open('choose')}>Choose preferred editor…</button></div></details>}
       </div>
     </div>
     {error && <p className="diff-open-error" role="alert">{error}</p>}
-    <MotionDisclosure id={contentId} open={!collapsed} unmountWhenClosed>{()=>file.binary ? <p className="empty-copy">Binary file. Text comparison is unavailable.</p> : <>
+    <MotionDisclosure id={contentId} open={!collapsed} unmountWhenClosed>{()=>file.binary ? <p className="empty-copy">Binary file. Text comparison is unavailable.</p> : file.omitted?<div className="empty-copy"><p>Content is stored on disk. Comparisons load up to 2 MiB per side; larger files can be opened in your editor.</p>{source.revision&&<button className="button" disabled={loading} onClick={()=>void load()}>{loading?'Loading comparison…':'Load comparison'}</button>}</div>:<>
       {(comparison.approximate || comparison.truncated || comparison.rows.length > 3000) && <p className="diff-notice">{comparison.approximate?'Large comparison: line counts are approximate. ':''}{comparison.truncated||comparison.rows.length>3000?'Showing the first 3,000 rows. Open in your editor for the full contents.':''}</p>}
       <div className="diff-code" tabIndex={0} aria-label={`File diff for ${file.path}`}>{comparison.rows.slice(0,3000).map((row,i)=><div className={`code-line ${row.kind}`} key={i}><span className="line-number">{row.oldLine ?? ''}</span><span className="line-number">{row.newLine ?? ''}</span><span className="line-sign">{row.kind==='added'?'+':row.kind==='removed'?'−':' '}</span><code>{row.text.replace(/\r$/,'')||' '}{row.noNewline&&<small className="no-newline"> No newline at end of file</small>}</code></div>)}</div>
     </>}</MotionDisclosure>

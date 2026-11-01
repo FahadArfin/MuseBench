@@ -8,7 +8,8 @@ export interface RuntimeState {nativeRetry?:import('./native-retry.mjs').NativeR
 export type Stage = 'plan' | 'changes' | 'preview' | 'checks' | 'review';
 export type CheckStatus = 'not-run' | 'running' | 'passed' | 'failed' | 'cancelled' | 'stale';
 export interface Project {lessons?:import('./project-lessons.mjs').ProjectLesson[];validationScripts?:string[];worktree?:{id:string;sourceRoot:string;branch:string;base:string}; repositoryUrl?:string|null; branch?:string|null; id: string; name: string; root: string; demo: boolean; scripts: Record<string,string>; instructions?:string; }
-export interface FileChange { path: string; status: 'added' | 'modified' | 'deleted'; additions: number; deletions: number; before: string; after: string; binary?: boolean; approximate?: boolean; }
+export interface FileChange { path: string; status: 'added' | 'modified' | 'deleted'; additions: number; deletions: number; before: string; after: string; binary?: boolean; approximate?: boolean; omitted?:boolean; beforeHash?:string|null; afterHash?:string|null; revision?:string; checkpointId?:string; }
+export interface MuseBenchBridge {inspectSourceDiff(input:{taskId:string;path:string;revision:string;beforeHash:string|null;afterHash:string|null;checkpointId?:string}):Promise<FileChange>;}
 export type WorkStatus = 'queued'|'working'|'waiting'|'completed'|'failed'|'cancelled'|'interrupted';
 export interface ActivityItem {workspaceBatch?:import('./workspace-tool-activity.mjs').WorkspaceBatchSummary;workflow?:{parentRunId:string;parallelLimit:number};id:string;kind:'model'|'tool'|'agent';title:string;tool:string;status:WorkStatus;detail:string;output:string;truncated?:boolean;agentId?:string;}
 export interface WorkRun {id:string;promptId:string;prompt:string;runId:string|null;ownedRunIds?:string[];status:WorkStatus;startedAt:string;endedAt?:string;reason?:string;activities:ActivityItem[];truncated?:boolean;}

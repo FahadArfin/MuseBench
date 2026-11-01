@@ -194,11 +194,12 @@ export function ChangedFiles({ files, onOpenFile, onOpenAll }: { files: FileChan
   const headingId = useId(), listId = useId();
   const additions = files.reduce((sum, file) => sum + (file.binary ? 0 : safeCount(file.additions)), 0);
   const deletions = files.reduce((sum, file) => sum + (file.binary ? 0 : safeCount(file.deletions)), 0);
-  const approximate = files.some(file => file.approximate);
+  const approximate = files.some(file => file.approximate&&!file.omitted);
   const binary = files.some(file => file.binary);
+  const deferred = files.some(file => file.omitted);
   const renderFile=(file:FileChange)=><button type="button" className="changed-file-row" key={file.path} onClick={() => onOpenFile(file.path)} title={`View ${file.path} · ${file.status}`}>
         <span className="changed-file-path">{file.path}</span>
-        {file.binary ? <span className="changed-file-binary">Binary</span> : <span className="changed-file-counts" aria-label={`${file.approximate ? 'Approximately ' : ''}${countLabel(safeCount(file.additions))} additions, ${countLabel(safeCount(file.deletions))} deletions`}>
+        {file.binary||file.omitted ? <span className="changed-file-binary">{file.binary?'Binary':'On demand'}</span> : <span className="changed-file-counts" aria-label={`${file.approximate ? 'Approximately ' : ''}${countLabel(safeCount(file.additions))} additions, ${countLabel(safeCount(file.deletions))} deletions`}>
           {file.approximate && <span title="Estimated line counts">≈</span>}
           <span className="work-additions">+{countLabel(safeCount(file.additions))}</span><span className="work-deletions">−{countLabel(safeCount(file.deletions))}</span>
         </span>}
@@ -209,10 +210,10 @@ export function ChangedFiles({ files, onOpenFile, onOpenAll }: { files: FileChan
       <span className="changed-files-icon"><Files size={16} aria-hidden="true" /></span>
       <div className="changed-files-summary">
         <strong id={headingId} title="Changes since this chat started">Edited {files.length} {files.length === 1 ? 'file' : 'files'}</strong>
-        <span className="changed-files-totals" aria-label={`${approximate ? 'Approximately ' : ''}${countLabel(additions)} additions, ${countLabel(deletions)} deletions`}>
+        {deferred?<span className="changed-files-totals">Comparisons on demand</span>:<span className="changed-files-totals" aria-label={`${approximate ? 'Approximately ' : ''}${countLabel(additions)} additions, ${countLabel(deletions)} deletions`}>
           {approximate && <span className="changed-files-approx" title="Estimated line counts">≈</span>}
           <span className="work-additions">+{countLabel(additions)}</span><span className="work-deletions">−{countLabel(deletions)}</span>
-        </span>
+        </span>}
       </div>
       <button type="button" className="changed-files-review" onClick={onOpenAll}>View changes</button>
     </div>

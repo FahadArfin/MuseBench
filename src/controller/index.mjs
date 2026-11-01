@@ -1,3 +1,4 @@
+import {createSourceSnapshots} from './source-snapshots.mjs';
 import {restoreChatRelation,mainChat,resolveRequestOrigin} from '../shared/chat-relations.mjs';
 import {mergeCompactionHistory,interruptCompactionHistory} from '../shared/compaction-history.mjs';
 import {restoreRecentContext,restoreRecentCapsule,prepareRecentContext,validateRecentContext,stagedRecentContext,recentSessionId,latestRecentCompaction,consumeRecentContext,restageRecentContext} from './recent-context.mjs';
@@ -54,7 +55,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 
-const MAX_FILE=2*1024*1024,MAX_TOTAL=24*1024*1024,MAX_FILES=4000,MAX_LOG=65536;
+const MAX_PACKAGE_BYTES=8*1024*1024,MAX_LOG=65536;
 const MAX_SHELL_HISTORY=512*1024;
 const EXCLUDED=new Set(['.git','.venv','venv','__pycache__','.pytest_cache','.mypy_cache','node_modules','dist','build','out','coverage','.next','.nuxt','.cache','.vite','.turbo','release','target','vendor','.ssh','.aws','.azure','.gnupg','.kube','.credentials','.secrets','secrets','credentials','.npmrc','.pypirc','.netrc','_netrc','.git-credentials','id_rsa','id_ed25519','service-account.json']);
 const excluded=name=>EXCLUDED.has(name.toLowerCase())||/^\.env/i.test(name)||/(?:^credentials(?:\.|$)|\.(?:pem|key|p12|pfx|keystore)$)/i.test(name);
@@ -120,38 +121,16 @@ async function safeFile(root,relative){
 }
 async function readSafe(root,relative){
   const handle=await fs.open(await safeFile(root,relative),FS.O_RDONLY|(FS.O_NOFOLLOW??0));
-  try{const stat=await handle.stat();if(!stat.isFile()||stat.size>MAX_FILE)throw Error(`Source file exceeds the 2 MiB limit: ${relative}`);await safeFile(root,relative);return await handle.readFile();}finally{await handle.close();}
+  try{const stat=await handle.stat();if(!stat.isFile()||stat.size>MAX_PACKAGE_BYTES)throw Error(`Project metadata file exceeds the 8 MiB limit: ${relative}`);await safeFile(root,relative);return await handle.readFile();}finally{await handle.close();}
 }
-async function snapshot(root){
-  const files=Object.create(null),sourcePaths=await workspaceSourcePaths(root,EXCLUDED_PATTERNS);let total=0,count=0;
-  const walk=async (relative,includeAll=!sourcePaths)=>{
-    const entries=await fs.readdir(path.join(root,relative),{withFileTypes:true});entries.sort((a,b)=>a.name.localeCompare(b.name,'en'));
-    for(const entry of entries){
-      if(excluded(entry.name))continue;
-      const name=relative?`${relative}/${entry.name}`:entry.name;
-      const sourceKey=sourcePaths?.caseInsensitive?name.toLowerCase():name;
-      if(!includeAll&&!sourcePaths.files.has(sourceKey)&&!sourcePaths.parents.has(sourceKey))continue;
-      if(entry.isSymbolicLink())throw Error(`Symbolic links are not allowed in source: ${name}`);
-      await safeFile(root,name);
-      // Git represents submodules and embedded untracked repositories as a single
-      // directory entry. Preserve their existing bounded filesystem inspection.
-      if(entry.isDirectory()){await walk(name,includeAll||sourcePaths.files.has(sourceKey));continue;}
-      if(!entry.isFile())throw Error(`Unsupported source type: ${name}`);
-      if(++count>MAX_FILES)throw Error('Project exceeds the 4,000 source-file limit.');
-      const bytes=await readSafe(root,name);total+=bytes.length;if(total>MAX_TOTAL)throw Error('Project source exceeds the 24 MiB snapshot limit.');
-      const binary=bytes.includes(0)||!Buffer.from(bytes.toString('utf8')).equals(bytes);
-      files[name]={hash:hash(bytes),text:binary?'':bytes.toString('utf8'),binary};
-    }
-  };
-  await walk('');return {revision:hash(Object.keys(files).sort().map(name=>`${name}\0${files[name].hash}\0`).join('')),files};
-}
+
 function changes(before,after,cache=new Map()){
   return [...new Set([...Object.keys(before),...Object.keys(after)])].sort().flatMap(name=>{
     const a=Object.hasOwn(before,name)?before[name]:undefined,b=Object.hasOwn(after,name)?after[name]:undefined;if(a?.hash===b?.hash)return [];
-    const binary=Boolean(a?.binary||b?.binary),key=`${a?.hash??''}:${b?.hash??''}`,cached=cache.get(name);
-    let diff=cached?.key===key?cached:binary?{additions:0,deletions:0,approximate:false}:computeFileDiff(a?.text??'',b?.text??'');
+    const binary=Boolean(a?.binary||b?.binary),omitted=!binary&&Boolean(a&&typeof a.text!=='string'||b&&typeof b.text!=='string'),key=`${a?.hash??''}:${b?.hash??''}:${omitted}`,cached=cache.get(name);
+    let diff=cached?.key===key?cached:binary||omitted?{additions:0,deletions:0,approximate:omitted}:computeFileDiff(a?.text??'',b?.text??'');
     cache.set(name,{key,additions:diff.additions,deletions:diff.deletions,approximate:diff.approximate});
-    return [{path:name,status:!a?'added':!b?'deleted':'modified',additions:diff.additions,deletions:diff.deletions,approximate:diff.approximate,before:a?.text??'',after:b?.text??'',binary}];
+    return [{path:name,status:!a?'added':!b?'deleted':'modified',additions:diff.additions,deletions:diff.deletions,approximate:diff.approximate,before:a?.text??'',after:b?.text??'',binary,omitted,beforeHash:a?.hash??null,afterHash:b?.hash??null}];
   });
 }
 async function scriptsFor(root){let bytes;try{bytes=await readSafe(root,'package.json');}catch(error){if(error.code==='ENOENT')return{name:path.basename(root),scripts:{}};throw error;}const json=JSON.parse(bytes.toString());const scripts={};for(const [k,v]of Object.entries(json.scripts??{}))if(/^\w[\w:.-]*$/.test(k)&&typeof v==='string')scripts[k]=v;return{name:typeof json.name==='string'?json.name:path.basename(root),scripts};}
@@ -194,6 +173,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const db=new DatabaseSync(path.join(dataDir,'musebench.sqlite'));
   db.exec('PRAGMA secure_delete=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS app(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS baselines(task_id TEXT PRIMARY KEY,revision TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,revision TEXT NOT NULL,json TEXT NOT NULL);');
+  const sourceSnapshots=createSourceSnapshots({directory:path.join(dataDir,'source-objects'),safeFile,excluded,excludedPatterns:EXCLUDED_PATTERNS});
+  const snapshot=(root,options={verify:true})=>sourceSnapshots.snapshot(root,options);
   const history=createHistoryStore(db),outputs=createOutputStore(db),analytics=createAnalyticsStore(db);
   const imports=createConversationImports(db,history),schedules=createCodeSchedules(db,{now:scheduleNow});
   const saved=db.prepare('SELECT json FROM app WHERE id=1').get();
@@ -365,12 +346,12 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const task=requireTask();
     if(task.revision!==snap.revision){task.revision=snap.revision;task.previewRevision=null;task.acceptedRevision=null;if(task.check?.status==='running')checkInvalidated=true;else if(task.check)task.check.status='stale';await stopPreview();}
     for(const key of diffCache.keys())if(!Object.hasOwn(baseline,key)&&!Object.hasOwn(snap.files,key))diffCache.delete(key);
-    task.changes=changes(baseline,snap.files,diffCache);return snap;
+    task.changes=changes(baseline,snap.files,diffCache).map(file=>({...file,revision:snap.revision}));return snap;
   };
-  const current=async()=>{
+  const current=async(verify=true)=>{
     requireTask();const root=state.activeProject.root;
     if(await canonicalRoot(root)!==root)throw Error('The workspace canonical path changed. Reopen the project.');
-    return applyCurrentSnapshot(await snapshot(root));
+    return applyCurrentSnapshot(await snapshot(root,{verify}));
   };
   const stopPreview=async()=>{previewToken=null;const child=previewProcess;previewProcess=null;await killTree(child);state.preview=stopped();};
   const observeCheck=(task,check)=>{const kind={passed:'check_passed',failed:'check_failed',cancelled:'check_stopped',stale:'check_stale'}[check?.status];if(kind){retainActivity(task,[{source:'check',sourceId:check.id,kind}]);saveRecord(task);}};
@@ -448,7 +429,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     // Capture after cleanup, which may finish source writes. Validate before
     // replacing the selection, then use this same fresh capture for its diff.
     if(await canonicalRoot(p.root)!==p.root)throw Error('The workspace canonical path changed. Reopen the project.');
-    const snap=await snapshot(p.root);
+    const snap=await snapshot(p.root,{verify:false});
     p.scripts=info.scripts;Object.assign(p,git);state.activeProject=p;state.task=restored;baseline=restoredBaseline;bindContext(restored);
     if(state.task)await applyCurrentSnapshot(snap);
   };
@@ -457,7 +438,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(!state.activeProject)throw Error('Open a project first.');if(typeof request!=='string'||!request.trim())throw Error('Describe the change first.');if(!['manual','demo','muse'].includes(mode))throw Error('Unknown task mode.');
     requireSwitchable();await cleanup(false);saveTask();
     if(!runtimeFactory&&state.task&&runtime?.snapshot?.().permissionVerified){await runtime.disconnect();state.runtime=runtime.snapshot();context.root=null;if(state.runtime.cleanup==='unconfirmed')throw Error('Native shutdown could not be confirmed. Disconnect before starting another chat.');}
-    const snap=await snapshot(state.activeProject.root);baseline=snap.files;if(runtimeFactory)bindContext(null);context.pending=false;
+    const snap=await snapshot(state.activeProject.root,{verify:false});baseline=snap.files;if(runtimeFactory)bindContext(null);context.pending=false;
     context.messageBaseline=runtimeMessageIds(state.runtime);context.turn=null;
     const demo=mode==='demo',plan=demo?'Demo plan: add a caffeine preference filter to the tea collection. Offer All teas and Caffeine free choices, preserve the storefront, and keep product counts clear.':'Review the request and local project. Describe the intended change, then approve this plan before accepting work.';
     const createdAt=now();state.task={runOptions:options,id:randomUUID(),projectId:state.activeProject.id,createdAt,updatedAt:createdAt,title:request.trim().slice(0,100),request:request.trim().slice(0,12000),requestOrigin:'initial',mode,plan,criteria:demo?['Caffeine free shows only herbal teas.','All teas restores the full collection.','The storefront works at narrow widths.']:['The requested change works in the preview.','The selected project check passes.'],planApproved:false,baselineRevision:snap.revision,revision:snap.revision,changes:[],messages:[],shellResults:[],runs:[],promptQueue:[],queuePaused:true,check:null,previewRevision:null,acceptedRevision:null,runtimeComplete:false};
@@ -574,7 +555,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const runSource=async input=>{
     const task=requireTask(),project=state.activeProject;if(input.taskId!==task.id)throw Error('The selected chat changed.');
     const root=project.root;if(await canonicalRoot(root)!==root)throw Error('The project folder changed.');
-    const snap=await snapshot(root);if(state.task?.id!==task.id||state.activeProject?.id!==project.id||state.activeProject.root!==root)throw Error('The selected chat changed.');return{files:snap.files,root};
+    const snap=await snapshot(root,{verify:false});if(state.task?.id!==task.id||state.activeProject?.id!==project.id||state.activeProject.root!==root)throw Error('The selected chat changed.');return{files:snap.files,root};
   };
   const inspectRunChanges=async input=>{validateRunInspection(input);const {files,root}=await runSource(input);return runChanges.read(input.taskId,input.runId,files,root);};
   const prepareRunFeedback=async input=>{input=validateRunFeedback(input);const {files,root}=await runSource(input);return runChanges.feedback(input,files,root);};
@@ -606,21 +587,34 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const selectedSources=async(files=[],project=state.activeProject)=>{
     const refs=fileReferences(files);if(!project)throw Error('Open a project first.');
     const root=project.root;if(await canonicalRoot(root)!==root)throw Error('Project path changed. Reopen the project.');
-    const snap=await snapshot(root);let size=0;
-    const attachments=refs.map(ref=>{const file=snap.files[ref.path];if(!contextAllowed(ref.path)||!file||file.binary||file.hash!==ref.hash)throw Error(`Context file changed or is unavailable. Select it again: ${ref.path}`);size+=JSON.stringify({path:ref.path,hash:ref.hash,text:file.text}).length;if(size>FILE_CONTEXT_LIMIT)throw Error('Selected files exceed 24,000 characters. Choose fewer or smaller files.');return{...ref,text:file.text};});
+    const snap=await snapshot(root,{verify:false});let size=0;
+    const attachments=[];for(const ref of refs){const file=snap.files[ref.path];if(!contextAllowed(ref.path)||!file||file.binary||file.hash!==ref.hash)throw Error(`Context file changed or is unavailable. Select it again: ${ref.path}`);const text=await sourceSnapshots.text(file,FILE_CONTEXT_LIMIT*4).catch(()=>{throw Error('Selected files exceed the text limit or captured content is unavailable. Choose fewer or smaller files.');});size+=JSON.stringify({path:ref.path,hash:ref.hash,text}).length;if(size>FILE_CONTEXT_LIMIT)throw Error('Selected files exceed 24,000 characters. Choose fewer or smaller files.');attachments.push({...ref,text});}
     return{snap,attachments};
   };
   db.exec('CREATE TABLE IF NOT EXISTS restore_operations(id TEXT PRIMARY KEY, task_id TEXT NOT NULL, json TEXT NOT NULL)');
   const inspectCheckpoint=async({taskId,id}={})=>{
-    const t=requireTask();if(taskId!==t.id)throw Error('Active chat changed.');const row=db.prepare('SELECT json FROM checkpoints WHERE id=? AND task_id=?').get(id,taskId);if(!row)throw Error('Checkpoint not found in this chat.');const checkpoint=JSON.parse(row.json),snap=await snapshot(state.activeProject.root);
-    return{revision:snap.revision,files:changes(snap.files,checkpoint.files).map(change=>({...change,restorable:!snap.files[change.path]?.binary&&!checkpoint.files[change.path]?.binary})),operations:db.prepare('SELECT json FROM restore_operations WHERE task_id=? ORDER BY rowid DESC LIMIT 5').all(taskId).map(row=>{const op=JSON.parse(row.json);return{id:op.id,status:op.status,completed:op.completed.length,total:op.paths.length};})};
+    const t=requireTask();if(taskId!==t.id)throw Error('Active chat changed.');const row=db.prepare('SELECT json FROM checkpoints WHERE id=? AND task_id=?').get(id,taskId);if(!row)throw Error('Checkpoint not found in this chat.');const checkpoint=JSON.parse(row.json),snap=await snapshot(state.activeProject.root,{verify:false});
+    return{revision:snap.revision,files:changes(snap.files,checkpoint.files).map(change=>({...change,revision:snap.revision,checkpointId:id,restorable:!snap.files[change.path]?.binary&&!checkpoint.files[change.path]?.binary})),operations:db.prepare('SELECT json FROM restore_operations WHERE task_id=? ORDER BY rowid DESC LIMIT 5').all(taskId).map(row=>{const op=JSON.parse(row.json);return{id:op.id,status:op.status,completed:op.completed.length,total:op.paths.length};})};
+  };
+  const inspectSourceDiff=async({taskId,path:relative,revision,beforeHash,afterHash,checkpointId}={})=>{
+    const task=requireTask();if(taskId!==task.id||!checkpointId&&revision!==task.revision||typeof relative!=='string'||typeof revision!=='string')throw Error('The selected chat or revision changed. Refresh the changes.');
+    const checkpoint=checkpointId?db.prepare('SELECT json FROM checkpoints WHERE id=? AND task_id=?').get(checkpointId,taskId):null;if(checkpointId&&!checkpoint)throw Error('Checkpoint not found in this chat.');
+    const root=state.activeProject.root,original=baseline,valid=()=>state.task?.id===taskId&&state.activeProject?.root===root&&(checkpointId||state.task.revision===revision&&baseline===original);
+    const snap=await snapshot(root,{verify:false});if(!valid()||snap.revision!==revision)throw Error('Files or selected chat changed after review. Refresh the changes.');
+    const beforeFiles=checkpoint?snap.files:original,afterFiles=checkpoint?JSON.parse(checkpoint.json).files:snap.files;
+    const left=Object.hasOwn(beforeFiles,relative)?beforeFiles[relative]:null,right=Object.hasOwn(afterFiles,relative)?afterFiles[relative]:null;
+    if((left?.hash??null)!==beforeHash||(right?.hash??null)!==afterHash||left?.hash===right?.hash)throw Error('The captured file changed. Refresh the changes.');
+    if(left?.binary||right?.binary)throw Error('Binary text comparison is unavailable.');
+    const before=left?await sourceSnapshots.text(left):'',after=right?await sourceSnapshots.text(right):'';
+    if(!valid())throw Error('The selected chat changed. Refresh the changes.');
+    const diff=computeFileDiff(before,after);return{path:relative,status:!left?'added':!right?'deleted':'modified',before,after,omitted:false,beforeHash,afterHash,additions:diff.additions,deletions:diff.deletions,approximate:diff.approximate};
   };
   const inspectContext=async({projectId,taskId=null,text='',files=[]}={})=>{
     validateBinding(projectId,taskId);const project=structuredClone(state.activeProject),memories=state.memories;
     const {snap,attachments}=await selectedSources(files);validateBinding(projectId,taskId);
     const task=taskId?structuredClone(state.task):null,recentContext=stagedRecentContext(task,recentSessionId(task,state.runtime));
     const context=composeChatContext({task,project,memories,text,attachments,recentContext,history:state.runtime.transport==='msp'?!state.runtime.sessionSeeded:!task?.nativeSession?.seeded,nativeSession:state.runtime.transport==='msp'?!!state.runtime.sessionSeeded:!!task?.nativeSession?.seeded});
-    return{...context,receipt:contextReceipt(context,{project,memories,attachments,revision:snap.revision}),attachments,files:Object.entries(snap.files).filter(([name,f])=>contextAllowed(name)&&!f.binary).map(([path,f])=>({path,hash:f.hash,characters:f.text.length}))};
+    return{...context,receipt:contextReceipt(context,{project,memories,attachments,revision:snap.revision}),attachments,files:Object.entries(snap.files).filter(([name,f])=>contextAllowed(name)&&!f.binary).map(([path,f])=>({path,hash:f.hash,characters:f.size??f.text?.length??0}))};
   };
   const searchChats=({query='',includeArchived=false}={})=>{
     if(typeof query!=='string'||query.length>200||typeof includeArchived!=='boolean')throw Error('Invalid chat search.');
@@ -995,7 +989,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'createWorktree':case 'openWorktree':case 'recoverWorktree':{
         requireSwitchable();validateBinding(action.projectId,null);const source=state.activeProject;
         const item=action.type==='createWorktree'?await worktrees.create(source.root,{branch:action.branch,base:action.base}):action.type==='recoverWorktree'?await worktrees.recover(source.root,action.id,action.branch):await worktrees.open(source.root,action.id);
-        const root=await canonicalRoot(item.path);if(root!==item.path)throw Error('Worktree folder changed.');const info=await scriptsFor(root);await snapshot(root);
+        const root=await canonicalRoot(item.path);if(root!==item.path)throw Error('Worktree folder changed.');const info=await scriptsFor(root);await snapshot(root,{verify:false});
         let p=state.projects.find(p=>p.root===root);if(!p){p={id:randomUUID(),name:source.name.split(' · ')[0]+' · '+item.branch,root,demo:false,scripts:info.scripts,instructions:source.instructions,worktree:{id:item.id,sourceRoot:item.sourceRoot,branch:item.branch,base:item.base}};state.projects.push(p);}await selectProject(p);break;
       }
       case 'archiveWorktree':case 'restoreWorktree':{
@@ -1009,7 +1003,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(!state.task)await startTask('Set up '+state.activeProject.name,'manual');await runCheck(action.script);break;
       }
       case 'openProject':{
-        requireSwitchable();const root=await canonicalRoot(action.path);if(inside(root,dataDir))throw Error('The project cannot contain MuseBench application data.');const info=await scriptsFor(root);await snapshot(root);
+        requireSwitchable();const root=await canonicalRoot(action.path);if(inside(root,dataDir))throw Error('The project cannot contain MuseBench application data.');const info=await scriptsFor(root);await snapshot(root,{verify:false});
         let p=state.projects.find(p=>p.root===root);if(!p){p={id:randomUUID(),name:info.name,root,demo:false,scripts:info.scripts};await selectProject(p);state.projects.push(p);}else await selectProject(p);break;
       }
       case 'selectProject':{
@@ -1033,10 +1027,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         await fs.mkdir(root);
         try{
           for(const [relative,file] of Object.entries(snap.files)){
-            const bytes=await readSafe(sourceRoot,relative);if(hash(bytes)!==file.hash)throw Error('The source changed while copying. Refresh and try again.');
+
             const destination=path.join(root,relative);await fs.mkdir(path.dirname(destination),{recursive:true});
             if(!inside(root,await fs.realpath(path.dirname(destination))))throw Error('Working-copy destination changed during copying.');
-            await fs.writeFile(destination,bytes,{flag:'wx'});
+            await sourceSnapshots.copySource(sourceRoot,relative,file,destination);
           }
           if((await snapshot(sourceRoot)).revision!==snap.revision||(await snapshot(root)).revision!==snap.revision)throw Error('The source changed while copying. Refresh and try again.');
         }catch(error){if(inside(projectsDir,root)&&await fs.realpath(root)===root)await fs.rm(root,{recursive:true,force:true});throw error;}
@@ -1241,10 +1235,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         const row=db.prepare('SELECT json FROM checkpoints WHERE id=? AND task_id=?').get(action.id,t.id),saved=JSON.parse(row.json),snap=await snapshot(state.activeProject.root);if(snap.revision!==action.revision)throw Error('Files changed after review.');
         const backup={id:randomUUID(),taskId:t.id,title:'Before restore · '+t.title,revision:snap.revision,createdAt:now()};
         db.prepare('INSERT INTO checkpoints(id,task_id,revision,json) VALUES(?,?,?,?)').run(backup.id,t.id,snap.revision,JSON.stringify({...backup,files:snap.files}));state.checkpoints.unshift(backup);persist();
-        try{await restoreSelected({root:state.activeProject.root,before:snap.files,after:saved.files,paths:action.paths,record:operation=>db.prepare('INSERT OR REPLACE INTO restore_operations(id,task_id,json) VALUES(?,?,?)').run(operation.id,t.id,JSON.stringify(operation))});}finally{await current();}
+        try{await restoreSelected({root:state.activeProject.root,before:snap.files,after:saved.files,paths:action.paths,content:sourceSnapshots,record:operation=>db.prepare('INSERT OR REPLACE INTO restore_operations(id,task_id,json) VALUES(?,?,?)').run(operation.id,t.id,JSON.stringify(operation))});}finally{await current();}
         t.check=null;t.checkReceipts=[];t.previewRevision=null;t.acceptedRevision=null;message('system','Selected files restored. Use the Before restore checkpoint to redo. Git staging and conversation history were not changed.');break;
       }
-      case 'refresh':if(state.task)await current();if(state.activeProject)await refreshScripts();state.runtime=runtime?.snapshot?.()??state.runtime;break;
+      case 'refresh':if(state.task)await current(false);if(state.activeProject)await refreshScripts();state.runtime=runtime?.snapshot?.()??state.runtime;break;
       case 'saveValidationProfile':{
         requireNavigationIdle();validateBinding(action.projectId,null);const scripts=validateCheckScripts(action.scripts);const p=await refreshScripts();if(scripts.some(name=>!Object.hasOwn(p.scripts,name)))throw Error('Choose scripts listed in package.json.');if(state.task?.validationRun?.status==='running')throw Error('Cancel validation before changing the profile.');p.validationScripts=scripts;state.projects.find(item=>item.id===p.id).validationScripts=scripts;break;
       }
@@ -1335,6 +1329,6 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     });queue=op.catch(()=>{});return op;
   };
   const archiveTimer=setInterval(()=>{queue=queue.then(async()=>{if(closed||closing)return;if(inbox.prune())emit();await purgeArchived();}).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,discoverySourceBusy:sourceId=>[...new Set([context,...contexts.values()])].some(c=>contextBusy(c)&&c.runtime?.snapshot?.().toolDiscovery?.sources?.some(row=>row.id===sourceId)),discoveryOwnerSnapshot,discoveryAuth,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,listSavedPrompts,readPromptShelf,transferCodeDraft,parkCodeDraft,restoreSavedPrompt,removeSavedPrompt,readMcpServers,inspectDiscoverySources,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!modelCatalogCleanup&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,findChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);if(action?.type==='refreshModels'&&modelCatalogPending)return modelCatalogPending;const refreshEpoch=modelCatalogEpoch;const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');if(['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse'].includes(action.type)){discoveryReview=null;discoveryInspectEpoch++;}if(action.type!=='refreshModels'||refreshEpoch===modelCatalogEpoch)await handle(action);if(authSourceRef&&['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse','connectMuse'].includes(action.type))await discoveryOAuth?.()?.inspectSource(authSourceRef).catch(()=>{});}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});if(action?.type==='refreshModels'){modelCatalogPending=op;void op.finally(()=>{if(modelCatalogPending===op)modelCatalogPending=null;}).catch(()=>{});}return op;},close(){if(closePromise)return closePromise;closing=true;modelCatalogEpoch++;modelCatalog=null;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
+  return{getState,cancelSourceScan:()=>sourceSnapshots.cancel(),discoverySourceBusy:sourceId=>[...new Set([context,...contexts.values()])].some(c=>contextBusy(c)&&c.runtime?.snapshot?.().toolDiscovery?.sources?.some(row=>row.id===sourceId)),discoveryOwnerSnapshot,discoveryAuth,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,listSavedPrompts,readPromptShelf,transferCodeDraft,parkCodeDraft,restoreSavedPrompt,removeSavedPrompt,readMcpServers,inspectDiscoverySources,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!modelCatalogCleanup&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectSourceDiff,inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,findChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);if(action?.type==='refreshModels'&&modelCatalogPending)return modelCatalogPending;const refreshEpoch=modelCatalogEpoch;const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');if(['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse'].includes(action.type)){discoveryReview=null;discoveryInspectEpoch++;}if(action.type!=='refreshModels'||refreshEpoch===modelCatalogEpoch)await handle(action);if(authSourceRef&&['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse','connectMuse'].includes(action.type))await discoveryOAuth?.()?.inspectSource(authSourceRef).catch(()=>{});}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});if(action?.type==='refreshModels'){modelCatalogPending=op;void op.finally(()=>{if(modelCatalogPending===op)modelCatalogPending=null;}).catch(()=>{});}return op;},close(){if(closePromise)return closePromise;closing=true;sourceSnapshots.cancel();modelCatalogEpoch++;modelCatalog=null;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;sourceSnapshots.close();clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';

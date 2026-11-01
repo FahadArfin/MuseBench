@@ -33,7 +33,9 @@ Separate [native confinement proof](../artifacts/shell-discovery/2026-10-25T23-2
 - Native shell outcomes are kept separate from assistant text and task.check. Raw exit zero can contain shell errors; it is not an automatic acceptance claim. Explicit preview inspection and an exact-revision Check are still required.
 - These positive runtime probes are not an exhaustive sandbox security audit. Outside reads remain possible under native policy. Native proxy-only configuration was observed, but no network-escape test was performed.
 - Preview and Check buttons remain separate user-initiated host processes with the existing cancellation limits. The new Job supervisor controls Muse and its descendants, not unrelated applications.
-- Source snapshots remain bounded to 4,000 files, 2 MiB per file and 24 MiB total; unsupported links are rejected. Checkpoints are local acceptance records, not Git commits or full backups.
+- Source snapshots remain bounded to 100,000 files, 256 MiB per file and 16 GiB total; unsupported links are rejected. Checkpoints are local acceptance records, not Git commits or full backups.
 - The package is unsigned and needs its companion files. Node/npm and the official Muse CLI remain external prerequisites. Credentials were not read, copied or embedded.
 
 See [sandboxed command behavior](SANDBOXED-COMMANDS.md), [review record](shell-review.md), and [live harness](LIVE-WORKFLOW.md).
+
+Current large-repository implementation and limits: [design](superpowers/specs/2026-10-31-large-repositories.md). Historical evidence elsewhere in this document predates that implementation.

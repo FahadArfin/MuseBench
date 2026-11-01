@@ -24,7 +24,7 @@ async function fixture(t, runtime) {
   return { controller, act, source, first, second };
 }
 
-test('switching chats captures source once and keeps each chat baseline', async t => {
+test('switching chats captures changed source once and reuses unchanged source across chat baselines', async t => {
   const { act, source, first, second } = await fixture(t);
   await fs.writeFile(source, 'edited outside MuseBench\n');
   let reads = 0;
@@ -39,7 +39,7 @@ test('switching chats captures source once and keeps each chat baseline', async 
   assert.deepEqual(state.task.changes.map(({ before, after }) => ({ before, after })), [{ before: 'original source\n', after: 'edited outside MuseBench\n' }]);
   reads = 0;
   state = await act({ type: 'selectTask', id: second.id });
-  assert.equal(reads, 1);
+  assert.equal(reads, 0, 'the second navigation reuses the already captured unchanged source');
   assert.equal(state.task.baselineRevision, second.baselineRevision);
   assert.equal(state.task.changes[0].after, 'edited outside MuseBench\n');
 });
@@ -60,9 +60,9 @@ test('navigation captures edits completed while the old runtime disconnects', as
 
 test('an unreadable target workspace does not replace the selected chat', async t => {
   const { controller, source, first, second } = await fixture(t);
-  await fs.writeFile(source, Buffer.alloc(2 * 1024 * 1024 + 1));
+  const oversized=await fs.open(source,'w');await oversized.truncate(256*1024*1024+1);await oversized.close();
   const state = await controller.dispatch({ type: 'selectTask', id: first.id });
-  assert.match(state.error, /2 MiB/);
+  assert.match(state.error, /256 MiB/);
   assert.equal(state.task.id, second.id);
 });
 

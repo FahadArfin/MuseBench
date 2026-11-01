@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, access, open } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createController } from '../src/controller/index.mjs';
@@ -161,12 +161,63 @@ test('cancelling a live package script does not let a later exit pass',async t=>
   assert.equal(c.getState().task.check.status,'cancelled');
 });
 
+test('multi-megabyte catalog files allow opening projects and creating chats with revision tracking',async t=>{
+  const {controller:c,root}=await fixture(t);
+  const catalog=path.join(root,'community-catalog.json');
+  const source=JSON.stringify({description:'a'.repeat(3*1024*1024)});
+  await writeFile(catalog,source);
+  let s=await c.dispatch({type:'openProject',path:root});
+  assert.equal(s.error,null);
+  s=await c.dispatch({type:'newTask',request:'Explain the source code',mode:'manual'});
+  assert.equal(s.error,null);
+  assert.equal(s.task.request,'Explain the source code');
+  const revision=s.task.revision;
+  await writeFile(catalog,source+'\n');
+  s=await c.dispatch({type:'refresh'});
+  assert.equal(s.error,null);
+  assert.notEqual(s.task.revision,revision);
+  assert.equal(s.task.changes.find(file=>file.path==='community-catalog.json')?.status,'modified');
+  assert.equal(await readFile(catalog,'utf8'),source+'\n');
+});
+
 test('source size limits fail closed before evidence is committed',async t=>{
   const {controller:c,root}=await fixture(t);
-  await writeFile(path.join(root,'large.js'),Buffer.alloc(2*1024*1024+1,65));
+  const handle=await open(path.join(root,'large.js'),'w');await handle.truncate(256*1024*1024+1);await handle.close();
   const s=await c.dispatch({type:'refresh'});
-  assert.match(s.error,/2 MiB/);
+  assert.match(s.error,/256 MiB/);
   assert.equal(s.checkpoints.length,0);
+});
+
+test('aggregate snapshots above the legacy 24 MiB budget remain usable',async t=>{
+  const {controller:c,root}=await fixture(t);
+  const revision=c.getState().task.revision;
+  for(let index=0;index<4;index++)await writeFile(path.join(root,`catalog-${index}.json`),Buffer.alloc(7*1024*1024,65));
+  const s=await c.dispatch({type:'refresh'});
+  assert.equal(s.error,null);
+  assert.notEqual(s.task.revision,revision);
+  assert.equal(s.checkpoints.length,0);
+});
+
+test('deferred diffs load only the selected file and reject stale or oversized requests',async t=>{
+ const {controller:c,root}=await fixture(t);
+ const left='a'.repeat(200000);await writeFile(path.join(root,'large.txt'),left);
+ let s=await c.dispatch({type:'newTask',request:'Review larger text',mode:'manual'});assert.equal(s.error,null);
+ await writeFile(path.join(root,'large.txt'),left+'\nchanged');s=await c.dispatch({type:'refresh'});
+ const change=s.task.changes.find(file=>file.path==='large.txt');assert.equal(change.omitted,true);assert.equal(change.before,'');assert.equal(change.after,'');
+ const request={taskId:s.task.id,path:change.path,revision:s.task.revision,beforeHash:change.beforeHash,afterHash:change.afterHash};
+ const diff=await c.inspectSourceDiff(request);assert.equal(diff.before,left);assert.equal(diff.after,left+'\nchanged');assert.equal(diff.omitted,false);
+ await assert.rejects(c.inspectSourceDiff({...request,taskId:'different'}),/chat|revision/i);
+ await writeFile(path.join(root,'large.txt'),left+'\nnewer');await assert.rejects(c.inspectSourceDiff(request),/changed/i);
+ await writeFile(path.join(root,'large.txt'),'x'.repeat(3*1024*1024));s=await c.dispatch({type:'refresh'});const large=s.task.changes.find(file=>file.path==='large.txt');await assert.rejects(c.inspectSourceDiff({...request,revision:s.task.revision,beforeHash:large.beforeHash,afterHash:large.afterHash}),/read limit/i);
+});
+
+test('deferred checkpoint comparisons load their own historical side rather than the chat baseline',async t=>{
+ const {controller:c,root,options}=await fixture(t),large='historical\n'+'x'.repeat(200000);await writeFile(path.join(root,'large.txt'),large);
+ let s=await c.dispatch({type:'newTask',request:'Checkpoint comparison',mode:'manual'});const taskId=s.task.id,db=new DatabaseSync(path.join(options.dataDir,'musebench.sqlite'));
+ try{const baseline=JSON.parse(db.prepare('SELECT json FROM baselines WHERE task_id=?').get(taskId).json);db.prepare('INSERT INTO checkpoints(id,task_id,revision,json) VALUES(?,?,?,?)').run('large-checkpoint',taskId,s.task.revision,JSON.stringify({files:baseline}));}finally{db.close();}
+ await writeFile(path.join(root,'large.txt'),large+'\ncurrent');const comparison=await c.inspectCheckpoint({taskId,id:'large-checkpoint'}),file=comparison.files.find(file=>file.path==='large.txt');assert.equal(file.omitted,true);assert.equal(file.checkpointId,'large-checkpoint');assert.equal(file.revision,comparison.revision);
+ const diff=await c.inspectSourceDiff({taskId,path:file.path,revision:file.revision,beforeHash:file.beforeHash,afterHash:file.afterHash,checkpointId:file.checkpointId});assert.equal(diff.before,large+'\ncurrent');assert.equal(diff.after,large);
+ await assert.rejects(c.inspectSourceDiff({taskId,path:file.path,revision:file.revision,checkpointId:'other'}),/checkpoint/i);
 });
 
 test('accept rehashes source even without refresh and rejects fabricated preview inspection',async t=>{

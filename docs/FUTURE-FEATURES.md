@@ -1,5 +1,32 @@
 # Features to implement in the future
 
+## Large repository refinements
+
+Updated October 31, 2026. The streamed, disk-backed backend is implemented
+locally; see [design](superpowers/specs/2026-10-31-large-repositories.md),
+[implementation plan](superpowers/plans/2026-10-31-large-repositories.md) and
+[validation](validation/2026-10-31-large-repositories.md).
+
+- **Historical object maintenance:** add reachability-based pruning with an
+  explicit retention policy; never delete objects needed by task baselines,
+  checkpoints or interrupted restore journals. Current roadblock: manifests
+  are shared across those lifecycles, so deleting by age alone is unsafe.
+- **Paged large-text comparisons:** load line ranges or bounded structural JSON
+  comparisons for files above 2 MiB, including the 36 MiB Nook inventory.
+  Current roadblock: the current diff engine and renderer consume whole strings;
+  they need an indexed line/range protocol before lifting rendering budgets.
+- **Very large change lists:** virtualize/paginate review rows and manifest
+  metadata for mass asset changes. Current roadblock: review state and several
+  consumers expect complete arrays; source-body memory is already bounded.
+- **Scan progress and background verification:** expose bytes/files scanned and
+  cancellation controls in the shared shell. Current roadblock: source capture
+  is asynchronous and cancellable in the backend, but scan progress is not yet
+  part of the shell state protocol. Verified scans still read all eligible bytes.
+- **Binary restore and chunk deduplication:** optional captured binary assets,
+  with disk quotas and safe streamed restore. Current roadblock: binaries are
+  intentionally hash-only today; chunk storage and retention semantics must be
+  designed before claiming backup support.
+
 ## Muse Voice Transcribe dictation
 
 Status: Deferred pending a supported integration and billing path. Updated October 31, 2026.
