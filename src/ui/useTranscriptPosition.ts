@@ -3,6 +3,7 @@ import {useCallback,useLayoutEffect,useRef,useState,type RefObject} from 'react'
 type Position={anchor:string|null;offset:number;top:number;following:boolean};
 type Session={element:HTMLDivElement;following:boolean;lastTop:number;ready:()=>boolean;capture:()=>void;cancelCorrection:()=>void;latest:()=>void};
 const CAPACITY=100,CORRECTION_MS=1200;
+const atBottom=(element:HTMLDivElement)=>element.scrollHeight-element.scrollTop-element.clientHeight<=1;
 
 // Positions live only for this mounted workspace. The DOM identity is scoped by
 // project/chat; identical message IDs in another chat never share an anchor.
@@ -12,7 +13,7 @@ export function useTranscriptPosition(transcript:RefObject<HTMLDivElement|null>,
  const [scrolledUp,setScrolledUp]=useState(false);
  const releaseForNavigation=useCallback(()=>{
   const current=session.current;if(!current)return;
-  current.cancelCorrection();current.following=false;setScrolledUp(true);current.capture();
+  current.cancelCorrection();current.following=false;setScrolledUp(!atBottom(current.element));current.capture();
  },[]);
  const jumpToLatest=useCallback(()=>{
   const current=session.current;if(!current)return;
@@ -24,7 +25,12 @@ export function useTranscriptPosition(transcript:RefObject<HTMLDivElement|null>,
   // A narrower transcript can become shorter on resize. Its browser-clamped
   // bottom is layout, while wheel/key/touch listeners capture upward intent
   // even at the very bottom before a scroll event arrives.
-  if(current.element.scrollTop<current.lastTop-1&&current.element.scrollHeight-current.element.scrollTop-current.element.clientHeight>1)releaseForNavigation();
+  if(atBottom(current.element)){
+   // Returning down to the end resumes following. Layout clamping and our
+   // own position restoration must not overwrite a saved reading intent.
+   if(current.element.scrollTop>current.lastTop){current.cancelCorrection();current.following=true;}
+   setScrolledUp(false);
+  }else if(current.element.scrollTop<current.lastTop-1)releaseForNavigation();
   current.lastTop=current.element.scrollTop;current.capture();
  },[releaseForNavigation]);
 
@@ -69,7 +75,8 @@ export function useTranscriptPosition(transcript:RefObject<HTMLDivElement|null>,
     awaitingLayout=false;restoreTarget=cache.get(key)??saved;
     if(!current.following&&restoreTarget){correcting=true;clearTimeout(deadline);deadline=setTimeout(()=>{correcting=false;},CORRECTION_MS);}
    }
-   if(current.following)latest();else if(correcting)restore();capture();
+   if(current.following)latest();else if(correcting)restore();
+   setScrolledUp(!current.following&&!atBottom(element));capture();
   };
   const schedule=()=>{if(!frame&&!disposed)frame=requestAnimationFrame(update);};
   // Layout effects restore before paint. Corrections only react to actual DOM

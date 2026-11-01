@@ -1,5 +1,5 @@
 import {memo,useEffect,useLayoutEffect,useMemo,useRef,useState,type DragEvent,type KeyboardEvent} from 'react';
-import {ChevronRight,FolderOpen,MoreHorizontal,Pin,Plus,Search,LoaderCircle} from 'lucide-react';
+import {ChevronRight,Folder,FolderOpen,MoreHorizontal,Pin,Plus,Search,LoaderCircle} from 'lucide-react';
 import type {Action,Project,TaskSummary} from '../shared/types';
 import {sidebarKey} from '../shared/sidebar-order.mjs';
 import {sameSidebarData,sidebarCollections,projectChatRelations} from '../shared/sidebar-model.mjs';
@@ -97,8 +97,8 @@ function SidebarContents({orders,projects,tasks,selectedId,projectId,overview,bu
    const props=dropProps(dragKind==='project'?'projects':'project',dragKind==='project'?undefined:project.id,dragKind==='project'?project.id:undefined);
    return <div className="project-group" key={project.id}>
      <div {...props} draggable={!busy} onDragStart={event=>start(event,'project',project.id)} onDragEnd={finish} className={`project-row ${props.className} ${projectId===project.id?'current':''} ${projectId===project.id&&overview?'overview-selected':''}`}>
-       <button className="project-toggle" aria-label={`${!expandedProjects.has(project.id)?'Expand':'Collapse'} ${project.name}`} aria-expanded={expandedProjects.has(project.id)} aria-controls={`project-chats-${project.id}`} onClick={()=>toggleProject(project.id)}><ChevronRight size={12} className={!expandedProjects.has(project.id)?'':'rotated'}/></button>
-       <button title={`${project.root} · Drag to reorder, or Alt+Shift+Up/Down`} disabled={busy} onKeyDown={event=>keyboardMove(event,'project',project.id,'projects',projectList)} onClick={()=>{if(!suppressClick.current)onProject(project.id);}}><FolderOpen size={15}/><span>{project.name.replace(' · tutorial','')}</span></button>
+       <button className="project-toggle" aria-label={`${!expandedProjects.has(project.id)?'Expand':'Collapse'} ${project.name}`} aria-expanded={expandedProjects.has(project.id)} aria-controls={`project-chats-${project.id}`} onClick={()=>toggleProject(project.id)}>{expandedProjects.has(project.id)?<FolderOpen size={15}/>:<Folder size={15}/>}</button>
+       <button title={`${project.root} · Drag to reorder, or Alt+Shift+Up/Down`} disabled={busy} onKeyDown={event=>keyboardMove(event,'project',project.id,'projects',projectList)} onClick={()=>{if(!suppressClick.current)onProject(project.id);}}><span>{project.name.replace(' · tutorial','')}</span></button>
        <button className="project-new-chat" aria-label={`New chat in ${project.name.replace(' · tutorial','')}`} disabled={busy} onClick={()=>onNew(project.id)}><Plus size={14}/></button>
      </div>
      <MotionDisclosure unmountWhenClosed id={`project-chats-${project.id}`} open={expandedProjects.has(project.id)} innerClassName="project-chats">{()=><div {...dropProps('project',project.id)} role="region" aria-label={`${project.name} active chats`}>{relations.roots.map(chat=>{const sides=relations.children.get(chat.id)??[];return <div key={chat.id}>{row(chat,'project',chats,project.id,sides.length)}{!!sides.length&&<MotionDisclosure unmountWhenClosed id={`side-chats-${chat.id}`} open={!closedSides.has(chat.id)} innerClassName="side-chats">{()=><div role="region" aria-label={`Side chats of ${chat.title}`}>{sides.map(side=>row(side,'project',chats,project.id))}</div>}</MotionDisclosure>}</div>;})}<div className={`sidebar-drop-end ${dragKind==='chat'?'visible':''}`} aria-label={`Place chat last in ${project.name}`}/></div>}</MotionDisclosure>

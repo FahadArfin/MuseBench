@@ -16,8 +16,8 @@
 .sidebar-section-toggle:hover { color: var(--text); }
 .sidebar-section-toggle .folded { transform: rotate(-90deg); }
 .project-row { min-height: 34px; }
-.project-toggle { width: 16px; }
-.project-toggle svg { opacity: .6; }
+.project-toggle { width: 26px; flex: 0 0 26px; }
+.project-toggle svg { opacity: 1; }
 .project-row > button:not(.project-toggle) { font-size: 13px; }
 .project-row > button.project-new-chat { flex: 0 0 26px; padding: 0; }
 .project-chats { border-left: 1px solid var(--border); margin: 3px 0 6px 20px; padding-left: 7px; }

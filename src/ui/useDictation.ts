@@ -39,7 +39,7 @@ export function useDictation(active:boolean,context:string,append:Dispatch<SetSt
    if(value.id!==current.id)return;
    if(value.text.startsWith(current.text)&&value.text.length>current.text.length){const delta=value.text.slice(current.text.length);current.text=value.text;insertSpeech(delta,current.context,current.epoch);}
    setState(value);
-   if(value.status==='idle'||value.status==='error'){if(!value.text&&!value.error)setHint('No speech caught. Try again or keep typing.');capture.current=null;}
+   if(value.status==='idle'||value.status==='error')capture.current=null;
   });
  // Draft callbacks change while typing; keep one listener and use the latest callback.
  },[insertSpeech]);
