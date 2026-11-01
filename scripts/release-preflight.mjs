@@ -14,6 +14,8 @@ const source={commit:git('rev-parse','HEAD'),dirty:Boolean(git('status','--porce
 // disposable Electron windows. A failure stops the preflight without retrying.
 const report=await runChecks([
  ['node','--test','--test-concurrency=1','test/source-object-gc.test.mjs','test/discovery-mcp-transport.test.mjs'],
+ ['node','--test','--test-name-pattern=multiple HTTP MCP clients|Windows restores','test/native-control-http.test.mjs'],
+ ['node','scripts/typography-smoke.mjs'],
  ['node','scripts/child-restart-smoke.mjs'],
  ['node','scripts/child-restart-smoke.mjs','--desktop'],
  ['node','scripts/meta-chat-history-smoke.mjs'],

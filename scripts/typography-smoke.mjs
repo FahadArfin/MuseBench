@@ -20,7 +20,7 @@ const output=path.resolve(process.argv[2]??'artifacts/typography');
 await mkdir(output,{recursive:true});
 await readFile('dist/index.html'); // A missing production build is an actionable failure.
 const fixture=(await build({stdin:{contents:"import {createPreviewBridge} from './src/preview/bridge.ts';window.musebench=createPreviewBridge();",resolveDir:process.cwd()},bundle:true,write:false,loader:{'.md':'text'},format:'iife',platform:'browser'})).outputFiles[0].text;
-const server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-typography',server:{host:'127.0.0.1',port:0,strictPort:true,open:false},plugins:[{name:'typography-production-fixture',configureServer(vite){vite.middlewares.use('/__typography__',async(req,res)=>{
+const server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-typography',server:{host:'127.0.0.1',port:0,strictPort:false,open:false},plugins:[{name:'typography-production-fixture',configureServer(vite){vite.middlewares.use('/__typography__',async(req,res)=>{
  const file=(req.url??'').split('?')[0];
  try{
   if(file==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(fixture);return;}
@@ -52,14 +52,28 @@ try{
   await page.locator('.assistant-message pre code').waitFor();
   const cdp=await context.newCDPSession(page),loadedFaces=new Map();await cdp.send('DOM.enable');await cdp.send('CSS.enable');
   async function renderedFont(selector,family){
+   // An intentionally empty composer has no rendered glyphs. Probe its font
+   // with unsent fixture text, then restore the empty state for screenshots.
+   const input=selector==='textarea[aria-label="Message Muse"]'?page.locator(selector):null;
+   const sample=input&&(await input.inputValue())==='';if(sample)await input.fill('Composer font sample');
    await page.evaluate(()=>document.fonts.ready.then(()=>undefined));
    // Record each face while its content is present; later scenes may release it.
    for(const face of await page.evaluate(()=>[...document.fonts].filter(font=>font.status==='loaded').map(font=>({family:font.family,style:font.style,weight:font.weight,status:font.status}))))loadedFaces.set(`${face.family}:${face.style}:${face.weight}`,face);
    const {root}=await cdp.send('DOM.getDocument'),{nodeId}=await cdp.send('DOM.querySelector',{nodeId:root.nodeId,selector});
    assert(nodeId,`${target}: missing ${selector}`);
-   const {fonts}=await cdp.send('CSS.getPlatformFontsForNode',{nodeId});
+   let fontNodeId=nodeId;
+   if(input){
+    // Typed input is rendered by Chromium's user-agent shadow editor, not
+    // the textarea's light-DOM text or its now-empty placeholder pseudo-node.
+    const {node}=await cdp.send('DOM.describeNode',{nodeId,depth:3,pierce:true});
+    const editor=node.shadowRoots?.flatMap(root=>root.children??[]).find(child=>child.nodeName==='DIV'&&!child.attributes?.includes('pseudo'));
+    assert(editor?.backendNodeId,`${target}: missing textarea text renderer`);
+    const {nodeIds}=await cdp.send('DOM.pushNodesByBackendIdsToFrontend',{backendNodeIds:[editor.backendNodeId]});fontNodeId=nodeIds[0];
+   }
+   const {fonts}=await cdp.send('CSS.getPlatformFontsForNode',{nodeId:fontNodeId});
    assert(fonts.some(font=>font.isCustomFont&&font.glyphCount>0&&font.familyName.includes(family)),`${target}: ${selector} did not render bundled ${family}: ${JSON.stringify(fonts)}`);
-   return {selector,computed:await page.locator(selector).first().evaluate(node=>{const s=getComputedStyle(node);return {family:s.fontFamily,weight:s.fontWeight,style:s.fontStyle};}),rendered:fonts};
+   const evidence={selector,computed:await page.locator(selector).first().evaluate(node=>{const s=getComputedStyle(node);return {family:s.fontFamily,weight:s.fontWeight,style:s.fontStyle};}),rendered:fonts};
+   if(sample)await input.fill('');return evidence;
   }
   async function capture(name){
    await page.evaluate(()=>document.fonts.ready.then(()=>undefined));

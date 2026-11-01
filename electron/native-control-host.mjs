@@ -25,7 +25,9 @@ async function privateDirectory(directory){
   // Replacing the DACL in one operation avoids briefly exposing the durable
   // grant to inherited permissions while the app is restarting.
   const script=`$ErrorActionPreference = 'Stop'; $directory = '${directory.replaceAll("'","''")}'; $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User; $acl = New-Object System.Security.AccessControl.DirectorySecurity; $acl.SetOwner($sid); $acl.SetAccessRuleProtection($true, $false); $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($sid, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')); $system = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-18'); $acl.AddAccessRule([System.Security.AccessControl.FileSystemAccessRule]::new($system, 'FullControl', 'ContainerInherit, ObjectInherit', 'None', 'Allow')); [System.IO.Directory]::SetAccessControl($directory, $acl)`;
-  await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:10000});
+  // Cold Windows/.NET startup under CI load can exceed ten seconds. Directory
+  // provisioning has its own bounded budget; HTTP request deadlines stay 10s.
+  await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',script],{windowsHide:true,timeout:30000});
  }else await chmod(directory,0o700);
 }
 async function readJson(file){
