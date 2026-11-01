@@ -51,7 +51,9 @@ try{
  if(desktop){const env={...process.env,MUSEBENCH_PARITY_DATA:path.join(output,'profile')};delete env.ELECTRON_RUN_AS_NODE;
   app=await electron.launch({args:['scripts/preview-parity-electron.mjs'],env,timeout:10000});
   app.context().on('page',p=>p.on('pageerror',error=>report.errors.push(error.message)));
-  await bounded('Electron ready',app.evaluate(({app})=>app.whenReady()));
+  // Playwright otherwise quits on the last window before our zero-window
+  // assertion. This fixture owns shutdown through the explicit app.close().
+  await bounded('Electron ready',app.evaluate(({app})=>{app.on('window-all-closed',()=>{});return app.whenReady();}));
   // Hold the actual BrowserWindow until its own closed event; explicitly await
   // both navigation and Playwright attachment rather than discard loadURL.
   windowOwner=await bounded('Fixture window creation',app.evaluateHandle(({BrowserWindow})=>new BrowserWindow({width:1000,height:820,show:false,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}})));
