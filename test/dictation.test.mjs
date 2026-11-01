@@ -52,3 +52,18 @@ test('cancel during an ordinary stop clears the buffer and discards late words',
  p.stdout.emit('data',Buffer.from('{"kind":"text","text":"Late words"}\n'));p.emit('close',0);
  for(const result of await Promise.all([stopped,cancelled]))assert.equal(result.text,'');
 });
+test('speech beyond a prompt budget remains available to the composer instead of being truncated',async t=>{
+ const h=fixture(t);await h.service.dispatch('start');
+ const first='a'.repeat(15990),tail='keep every remaining word';
+ h.children[0].p.stdout.emit('data',Buffer.from(JSON.stringify({kind:'text',text:first})+'\n'));
+ h.children[0].p.stdout.emit('data',Buffer.from(JSON.stringify({kind:'text',text:tail})+'\n'));
+ assert.equal(h.service.snapshot().text.length,first.length+1+tail.length);
+ assert.equal(h.service.snapshot().text,first+' '+tail);
+ await h.service.dispatch('stop');assert.equal(h.service.snapshot().text,first+' '+tail);
+});
+test('native errors preserve already recognized speech for recovery',async t=>{
+ const h=fixture(t);await h.service.dispatch('start');
+ h.children[0].p.stdout.emit('data',Buffer.from('{"kind":"text","text":"Keep these words"}\n{"kind":"error","code":"microphone"}\n'));
+ assert.equal(h.service.snapshot().status,'error');
+ assert.equal(h.service.snapshot().text,'Keep these words');
+});

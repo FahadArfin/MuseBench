@@ -153,7 +153,7 @@ async function killTree(child){
 }
 async function freePort(){const server=net.createServer();await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});const port=server.address().port;await new Promise(r=>server.close(r));return port;}
 
-export async function createController({dataDir,projectsDir,newProjectsDir,templateDir=fileURLToPath(new URL('../../templates/tea-store',import.meta.url)),runtime,runtimeFactory,discoverModels,discoveryOAuth,checkTimeoutMs=120000,archiveNow=()=>Date.now(),scheduleNow=()=>Date.now(),schedulePollMs=15000}={}){
+export async function createController({dataDir,projectsDir,newProjectsDir,templateDir=fileURLToPath(new URL('../../templates/tea-store',import.meta.url)),runtime,runtimeFactory,discoverModels,discoveryOAuth,checkTimeoutMs=120000,archiveNow=()=>Date.now(),scheduleNow=()=>Date.now(),schedulePollMs=15000,sourceGc}={}){
   if(!dataDir)throw Error('A controller dataDir is required.');await fs.mkdir(dataDir,{recursive:true});dataDir=await fs.realpath(dataDir);
   runtime??=runtimeFactory?.();
   const imageStore=createImageStore(dataDir),imageLeases=new Map(),imageImports=new Map();
@@ -173,7 +173,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const db=new DatabaseSync(path.join(dataDir,'musebench.sqlite'));
   db.exec('PRAGMA secure_delete=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS app(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS baselines(task_id TEXT PRIMARY KEY,revision TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,revision TEXT NOT NULL,json TEXT NOT NULL);');
-  const sourceSnapshots=createSourceSnapshots({directory:path.join(dataDir,'source-objects'),safeFile,excluded,excludedPatterns:EXCLUDED_PATTERNS});
+  const sourceSnapshots=createSourceSnapshots({directory:path.join(dataDir,'source-objects'),safeFile,excluded,excludedPatterns:EXCLUDED_PATTERNS,gc:sourceGc});
   const snapshot=(root,options={verify:true})=>sourceSnapshots.snapshot(root,options);
   const history=createHistoryStore(db),outputs=createOutputStore(db),analytics=createAnalyticsStore(db);
   const imports=createConversationImports(db,history),schedules=createCodeSchedules(db,{now:scheduleNow});
@@ -215,14 +215,55 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   }
   let baseline=state.task?JSON.parse(db.prepare('SELECT json FROM baselines WHERE task_id=?').get(state.task.id)?.json??'{}'):{};
   for(const task of taskRecords.values())analytics.sync(task);
-  const listeners=new Set();let queue=Promise.resolve(),closed=false,closing=false,closePromise=null,checkProcess=null,previewProcess=null,previewToken=null,checkInvalidated=false;
+  const listeners=new Set();let queue=Promise.resolve(),closed=false,closing=false,closePromise=null,checkProcess=null,previewProcess=null,previewToken=null,checkInvalidated=false,refreshGeneration=0,backgroundRefresh=null;
   const contexts=new Map(),pendingActivity=new Map();let preferredBinary=runtime?.snapshot?.().binary??null;
+  // Keep primitive revision tokens rather than serializing/copying retained
+  // message bodies to discover that a runtime observation changed nothing.
+  const objectToken=Symbol('object'),arrayToken=Symbol('array');
+  const revision=(value,omitUpdated=false)=>{
+    const tokens=[];const visit=(item,root=false)=>{
+      if(!item||typeof item!=='object'){tokens.push(item);return;}
+      if(Array.isArray(item)){tokens.push(arrayToken,item.length);for(const child of item)visit(child);return;}
+      const keys=Object.keys(item).filter(key=>!root||!omitUpdated||key!=='updatedAt');tokens.push(objectToken,keys.length);
+      for(const key of keys){tokens.push(key);visit(item[key]);}
+    };visit(value,true);return tokens;
+  };
+  const sameRevision=(left,right)=>!!left&&left.length===right.length&&left.every((value,index)=>Object.is(value,right[index]));
+  const sourceDescriptors=value=>{
+    const files=Object.create(null);let count=0;
+    const visit=item=>{if(!item||typeof item!=='object')return;if(Object.hasOwn(item,'object')){files[String(count++)]=item;return;}for(const child of Object.values(item))visit(child);};
+    visit(value);return files;
+  };
+  const sourceTaskRevisions=new Map();let sourceOwnerVersion=0,appSourceRevision=null;
+  const writeSourceRecord=(sql,...args)=>{const result=db.prepare(sql).run(...args);sourceOwnerVersion++;return result;};
+  const taskPersistence=new Map(),projectPersistence=new Map();let appPersistence=null,draftRevision=null;
+  const taskMessageEncoding=new Map();
+  const encodeTask=task=>{
+    const previous=taskMessageEncoding.get(task.id),messages=new Map(),encoded=[];
+    for(const message of task.messages){const signature=revision(message),cached=previous?.get(message.id),json=sameRevision(cached?.signature,signature)?cached.json:JSON.stringify(message);encoded.push(json);messages.set(message.id,{signature,json});}
+    taskMessageEncoding.delete(task.id);taskMessageEncoding.set(task.id,messages);while(taskMessageEncoding.size>8)taskMessageEncoding.delete(taskMessageEncoding.keys().next().value);
+    const {messages:window,...metadata}=task,json=JSON.stringify(metadata);return json.slice(0,-1)+',"messages":['+encoded.join(',')+']}';
+  };
+  const invalidatePersistence=()=>{taskPersistence.clear();projectPersistence.clear();taskMessageEncoding.clear();appPersistence=null;draftRevision=null;sourceTaskRevisions.clear();appSourceRevision=null;sourceOwnerVersion++;for(const owner of contexts.values()){owner.publishedRuntime=null;owner.publishedTask=null;}};
   const retainActivity=(task,events)=>{for(const event of events){const key=JSON.stringify([task.id,event.source,event.sourceId,event.kind,event.identity??'']);if(!pendingActivity.has(key))pendingActivity.set(key,{taskId:task.id,event:{...event,at:now()}});}while(pendingActivity.size>200)pendingActivity.delete(pendingActivity.keys().next().value);};
   const persistActivity=(task,write)=>{const pending=[...pendingActivity].filter(([,item])=>item.taskId===task.id);if(!pending.length)return write();inbox.recordMany(task.id,pending.map(([,item])=>item.event),write);for(const [key] of pending)pendingActivity.delete(key);};
   const newContext=(owner,task=null)=>{const observed=owner?.snapshot?.();return{id:randomUUID(),runtime:owner,task,everOwned:!!task,compactionTaskId:task?.id??null,compactionExcluded:new Set(),root:null,pending:false,turn:null,workIdentity:workIdentity(observed),messageBaseline:runtimeMessageIds(observed),navigation:false,queueScheduled:false,unsubscribe:null};};
   let context=newContext(runtime,state.task);if(state.task)contexts.set(state.task.id,context);
   const contextBusy=c=>!!c&&(c.pending||runtimeStatusBusy(readRuntimeStatus(c.runtime)));
-  const saveRecord=t=>{if(!t)return;persistActivity(t,()=>{analytics.sync(t);history.sync(t);t.messages=t.messages.slice(-150);t.updatedAt=now();if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,structuredClone(t));db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,JSON.stringify(t));});};
+  const saveRecord=t=>{
+    if(!t)return;if(t.messages.length>150){history.sync(t);t.messages=t.messages.slice(-150);}
+    const signature=revision(t,true),prior=taskPersistence.get(t.id),changed=!sameRevision(prior?.signature,signature);let persisted;
+    db.exec('SAVEPOINT controller_task');
+    try{
+      persistActivity(t,()=>{
+        if(!changed)return;analytics.sync(t);history.sync(t);
+        const previous=taskRecords.get(t.id),previousTime=Date.parse(previous?.updatedAt??t.updatedAt);t.updatedAt=new Date(Math.max(Date.now(),Number.isFinite(previousTime)?previousTime+1:0)).toISOString();
+        const json=encodeTask(t);db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(t.id,json);persisted={signature,json};
+      });db.exec('RELEASE controller_task');
+    }catch(error){db.exec('ROLLBACK TO controller_task; RELEASE controller_task');invalidatePersistence();throw error;}
+    if(contexts.has(t.id))contexts.get(t.id).task=t;
+    if(persisted){taskRecords.set(t.id,structuredClone(t));taskPersistence.set(t.id,persisted);const refs=revision(sourceDescriptors(t));if(!sameRevision(sourceTaskRevisions.get(t.id),refs)){sourceTaskRevisions.set(t.id,refs);sourceOwnerVersion++;}}
+  };
   const compactionKey=row=>JSON.stringify([row.sessionId,row.itemId]);
   const bindOwner=(owner,task)=>{
     if(owner.compactionTaskId!==(task?.id??null)){
@@ -280,14 +321,26 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     return rows;
   };
   const getState=()=>{const observations=new Map([...contexts.values()].map(owner=>[owner,readRuntimeStatus(owner.runtime)]));return structuredClone({...state,runtime:{...state.runtime,modelCatalog:visibleCatalog()},codeSchedules:schedules.list(),codeSchedulesAvailable:!!runtimeFactory,task:state.task?{...state.task,reviewUsage:combineUsage((state.task.reviewChildren??[]).map(id=>taskRecords.get(id)?.nativeUsage??null)),executionReceipts:closed?state.task.executionReceipts??[]:executions.list(state.task.id)}:null,backgroundChats:!!runtimeFactory,tasks:summaries(observations),workActivity:workActivity(observations),activityInbox:inbox.list().flatMap(event=>{const task=taskRecords.get(event.taskId);return task?[{...event,title:task.title,projectName:state.projects.find(p=>p.id===task.projectId)?.name??'Project'}]:[];})});};
-  const saveTask=()=>{
-    if(!state.task)return;persistActivity(state.task,()=>{analytics.sync(state.task);history.sync(state.task);state.task.messages=state.task.messages.slice(-150);context.task=state.task;
-    const previous=taskRecords.get(state.task.id);
-    if(previous&&JSON.stringify({...previous,updatedAt:undefined})!==JSON.stringify({...state.task,updatedAt:undefined}))state.task.updatedAt=new Date(Math.max(Date.now(),Date.parse(previous.updatedAt)+1)).toISOString();
-    taskRecords.set(state.task.id,structuredClone(state.task));
-    db.prepare('INSERT INTO tasks(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(state.task.id,JSON.stringify(state.task));});
+  const saveTask=()=>{if(state.task){saveRecord(state.task);context.task=state.task;}};
+  const persist=()=>{
+    if(closed)return;const pendingBefore=new Map(pendingActivity),recordsBefore=new Map(taskRecords);
+    db.exec('SAVEPOINT controller_persist');
+    try{
+      saveTask();for(const id of new Set([...pendingActivity.values()].map(item=>item.taskId)))saveRecord(contexts.get(id)?.task??taskRecords.get(id));
+      const drafts=revision(state.drafts);if(!sameRevision(draftRevision,drafts))draftStore.sync(state.drafts);
+      state.tasks=summaries();const {task,...metadata}={...state,runtime:{...state.runtime,childInspections:undefined,modelCatalog:undefined}},signature=revision(metadata),taskJson=task?taskPersistence.get(task.id).json:'null';
+      if(appPersistence?.taskJson!==taskJson||!sameRevision(appPersistence?.signature,signature)){
+        // Reuse the task's durable JSON instead of encoding its entire retained
+        // transcript a second time for each app/status update. Keep the on-disk
+        // schema compatible with existing profiles and recovery readers.
+        const json=JSON.stringify(metadata);db.prepare('INSERT INTO app(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(json.slice(0,-1)+',"task":'+taskJson+'}');appPersistence={signature,taskJson};
+      }
+      for(const project of state.projects){const signature=revision(project);if(!sameRevision(projectPersistence.get(project.id),signature)){db.prepare('INSERT INTO projects(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(project.id,JSON.stringify(project));projectPersistence.set(project.id,signature);}}
+      db.exec('RELEASE controller_persist');draftRevision=drafts;const refs=revision(sourceDescriptors(metadata));if(!sameRevision(appSourceRevision,refs)){appSourceRevision=refs;sourceOwnerVersion++;}
+    }catch(error){
+      db.exec('ROLLBACK TO controller_persist; RELEASE controller_persist');invalidatePersistence();pendingActivity.clear();for(const [key,item] of pendingBefore)pendingActivity.set(key,item);taskRecords.clear();for(const [id,task] of recordsBefore)taskRecords.set(id,task);inbox.refresh();throw error;
+    }
   };
-  const persist=()=>{if(closed)return;saveTask();for(const id of new Set([...pendingActivity.values()].map(item=>item.taskId)))saveRecord(contexts.get(id)?.task??taskRecords.get(id));draftStore.sync(state.drafts);state.tasks=summaries();db.prepare('INSERT INTO app(id,json) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(JSON.stringify({...state,runtime:{...state.runtime,childInspections:undefined,modelCatalog:undefined}}));for(const p of state.projects)db.prepare('INSERT INTO projects(id,json) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET json=excluded.json').run(p.id,JSON.stringify(p));};
   const emit=()=>{if(closed)return;persist();const view=getState();for(const listener of listeners)try{listener(view);}catch{}};
   const runtimeDirty=new Set();let runtimeTimer=null;
   const flushRuntime=()=>{
@@ -295,8 +348,11 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     for(const task of runtimeDirty)if(task.id!==state.task?.id)saveRecord(task);runtimeDirty.clear();emit();
   };
   const publishRuntime=(task,next,owner)=>{
+    const runtimeRevision=revision(next),taskRevision=revision(task,true);
+    if(sameRevision(owner.publishedRuntime,runtimeRevision)&&sameRevision(owner.publishedTask,taskRevision))return;
     if(task)runtimeDirty.add(task);const control=JSON.stringify([next.inputAccepted,next.nativeSessionId,(next.activity?.items??[]).map(item=>[item.id,item.status,item.tool])]);const replaceable=task&&next.status==='running'&&!next.pending&&owner.lastStreamRun===next.runId&&owner.lastControl===control&&!next.activity?.items?.some(item=>item.status==='waiting');owner.lastStreamRun=next.runId;owner.lastControl=control;
-    if(!replaceable){if(runtimeDirty.size)flushRuntime();else emit();return;}
+    if(!replaceable){if(runtimeDirty.size)flushRuntime();else emit();owner.publishedRuntime=runtimeRevision;owner.publishedTask=taskRevision;return;}
+    owner.publishedRuntime=runtimeRevision;owner.publishedTask=taskRevision;
     if(!runtimeTimer){runtimeTimer=setTimeout(flushRuntime,40);runtimeTimer.unref?.();}
   };
   const message=(role,text)=>{if(state.task){state.task.messages.push({id:randomUUID(),role,text:String(text).slice(0,16000),at:now()});state.task.messages=state.task.messages.slice(-150);}};
@@ -342,16 +398,55 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   };
   const requireTask=()=>{if(!state.task||!state.activeProject)throw Error('Open a project and start a task first.');return state.task;};
   const diffCache=new Map();
-  const applyCurrentSnapshot=async snap=>{
+  const applyCurrentSnapshot=async(snap,isCurrent=()=>true)=>{
     const task=requireTask();
-    if(task.revision!==snap.revision){task.revision=snap.revision;task.previewRevision=null;task.acceptedRevision=null;if(task.check?.status==='running')checkInvalidated=true;else if(task.check)task.check.status='stale';await stopPreview();}
+    if(!isCurrent())return null;
+    if(task.revision!==snap.revision){await stopPreview();if(!isCurrent())return null;task.revision=snap.revision;task.previewRevision=null;task.acceptedRevision=null;if(task.check?.status==='running')checkInvalidated=true;else if(task.check)task.check.status='stale';}
     for(const key of diffCache.keys())if(!Object.hasOwn(baseline,key)&&!Object.hasOwn(snap.files,key))diffCache.delete(key);
     task.changes=changes(baseline,snap.files,diffCache).map(file=>({...file,revision:snap.revision}));return snap;
   };
   const current=async(verify=true)=>{
+    if(verify)invalidateRefresh();
     requireTask();const root=state.activeProject.root;
     if(await canonicalRoot(root)!==root)throw Error('The workspace canonical path changed. Reopen the project.');
     return applyCurrentSnapshot(await snapshot(root,{verify}));
+  };
+  const invalidateRefresh=()=>{
+    refreshGeneration++;const pending=backgroundRefresh;if(!pending)return;
+    backgroundRefresh=null;pending.abort.abort();pending.resolve(getState());
+  };
+  const refreshEvidence=task=>JSON.stringify([task?.revision,task?.acceptedRevision,task?.previewRevision,task?.runtimeComplete,task?.check?.id,task?.check?.revision,task?.check?.status,task?.validationRun]);
+  const requestRefresh=()=>{
+    if(backgroundRefresh)return backgroundRefresh.promise;
+    const pending={generation:refreshGeneration,abort:new AbortController()};pending.promise=new Promise(resolve=>{pending.resolve=resolve;});backgroundRefresh=pending;
+    const fresh=()=>!closing&&!closed&&!pending.abort.signal.aborted&&pending.generation===refreshGeneration;
+    const admitted=queue.then(()=>fresh()?{project:state.activeProject,task:state.task,baseline,owner:context,evidence:refreshEvidence(state.task)}:null);
+    void(async()=>{
+      const scope=await admitted;if(!scope)return;
+      const selected=()=>fresh()&&state.activeProject===scope.project&&state.task===scope.task&&context===scope.owner&&baseline===scope.baseline;
+      const evidence=()=>selected()&&refreshEvidence(scope.task)===scope.evidence;
+      let observation,error;
+      try{
+        if(scope.project){
+          const root=scope.project.root;if(await canonicalRoot(root)!==root)throw Error('The workspace canonical path changed. Reopen the project.');
+          if(!evidence())return;
+          const [snap,info,git]=await Promise.all([scope.task?snapshot(root,{verify:false,signal:pending.abort.signal}):null,scriptsFor(root),projectGit(root)]);
+          if(!evidence())return;if(await canonicalRoot(root)!==root)throw Error('The workspace canonical path changed. Reopen the project.');observation={snap,info,git};
+        }
+      }catch(cause){error=cause;}
+      if(!evidence())return;
+      // Only the short observation commit joins the mutation queue. A slow read
+      // can be abandoned without delaying a send, stop, navigation, or close.
+      const commit=queue.then(async()=>{
+        if(!evidence())return;
+        if(error){state.error=error.message;emit();return;}
+        if(scope.task&&!await applyCurrentSnapshot(observation.snap,evidence))return;
+        if(!selected())return;
+        if(scope.project){scope.project.scripts=observation.info.scripts;Object.assign(scope.project,observation.git);}
+        state.error=null;state.runtime=runtime?.snapshot?.()??state.runtime;emit();
+      });queue=commit.catch(()=>{});await commit;
+    })().catch(error=>{if(fresh()){state.error=error.message;try{emit();}catch{/* Keep the storage failure visible in the returned state; retry may persist it later. */}}}).finally(()=>{if(backgroundRefresh===pending)backgroundRefresh=null;if(!closed)pending.resolve(getState());});
+    return pending.promise;
   };
   const stopPreview=async()=>{previewToken=null;const child=previewProcess;previewProcess=null;await killTree(child);state.preview=stopped();};
   const observeCheck=(task,check)=>{const kind={passed:'check_passed',failed:'check_failed',cancelled:'check_stopped',stale:'check_stale'}[check?.status];if(kind){retainActivity(task,[{source:'check',sourceId:check.id,kind}]);saveRecord(task);}};
@@ -398,10 +493,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(state.task?.id===id){await navigationCleanup();state.task=null;baseline={};diffCache.clear();state.runtime=missingRuntime();}
     db.exec('BEGIN IMMEDIATE');
     try{
-      inbox.deleteTask(id);executions.deleteTask(id);runChanges.deleteTask(id);outputs.deleteTask(id);history.deleteTask(id);db.prepare('DELETE FROM restore_operations WHERE task_id=?').run(id);db.prepare('DELETE FROM tasks WHERE id=?').run(id);db.prepare('DELETE FROM baselines WHERE task_id=?').run(id);db.prepare('DELETE FROM checkpoints WHERE task_id=?').run(id);
+      inbox.deleteTask(id);executions.deleteTask(id);runChanges.deleteTask(id);outputs.deleteTask(id);history.deleteTask(id);writeSourceRecord('DELETE FROM restore_operations WHERE task_id=?',id);db.prepare('DELETE FROM tasks WHERE id=?').run(id);writeSourceRecord('DELETE FROM baselines WHERE task_id=?',id);writeSourceRecord('DELETE FROM checkpoints WHERE task_id=?',id);
       const retained=contexts.get(id);if(retained){retained.unsubscribe?.();retained.unsubscribe=null;retained.task=null;contexts.delete(id);}if(context.task?.id===id)context.task=null;
       promptShelf.deleteOwner(draftKey(target.projectId,id));analytics.deleteTask(id);taskRecords.delete(id);delete state.drafts[draftKey(target.projectId,id)];state.checkpoints=state.checkpoints.filter(item=>item.taskId!==id);persist();db.exec('COMMIT');for(const [key,item] of pendingActivity)if(item.taskId===id)pendingActivity.delete(key);inbox.refresh();
-    }catch(error){db.exec('ROLLBACK');inbox.refresh();Object.assign(state,previous.state);baseline=previous.baseline;taskRecords.clear();for(const [key,value] of previous.records)taskRecords.set(key,value);state.runtime=runtime?.snapshot?.()??missingRuntime();throw error;}
+    }catch(error){db.exec('ROLLBACK');invalidatePersistence();inbox.refresh();Object.assign(state,previous.state);baseline=previous.baseline;taskRecords.clear();for(const [key,value] of previous.records)taskRecords.set(key,value);state.runtime=runtime?.snapshot?.()??missingRuntime();throw error;}
     imageLeases.delete(draftKey(target.projectId,id));
     await releaseImages(target.projectId,deletedImages).catch(()=>{});
     try{db.exec('PRAGMA wal_checkpoint(TRUNCATE)');}catch{/* Logical deletion is committed; SQLite retries checkpointing on close. */}
@@ -443,7 +538,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const demo=mode==='demo',plan=demo?'Demo plan: add a caffeine preference filter to the tea collection. Offer All teas and Caffeine free choices, preserve the storefront, and keep product counts clear.':'Review the request and local project. Describe the intended change, then approve this plan before accepting work.';
     const createdAt=now();state.task={runOptions:options,id:randomUUID(),projectId:state.activeProject.id,createdAt,updatedAt:createdAt,title:request.trim().slice(0,100),request:request.trim().slice(0,12000),requestOrigin:'initial',mode,plan,criteria:demo?['Caffeine free shows only herbal teas.','All teas restores the full collection.','The storefront works at narrow widths.']:['The requested change works in the preview.','The selected project check passes.'],planApproved:false,baselineRevision:snap.revision,revision:snap.revision,changes:[],messages:[],shellResults:[],runs:[],promptQueue:[],queuePaused:true,check:null,previewRevision:null,acceptedRevision:null,runtimeComplete:false};
     bindContext(state.task);
-    db.prepare('INSERT INTO baselines(task_id,revision,json) VALUES(?,?,?)').run(state.task.id,snap.revision,JSON.stringify(baseline));
+    writeSourceRecord('INSERT INTO baselines(task_id,revision,json) VALUES(?,?,?)',state.task.id,snap.revision,JSON.stringify(baseline));
     message('system',demo?'Deterministic tutorial. Only this copied sample is edited; diffs, preview, checks and checkpoints use real local files.':mode==='muse'?'Muse chat started. Send a request to connect with your selected approval access. Planning is optional; execution access is set in your connection settings.':'Local task started. Approving a manual plan explicitly confirms user-directed manual work.');message(demo?'assistant':'system',plan);
   };
   const refreshScripts=async()=>{const p=state.activeProject;if(!p)throw Error('Open a project first.');p.scripts=(await scriptsFor(p.root)).scripts;Object.assign(p,await projectGit(p.root));return p;};
@@ -562,6 +657,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const captureTurn=(turn,owner,next,confirmed)=>{
     if(turn.captureScheduled)return;turn.captureScheduled=true;
     const taskId=turn.taskId,runId=turn.promptId,root=turn.captureRoot;
+    if(closing||closed){if(!closed)runChanges.unavailable(taskId,runId,'The app closed before a source capture was confirmed.');return;}
     if(!confirmed||!root){runChanges.unavailable(taskId,runId,'The run did not report a confirmed owned terminal outcome.');return;}
     owner.sourceCapturePending=true;
     const capture=queue.then(async()=>{
@@ -592,6 +688,62 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     return{snap,attachments};
   };
   db.exec('CREATE TABLE IF NOT EXISTS restore_operations(id TEXT PRIMARY KEY, task_id TEXT NOT NULL, json TEXT NOT NULL)');
+  let sourceInventoryCache=null,sourceInventoryBuild=null,liveSourceRevision=null,liveSourceVersion=0;
+  const sourceDataVersion=db.prepare('PRAGMA data_version'),sourceTables=['baselines','checkpoints','restore_operations','tasks','app','run_changes'];
+  const sourceRows=sourceTables.map(table=>db.prepare(`SELECT rowid AS source_rowid,json FROM ${table} WHERE rowid>? ORDER BY rowid LIMIT 1`));
+  const sourceDatabaseRevision=()=>`${sourceOwnerVersion}:${sourceDataVersion.get().data_version}`;
+  const prepareSourceInventory=()=>{
+    const databaseRevision=sourceDatabaseRevision();
+    if(sourceInventoryCache?.revision===databaseRevision)return{complete:true,reused:true,rows:sourceInventoryCache.rows};
+    if(sourceInventoryBuild?.revision!==databaseRevision)sourceInventoryBuild={revision:databaseRevision,table:0,cursor:0,manifests:[],rows:0,bytes:0};
+    const build=sourceInventoryBuild;if(build.failed)return{complete:false,failed:true,rows:build.rows};
+    const start=performance.now();let processed=0;
+    try{
+      const manifest=value=>{if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Invalid retained source manifest.');build.manifests.push(value);};
+      // StatementSync.iterate() on a temporary statement can be collected while
+      // native SQLite still owns its row. Stable keyset reads also bound work
+      // per maintenance slice; large chat bodies are parsed once per source
+      // owner generation, never on every progress or acknowledged draft edit.
+      while(build.table<sourceTables.length&&processed<8&&performance.now()-start<8){
+        const row=sourceRows[build.table].get(build.cursor);
+        if(!row){build.table++;build.cursor=0;continue;}
+        build.rows++;processed++;build.bytes+=Buffer.byteLength(row.json);
+        if(build.rows>20000||build.bytes>512*1024*1024)throw Error('Source reference inventory exceeds its maintenance budget.');
+        const value=JSON.parse(row.json);if(!value||typeof value!=='object'||Array.isArray(value))throw Error('Invalid source reference owner.');
+        const table=sourceTables[build.table];if(table==='baselines')manifest(value);else if(table==='checkpoints')manifest(value.files);else if(table==='restore_operations'){manifest(value.before);manifest(value.after);}else manifest(sourceDescriptors(value));
+        build.cursor=row.source_rowid;
+      }
+      if(databaseRevision!==sourceDatabaseRevision()){sourceInventoryBuild=null;return{complete:false,rows:build.rows};}
+      if(build.table<sourceTables.length)return{complete:false,rows:build.rows};
+      sourceInventoryCache={revision:databaseRevision,manifests:build.manifests,rows:build.rows};sourceInventoryBuild=null;return{complete:true,reused:false,rows:build.rows};
+    }catch{build.failed=true;return{complete:false,failed:true,rows:build.rows};}
+  };
+  const sourceReferences=()=>{
+    if(closing||closed)return{complete:false};
+    try{
+      const databaseRevision=sourceDatabaseRevision();
+      if(sourceInventoryCache?.revision===databaseRevision&&sourceInventoryCache.baseline===baseline&&sourceInventoryCache.inventory)return sourceInventoryCache.inventory;
+      if(sourceInventoryCache?.revision!==databaseRevision)return{complete:false};
+      const live=sourceDescriptors([state.task,[...taskRecords.values()],[...contexts.values()].map(owner=>owner.task)]),signature=revision([baseline,live]);
+      if(!sameRevision(liveSourceRevision,signature)){liveSourceRevision=signature;liveSourceVersion++;}
+      const inventory={complete:true,revision:`${databaseRevision}:${liveSourceVersion}`,manifests:[...sourceInventoryCache.manifests,baseline,live]};sourceInventoryCache.baseline=baseline;sourceInventoryCache.inventory=inventory;return inventory;
+    }catch{return{complete:false};}
+  };
+  const withSourceReferenceLock=work=>{
+    const timeout=db.prepare('PRAGMA busy_timeout').get().timeout;let acquired=false;
+    // Cross-process checkpoint writers share this lock with the final reference
+    // read and unlink. Never wait for a writer, nest a transaction, or retain a
+    // database lock across a filesystem await.
+    db.exec('PRAGMA busy_timeout=0');
+    try{db.exec('BEGIN IMMEDIATE');acquired=true;return work();}
+    finally{if(acquired)db.exec('ROLLBACK');db.exec(`PRAGMA busy_timeout=${Number.isSafeInteger(timeout)?timeout:0}`);}
+  };
+  const collectSourceObjects=()=>{
+    if(closing||closed||state.busy||checkProcess||[...new Set([context,...contexts.values()])].some(owner=>contextBusy(owner)||owner.sourceCapturePending))return Promise.resolve({scanned:0,deleted:0,bytesDeleted:0,errors:0,done:false,skipped:'workspace-busy'});
+    const inventory=prepareSourceInventory();
+    if(!inventory.complete)return Promise.resolve({scanned:0,deleted:0,bytesDeleted:0,errors:0,done:false,phase:'inventory',inventoryRows:inventory.rows,skipped:inventory.failed?'references':'inventory'});
+    return sourceSnapshots.collect({references:sourceReferences,withReferenceLock:withSourceReferenceLock}).then(result=>({...result,inventoryRows:inventory.rows,inventoryReused:inventory.reused}));
+  };
   const inspectCheckpoint=async({taskId,id}={})=>{
     const t=requireTask();if(taskId!==t.id)throw Error('Active chat changed.');const row=db.prepare('SELECT json FROM checkpoints WHERE id=? AND task_id=?').get(id,taskId);if(!row)throw Error('Checkpoint not found in this chat.');const checkpoint=JSON.parse(row.json),snap=await snapshot(state.activeProject.root,{verify:false});
     return{revision:snap.revision,files:changes(snap.files,checkpoint.files).map(change=>({...change,revision:snap.revision,checkpointId:id,restorable:!snap.files[change.path]?.binary&&!checkpoint.files[change.path]?.binary})),operations:db.prepare('SELECT json FROM restore_operations WHERE task_id=? ORDER BY rowid DESC LIMIT 5').all(taskId).map(row=>{const op=JSON.parse(row.json);return{id:op.id,status:op.status,completed:op.completed.length,total:op.paths.length};})};
@@ -688,7 +840,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       const taskId=randomUUID();requireScheduledWritable({id:taskId},project);const snap=await snapshot(project.root);
       if(closing||await scheduleRootIdentity(project.root)!==schedule.rootIdentity)throw Error('The app is closing or the project folder changed.');
       const createdAt=now(),task={id:taskId,projectId:project.id,title:run.spec.title,createdAt,updatedAt:createdAt,request:run.spec.prompt,mode:'muse',runOptions:run.spec.runOptions,plan:'Scheduled request explicitly enabled by the user.',criteria:[],planApproved:false,baselineRevision:snap.revision,revision:snap.revision,changes:[],messages:[],shellResults:[],runs:[],promptQueue:[],queuePaused:true,check:null,previewRevision:null,acceptedRevision:null,runtimeComplete:false,scheduleOrigin:{id,runId:run.id}};
-      db.prepare('INSERT INTO baselines(task_id,revision,json) VALUES(?,?,?)').run(task.id,snap.revision,JSON.stringify(snap.files));
+      writeSourceRecord('INSERT INTO baselines(task_id,revision,json) VALUES(?,?,?)',task.id,snap.revision,JSON.stringify(snap.files));
       owner=newContext(runtimeFactory(),task);owner.schedule={id,runId:run.id};contexts.set(task.id,owner);subscribeContext(owner);saveRecord(task);schedules.attach(id,run.id,task.id);
       owner.scheduleDeadline=setTimeout(()=>void stopScheduledRun(id,run.id,'timed-out').catch(()=>{}),Math.max(1,run.deadlineAt-scheduleNow()));owner.scheduleDeadline.unref?.();
       await connectNative(owner,task,project,{transport:'exec',fullAccess:run.spec.fullAccess,workspaceTools:false});
@@ -766,6 +918,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     return next;
   };
   const sendToTask=async(action,t=state.task,context=contexts.get(t?.id)??selectedContext())=>{
+        invalidateRefresh();
         if(action.recentContext&&!action.fromQueue)throw Error('Review recent excerpts in Session before including them.');
         const runtime=context.runtime,project=state.projects.find(p=>p.id===t?.projectId);if(!t||!project)throw Error('Chat or project unavailable.');
         const assertGoalDispatch=()=>{if(!action.fromGoal)return;const driver=t.goal?.driver;if(!driver?.armed||driver.id!==action.goalDriverId)throw Error(driver?.reason||'Goal continuation is no longer active.');if(Date.now()>=driver.deadline){pauseGoalDriver(driver,'Time budget reached');throw Error(driver.reason);}if(context!==selectedContext()||t.promptQueue?.length)throw Error('User input or navigation takes priority');};
@@ -813,7 +966,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
             if(recentTransaction){db.exec('RELEASE recent_context_dispatch');recentTransaction=false;}
           }catch(error){
             try{if(recentTransaction)db.exec('ROLLBACK TO recent_context_dispatch; RELEASE recent_context_dispatch');}
-            finally{if(beforePreparation){Object.assign(t,beforePreparation);context.pending=false;context.turn=null;taskRecords.set(t.id,structuredClone(t));}}
+            finally{invalidatePersistence();if(beforePreparation){Object.assign(t,beforePreparation);context.pending=false;context.turn=null;taskRecords.set(t.id,structuredClone(t));}}
             throw error;
           }
           try{await runtime.send({text:contextPrompt,imagePaths,...(durable?{sessionId:durable.session.id,resumeSession:Boolean(previousSession)}:{}),mode:action.mode??'chat',runOptions:restoreRunOptions(action.fromQueue?action.runOptions:t.runOptions)});}
@@ -1066,13 +1219,13 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
             const before={state:structuredClone(state),record:taskRecords.get(t.id),baseline};
             db.exec('BEGIN IMMEDIATE');
             try{
-              db.prepare('UPDATE baselines SET revision=?,json=? WHERE task_id=?').run(snap.revision,JSON.stringify(snap.files),t.id);
+              writeSourceRecord('UPDATE baselines SET revision=?,json=? WHERE task_id=?',snap.revision,JSON.stringify(snap.files),t.id);
               promptShelf.move(oldKey,draftKey(t.projectId,t.id));
               if(draft){state.drafts[draftKey(t.projectId,t.id)]=draft;delete state.drafts[oldKey];}
               if(contexts.has(t.id))contexts.get(t.id).task=t;taskRecords.set(t.id,t);db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(t),t.id);
               if(state.task?.id===t.id){state.task=t;state.activeProject=destination;baseline=snap.files;diffCache.clear();}
               state.sidebarOrder=planned.orders;persist();db.exec('COMMIT');
-            }catch(error){db.exec('ROLLBACK');Object.assign(state,before.state);taskRecords.set(t.id,before.record);baseline=before.baseline;throw error;}
+            }catch(error){db.exec('ROLLBACK');invalidatePersistence();Object.assign(state,before.state);taskRecords.set(t.id,before.record);baseline=before.baseline;throw error;}
           }else{
             if(action.section==='pinned')t.pinned=true;
             if(action.section==='recents')t.pinned=false;
@@ -1234,8 +1387,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         const info=await inspectCheckpoint(action);if(info.revision!==action.revision)throw Error('Files changed after review. Refresh the comparison.');if(!Array.isArray(action.paths)||action.paths.some(name=>!info.files.some(f=>f.path===name&&f.restorable)))throw Error('Select captured text files from the comparison.');
         const row=db.prepare('SELECT json FROM checkpoints WHERE id=? AND task_id=?').get(action.id,t.id),saved=JSON.parse(row.json),snap=await snapshot(state.activeProject.root);if(snap.revision!==action.revision)throw Error('Files changed after review.');
         const backup={id:randomUUID(),taskId:t.id,title:'Before restore · '+t.title,revision:snap.revision,createdAt:now()};
-        db.prepare('INSERT INTO checkpoints(id,task_id,revision,json) VALUES(?,?,?,?)').run(backup.id,t.id,snap.revision,JSON.stringify({...backup,files:snap.files}));state.checkpoints.unshift(backup);persist();
-        try{await restoreSelected({root:state.activeProject.root,before:snap.files,after:saved.files,paths:action.paths,content:sourceSnapshots,record:operation=>db.prepare('INSERT OR REPLACE INTO restore_operations(id,task_id,json) VALUES(?,?,?)').run(operation.id,t.id,JSON.stringify(operation))});}finally{await current();}
+        writeSourceRecord('INSERT INTO checkpoints(id,task_id,revision,json) VALUES(?,?,?,?)',backup.id,t.id,snap.revision,JSON.stringify({...backup,files:snap.files}));state.checkpoints.unshift(backup);persist();
+        try{await restoreSelected({root:state.activeProject.root,before:snap.files,after:saved.files,paths:action.paths,content:sourceSnapshots,record:operation=>writeSourceRecord('INSERT OR REPLACE INTO restore_operations(id,task_id,json) VALUES(?,?,?)',operation.id,t.id,JSON.stringify(operation))});}finally{await current();}
         t.check=null;t.checkReceipts=[];t.previewRevision=null;t.acceptedRevision=null;message('system','Selected files restored. Use the Before restore checkpoint to redo. Git staging and conversation history were not changed.');break;
       }
       case 'refresh':if(state.task)await current(false);if(state.activeProject)await refreshScripts();state.runtime=runtime?.snapshot?.()??state.runtime;break;
@@ -1258,7 +1411,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'accept':{
         const snap=await current(),t=state.task;const missing=missingChecks(t,snap.revision,state.activeProject.validationScripts??[]);if(missing.length)throw Error('Validation profile needs passing checks for this revision: '+missing.join(', '));if(action.revision!==snap.revision)throw Error('Revision changed. Inspect and check the current files.');if(!t.planApproved)throw Error('Approve the plan first.');if(!t.runtimeComplete)throw Error('The Muse turn must complete, or explicitly approve a manual work plan.');if(t.previewRevision!==snap.revision||state.preview.status!=='running')throw Error('Inspect the running preview for this exact revision.');if(t.check?.action||t.check?.status!=='passed'||t.check.revision!==snap.revision)throw Error('A passing check for this exact revision is required.');
         const verified=await current();if(verified.revision!==snap.revision)throw Error('Files changed while accepting. Repeat preview and checks.');if(!t.runtimeComplete||state.preview.status!=='running'||t.previewRevision!==verified.revision||t.check?.action||t.check?.status!=='passed'||t.check.revision!==verified.revision)throw Error('Review evidence changed while accepting. Repeat preview and checks.');if(t.acceptedRevision===snap.revision)break;
-        const checkpoint={id:randomUUID(),taskId:t.id,title:t.title,revision:snap.revision,createdAt:now()};db.exec('BEGIN IMMEDIATE');try{db.prepare('INSERT INTO checkpoints(id,task_id,revision,json) VALUES(?,?,?,?)').run(checkpoint.id,t.id,snap.revision,JSON.stringify({...checkpoint,files:verified.files}));state.checkpoints.unshift(checkpoint);t.acceptedRevision=snap.revision;persist();db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');throw e;}message('system',`Local checkpoint saved for revision ${snap.revision.slice(0,12)}.`);break;
+        const checkpoint={id:randomUUID(),taskId:t.id,title:t.title,revision:snap.revision,createdAt:now()};db.exec('BEGIN IMMEDIATE');try{writeSourceRecord('INSERT INTO checkpoints(id,task_id,revision,json) VALUES(?,?,?,?)',checkpoint.id,t.id,snap.revision,JSON.stringify({...checkpoint,files:verified.files}));state.checkpoints.unshift(checkpoint);t.acceptedRevision=snap.revision;persist();db.exec('COMMIT');}catch(e){db.exec('ROLLBACK');invalidatePersistence();throw e;}message('system',`Local checkpoint saved for revision ${snap.revision.slice(0,12)}.`);break;
       }
       case 'recoverSession':{
         requireNavigationIdle();const t=requireTask();if(!['continue','fresh'].includes(action.choice))throw Error('Choose a session recovery action.');
@@ -1328,7 +1481,14 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       state.runtime=runtime?.snapshot?.()??missingRuntime();emit();
     });queue=op.catch(()=>{});return op;
   };
+  let sourceGcContinuation=null;
+  const maintainSourceObjects=async()=>{
+    clearTimeout(sourceGcContinuation);sourceGcContinuation=null;const result=await collectSourceObjects().catch(()=>null);
+    if(result&&!result.done&&!closing&&!closed&&!["references","storage","workspace-busy","reference-lock","cancelled"].includes(result.skipped)){sourceGcContinuation=setTimeout(()=>void maintainSourceObjects(),1000);sourceGcContinuation.unref?.();}
+  };
+  await maintainSourceObjects();
+  const sourceGcTimer=setInterval(()=>void maintainSourceObjects(),60000);sourceGcTimer.unref?.();
   const archiveTimer=setInterval(()=>{queue=queue.then(async()=>{if(closed||closing)return;if(inbox.prune())emit();await purgeArchived();}).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,cancelSourceScan:()=>sourceSnapshots.cancel(),discoverySourceBusy:sourceId=>[...new Set([context,...contexts.values()])].some(c=>contextBusy(c)&&c.runtime?.snapshot?.().toolDiscovery?.sources?.some(row=>row.id===sourceId)),discoveryOwnerSnapshot,discoveryAuth,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,listSavedPrompts,readPromptShelf,transferCodeDraft,parkCodeDraft,restoreSavedPrompt,removeSavedPrompt,readMcpServers,inspectDiscoverySources,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!modelCatalogCleanup&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectSourceDiff,inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,findChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='inspectChild')return inspectChild(action);if(action?.type==='refreshModels'&&modelCatalogPending)return modelCatalogPending;const refreshEpoch=modelCatalogEpoch;const op=queue.then(async()=>{if(closed)throw Error('Controller closed.');state.error=null;const quiet=action?.type==='saveDraft';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');if(['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse'].includes(action.type)){discoveryReview=null;discoveryInspectEpoch++;}if(action.type!=='refreshModels'||refreshEpoch===modelCatalogEpoch)await handle(action);if(authSourceRef&&['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse','connectMuse'].includes(action.type))await discoveryOAuth?.()?.inspectSource(authSourceRef).catch(()=>{});}catch(e){state.error=e.message;}finally{if(quiet)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});if(action?.type==='refreshModels'){modelCatalogPending=op;void op.finally(()=>{if(modelCatalogPending===op)modelCatalogPending=null;}).catch(()=>{});}return op;},close(){if(closePromise)return closePromise;closing=true;sourceSnapshots.cancel();modelCatalogEpoch++;modelCatalog=null;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;sourceSnapshots.close();clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
+  return{getState,collectSourceObjects,cancelSourceScan:()=>{invalidateRefresh();sourceSnapshots.cancel();},discoverySourceBusy:sourceId=>[...new Set([context,...contexts.values()])].some(c=>contextBusy(c)&&c.runtime?.snapshot?.().toolDiscovery?.sources?.some(row=>row.id===sourceId)),discoveryOwnerSnapshot,discoveryAuth,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,listSavedPrompts,readPromptShelf,transferCodeDraft,parkCodeDraft,restoreSavedPrompt,removeSavedPrompt,readMcpServers,inspectDiscoverySources,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!modelCatalogCleanup&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectSourceDiff,inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,findChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='refresh')return requestRefresh();if(action?.type!=='saveDraft')invalidateRefresh();if(action?.type==='inspectChild')return inspectChild(action);if(action?.type==='refreshModels'&&modelCatalogPending)return modelCatalogPending;const refreshEpoch=modelCatalogEpoch;const op=queue.then(async()=>{if(closed||closing&&!['queueMessage','saveDraft'].includes(action?.type))throw Error('Controller closed.');state.error=null;const draftOnly=action?.type==='saveDraft',quiet=draftOnly||action?.type==='refresh';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');if(['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse'].includes(action.type)){discoveryReview=null;discoveryInspectEpoch++;}if(action.type!=='refreshModels'||refreshEpoch===modelCatalogEpoch)await handle(action);if(authSourceRef&&['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse','connectMuse'].includes(action.type))await discoveryOAuth?.()?.inspectSource(authSourceRef).catch(()=>{});}catch(e){state.error=e.message;}finally{if(draftOnly)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});if(action?.type==='refreshModels'){modelCatalogPending=op;void op.finally(()=>{if(modelCatalogPending===op)modelCatalogPending=null;}).catch(()=>{});}return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(sourceGcTimer);clearTimeout(sourceGcContinuation);invalidateRefresh();sourceSnapshots.cancel();modelCatalogEpoch++;modelCatalog=null;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);await Promise.all([...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.()));if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;await sourceSnapshots.close();clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';

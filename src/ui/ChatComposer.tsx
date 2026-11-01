@@ -12,6 +12,7 @@ import type {CodeImage,RunOptions,RuntimeState} from '../shared/types';
 import {ReasoningPicker,reasoningLabels as labels} from './ReasoningPicker';
 import {modelSettingsView} from '../shared/model-settings.mjs';
 import {useDictation} from './useDictation';
+import {appendDictation} from '../shared/dictation-budget.mjs';
 import './composer.css';
 const approvals:{id:RunOptions['approval'];label:string;description:string}[]=[
  {id:'ask',label:'Ask for approval',description:'Safe actions run. Requests needing your approval stop the run.'},
@@ -22,9 +23,12 @@ type Props={onAnnotate?:import('./ImageAnnotationEditor').AnnotateImage;onSaveFo
 export function ChatComposer(p:Props){
  const [skillsOpen,setSkillsOpen]=useState(false);
  const [menu,setMenu]=useState<'add'|'approval'|'reasoning'|null>(null);
+ const [speechNotice,setSpeechNotice]=useState('');
  const imageInput=useRef<HTMLInputElement>(null);
  const root=useRef<HTMLFormElement>(null),opener=useRef<HTMLElement|null>(null);
  const voice=useDictation(p.active&&!p.busy&&!p.running,p.context,p.onChange);
+ const canReinsert=!!voice.overflow&&appendDictation(p.value,voice.overflow).text!==p.value;
+ const copySpeech=async()=>{try{if(window.musebench?.copyText)await window.musebench.copyText(voice.overflow);else await navigator.clipboard.writeText(voice.overflow);setSpeechNotice('Extra speech copied.');}catch{setSpeechNotice('Select the extra text and copy it manually.');}};
  const hasPrompt=!!p.value.trim()||p.images.some(image=>!!image.annotation?.marks.length);
  const muse=p.taskMode==='muse',approval=approvals.find(item=>item.id===p.options.approval)!;
  const locked=p.busy||p.running||voice.recording||p.uploadingImages;
@@ -33,6 +37,7 @@ export function ChatComposer(p:Props){
  const close=()=>{setMenu(null);opener.current?.focus();};
  const open=(kind:typeof menu,event:React.MouseEvent<HTMLButtonElement>)=>{opener.current=event.currentTarget;setMenu(menu===kind?null:kind);};
  useEffect(()=>{setMenu(null);setSkillsOpen(false);},[p.active,p.context,p.showTask]);
+ useEffect(()=>setSpeechNotice(''),[p.context,voice.overflow]);
  useLayoutEffect(()=>{
   if(!menu||menu==='reasoning')return;
   const position=()=>{const popup=root.current?.querySelector<HTMLElement>('.composer-popover'),anchor=opener.current;if(!popup||!anchor)return;const box=anchor.getBoundingClientRect(),above=box.top-56,below=window.innerHeight-box.bottom-20,down=above<popup.scrollHeight&&below>above;popup.style.top=down?'42px':'';popup.style.bottom=down?'auto':'42px';popup.style.maxHeight=Math.max(100,down?below:above)+'px';popup.style.overflowY='auto';};
@@ -58,6 +63,8 @@ export function ChatComposer(p:Props){
   {p.uploadingImages&&<span role="status">Attaching screenshots…</span>}
   <textarea data-workspace-default aria-expanded={slash.open} aria-controls={slash.open?"muse-slash-options":undefined} aria-activedescendant={slash.open?`muse-slash-${slash.index}`:undefined} ref={p.inputRef} aria-label="Message Muse" rows={2} value={p.value} onChange={event=>p.onChange(event.target.value)} placeholder={p.running||p.value?'':p.showTask?p.taskMode==='muse'?'Ask Muse anything about your project…':'Add a note to this chat…':'Ask Muse to build, fix, or explain something…'} maxLength={16000} disabled={p.busy} onKeyDown={event=>{if(event.key==='Enter'&&event.altKey&&!event.nativeEvent.isComposing&&p.onQueue&&!p.busy&&!voice.recording){event.preventDefault();p.onQueue();return;}if(slash.onKeyDown(event))return;if(event.key==='Enter'&&!event.nativeEvent.isComposing&&((event.ctrlKey||event.metaKey)||(p.enterToSend&&!event.shiftKey))){event.preventDefault();event.currentTarget.form?.requestSubmit();}}}/>
   {!voice.recording&&(voice.state.error||voice.hint)&&<div className={`dictation-status ${voice.state.error?'failed':''}`} role="status"><span>{voice.state.error||voice.hint}</span><button type="button" aria-label="Dismiss dictation notice" onClick={voice.cancel}><X size={13}/></button></div>}
+  {voice.recoveryError&&<div className="dictation-status failed" role="alert"><span>{voice.recoveryError}</span><button type="button" aria-label="Retry saving extra speech" onClick={voice.retryRecovery}>Retry</button></div>}
+  {voice.overflow&&<section className="dictation-recovery" aria-label="Dictation recovery"><p role="status">Extra speech is kept for this chat. Each message can hold 16,000 characters.</p><textarea aria-label="Extra dictated text" readOnly rows={2} value={voice.overflow}/><div className="dictation-recovery-actions"><button type="button" aria-label="Copy extra speech" onClick={()=>void copySpeech()}>Copy</button><button type="button" aria-label="Add extra speech to message" disabled={!p.active||p.busy||p.running||voice.recording||!canReinsert} onClick={()=>{voice.reinsert();p.inputRef.current?.focus();}}>Add to message</button><button type="button" aria-label="Discard extra speech" onClick={voice.dismissOverflow}>Discard</button><span role="status">{speechNotice||`${voice.overflow.length.toLocaleString()} characters kept`}</span></div></section>}
 
   <div className="composer-toolbar">{voice.recording?<><button type="button" className="icon-button" aria-label="Cancel dictation" title="Cancel dictation" onClick={voice.cancel}><X size={16}/></button><div className="dictation-track" role="status"><span className="sr-only">{voice.state.status==='starting'?'Starting microphone':voice.state.status==='stopping'?'Finishing dictation':'Recording'}</span><span className="dictation-dots" aria-hidden="true"/></div></>:<>{p.running&&<button type="button" className="icon-button" aria-label="Session controls" title="Session controls" disabled={p.busy} onClick={()=>p.onCommand('session','',p.value)}><Terminal size={16}/></button>}
    <div className="composer-control"><button type="button" className="icon-button" aria-label="Add to chat" title="Add to chat" aria-expanded={menu==='add'} disabled={locked} onClick={e=>open('add',e)}><Plus size={20}/></button>
@@ -76,7 +83,7 @@ export function ChatComposer(p:Props){
     {menu==='reasoning'&&<ReasoningPicker disabled={settingsLocked} value={p.options.reasoning} levels={selectedModel?selectedModel.efforts:REASONING_LEVELS} onChange={reasoning=>p.onOptions({...p.options,reasoning})} model={p.options.model} catalog={p.modelCatalog} onRefreshModels={p.onRefreshModels} onModelChange={model=>{const row=p.modelCatalog?.models.find(m=>model?m.id===model:m.isDefault);const {model:oldModel,...rest}=p.options;p.onOptions({...rest,...(model?{model}:{}),reasoning:row?.efforts.includes(p.options.reasoning)?p.options.reasoning:row?.defaultEffort??row?.efforts[0]??'high'});}}/>}
    </div>}
    </>}
-   <button type="button" className={`icon-button microphone-button ${voice.recording?'recording':''}`} aria-label={voice.recording?'Stop dictation':'Start dictation'} title={voice.recording?'Stop dictation':voice.state.available===false?'Dictation unavailable on this device':'Dictate with Windows speech recognition (on device)'} disabled={p.busy||p.running||voice.state.status==='stopping'||(!voice.recording&&voice.state.available===false)} onClick={()=>{setMenu(null);void voice.toggle();}}>{voice.recording?<Square size={14} fill="currentColor"/>:<Mic size={17}/>}</button>
+   <button type="button" className={`icon-button microphone-button ${voice.recording?'recording':''}`} aria-label={voice.recording?'Stop dictation':'Start dictation'} title={voice.recording?'Stop dictation':voice.state.available===false?'Dictation unavailable on this device':'Dictate with Windows speech recognition (on device)'} disabled={p.busy||p.running||voice.state.status==='stopping'||(!voice.recording&&(voice.state.available===false||!!voice.recoveryError))} onClick={()=>{setMenu(null);void voice.toggle();}}>{voice.recording?<Square size={14} fill="currentColor"/>:<Mic size={17}/>}</button>
    {!p.running&&p.onQueue&&<button type="button" className="icon-button" aria-label="Queue message" title="Queue for later - Alt+Enter" disabled={p.busy||voice.recording||!hasPrompt} onClick={p.onQueue}><ListPlus size={17}/></button>}
    {p.running?<><button type="submit" className="send-button queue-send" aria-label={p.canSteer?'Steer current turn':'Queue message'} disabled={p.busy||!hasPrompt}><ListPlus size={15}/>{p.canSteer?'Steer':'Queue'}</button><button type="button" className="send-button" aria-label="Stop Muse" onClick={p.onStop}><Square size={14} fill="currentColor"/></button></>:<button type="submit" className="send-button" aria-label={!hasPrompt&&p.onRunQueue?'Send next queued prompt':p.showTask?'Send message':'Create task'} title={!hasPrompt&&p.onRunQueue?'Send next queued prompt':'Send'} disabled={(!hasPrompt&&!p.onRunQueue)||locked||(p.showTask&&!p.canSend)}><ArrowUp size={19}/></button>}
   </div>

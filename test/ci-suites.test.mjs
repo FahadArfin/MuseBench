@@ -25,7 +25,7 @@ const required=[
  'npm run test:transcript-position','npm run test:chat-history-find','npm run test:prompt-shelf','npm run test:image-annotations','npm run test:chat-menu-tools','npm run test:workspace-focus','npm run test:navigation-cache','npm run test:browser-preview','npm run test:onboarding-preview',
  'npm run test:catalog-preview','npm run test:catalog-desktop','npm run test:billing-preview',
  'npm run test:billing-desktop','npm run test:preview-parity','node scripts/mobile-settings-smoke.mjs',
- 'node scripts/native-control-smoke.mjs','node scripts/native-navigation-smoke.mjs','node scripts/session-mcp-smoke.mjs','node scripts/session-mcp-smoke.mjs --desktop',
+ 'node scripts/native-control-smoke.mjs','node test/native-control-http-ui-smoke.mjs','node scripts/native-navigation-smoke.mjs','node scripts/session-mcp-smoke.mjs','node scripts/session-mcp-smoke.mjs --desktop',
  'node scripts/meta-settings-smoke.mjs','node scripts/meta-settings-smoke.mjs --desktop',
  'node scripts/settings-connections-smoke.mjs','node scripts/settings-connections-smoke.mjs --desktop',
  'npm run test:conversation-import','npm run test:code-schedules','npm run test:preview-annotations','npm run test:workspace-analysis','npm run test:tool-discovery','npm run test:discovery-approvals',

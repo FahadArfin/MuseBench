@@ -6,10 +6,11 @@ import {packagePaths} from './package-paths.mjs';
 import {isolatedDesktopEnvironment} from './isolated-desktop-environment.mjs';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
+import {StreamableHTTPClientTransport} from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 await mkdir('artifacts/portable-desktop',{recursive:true});
 const data=await mkdtemp(path.resolve('artifacts/portable-desktop','profile-'));
 const env=isolatedDesktopEnvironment(data);
-const errors=[],report={platform:process.platform,arch:process.arch,checks:[],errors};let app,nativeClient;
+const errors=[],report={platform:process.platform,arch:process.arch,checks:[],errors};let app,nativeClient,httpClient;
 try{
  app=await electron.launch({executablePath:packagePaths().executable,args:['--host-resolver-rules=MAP * 0.0.0.0, EXCLUDE localhost',...(process.env.CI&&process.platform==='linux'?['--no-sandbox']:[])],env,timeout:60000});
  // Electron also creates personal-chat WebContentsViews during boot. Select the
@@ -38,6 +39,13 @@ try{
   report.checks.push('Packaged ASAR import worker and real preload/controller persist selected source text; picker is a clean fixture');
  }finally{await app.evaluate(()=>globalThis.restoreImportPicker());}
  const control=await page.evaluate(()=>window.musebench.nativeControl({type:'enable'}));assert.equal(control.running,true);assert.ok(control.connectionConfig,control.connectionError);
+ assert.ok(control.httpConnectionConfig,'Packaged App control must offer the shared HTTP transport');
+ httpClient=new Client({name:'packaged-http-check',version:'1.0.0'});
+ await httpClient.connect(new StreamableHTTPClientTransport(new URL(control.httpConnectionConfig.url),{requestInit:{headers:control.httpConnectionConfig.headers}}));
+ const httpResult=await httpClient.callTool({name:'app_status',arguments:{}});assert.ok(!httpResult.isError,httpResult.content?.[0]?.text);
+ const httpStatus=JSON.parse(httpResult.content[0].text);assert.equal(httpStatus.version,expected.version);assert.equal(httpStatus.packaged,true);
+ const httpNavigation=await httpClient.callTool({name:'navigate',arguments:{target:'settings',section:'control'}});assert.ok(!httpNavigation.isError,httpNavigation.content?.[0]?.text);assert.ok(JSON.parse(httpNavigation.content[0].text).headings.includes('App control'));
+ await httpClient.close();httpClient=null;report.checks.push('Shared HTTP in the actual packaged app negotiates, inspects and navigates without a relay');
  if(process.platform==='win32'){assert.ok(control.connectionConfig.command.startsWith(data+path.sep));assert.equal(path.basename(control.connectionConfig.command),'MuseBenchControl.exe');assert.ok(control.connectionConfig.args[0].startsWith(data+path.sep));}
  nativeClient=new Client({name:'packaged-native-check',version:'1.0.0'});await nativeClient.connect(new StdioClientTransport({...control.connectionConfig,stderr:'pipe'}));
  const result=await nativeClient.callTool({name:'app_status',arguments:{}});assert.ok(!result.isError,result.content?.[0]?.text);const native=JSON.parse(result.content[0].text);assert.equal(native.version,expected.version);assert.equal(native.packaged,true);
@@ -47,4 +55,4 @@ try{
  assert.deepEqual(errors,[]);report.status='passed';
  console.log(JSON.stringify(report));
 }catch(error){report.status='failed';report.failure=error.message;throw error;}
-finally{await writeFile('artifacts/portable-desktop/report.json',JSON.stringify(report,null,2));await nativeClient?.close();await app?.close();}
+finally{await writeFile('artifacts/portable-desktop/report.json',JSON.stringify(report,null,2));await httpClient?.close();await nativeClient?.close();await app?.close();}

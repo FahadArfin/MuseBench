@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {BROWSER_LOGIN_SESSION_BLOCKED_MESSAGE,browserLoginNotice} from './browser-login-store.mjs';
 import {mergeMetaChatPins} from './meta-chat-pins.mjs';
 import {readMetaChatRows,openMetaChatRow,normalizeMetaChatRows} from './meta-chat-history.mjs';
 import {readMetaApps,connectMetaApp} from './meta-apps.mjs';
@@ -39,12 +40,16 @@ const defaultLibraryAdapter = {
 
 // Only the trusted local main frame calls this controller. Remote contents have
 // no preload and never receive project state, credentials, or the local bridge.
-export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, settings: runMetaSettings, dismiss: dismissMetaSearch, ready: metaNavigationReady }, metaAppsAdapter = {read:readMetaApps,connect:connectMetaApp}, metaHistoryAdapter = {read:readMetaChatRows,open:openMetaChatRow}, metaPinStore = {read:async()=>[],write:async()=>{}}, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 0 }) {
+export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell, onState = () => {}, onShortcut = () => {}, presentation = { apply: applyPersonalPresentation, action: runPersonalAction, state: readPersonalToolState }, libraryAdapter = defaultLibraryAdapter, metaAdapter = { action: runMetaAction, settings: runMetaSettings, dismiss: dismissMetaSearch, ready: metaNavigationReady }, metaAppsAdapter = {read:readMetaApps,connect:connectMetaApp}, metaHistoryAdapter = {read:readMetaChatRows,open:openMetaChatRow}, metaPinStore = {read:async()=>[],write:async()=>{}}, authReader = readPersonalAuth, accountReader = readMetaAccount, accountTiming = {}, warmupDelay = 800, warmLimit = 0, sessionReady = () => true, sessionStatus = () => null }) {
   // Native getters can throw after destruction: cache contents while alive.
   const localContents = window.webContents;
+  const usableSession=()=>{try{return sessionReady()!==false;}catch{return false;}};
+  const requireSession=()=>{if(!usableSession())throw Error(BROWSER_LOGIN_SESSION_BLOCKED_MESSAGE);};
   const entries = new Map(), serviceSessions = new Map(), popups = new Set(), pendingReady = new Set();
   let destination = 'chat', activeEntry = null, requestedVisible = false, launchHeld = false, cssBounds = null, closed = false;
   let compact = true, notice = null, actionEpoch = 0;
+  let dismissedSessionNotice = null;
+  const sessionNotice=()=>{try{return browserLoginNotice(sessionStatus());}catch{return null;}};
   let browserNotice = null;
   let browserNoticeDestination = null;
   let settingsAbort = null;
@@ -83,6 +88,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
 
   async function checkLogin(){
     if(closed)return {status:'unknown'};
+    if(!usableSession())return {status:'unknown',message:BROWSER_LOGIN_SESSION_BLOCKED_MESSAGE};
     if(setupLoginWindow&&!setupLoginWindow.isDestroyed()){
       const status=await readPersonalAuth(setupLoginWindow.webContents);
       if(status==='ready'){knownLogin='ready';setupLoginWindow.close();const entry=current();if(alive(entry))entry.contents.reload();return {status:'ready'};}
@@ -95,6 +101,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     return {status:knownLogin};
   }
   async function openLogin(){
+    requireSession();
     if(closed)return;
     if(setupLoginWindow&&!setupLoginWindow.isDestroyed()){setupLoginWindow.show();setupLoginWindow.focus();return;}
     const entry=alive(current())?current():selectDestination('bot'),owner=getServiceSession('muse');
@@ -116,12 +123,13 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   }
   function snapshot() {
     const entry = current(), contents = alive(entry) ? entry.contents : null;
+    const storageNotice=sessionNotice(),displayNotice=storageNotice!==dismissedSessionNotice&&storageNotice||notice;
     return {
       destination, loading: Boolean(entry?.loading || (entry?.initializing && !entry?.initialized)), origin: entry?.origin ?? personalOrigin(personalTarget(destination)),
       error: entry?.error ?? null, canGoBack: Boolean(contents?.navigationHistory.canGoBack()),
       canGoForward: Boolean(contents?.navigationHistory.canGoForward()), visible: Boolean(entry?.visible),
-      available: personalAvailability(), compact, notice, noticeCanOpenBrowser: Boolean(notice && notice === browserNotice),
-      noticeBrowserDestination: notice && notice === browserNotice ? browserNoticeDestination : null,
+      available: personalAvailability(), compact, notice:displayNotice, noticeCanOpenBrowser: Boolean(displayNotice && displayNotice === browserNotice),
+      noticeBrowserDestination: displayNotice && displayNotice === browserNotice ? browserNoticeDestination : null,
       appearance: { ...appearance }, profile: accountSync.snapshot(), agentProfile, schedules: destination==='chat'&&alive(entry)&&scheduledDocument(contents)?schedules:null,
       authenticating: isAuthenticating() || Boolean(personalAuthenticating(entry?.origin) || museAuthPending()),
       authWindowOpen: Boolean(setupLoginWindow && !setupLoginWindow.isDestroyed()) || popups.size > 0,
@@ -447,8 +455,10 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
     });
   }
   function getServiceSession(_service) {
+    requireSession();
     // Reuse the existing Muse partition: official Meta auth cookies can serve
-    // both sites. Origin isolation stays enforced; no cookies are read/copied.
+    // both sites. Origin isolation stays enforced; this UI layer never reads
+    // cookies. The main-process login store restores OS-protected session data.
     const service='meta-shared';
     if (serviceSessions.has(service)) return serviceSessions.get(service);
     const webSession = session.fromPartition('persist:musebench-personal-muse'), owned = new Set();
@@ -875,7 +885,7 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
       compact = command.compact; await presentAll();
     } else if (command.type === 'appearance') {
       appearance = { ...command.appearance }; await presentAll();
-    } else if (command.type === 'dismissNotice') notice = null;
+    } else if (command.type === 'dismissNotice') {notice = null;dismissedSessionNotice=sessionNotice();}
     else if (command.type === 'serviceAction') {
       cancelActions(); const requestEpoch = actionEpoch;
       const cachedTool = toolTargets[`muse-${command.action}`];
@@ -942,10 +952,11 @@ export function createPersonalBrowser({ window, BrowserWindow, WebContentsView, 
   function setLaunchHold(held) { if (!closed) { launchHeld = Boolean(held); publish(); } }
   function preloadInitial() {
     if (closed || alive(current())) return;
+    if(!usableSession()){notice=BROWSER_LOGIN_SESSION_BLOCKED_MESSAGE;publish();return;}
     // Start only the default page. Normal navigation keeps this exact contents
     // and its completed work; extra destinations still use the bounded cache.
     selectDestination('chat'); publish();
   }
   accountSync.start();
-  return { snapshot, dispatch, hide, close, checkLogin, openLogin, isAuthenticating, setLaunchHold, preloadInitial };
+  return { snapshot, dispatch, hide, close, checkLogin, openLogin, isAuthenticating, setLaunchHold, preloadInitial, refreshSessionStatus:publish };
 }

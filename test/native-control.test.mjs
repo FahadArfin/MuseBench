@@ -50,7 +50,7 @@ test('Windows revokes pre-existing explicit Everyone grants before publishing a 
  const dataDir=await mkdtemp(path.join(os.tmpdir(),'muse-native-acl-')),directory=path.join(dataDir,'native-control'),exec=promisify(execFile);let host;
  try{await mkdir(directory);await exec('icacls.exe',[directory,'/grant','*S-1-1-0:(OI)(CI)RX'],{windowsHide:true});
   host=await createNativeControlHost({dataDir,service:{call:()=>({})}});await host.command({type:'enable'});
-  const output=await exec('icacls.exe',[path.join(directory,'connection.json')],{windowsHide:true});assert.ok(!output.stdout.includes('Everyone'),output.stdout);
+  for(const name of ['connection.json','http-grant.json']){const output=await exec('icacls.exe',[path.join(directory,name)],{windowsHide:true});assert.ok(!output.stdout.includes('Everyone'),output.stdout);}
  }finally{await host?.close();await rm(dataDir,{recursive:true,force:true});}
 });
 

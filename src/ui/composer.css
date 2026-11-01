@@ -63,6 +63,13 @@
 .dictation-status > span:nth-child(2),.dictation-status.failed > span { flex: 1; }
 .dictation-status button { margin-left: auto; text-decoration: underline; }
 .dictation-status.failed { color: #d7897f; }
+.dictation-recovery { min-width: 0; margin: 4px 1px 10px; padding: 9px; border: 1px solid var(--border); border-radius: 10px; }
+.dictation-recovery > p { margin: 0 0 6px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.codex-composer .dictation-recovery textarea { min-height: 42px; max-height: 150px; padding: 5px 6px; border-radius: 5px; background: var(--surface); font-size: 12px; }
+.dictation-recovery-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 9px; margin-top: 5px; }
+.dictation-recovery-actions button { min-height: 32px; padding: 3px 1px; color: var(--text); font-size: 11px; text-decoration: underline; }
+.dictation-recovery-actions button:disabled { opacity: .45; cursor: default; }
+.dictation-recovery-actions span { color: var(--muted); font-size: 10px; }
 .dictation-track { flex: 1; min-width: 0; display: flex; align-items: center; padding: 0 3px; }
 .dictation-dots { width: 100%; height: 4px; background: radial-gradient(circle, var(--muted) 1px, transparent 1.5px) 0 center / 6px 4px repeat-x; animation: dictation-pulse 1.2s ease-in-out infinite; }
 @keyframes dictation-pulse { 50% { opacity: .4; } }

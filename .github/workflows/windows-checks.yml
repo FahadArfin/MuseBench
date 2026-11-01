@@ -85,6 +85,10 @@ jobs:
             artifacts/sidebar-drag/**/report.json
             artifacts/native-control/report.json
             artifacts/native-navigation/report.json
+            output/playwright/native-control-http/report.json
+            output/playwright/dictation-reliability/report.json
+            output/playwright/dictation-durability/report.json
+            artifacts/typing-refresh/**/report.json
             artifacts/navigation-cache/report.json
             artifacts/preview-annotations/**/report.json
             artifacts/workspace-analysis/**/report.json

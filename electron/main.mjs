@@ -57,12 +57,18 @@ import { createPersonalBrowser } from './personal.mjs';
 import { createStartupFailureHandler } from './startup.mjs';
 import { createLaunchAnimation } from './launch-animation.mjs';
 import { createSessionDurability } from './session-durability.mjs';
+import { createBrowserLoginStore } from './browser-login-store.mjs';
+import { createServiceOwners } from './service-owners.mjs';
+import { createQuitLifecycle } from './quit-lifecycle.mjs';
+import { allowedWhileBillingBlocked } from './billing-action-policy.mjs';
 import { titleBarOverlay, updateWindowTheme } from './window-chrome.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dataOverride = process.env.MUSEBENCH_DATA_DIR;
 if (dataOverride && path.isAbsolute(dataOverride)) app.setPath('userData', dataOverride);
+app.setPath('sessionData',app.getPath('userData'));
 const sessionDurability = createSessionDurability({ app });
+const onboardingOwners=createServiceOwners();
 const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
@@ -70,6 +76,11 @@ let pendingChatLink=process.argv.map(chatLinkTask).find(Boolean)??null,deliverCh
 let window, ui, openWindow, background, closeOwned, ownedWorkBusy, controller, customize, codeBilling, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0, opening=null, pendingQuit=false;
 const retryPendingQuit=()=>{if(pendingQuit&&!opening&&pendingIpc===0){pendingQuit=false;setImmediate(()=>app.quit());}};
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
+const quitLifecycle=createQuitLifecycle({close:()=>closeOwned?.(),quit:()=>app.quit(),onFailure:async()=>{
+ const options={type:'error',title:'MuseBench could not finish closing',message:'Background cleanup or storage saving could not be confirmed.',detail:'Keep MuseBench running and retry cleanup after the background process stops. Quit anyway only if you accept that a process or recent session data may remain unconfirmed.',buttons:['Keep running','Retry cleanup','Quit anyway'],defaultId:0,cancelId:0,noLink:true};
+ const result=window&&!window.isDestroyed()?await dialog.showMessageBox(window,options):await dialog.showMessageBox(options);
+ return result.response===2?'force':result.response===1?'retry':'keep';
+}});
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.on('second-instance',(_event,args)=>{pendingChatLink=(Array.isArray(args)?args:[]).map(chatLinkTask).find(Boolean)??pendingChatLink;void openWindow?.().then(()=>deliverChatLink?.()).catch(startupFailed);});
@@ -78,13 +89,14 @@ else {
   app.whenReady().then(async () => {
     const helperPath = app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchJob.exe') : path.join(root,'native','bin','MuseBenchJob.exe');
     const dataDir = app.getPath('userData');
+    const browserLogin=await createBrowserLoginStore({dataDir,protection:safeStorage,session:session.fromPartition('persist:musebench-personal-muse'),onFailure:()=>ui?.personal?.refreshSessionStatus()});
     const extensionReview=createExtensionReview({dataDir,profile:userProfile()});
     const workspaceMcp=createWorkspaceMcpConfig({appRoot:root});
     let discoveryOAuth;
     const discoveryMcp=createDiscoveryMcpConfig({appRoot:root,helperPath,extensionReview,oauth:()=>discoveryOAuth});
     const discoveryStore=await createDiscoveryOAuthStore({dataDir,protection:{available:async()=>safeStorage.isEncryptionAvailable()&&!['basic_text','plaintext'].includes(safeStorage.getSelectedStorageBackend?.()),encrypt:text=>safeStorage.encryptStringAsync(text),decrypt:bytes=>safeStorage.decryptStringAsync(bytes)}});
     discoveryOAuth=createDiscoveryOAuth({store:discoveryStore,flow:createDiscoveryOAuthFlow({networkFactory:({url,limits})=>createRemoteNetwork({url},{limits})}),callbackFactory:createDiscoveryOAuthCallback,resolveSource:discoveryMcp.resolveAuthSource,getSourceSnapshot:discoveryMcp.getAuthSourceSnapshot,ownerSnapshot:()=>controller?.discoveryOwnerSnapshot(),runtimeOwnerSnapshot:discoveryMcp.runtimeOwnerSnapshot,admitSourceMutation:id=>!controller||controller.discoverySourceBusy(id)?null:discoveryMcp.admitSourceMutation(id),withIdleLease:discoveryMcp.withIdleLease,openBrowser:url=>shell.openExternal(url),onSafeUpdate:event=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:discovery-auth-update',event);}});
-    codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>!!ui?.onboarding?.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
+    codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>onboardingOwners.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
     const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,discoveryMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp,discoveryMcp});
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.13 can stall before shell launch inside the user profile.
@@ -118,13 +130,14 @@ else {
 
     dictation = createDictation({helperPath: app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchSpeech.exe') : path.join(root,'native','bin','MuseBenchSpeech.exe'), onState: value => { if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:dictation-update',value); }});
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{if(!window||window.isDestroyed())throw Error('Open MuseBench to choose a folder.');const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
-    mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||!!ui?.onboarding?.isBusy()})});
-    ownedWorkBusy=()=>discoveryOAuth.isBusy()||nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||ui?.onboarding?.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
+    mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||onboardingOwners.isBusy()})});
+    ownedWorkBusy=()=>discoveryOAuth.isBusy()||nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||onboardingOwners.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
     const updateBusy=()=>pendingIpc>0||ownedWorkBusy();
-    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['tool-signin','Tool sign-in',discoveryOAuth.isBusy()],['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',ui?.onboarding?.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
+    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['tool-signin','Tool sign-in',discoveryOAuth.isBusy()],['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',onboardingOwners.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
     let firstWindow=true,blockedDialog=false,pendingWindowClose=false;
     const showBlocked=async message=>{if(blockedDialog||closing)return;blockedDialog=true;try{await openWindow();await dialog.showMessageBox(window,{type:'info',title:'MuseBench is still working',message,detail:updateBlockers().map(row=>row.label+': '+row.detail).join('\n'),buttons:['Keep running']});}finally{blockedDialog=false;}};
     openWindow=()=>{
+      if(closing&&!quitLifecycle.confirmed())void quitLifecycle.request();
       if(closing||updateInstalling)return Promise.reject(Error('MuseBench is closing or updating.'));
       if(opening)return opening;
       if(window&&!window.isDestroyed()){if(window.isMinimized())window.restore();window.show();window.focus();return Promise.resolve(window);}
@@ -141,13 +154,14 @@ else {
       const tray=new Tray(path.join(root,'electron','assets',process.platform==='win32'?'musebench.ico':'musebench.png'));
       tray.setToolTip('MuseBench — running in the background');tray.setContextMenu(Menu.buildFromTemplate([{label:'Open MuseBench',click:actions.open},{type:'separator'},{label:'Quit MuseBench',click:actions.quit}]));tray.on('click',actions.open);return tray;
     }});
-    const nativeRouter=createNativeControlRouter({app,controller,getView:()=>ui?.nativeService,getBackground:()=>background.snapshot(),isBlocked:()=>closing||updateInstalling||customize.isBusy()||codeBilling.isBusy()||!!ui?.onboarding?.isBusy()});
+    const nativeRouter=createNativeControlRouter({app,controller,getView:()=>ui?.nativeService,getBackground:()=>background.snapshot(),isBlocked:()=>closing||updateInstalling||customize.isBusy()||codeBilling.blocksWork()||onboardingOwners.isBusy()});
     nativeControl=await createNativeControlHost({dataDir,service:nativeRouter,connectionConfig:()=>prepareNativeMcpConfig({dataDir,executable:process.execPath,appRoot:root})});
     closeOwned=async()=>{
-      closing=true;ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();ui?.onboarding?.close();await discoveryOAuth.close();await discoveryStore.close();
-      const results=await Promise.allSettled([nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close(),background.close()]);
+      closing=true;ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();
+      const discoveryClose=Promise.resolve().then(()=>discoveryOAuth.close()).finally(()=>discoveryStore.close());
+      const results=await Promise.allSettled([discoveryClose,onboardingOwners.closeAll(),codeBilling.close(),nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close(),background.close(),browserLogin.close(),sessionDurability.close()]);
       for(const notification of notifications)notification.close();notifications.clear();
-      await sessionDurability.close();if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
+      if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
     };
     const {autoUpdater}=updaterPackage;
     autoUpdater.setFeedURL({provider:'github',owner:'FahadArfin',repo:'MuseBench',private:false});
@@ -181,7 +195,7 @@ else {
     window.on('close',event=>{
       if(closing)return;
       if(updateShutdown?.preparing()){event.preventDefault();return;}
-      if(codeBilling.isBusy()||view.onboarding?.isBusy()||updateBlocked(dictation.snapshot())){
+      if(codeBilling.blocksWork()||onboardingOwners.isBusy()||updateBlocked(dictation.snapshot())){
         event.preventDefault();void showBlocked('Finish sign-in, dictation or active work before closing MuseBench. Background mode can keep Code work running.').catch(()=>{});return;
       }
       if(opening){event.preventDefault();pendingWindowClose=true;return;}
@@ -203,6 +217,8 @@ else {
     });
     window.webContents.on('will-attach-webview', event=>event.preventDefault());
     const personal = view.personal = createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell,
+      sessionReady:()=>browserLogin.canUseSession(),
+      sessionStatus:()=>browserLogin.snapshot(),
       metaPinStore:createMetaChatPinStore(path.join(app.getPath('userData'),'meta-chat-pins.json')),
       onState: state => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:personal-update', state); },
       onShortcut: shortcut => { if (!window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:personal-shortcut', shortcut); },
@@ -231,7 +247,7 @@ else {
     const handler = (name, fn) => {handlers.push(name);ipcMain.handle(name, async (event,...args) => {
       if (!trustedSender(event,window.webContents,uiURL)) throw Error('Workspace access is restricted to the main MuseBench window.');
       if(updateInstalling&&name!=='musebench:app-update')throw Error('MuseBench is restarting to install an update.');
-      if((codeBilling.isBusy()||onboarding?.isBusy())&&['musebench:action','musebench:work','musebench:sites','musebench:customize'].includes(name))throw Error('Finish the billing source change or sign-in before starting work.');
+      if((codeBilling.blocksWork()||onboardingOwners.isBusy())&&['musebench:action','musebench:work','musebench:sites','musebench:customize'].includes(name)&&!allowedWhileBillingBlocked(name,args[0]))throw Error('Finish the billing source change or sign-in before starting work.');
       if(name==='musebench:app-update')return fn(...args);
       pendingIpc++;try{return await fn(...args);}finally{pendingIpc--;retryPendingQuit();if(pendingIpc===0&&view.closeAfterIpc){view.closeAfterIpc=false;setImmediate(()=>{if(!window.isDestroyed())window.close();});}}
     });};
@@ -288,7 +304,7 @@ else {
     handler('musebench:code-draft',input=>controller.saveCodeDraft(validateAction({...input,type:'saveDraft'})));
     handler('musebench:mobile-device',command=>mobileHost.command(command));
     const nativeRenderer=createNativeRenderer({window,ipcMain,trusted:event=>trustedSender(event,window.webContents,uiURL)});
-    const nativeService=view.nativeService=createNativeControlService({app,window,controller,personal,renderer:nativeRenderer,isBlocked:()=>closing||updateInstalling||window.webContents.isLoading()||customize.isBusy()||codeBilling.isBusy()||!!onboarding?.isBusy()});
+    const nativeService=view.nativeService=createNativeControlService({app,window,controller,personal,renderer:nativeRenderer,isBlocked:()=>closing||updateInstalling||window.webContents.isLoading()||customize.isBusy()||codeBilling.blocksWork()||onboardingOwners.isBusy()});
     handler('musebench:native-control',command=>nativeControl.command(command));
     handler('musebench:app-update',command=>updates.dispatch(command));
     handler('musebench:customize',command=>customize.dispatch(command));
@@ -359,13 +375,13 @@ else {
       if(type==='close'){setImmediate(()=>{if(!window.isDestroyed())window.close();});return{status:'ready'};}
       throw Error('Unsupported command.');
     });
-    const onboarding=view.onboarding=createOnboarding({getBinary:()=>controller.getState().runtime.binary,getRuntime:()=>controller.getState().runtime,personal});
+    const onboarding=view.onboarding=onboardingOwners.add(createOnboarding({getBinary:()=>controller.getState().runtime.binary,getRuntime:()=>controller.getState().runtime,personal}));
     handler('musebench:onboarding',async command=>{
       if(command?.type==='apiKey'){await codeBilling.command({type:'saveApiKey',key:command.key});billingChanged();return{code:{status:'ready',method:'api'},personal:{status:'unknown'}};}
       if(command?.type==='loginCode')return codeBilling.signIn(()=>onboarding.command(command));
       return onboarding.command(command);
     });
-    window.once('closed',()=>onboarding.close());
+    window.once('closed',()=>{void onboardingOwners.close(onboarding).catch(()=>{});});
     handler('musebench:personal-state',()=>personal.snapshot());
     handler('musebench:personal',async command=>{if(command?.type==='layout'&&command.visible)await dictation.stop(true);const result=await personal.dispatch(command);if(command?.type==='appearance')nativeTheme.themeSource=result.appearance.theme;return result;});
     handler('musebench:dictation',command=>{if(command==='start'&&!window.isFocused())throw Error('Focus MuseBench to start dictation.');return dictation.dispatch(command);});
@@ -389,9 +405,10 @@ app.on('window-all-closed',()=>{if(background)background.windowClosed();else app
 app.on('will-quit',()=>updates?.close());
 app.on('before-quit',event=>{
   if(updateShutdown?.preparing()){event.preventDefault();return;}
-  if(closing)return;
-  if((opening||pendingIpc>0)&&!ui?.onboarding?.isBusy()&&!codeBilling?.isBusy()&&!updateBlocked(dictation?.snapshot())){event.preventDefault();pendingQuit=true;return;}
+  if(quitLifecycle.confirmed())return;
+  if(closing){event.preventDefault();void quitLifecycle.request();return;}
+  if((opening||pendingIpc>0)&&!onboardingOwners.isBusy()&&!codeBilling?.blocksWork()&&!updateBlocked(dictation?.snapshot())){event.preventDefault();pendingQuit=true;return;}
   if(background&&!background.beforeQuit(event))return;
   event.preventDefault();closing=true;
-  Promise.resolve().then(()=>closeOwned?.()).catch(()=>{}).finally(()=>app.quit());
+  void quitLifecycle.request();
 });

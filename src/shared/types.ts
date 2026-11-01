@@ -110,7 +110,7 @@ export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<Chat
 }
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;mobileDevice(command:import('./mobile-types').MobileDeviceCommand):Promise<import('./mobile-types').MobileDeviceState>;}
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;
- nativeControl(command:{type:'status'|'enable'|'disable'}):Promise<import('./native-control-types').NativeControlState>;
+ nativeControl(command:{type:'status'|'enable'|'disable';transport?:'http'|'stdio'}):Promise<import('./native-control-types').NativeControlState>;
  backgroundEngine(command:{type:'status'}|{type:'set';enabled:boolean}):Promise<{enabled:boolean;running:boolean;windowOpen:boolean;simulation?:boolean}>;
  onNativeRequest?(callback:(request:import('./native-control-types').NativeRequest)=>Promise<unknown>):()=>void;
  onNativeCancel?(callback:(id:string)=>void):()=>void;

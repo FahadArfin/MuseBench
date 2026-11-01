@@ -5,6 +5,8 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {createCodeBilling} from '../electron/code-billing.mjs';
 import {createCipheriv,createDecipheriv,randomBytes} from 'node:crypto';
+import {readNativeAccount} from '../src/runtime/account.mjs';
+import {TARGET} from '../reference/patchlight/adapter/compatibility.mjs';
 
 async function fixture(t){
  const dataDir=await mkdtemp(path.join(tmpdir(),'musebench-billing-'));t.after(()=>rm(dataDir,{recursive:true,force:true}));
@@ -81,4 +83,114 @@ test('a delayed or failed account read cannot relabel the newly selected API rou
   if(fails)reject(Error('Private old account error'));else release({state:'accountLogin',usage:{windows:[{remainingPercent:90}]}});
   const result=await pending;assert.equal(result.source,'api');assert.equal(result.mode,'api');assert.deepEqual(result.usage.windows,[]);
  }
+});
+
+function delayedCleanupProbe({rejectClose=false}={}){
+ let finishExit,finishClose,spawns=0;const exited=new Promise(resolve=>{finishExit=resolve;}),closing=new Promise(resolve=>{finishClose=resolve;});
+ return{
+  probe:input=>readNativeAccount({...input,closeTimeoutMs:10,spawn:()=>{spawns++;return{exited,initialize:async()=>({initializeResult:{serverInfo:{version:TARGET.hostVersion},schema:{fingerprint:TARGET.fingerprint}},connection:{request:async method=>method==='account/read'?{state:'accountLogin'}:{}}}),close:()=>rejectClose?Promise.reject(Error('private cleanup failure')):closing};}}),
+  finish:()=>{finishClose();finishExit({code:0,signal:null});},get spawns(){return spawns;}
+ };
+}
+
+for(const rejectClose of [false,true])test(`billing retains ${rejectClose?'failed':'timed-out'} account cleanup and recovers only after confirmed exit`,async t=>{
+ const f=await fixture(t),native=delayedCleanupProbe({rejectClose});t.after(native.finish);
+ const service=await createCodeBilling({...f.options,probe:native.probe});
+ const state=await service.status();assert.equal(state.status,'error');assert.equal(state.busy,true);assert.equal(service.isBusy(),true);assert.deepEqual(state.usage.windows,[]);assert.ok(!JSON.stringify(state).includes('private'));
+ assert.equal((await service.status()).status,'error');assert.equal(native.spawns,1);
+ for(const action of [{type:'saveApiKey',key:'fixture-api-new-abcdefgh'},{type:'select',source:'account'}])await assert.rejects(service.command(action),/cleanup|shut down/i);
+ await assert.rejects(service.signIn(()=>assert.fail('A second process started')),/cleanup|shut down/i);
+ await assert.rejects(service.credentials({binary:'fixture.exe',environment:{}}),/cleanup|shut down/i);assert.equal(native.spawns,1);
+ native.finish();await new Promise(resolve=>setImmediate(resolve));assert.equal(service.isBusy(),false);
+ await service.command({type:'saveApiKey',key:'fixture-api-new-abcdefgh'});assert.equal((await service.status()).status,'ready');assert.equal(native.spawns,1);
+});
+
+test('cleanup failures from account selection and credential verification remain blockers',async t=>{
+ for(const action of ['select','verify']){
+  const f=await fixture(t);let failing=false,probes=0;
+  const service=await createCodeBilling({...f.options,probe:async()=>{probes++;if(failing)throw Object.assign(Error('private cleanup error'),{code:'ACCOUNT_CLEANUP'});return{state:'accountLogin',usage:{windows:[]}};}});
+  if(action==='verify')await service.command({type:'select',source:'account'});failing=true;
+  const request=action==='select'?service.command({type:'select',source:'account'}):service.credentials({binary:'fixture.exe',environment:{}});
+  await assert.rejects(request,error=>error.code==='ACCOUNT_CLEANUP'&&!error.message.includes('private'));assert.equal(service.isBusy(),true);
+  const count=probes;assert.equal((await service.status()).status,'error');await assert.rejects(service.command({type:'saveApiKey',key:'fixture-api-new-abcdefgh'}),/cleanup|shut down/i);assert.equal(probes,count);
+ }
+});
+
+test('an account cleanup fault arriving during a payer change prevents persistence',async t=>{
+ const f=await fixture(t);let rejectProbe,releaseChange;
+ const service=await createCodeBilling({...f.options,probe:()=>new Promise((_,reject)=>{rejectProbe=reject;}),beforeChange:()=>new Promise(resolve=>{releaseChange=resolve;})});
+ const read=service.status();await new Promise(resolve=>setImmediate(resolve));const change=service.command({type:'saveApiKey',key:'fixture-api-new-abcdefgh'});
+ rejectProbe(Object.assign(Error('private cleanup failure'),{code:'ACCOUNT_CLEANUP'}));assert.equal((await read).status,'error');releaseChange();await assert.rejects(change,/cleanup|shut down/i);
+ assert.equal((await service.status()).hasApiKey,false);await assert.rejects(readFile(path.join(f.options.dataDir,'code-billing.bin')),error=>error.code==='ENOENT');
+});
+
+test('an account cleanup fault during a protected write cannot commit a new payer',async t=>{
+ const f=await fixture(t);let rejectProbe;
+ const service=await createCodeBilling({...f.options,probe:()=>new Promise((_,reject)=>{rejectProbe=reject;})});
+ const read=service.status();await new Promise(resolve=>setImmediate(resolve));
+ const encrypt=f.options.safeStorage.encryptString;f.options.safeStorage.encryptString=value=>{rejectProbe(Object.assign(Error('private cleanup failure'),{code:'ACCOUNT_CLEANUP'}));return encrypt(value);};
+ await assert.rejects(service.command({type:'saveApiKey',key:'fixture-api-new-abcdefgh'}),/cleanup|shut down/i);assert.equal((await read).status,'error');
+ assert.equal((await service.status()).hasApiKey,false);await assert.rejects(readFile(path.join(f.options.dataDir,'code-billing.bin')),error=>error.code==='ENOENT');
+});
+
+test('billing shutdown is bounded while an account owner is unconfirmed',async t=>{
+ const f=await fixture(t),native=delayedCleanupProbe();t.after(native.finish);
+ const service=await createCodeBilling({...f.options,probe:native.probe,closeTimeoutMs:10});await service.status();
+ await assert.rejects(service.close(),error=>error.code==='ACCOUNT_CLEANUP');assert.equal(service.isBusy(),true);assert.equal(native.spawns,1);
+ native.finish();await new Promise(resolve=>setImmediate(resolve));await service.close();assert.equal(service.isBusy(),false);
+ await service.status();assert.equal(native.spawns,1);await assert.rejects(service.credentials({binary:'fixture.exe',environment:{}}),/closed|shut down/i);
+});
+
+test('billing shutdown aborts an active account query and waits for cleanup',async t=>{
+ const f=await fixture(t);let finishInitialize,closes=0,spawns=0;
+ const service=await createCodeBilling({...f.options,probe:input=>readNativeAccount({...input,spawn:()=>{spawns++;return{initialize:()=>new Promise(resolve=>{finishInitialize=resolve;}),close:async()=>{closes++;}};}})});
+ const read=service.status();await new Promise(resolve=>setImmediate(resolve));const closing=service.close();assert.equal(service.isBusy(),true);await closing;await read;
+ assert.equal(service.isBusy(),false);assert.equal(closes,1);assert.equal(spawns,1);
+ finishInitialize({initializeResult:{serverInfo:{version:TARGET.hostVersion},schema:{fingerprint:TARGET.fingerprint}},connection:{request:()=>assert.fail('Late credential read')}});await new Promise(resolve=>setImmediate(resolve));await service.status();assert.equal(spawns,1);
+});
+
+test('a probe that ignores shutdown cancellation remains owned through the close deadline',async t=>{
+ const f=await fixture(t);let finishProbe,probes=0;
+ const service=await createCodeBilling({...f.options,closeTimeoutMs:10,probe:()=>{probes++;return new Promise(resolve=>{finishProbe=resolve;});}});
+ const read=service.status();await new Promise(resolve=>setImmediate(resolve));
+ await assert.rejects(service.close(),error=>error.code==='ACCOUNT_CLEANUP');assert.equal(service.isBusy(),true);
+ finishProbe({state:'accountLogin',usage:{windows:[]}});await read;assert.equal(service.isBusy(),false);await service.close();
+ assert.equal((await service.status()).status,'error');assert.equal(probes,1);
+});
+
+test('shutdown cannot abandon a payer change waiting for idle connections to close',async t=>{
+ const f=await fixture(t);let finishChange;
+ const service=await createCodeBilling({...f.options,closeTimeoutMs:10,beforeChange:()=>new Promise(resolve=>{finishChange=resolve;})});
+ const change=service.command({type:'saveApiKey',key:'fixture-api-new-abcdefgh'});change.catch(()=>{});
+ await assert.rejects(service.close(),error=>error.code==='ACCOUNT_CLEANUP');assert.equal(service.isBusy(),true);
+ finishChange();await assert.rejects(change,/closed|shut down/i);await service.close();assert.equal(service.isBusy(),false);
+ await assert.rejects(readFile(path.join(f.options.dataDir,'code-billing.bin')),error=>error.code==='ENOENT');
+});
+
+test('usage probes retain shutdown ownership while payer changes alone block work',async t=>{
+ const f=await fixture(t);let finishProbe,finishChange;
+ const service=await createCodeBilling({...f.options,probe:()=>new Promise(resolve=>{finishProbe=resolve;}),beforeChange:()=>new Promise(resolve=>{finishChange=resolve;})});
+ assert.equal(typeof service.blocksWork,'function');assert.equal(service.blocksWork(),false);
+ const read=service.status();await new Promise(resolve=>setImmediate(resolve));assert.equal(service.isBusy(),true);assert.equal(service.blocksWork(),false);
+ const change=service.command({type:'saveApiKey',key:'fixture-api-new-abcdefgh'});assert.equal(service.blocksWork(),true);
+ finishProbe({state:'accountLogin',usage:{windows:[]}});await read;assert.equal(service.isBusy(),true);assert.equal(service.blocksWork(),true);
+ finishChange();await change;assert.equal(service.isBusy(),false);assert.equal(service.blocksWork(),false);
+ await service.close();assert.equal(service.isBusy(),false);assert.equal(service.blocksWork(),true);
+});
+
+test('unconfirmed account cleanup blocks work until the original owner exits',async t=>{
+ const f=await fixture(t),native=delayedCleanupProbe();t.after(native.finish);
+ const service=await createCodeBilling({...f.options,probe:native.probe});assert.equal(typeof service.blocksWork,'function');
+ assert.equal((await service.status()).status,'error');assert.equal(service.isBusy(),true);assert.equal(service.blocksWork(),true);
+ native.finish();await new Promise(resolve=>setImmediate(resolve));assert.equal(service.isBusy(),false);assert.equal(service.blocksWork(),false);
+});
+
+test('failed native spawn leaves billing usable for an API payer without a process cleanup blocker',async t=>{
+ const f=await fixture(t);let spawns=0;
+ const service=await createCodeBilling({...f.options,probe:input=>readNativeAccount({...input,closeTimeoutMs:10,spawn:()=>{
+  spawns++;const failure=Object.assign(Error('private spawn failure'),{code:'ENOENT'}),exited=Promise.reject(failure);exited.catch(()=>{});
+  return{exited,initialize:async()=>{throw failure;},close:async()=>{await exited;}};
+ }})});
+ const state=await service.status();assert.equal(state.busy,false);assert.equal(service.isBusy(),false);assert.equal(service.blocksWork(),false);assert.ok(!JSON.stringify(state).includes('private'));
+ await service.command({type:'saveApiKey',key:'fixture-api-new-abcdefgh'});assert.equal((await service.status()).source,'api');assert.equal(spawns,1);await service.close();
 });

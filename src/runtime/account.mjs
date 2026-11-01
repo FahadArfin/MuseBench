@@ -3,9 +3,10 @@ import {TARGET} from '../../reference/patchlight/adapter/compatibility.mjs';
 import {normalizeAllowance} from '../shared/account-usage.mjs';
 
 // Sessionless native account queries. Never exposes credential labels or raw errors.
-export async function readNativeAccount({binary,environment,refreshUsage=false,spawn=spawnMspConnection,timeoutMs=12000,closeTimeoutMs=4000}){
- let owner,timer,closeTimer,finished=false;
+export async function readNativeAccount({binary,environment,refreshUsage=false,spawn=spawnMspConnection,timeoutMs=12000,closeTimeoutMs=4000,signal}){
+ let owner,timer,onAbort,finished=false;
  try{
+  if(signal?.aborted)throw Error('Muse account check was closed.');
   owner=spawn({command:binary,args:['serve','--provider','meta'],env:environment,shutdownTimeoutMs:3000});
   return await Promise.race([(async()=>{
    const host=await owner.initialize({clientInfo:{name:'musebench_billing',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:false}});
@@ -20,12 +21,36 @@ export async function readNativeAccount({binary,environment,refreshUsage=false,s
     catch{usageUnavailable=true;}
    }
    return{state,usage,usageUnavailable};
-  })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Muse account check timed out.')),timeoutMs);})]);
+  })(),new Promise((_,reject)=>{
+   timer=setTimeout(()=>reject(Error('Muse account check timed out.')),timeoutMs);
+   if(signal){onAbort=()=>reject(Error('Muse account check was closed.'));signal.addEventListener('abort',onAbort,{once:true});if(signal.aborted)onAbort();}
+  })]);
  }catch{throw Error('Muse account details are unavailable. Check your CLI sign-in and version.');}
  finally{
-  finished=true;clearTimeout(timer);
-  if(owner)try{await Promise.race([owner.close(),new Promise((_,reject)=>{closeTimer=setTimeout(()=>reject(Error('Account cleanup timed out.')),closeTimeoutMs);})]);}
-  catch{throw Object.assign(Error('Muse account check could not shut down. Restart MuseBench before changing billing.'),{code:'ACCOUNT_CLEANUP'});}
-  finally{clearTimeout(closeTimer);}
+  finished=true;clearTimeout(timer);if(onAbort)signal.removeEventListener('abort',onAbort);
+  if(owner)await retainCleanup(owner,closeTimeoutMs).wait();
  }
+}
+
+// The opaque handle keeps the owner reachable after a caller's deadline. A
+// rejected close is not exit confirmation; the SDK's separate exit promise can
+// still confirm a later terminal event. SDK 1.4.14 also defines an exited
+// rejection as a failed spawn with no live child. Never expose the raw owner.
+function retainCleanup(owner,timeoutMs){
+ let retainedOwner=owner,confirmClose;
+ const closed=new Promise(resolve=>{confirmClose=()=>{retainedOwner=null;resolve();};});
+ if(owner.exited)Promise.resolve(owner.exited).then(confirmClose,confirmClose);
+ const closing=Promise.resolve().then(()=>owner.close()).then(confirmClose);
+ closing.catch(()=>{});
+ const cleanup={
+  get confirmed(){return retainedOwner===null;},closed,
+  async wait(){
+   if(!retainedOwner)return;
+   let timer;
+   try{await Promise.race([closed,closing,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('Account cleanup timed out.')),timeoutMs);})]);}
+   catch{if(retainedOwner){const error=Object.assign(Error('Muse account process cleanup is unconfirmed. Wait for it to shut down before changing billing.'),{code:'ACCOUNT_CLEANUP'});Object.defineProperty(error,'cleanup',{value:cleanup});throw error;}}
+   finally{clearTimeout(timer);}
+  }
+ };
+ return cleanup;
 }

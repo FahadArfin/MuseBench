@@ -1,5 +1,9 @@
 # Sidebar loading and browser session durability
 
+The session-only cookie behavior described below is historical. The subsequent
+[login persistence fix](VALIDATION-login-persistence.md) adds OS-encrypted
+restoration for the personal Meta/Muse partition and updates the restart test.
+
 The sidebar previously rendered idle collection states as “Loading…”, including
 when Muse sign-in was required. Ideas and Goals also waited for the separate
 side-chat menu to be read successfully. Missing provider markup or a stalled

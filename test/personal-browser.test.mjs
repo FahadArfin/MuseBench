@@ -45,10 +45,46 @@ function harness(options = {}) {
     dismiss: async contents => { dismissals.push(contents); return true; },
   };
   const libraryAdapter = options.libraryAdapter ?? { prepare: async () => false, read: async () => ({ status: 'unavailable', items: [] }), activate: async () => false };
-  const browser = implementation.createPersonalBrowser({ window, BrowserWindow: Popup, WebContentsView: View, session, shell: { openExternal: async url => { external.push(url); } }, onState: value => states.push(value), onShortcut: value => shortcuts.push(value), presentation, libraryAdapter, metaAdapter, ...(options.metaAppsAdapter?{metaAppsAdapter:options.metaAppsAdapter}:{}), accountReader:options.accountReader ?? null, accountTiming:options.accountTiming ?? {}, ...(options.authReader === undefined ? {} : { authReader: options.authReader }), ...(options.warmupDelay === undefined ? {} : { warmupDelay: options.warmupDelay }), ...(options.warmLimit === undefined ? {} : { warmLimit: options.warmLimit }) });
+  const browser = implementation.createPersonalBrowser({ window, BrowserWindow: Popup, WebContentsView: View, session, shell: { openExternal: async url => { external.push(url); } }, onState: value => states.push(value), onShortcut: value => shortcuts.push(value), presentation, libraryAdapter, metaAdapter, sessionReady:options.sessionReady, sessionStatus:options.sessionStatus, ...(options.metaAppsAdapter?{metaAppsAdapter:options.metaAppsAdapter}:{}), accountReader:options.accountReader ?? null, accountTiming:options.accountTiming ?? {}, ...(options.authReader === undefined ? {} : { authReader: options.authReader }), ...(options.warmupDelay === undefined ? {} : { warmupDelay: options.warmupDelay }), ...(options.warmLimit === undefined ? {} : { warmLimit: options.warmLimit }) });
   return { browser, views, sessions, states, external, shortcuts, window, popups, presentations, actions, presentation, libraryAdapter, metaAdapter, metaActions, dismissals };
 }
 const layout = { type: 'layout', visible: true, bounds: { x: 300, y: 80, width: 700, height: 620 } };
+
+test('protected login save timeout publishes a persistent safe notice in an existing and reopened window',async t=>{
+ const {mkdtemp,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const path=await import('node:path');
+ const {createBrowserLoginStore}=await import('../electron/browser-login-store.mjs');
+ const dataDir=await mkdtemp(path.join(tmpdir(),'muse-login-notice-'));t.after(()=>rm(dataDir,{recursive:true,force:true}));
+ const cookies=new EventEmitter();cookies.get=()=>new Promise(()=>{});cookies.set=async()=>{};
+ let h,store;store=await createBrowserLoginStore({dataDir,session:{cookies},protection:{isEncryptionAvailable:()=>true},saveTimeoutMs:20,onFailure:()=>h?.browser.refreshSessionStatus()});
+ t.after(()=>store.close());h=harness({sessionStatus:()=>store.snapshot()});t.after(()=>h.browser.close());
+ await assert.rejects(store.save(),{code:'BROWSER_LOGIN_SAVE_TIMEOUT'});
+ assert.equal(store.canUseSession(),true,'the current partition remains usable');
+ assert.match(h.states.at(-1).notice,/sign-in.*paused/i);assert.match(h.browser.snapshot().notice,/restart/i);
+ assert.equal(h.browser.snapshot().noticeCanOpenBrowser,false);
+ await h.browser.dispatch({type:'navigate',destination:'bot'});assert.match(h.browser.snapshot().notice,/sign-in.*paused/i);
+ await h.browser.dispatch({type:'dismissNotice'});assert.equal(h.browser.snapshot().notice,null);
+ h.browser.close();h=harness({sessionStatus:()=>store.snapshot()});assert.match(h.browser.snapshot().notice,/sign-in.*paused/i);
+});
+
+test('startup restoration failure has a safe notice and never forwards native error fields',()=>{
+ const state={status:'failed',sessionBlocked:false,failure:{code:'BROWSER_LOGIN_RESTORE_FAILED',stage:'restore',message:'PRIVATE COOKIE VALUE'}};
+ const h=harness({sessionStatus:()=>state});
+ try{assert.match(h.browser.snapshot().notice,/restored/i);assert.doesNotMatch(h.browser.snapshot().notice,/PRIVATE/);
+  state.failure=null;assert.equal(h.browser.snapshot().notice,null);
+ }finally{h.browser.close();}
+});
+
+test('a quarantined login restore cannot expose the personal partition to a new page',async()=>{
+ const h=harness({sessionReady:()=>false});
+ try{
+  h.browser.preloadInitial();
+  assert.equal(h.views.length,0);
+  assert.match((await h.browser.checkLogin()).message,/restart/i);
+  await assert.rejects(h.browser.openLogin(),/restart/i);
+  await assert.rejects(h.browser.dispatch({type:'navigate',destination:'chat'}),/restart/i);
+  assert.equal(h.views.length,0);assert.equal(h.popups.length,0);
+ }finally{h.browser.close();}
+});
 
 test('default Meta startup and hover hints do not start unused tool or Muse collection pages', async t => {
   const reads = [];

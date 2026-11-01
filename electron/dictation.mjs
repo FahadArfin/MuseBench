@@ -52,7 +52,9 @@ export function createDictation({helperPath,platform=process.platform,spawnHelpe
    for(const line of lines){if(!line.trim())continue;try{
     const value=JSON.parse(line);
     if(value.kind==='listening'&&state.status==='starting')update({status:'listening'});
-    else if(value.kind==='text'&&typeof value.text==='string'&&value.text.trim())update({text:(state.text+(state.text?' ':'')+value.text.trim()).slice(0,16000)});
+    // The composer owns the prompt budget. Keep the complete bounded transcript
+    // here so speech that does not fit remains recoverable in its original chat.
+    else if(value.kind==='text'&&typeof value.text==='string'&&value.text.trim())update({text:state.text+(state.text?' ':'')+value.text.trim()});
     else if(value.kind==='error'){fail(value.code);return;}
    }catch{fail('protocol');return;}}
   });

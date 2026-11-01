@@ -21,7 +21,7 @@ const pass=message=>{report.checks.push(message);console.log(`PASS ${message}`);
 const launch=async()=>{
   app=await electron.launch({cwd:root,args:[...(process.env.MUSEBENCH_EXECUTABLE?[]:['.']),'--host-resolver-rules=MAP * ~NOTFOUND'],...(process.env.MUSEBENCH_EXECUTABLE?{executablePath:process.env.MUSEBENCH_EXECUTABLE}:{}),env,timeout:30000});
   await app.firstWindow();
-  await app.evaluate(({app},expected)=>{if(app.getPath('userData')!==expected)throw Error('Isolated profile required');},dataDir);
+  await app.evaluate(({app},expected)=>{if(app.getPath('userData')!==expected||app.getPath('sessionData')!==expected)throw Error('Isolated profile required');},dataDir);
 };
 async function inspect(seed){
   return app.evaluate(async({app,BrowserWindow,session},{partitions,expires,seed,shutdownFile})=>{
@@ -39,13 +39,13 @@ async function inspect(seed){
       };
       await store.protocol.handle('https',()=>new Response('<!doctype html><title>Local persistence fixture</title>',{headers:{'content-type':'text/html'}}));
       const view=new BrowserWindow({parent:main,show:false,webPreferences:{session:store,sandbox:true,contextIsolation:true,nodeIntegration:false}});
-      await view.loadURL('https://durability.invalid/');
+      await view.loadURL('https://www.meta.ai/');
       if(seed){
         await view.webContents.executeJavaScript(`localStorage.setItem('fictional-persistence-marker','saved')`);
-        await store.cookies.set({url:'https://durability.invalid/',name:'fictional_persistent',value:'fixture-only',expirationDate:expires,secure:true,httpOnly:true,sameSite:'strict'});
-        await store.cookies.set({url:'https://durability.invalid/',name:'fictional_session',value:'fixture-only',secure:true,httpOnly:true,sameSite:'lax'});
+        await store.cookies.set({url:'https://www.meta.ai/',name:'fictional_persistent',value:'fixture-only',expirationDate:expires,secure:true,httpOnly:true,sameSite:'strict'});
+        await store.cookies.set({url:'https://www.meta.ai/',name:'fictional_session',value:'fixture-only',secure:true,httpOnly:true,sameSite:'lax'});
       }
-      const rows=await store.cookies.get({url:'https://durability.invalid/'});
+      const rows=await store.cookies.get({url:'https://www.meta.ai/'});
       results.push({name,persistent:store.isPersistent(),storage:await view.webContents.executeJavaScript(`localStorage.getItem('fictional-persistence-marker')`),cookies:rows.map(({name,expirationDate,secure,httpOnly,sameSite,session})=>({name,expirationDate,secure,httpOnly,sameSite,session}))});
       view.destroy();
     }
@@ -71,13 +71,32 @@ try{
   const restored=await inspect(false);
   for(const row of restored){
     assert.equal(row.storage,'saved');
-    assert.deepEqual(row.cookies,[{name:'fictional_persistent',expirationDate:expires,secure:true,httpOnly:true,sameSite:'strict',session:false}]);
+    assert.deepEqual(row.cookies.sort((a,b)=>a.name.localeCompare(b.name)),[{name:'fictional_persistent',expirationDate:expires,secure:true,httpOnly:true,sameSite:'strict',session:false},...(row.name==='persist:musebench-personal-muse'?[{name:'fictional_session',expirationDate:undefined,secure:true,httpOnly:true,sameSite:'lax',session:true}]:[])]);
   }
   pass('A full process restart retains fictional persistent cookies and localStorage in all three sessions');
-  pass('Provider-style expiry, Secure, HttpOnly and SameSite flags stay unchanged; session-only cookies expire normally');
+  pass('Provider expiry and security flags stay unchanged; personal session cookies restore while unrelated partitions stay ephemeral');
+  await app.evaluate(async({session})=>session.fromPartition('persist:musebench-personal-muse').cookies.remove('https://www.meta.ai/','fictional_session'));
   await app.close();app=null;
   const second=JSON.parse(await readFile(path.join(output,'second-shutdown.json'),'utf8'));
   assert.equal(second.pending,0);for(const name of partitions)assert(second.flushes[name]>=1);
+  const encrypted=await readFile(path.join(dataDir,'browser-login.bin'));assert(!encrypted.includes(Buffer.from('fixture-only')));
+  await launch();const loggedOut=await inspect(false);
+  assert(!loggedOut.find(row=>row.name==='persist:musebench-personal-muse').cookies.some(cookie=>cookie.name==='fictional_session'));
+  pass('Explicit cookie removal survives another full restart; protected login snapshots contain no plaintext fixture values');
+  await app.evaluate(async({safeStorage,session})=>{
+    globalThis.__restoreLoginEncryption=safeStorage.encryptStringAsync;
+    safeStorage.encryptStringAsync=()=>new Promise(()=>{});
+    await session.fromPartition('persist:musebench-personal-muse').cookies.set({url:'https://www.meta.ai/',name:'fictional_save_failure',value:'fixture-only',secure:true,httpOnly:true,sameSite:'strict'});
+  });
+  let shellPage;const shellDeadline=Date.now()+10000;
+  while(!shellPage&&Date.now()<shellDeadline){shellPage=app.windows().find(page=>/\/dist\/index\.html(?:[?#]|$)/.test(page.url().replaceAll('\\','/')));if(!shellPage)await new Promise(resolve=>setTimeout(resolve,50));}
+  assert(shellPage,'The isolated main shell must be present');
+  const storageNotice=shellPage.getByRole('status').filter({hasText:'Protected sign-in storage is paused'});
+  await storageNotice.waitFor({timeout:10000});assert.match(await storageNotice.innerText(),/may need to sign in again/i);
+  await shellPage.screenshot({path:path.join(output,'protected-storage-failure.png')});
+  await app.evaluate(({safeStorage})=>{safeStorage.encryptStringAsync=globalThis.__restoreLoginEncryption;delete globalThis.__restoreLoginEncryption;});
+  pass('A stalled protected save reaches its deadline and visibly warns the actual shell without blocking the current browser session');
+  await app.close();app=null;
   report.status='passed';
 }catch(error){report.status='failed';report.error=String(error.stack??error);console.error(error);process.exitCode=1;}
 finally{await app?.close().catch(()=>{});await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log(output);}
