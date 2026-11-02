@@ -1,0 +1,19 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {promises as fs} from 'node:fs';
+import {randomUUID} from 'node:crypto';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {createFileReviewCacheCollector,reviewCacheOwnerState} from '../src/controller/file-review-cache.mjs';
+
+async function fixture(t){const base=await fs.mkdtemp(path.join(tmpdir(),'muse-review-cache-')),directory=path.join(base,'reviews');await fs.mkdir(directory);t.after(()=>fs.rm(base,{recursive:true,force:true,maxRetries:3}));const make=async(pid=99999999,name=`comparison-${pid}-${randomUUID()}`)=>{const target=path.join(directory,name);await fs.mkdir(target);await fs.writeFile(path.join(target,'rows'),'temporary diff');return target;};return{base,directory,make,exists:target=>fs.access(target).then(()=>true,()=>false)};}
+test('cache slices remove only old dead-process directories and preserve alive, denied, recent and unknown owners',async t=>{
+ const f=await fixture(t),dead=await f.make(),alive=await f.make(process.pid),denied=await f.make(3333),unknown=await f.make(4444),legacy=await f.make(1,'comparison-legacy'),fresh=await f.make(5555);const old=new Date(Date.now()-3*86400000);for(const target of [dead,alive,denied,unknown,legacy])await fs.utimes(target,old,old);
+ const time=Date.now()+3*86400000;await fs.utimes(fresh,new Date(time),new Date(time));const collector=createFileReviewCacheCollector({directory:f.directory,now:()=>time,ownerState:pid=>pid===99999999||pid===5555?'dead':pid===process.pid?'alive':pid===3333?(()=>{throw Object.assign(Error('denied'),{code:'EPERM'});})():'unknown'});t.after(()=>collector.close());let result;do{result=await collector.collect();assert.ok(result.scanned<=32);}while(!result.done);assert.equal(await f.exists(dead),false);for(const target of [alive,denied,unknown,legacy,fresh])assert.equal(await f.exists(target),true);assert.equal(reviewCacheOwnerState(process.pid),'alive');assert.equal(reviewCacheOwnerState(-1),'unknown');
+});
+test('cache cleanup keeps symlinks and outside contents, and never accepts a symlink storage root',async t=>{
+ const f=await fixture(t),outside=path.join(f.base,'outside');await fs.mkdir(outside);await fs.writeFile(path.join(outside,'important.txt'),'keep');const link=path.join(f.directory,`comparison-99999999-${randomUUID()}`);await fs.symlink(outside,link,'junction');const collector=createFileReviewCacheCollector({directory:f.directory,now:()=>Date.now()+3*86400000,ownerState:()=> 'dead'});t.after(()=>collector.close());const result=await collector.collect();assert.equal(result.deleted,0);assert.equal((await fs.lstat(link)).isSymbolicLink(),true);assert.equal(await fs.readFile(path.join(outside,'important.txt'),'utf8'),'keep');const rootLink=path.join(f.base,'linked-cache');await fs.symlink(f.directory,rootLink,'junction');const unsafe=createFileReviewCacheCollector({directory:rootLink,now:()=>Date.now()+3*86400000,ownerState:()=> 'dead'});t.after(()=>unsafe.close());assert.equal((await unsafe.collect()).skipped,'storage');
+});
+test('cleanup resumes after a bounded slice and preserves a normal outside sibling',async t=>{
+ const f=await fixture(t),outside=path.join(f.base,'comparison-99999999-'+randomUUID());await fs.mkdir(outside);await fs.writeFile(path.join(outside,'keep'),'outside');for(let i=0;i<40;i++)await f.make();const collector=createFileReviewCacheCollector({directory:f.directory,now:()=>Date.now()+3*86400000,ownerState:()=> 'dead'});t.after(()=>collector.close());const first=await collector.collect();assert.equal(first.scanned,32);assert.equal(first.deleted,32);assert.equal(first.done,false);const second=await collector.collect();assert.equal(second.deleted,8);assert.equal(second.done,true);assert.equal(await fs.readFile(path.join(outside,'keep'),'utf8'),'outside');
+});

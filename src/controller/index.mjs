@@ -1,3 +1,5 @@
+import {restoreVisualEvidence} from '../shared/visual-evidence.mjs';
+import {validateBrowserAnnotations} from '../shared/browser-annotations.mjs';
 import {createSourceSnapshots} from './source-snapshots.mjs';
 import {restoreChatRelation,mainChat,resolveRequestOrigin} from '../shared/chat-relations.mjs';
 import {mergeCompactionHistory,interruptCompactionHistory} from '../shared/compaction-history.mjs';
@@ -12,6 +14,8 @@ import {reviewPrompt,parseReview} from '../shared/reviewer-contracts.mjs';
 import {newGoalDriver,goalDecision,pauseGoalDriver} from '../shared/goal-driver.mjs';
 import {createExecutionLedger} from './execution-ledger.mjs';
 import {createRunChangeStore} from './run-changes.mjs';
+import {createFileReviewPager,describeReviewFiles} from './file-review.mjs';
+import {validateFileReviewInspection,validateFileReviewRead} from '../shared/file-review.mjs';
 import {validateRunInspection,validateRunReview,validateRunFeedback} from '../shared/run-changes.mjs';
 import {createActivityInbox} from './activity-inbox.mjs';
 import {validateActivityRead} from '../shared/activity-inbox.mjs';
@@ -174,6 +178,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const db=new DatabaseSync(path.join(dataDir,'musebench.sqlite'));
   db.exec('PRAGMA secure_delete=ON; PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS app(id INTEGER PRIMARY KEY CHECK(id=1),json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS tasks(id TEXT PRIMARY KEY,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS baselines(task_id TEXT PRIMARY KEY,revision TEXT NOT NULL,json TEXT NOT NULL); CREATE TABLE IF NOT EXISTS checkpoints(id TEXT PRIMARY KEY,task_id TEXT NOT NULL,revision TEXT NOT NULL,json TEXT NOT NULL);');
   const sourceSnapshots=createSourceSnapshots({directory:path.join(dataDir,'source-objects'),safeFile,excluded,excludedPatterns:EXCLUDED_PATTERNS,gc:sourceGc});
+  const fileReviewPager=createFileReviewPager({directory:path.join(dataDir,'file-reviews'),content:sourceSnapshots});
   const snapshot=(root,options={verify:true})=>sourceSnapshots.snapshot(root,options);
   const history=createHistoryStore(db),outputs=createOutputStore(db),analytics=createAnalyticsStore(db);
   const imports=createConversationImports(db,history),schedules=createCodeSchedules(db,{now:scheduleNow});
@@ -190,12 +195,14 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const promptShelf=createPromptShelf(db);
   state.memories=typeof state.memories==='string'?state.memories.slice(0,1500):'';
   state.preview=stopped();state.busy=false;state.error=null;state.runtime=runtime?.snapshot?.()??missingRuntime();
-  const taskRecords=new Map();
+  const taskRecords=new Map(),initialVisuals=[];
+  const visualReferences=task=>(task?.runs??[]).flatMap(run=>restoreVisualEvidence(run.visuals).flatMap(row=>row.images));
   for(const row of db.prepare('SELECT id,json FROM tasks ORDER BY rowid').all()){
-    try{const raw=JSON.parse(row.json);if(raw.id===row.id)history.sync(raw,true);const task=restoreTask(raw);if(task.id!==row.id)continue;taskRecords.set(row.id,task);db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(task),row.id);}catch{/* Preserve unreadable history in the database, without exposing it as a selectable task. */}
+    try{const raw=JSON.parse(row.json);if(raw.id===row.id)history.sync(raw,true);initialVisuals.push({projectId:raw.projectId,images:visualReferences(raw)});const task=restoreTask(raw);if(task.id!==row.id)continue;taskRecords.set(row.id,task);db.prepare('UPDATE tasks SET json=? WHERE id=?').run(JSON.stringify(task),row.id);}catch{/* Preserve unreadable history in the database, without exposing it as a selectable task. */}
   }
   if(state.task){
     const knownProject=state.projects.find(p=>p.id===state.activeProject?.id&&p.root===state.activeProject.root);
+    initialVisuals.push({projectId:state.task.projectId,images:visualReferences(state.task)});
     history.sync(state.task,true);state.task=restoreTask(state.task,knownProject?.id);
     // Task rows are written before the app selection snapshot. A crash between
     // those writes must not replace a sending/unknown queue with an older copy.
@@ -476,14 +483,19 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   const ownedImages=value=>{
     const refs=new Map();const visit=item=>{if(!item||typeof item!=='object')return;if(Array.isArray(item.images))for(const image of item.images)if(image?.id){refs.set(image.id,image);if(image.annotation?.source?.id)refs.set(image.annotation.source.id,image.annotation.source);}for(const [key,child] of Object.entries(item))if(key!=='images')visit(child);};visit(value);return[...refs.values()];
   };
-  const releaseImages=async(projectId,candidates)=>{
-    const owners=[...taskRecords.values()].filter(task=>task.projectId===projectId),drafts=Object.entries(state.drafts).filter(([key])=>key.startsWith(projectId+':')).map(([,draft])=>draft),shelf=promptShelf.all().filter(row=>row.key.startsWith(projectId+':')).map(row=>row.draft);
-    if(imageImports.get(projectId)>0)return;
+  const imageLocks=new Map();
+  const withImages=(projectId,operation)=>{
+    const previous=imageLocks.get(projectId)??Promise.resolve(),job=previous.catch(()=>{}).then(operation);imageLocks.set(projectId,job);
+    void job.finally(()=>{if(imageLocks.get(projectId)===job)imageLocks.delete(projectId);}).catch(()=>{});return job;
+  };
+  const releaseImages=(projectId,candidates)=>withImages(projectId,async()=>{
+    const owners=[...taskRecords.values()].map(task=>contexts.get(task.id)?.task??task).filter(task=>task.projectId===projectId),drafts=Object.entries(state.drafts).filter(([key])=>key.startsWith(projectId+':')).map(([,draft])=>draft),shelf=promptShelf.all().filter(row=>row.key.startsWith(projectId+':')).map(row=>row.draft);
+    if(imageImports.get(projectId)>0)return false;
     const pending=[...imageLeases.values()].filter(lease=>lease.projectId===projectId).flatMap(lease=>[...lease.images.values()]);
     const retained=new Set([...ownedImages([owners,drafts,shelf]),...pending].map(image=>image.id));
     const expanded=new Map(candidates.flatMap(image=>[image,...(image.annotation?.source?[image.annotation.source]:[])]).map(image=>[image.id,image]));
-    await imageStore.release(projectId,[...expanded.values()].filter(image=>!retained.has(image.id)));
-  };
+    await imageStore.release(projectId,[...expanded.values()].filter(image=>!retained.has(image.id)&&!history.retainsImage(owners.map(task=>task.id),image.id)));return true;
+  });
   const deleteArchivedChat=async (id,allowUnarchived=false)=>{
     requireNavigationIdle();if(typeof allowUnarchived!=='boolean')throw Error('Invalid direct-delete choice.');const target=taskRecords.get(id);if(!target)throw Error('Chat not found.');if(!target.archived&&!allowUnarchived)throw Error('Archive this chat before permanently deleting it.');if(contextBusy(contexts.get(id)))throw Error('Stop this chat before deleting it.');
     // A deleted chat's idle connection must not be reused or left unowned.
@@ -578,9 +590,9 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const project=state.projects.find(p=>p.id===action.projectId);
     if(!project||action.taskId!=null&&taskRecords.get(action.taskId)?.projectId!==project.id)throw Error('Draft project or chat is unavailable.');
     if(typeof action.text!=='string'||action.text.length>16000||!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid draft.');
-    const key=draftKey(action.projectId,action.taskId),previousImages=state.drafts[key]?.images??[],files=fileReferences(action.files),images=imageReferences(action.images);
+    const key=draftKey(action.projectId,action.taskId),previousImages=state.drafts[key]?.images??[],files=fileReferences(action.files),images=imageReferences(action.images),annotations=validateBrowserAnnotations(action.annotations);
     await imageStore.resolve(action.projectId,images);
-    const value=!action.text&&!files.length&&!images.length?null:{text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};
+    const value=!action.text&&!files.length&&!images.length&&!annotations.length?null:{text:action.text,files,images,annotations,mode:action.mode??'chat',updatedAt:now()};
     draftStore.write(key,value);
     if(value===null)delete state.drafts[key];else state.drafts[key]=value;
     for(const image of images)imageLeases.get(key)?.images.delete(image.id);
@@ -600,7 +612,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(!project||input.taskId!==null&&task?.projectId!==project.id)throw Error('Saved prompt project or chat owner unavailable.');
     return{key:draftKey(input.projectId,input.taskId),project,task};
   };
-  const draftPayload=draft=>JSON.stringify({text:draft?.text??'',files:draft?.files??[],images:draft?.images??[],mode:!draft?.text&&!draft?.files?.length&&!draft?.images?.length?'chat':draft?.mode??'chat'});
+  const draftPayload=draft=>JSON.stringify({text:draft?.text??'',files:draft?.files??[],images:draft?.images??[],annotations:validateBrowserAnnotations(draft?.annotations),mode:!draft?.text&&!draft?.files?.length&&!draft?.images?.length&&!draft?.annotations?.length?'chat':draft?.mode??'chat'});
   const shelfQueue=operation=>{if(closing||closed)return Promise.reject(Error('Controller closed.'));const next=queue.then(()=>{if(closed)throw Error('Controller closed.');return operation();});queue=next.catch(()=>{});return next;};
   const listSavedPrompts=input=>shelfQueue(()=>promptShelf.list(shelfOwner(input).key));
   const readPromptShelf=input=>shelfQueue(()=>{const {key}=shelfOwner(input);return{draft:structuredClone(state.drafts[key]??null),entries:promptShelf.list(key)};});
@@ -609,7 +621,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const source=shelfOwner(input),target=shelfOwner({...input,taskId:input.targetTaskId}),draft=state.drafts[source.key];
     if(!draft||draftPayload(draft)!==draftPayload(input.expected))throw Error('The new-chat draft changed. Review it before submitting again.');
     if(state.drafts[target.key])throw Error('The destination already has a draft.');
-    await imageStore.resolve(input.projectId,imageReferences(draft.images));await selectedSources(fileReferences(draft.files),source.project);
+    validateBrowserAnnotations(draft.annotations);await imageStore.resolve(input.projectId,imageReferences(draft.images));await selectedSources(fileReferences(draft.files),source.project);
     db.exec('SAVEPOINT transfer_code_draft');
     try{draftStore.write(target.key,draft);draftStore.write(source.key,null);db.exec('RELEASE transfer_code_draft');}
     catch(error){db.exec('ROLLBACK TO transfer_code_draft; RELEASE transfer_code_draft');throw error;}
@@ -624,7 +636,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(kind!=='park'){if(typeof input.id!=='string'||!input.id||input.id.length>200)throw Error('Invalid saved prompt.');selected=promptShelf.list(key).find(row=>row.id===input.id);if(!selected)throw Error('Saved prompt unavailable.');}
     const validate=async draft=>{
       if(!draft||typeof draft.text!=='string'||draft.text.length>16000||!['chat','plan'].includes(draft.mode))throw Error('Invalid saved draft.');
-      const files=fileReferences(draft.files),images=imageReferences(draft.images);await imageStore.resolve(project.id,images);await selectedSources(files,project);
+      validateBrowserAnnotations(draft.annotations);const files=fileReferences(draft.files),images=imageReferences(draft.images);await imageStore.resolve(project.id,images);await selectedSources(files,project);
     };
     if(kind!=='remove'){if(before)await validate(before);if(selected)await validate(selected.draft);}
     if(kind==='park'&&!before)throw Error('Write a prompt before saving for later.');
@@ -653,6 +665,35 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     const snap=await snapshot(root,{verify:false});if(state.task?.id!==task.id||state.activeProject?.id!==project.id||state.activeProject.root!==root)throw Error('The selected chat changed.');return{files:snap.files,root};
   };
   const inspectRunChanges=async input=>{validateRunInspection(input);const {files,root}=await runSource(input);return runChanges.read(input.taskId,input.runId,files,root);};
+  const selectFileReview=async(input,includeHistory=true)=>{
+    const task=requireTask(),project=state.activeProject;if(input.taskId!==task.id)throw Error('The selected chat changed.');
+    const root=project.root,original=baseline;
+    const valid=()=>!closing&&!closed&&state.task?.id===task.id&&state.activeProject?.id===project.id&&state.activeProject.root===root&&(input.scope==='run'||baseline===original);
+    if(await canonicalRoot(root)!==root||!valid())throw Error('The selected project or chat changed.');
+    const history=includeHistory?runChanges.history(task.id,root):[];
+    if(input.scope==='run'){
+      const saved=runChanges.capture(task.id,input.runId,root);
+      if(!valid())throw Error('The selected chat changed.');
+      if(saved?.status!=='complete')return{status:saved?.status??'unavailable',revision:'',reason:saved?.reason??'No source capture is retained for this run in this project.',files:[],valid};
+      return{status:'complete',revision:saved.revision,capturedAt:saved.capturedAt,before:saved.beforeFiles,after:saved.afterFiles,history,valid,root};
+    }
+    const current=await snapshot(root,{verify:false});if(!valid())throw Error('The selected project or chat changed.');
+    return{status:'complete',revision:hash(JSON.stringify([task.id,root,original,current.revision])),sourceRevision:current.revision,before:original,after:current.files,history,valid,root};
+  };
+  const inspectFileReview=async value=>{
+    const input=validateFileReviewInspection(value),selection=await selectFileReview(input);
+    return{...input,status:selection.status,revision:selection.revision,...(selection.reason?{reason:selection.reason}:{}),...(selection.capturedAt?{capturedAt:selection.capturedAt}:{}),files:selection.status==='complete'?describeReviewFiles({before:selection.before,after:selection.after,changedOnly:input.scope==='run',history:selection.history}):[]};
+  };
+  const readFileReview=async value=>{
+    const input=validateFileReviewRead(value),selection=await selectFileReview(input,false);
+    if(selection.status!=='complete'||selection.revision!==input.revision)throw Error(selection.reason??'The selected files or revision changed. Refresh the file review.');
+    const left=Object.hasOwn(selection.before,input.path)?selection.before[input.path]:null,right=Object.hasOwn(selection.after,input.path)?selection.after[input.path]:null;
+    if(!left&&!right||input.scope==='run'&&left?.hash===right?.hash)throw Error('This file is not part of the selected review.');
+    const page=await fileReviewPager.read({...input,left,right});
+    if(!selection.valid())throw Error('The selected project or chat changed.');
+    if(input.scope==='all'){const current=await snapshot(selection.root,{verify:false});if(!selection.valid()||current.revision!==selection.sourceRevision)throw Error('Files changed during the comparison. Refresh the file review.');}
+    return page;
+  };
   const prepareRunFeedback=async input=>{input=validateRunFeedback(input);const {files,root}=await runSource(input);return runChanges.feedback(input,files,root);};
   const captureTurn=(turn,owner,next,confirmed)=>{
     if(turn.captureScheduled)return;turn.captureScheduled=true;
@@ -672,13 +713,49 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     });
     queue=capture.catch(()=>{});
   };
+  const visualJobs=new Set(),visualCleanupJobs=new Set(),visualCleanupPending=new Map(),visualCleanupOwners=new Map();
+  const flushVisualCleanup=projectId=>{
+    if(visualCleanupOwners.has(projectId))return visualCleanupOwners.get(projectId);
+    if(imageImports.get(projectId)>0||!visualCleanupPending.get(projectId)?.size)return Promise.resolve();
+    const job=(async()=>{while(visualCleanupPending.get(projectId)?.size&&!(imageImports.get(projectId)>0)){
+      const refs=[...visualCleanupPending.get(projectId).values()];visualCleanupPending.delete(projectId);
+      try{if(await releaseImages(projectId,refs)===false){const pending=visualCleanupPending.get(projectId)??new Map();for(const ref of refs)pending.set(ref.id,ref);visualCleanupPending.set(projectId,pending);break;}}catch{const pending=visualCleanupPending.get(projectId)??new Map();for(const ref of refs)pending.set(ref.id,ref);visualCleanupPending.set(projectId,pending);break;}
+    }})();visualCleanupOwners.set(projectId,job);visualCleanupJobs.add(job);
+    void job.finally(()=>{visualCleanupOwners.delete(projectId);visualCleanupJobs.delete(job);}).catch(()=>{});return job;
+  };
+  const queueVisualCleanup=(projectId,images)=>{if(!images.length)return;const pending=visualCleanupPending.get(projectId)??new Map();for(const ref of images)pending.set(ref.id,ref);visualCleanupPending.set(projectId,pending);void flushVisualCleanup(projectId);};
+  const replaceRuns=(task,runs,options)=>{const images=visualReferences(task);task.runs=restoreRuns(runs,options);const retained=new Set(visualReferences(task).map(image=>image.id));queueVisualCleanup(task.projectId,images.filter(image=>!retained.has(image.id)));};
   const inspectProjectActions=async({projectId,taskId}={})=>{if(typeof projectId!=='string'||typeof taskId!=='string')throw Error('Choose a project and chat first.');validateBinding(projectId,taskId);const root=state.activeProject.root,result=await readProjectActions(root);validateBinding(projectId,taskId);return{...result,projectId,taskId};};
   const importImage=async ({projectId,taskId=null,...input})=>{
+    if(closing||closed)throw Error('Controller closed.');
     validateBinding(projectId,taskId);imageImports.set(projectId,(imageImports.get(projectId)??0)+1);
-    try{const ref=await imageStore.import(projectId,input);validateBinding(projectId,taskId);const key=draftKey(projectId,taskId),lease=imageLeases.get(key)??{projectId,images:new Map()};lease.images.set(ref.id,ref);imageLeases.set(key,lease);return ref;}
-    finally{imageImports.set(projectId,imageImports.get(projectId)-1);}
+    try{return await withImages(projectId,async()=>{validateBinding(projectId,taskId);const ref=await imageStore.import(projectId,input);validateBinding(projectId,taskId);const key=draftKey(projectId,taskId),lease=imageLeases.get(key)??{projectId,images:new Map()};lease.images.set(ref.id,ref);imageLeases.set(key,lease);return ref;});}
+    finally{imageImports.set(projectId,imageImports.get(projectId)-1);void flushVisualCleanup(projectId);}
   };
   const readImage=async ({projectId,image})=>{if(!state.projects.some(p=>p.id===projectId))throw Error('Project unavailable.');return imageStore.read(projectId,image);};
+  // Host-only capability: the renderer cannot manufacture visual evidence or choose its request.
+  const beginVisual=({taskId,root,isCurrent=()=>true})=>{
+    const owner=contexts.get(taskId),task=owner?.task,turn=owner?.turn,sessionId=owner?.runtime?.snapshot?.().sessionId;
+    const current=()=>{
+      const native=owner?.runtime?.snapshot?.(),project=state.projects.find(p=>p.id===task?.projectId);
+      if(closing||closed||!isCurrent()||!task||task.id!==taskId||owner.task!==task||owner.turn!==turn||!turn||turn.planning||turn.captureRoot!==root||project?.root!==root||native?.sessionId!==sessionId||!native?.permissionVerified||native.status!=='running')throw Error('The visual request owner changed.');
+      const run=task.runs?.find(run=>run.id===turn.promptId);if(!run||!['working','queued'].includes(run.status))throw Error('No current request can own this image.');return run;
+    };
+    current();
+    return value=>{const job=(async()=>{
+      let run=current();if((run.visuals?.length??0)>=12){run.visualsTruncated=true;saveRecord(task);emit();return;}
+      if(!['view','capture'].includes(value?.kind)||typeof value.imageDataUrl!=='string')throw Error('Invalid visual evidence.');
+      imageImports.set(task.projectId,(imageImports.get(task.projectId)??0)+1);
+      let imported;
+      try{await withImages(task.projectId,async()=>{
+        current();const name=String(value.name|| (value.kind==='capture'?'Browser screenshot':'Viewed image')).slice(0,160);
+        const image=imported=await imageStore.import(task.projectId,{name,dataUrl:value.imageDataUrl});run=current();
+        if((run.visuals?.length??0)>=12){run.visualsTruncated=true;return;}
+        const evidence={id:'visual:'+randomUUID(),kind:'tool',title:value.kind==='capture'?'Captured a screenshot':'Viewed an image',tool:value.kind==='capture'?'visual_capture':'visual_view',status:'completed',detail:'Preview of the inspected image.',output:'',images:[image],visual:{projectId:task.projectId,kind:value.kind},subject:typeof value.path==='string'?value.path.slice(0,1000):name};
+        run.visuals=[...(run.visuals??[]),evidence];saveRecord(task);emit();
+      });}finally{imageImports.set(task.projectId,imageImports.get(task.projectId)-1);if(imported)queueVisualCleanup(task.projectId,[imported]);await flushVisualCleanup(task.projectId);}
+    })();visualJobs.add(job);void job.finally(()=>visualJobs.delete(job)).catch(()=>{});return job;};
+  };
   const contextAllowed=name=>!name.split('/').some(part=>['.muse','.codex','.config','auth.json','.mcp.json'].includes(part.toLowerCase()));
   const selectedSources=async(files=[],project=state.activeProject)=>{
     const refs=fileReferences(files);if(!project)throw Error('Open a project first.');
@@ -691,7 +768,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   let sourceInventoryCache=null,sourceInventoryBuild=null,liveSourceRevision=null,liveSourceVersion=0;
   const sourceDataVersion=db.prepare('PRAGMA data_version'),sourceTables=['baselines','checkpoints','restore_operations','tasks','app','run_changes'];
   const sourceRows=sourceTables.map(table=>db.prepare(`SELECT rowid AS source_rowid,json FROM ${table} WHERE rowid>? ORDER BY rowid LIMIT 1`));
-  const sourceDatabaseRevision=()=>`${sourceOwnerVersion}:${sourceDataVersion.get().data_version}`;
+  const sourceDatabaseRevision=()=>`${sourceOwnerVersion}:${runChanges.generation}:${sourceDataVersion.get().data_version}`;
   const prepareSourceInventory=()=>{
     const databaseRevision=sourceDatabaseRevision();
     if(sourceInventoryCache?.revision===databaseRevision)return{complete:true,reused:true,rows:sourceInventoryCache.rows};
@@ -761,11 +838,11 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(!valid())throw Error('The selected chat changed. Refresh the changes.');
     const diff=computeFileDiff(before,after);return{path:relative,status:!left?'added':!right?'deleted':'modified',before,after,omitted:false,beforeHash,afterHash,additions:diff.additions,deletions:diff.deletions,approximate:diff.approximate};
   };
-  const inspectContext=async({projectId,taskId=null,text='',files=[]}={})=>{
+  const inspectContext=async({projectId,taskId=null,text='',files=[],annotations=[]}={})=>{
     validateBinding(projectId,taskId);const project=structuredClone(state.activeProject),memories=state.memories;
     const {snap,attachments}=await selectedSources(files);validateBinding(projectId,taskId);
     const task=taskId?structuredClone(state.task):null,recentContext=stagedRecentContext(task,recentSessionId(task,state.runtime));
-    const context=composeChatContext({task,project,memories,text,attachments,recentContext,history:state.runtime.transport==='msp'?!state.runtime.sessionSeeded:!task?.nativeSession?.seeded,nativeSession:state.runtime.transport==='msp'?!!state.runtime.sessionSeeded:!!task?.nativeSession?.seeded});
+    const context=composeChatContext({task,project,memories,text,annotations,attachments,recentContext,history:state.runtime.transport==='msp'?!state.runtime.sessionSeeded:!task?.nativeSession?.seeded,nativeSession:state.runtime.transport==='msp'?!!state.runtime.sessionSeeded:!!task?.nativeSession?.seeded});
     return{...context,receipt:contextReceipt(context,{project,memories,attachments,revision:snap.revision}),attachments,files:Object.entries(snap.files).filter(([name,f])=>contextAllowed(name)&&!f.binary).map(([path,f])=>({path,hash:f.hash,characters:f.size??f.text?.length??0}))};
   };
   const searchChats=({query='',includeArchived=false}={})=>{
@@ -897,7 +974,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
     if(saved?.unsupportedWorkspaceToolset)throw Error('This saved session uses an unsupported workspace tool set. Update MuseBench or explicitly start a fresh session.');
     if(saved&&saved.root!==project.root)throw Error('This session belongs to another folder. Start a fresh session before continuing.');
     if(saved&&transport!==(saved.transport??'exec'))throw Error('This session belongs to another transport. Start a fresh session before continuing.');
-    const request={binary:options.binary??preferredBinary??undefined,workspaceRoot:project.root,transport,fullAccess:options.fullAccess??saved?.fullAccess??false,workspaceTools:options.workspaceTools??saved?.workspaceTools??false,...(saved?.transport==='msp'?{sessionId:saved.id}:{})};
+    const request={...(task?{browserTaskId:task.id}:{}),binary:options.binary??preferredBinary??undefined,workspaceRoot:project.root,transport,fullAccess:options.fullAccess??saved?.fullAccess??false,workspaceTools:options.workspaceTools??saved?.workspaceTools??false,...(saved?.transport==='msp'?{sessionId:saved.id}:{})};
     if(discovery){request.toolDiscovery=discovery;request.discoveryTaskId=task.id;}
     const selectedToolset=options.workspaceToolset??(request.workspaceTools?saved?.workspaceToolset:undefined);
     if(selectedToolset!==undefined){normalizeWorkspaceToolset(selectedToolset);if(!request.workspaceTools||transport!=='msp')throw Error('Workspace tools require an interactive connection.');request.workspaceToolset=selectedToolset;}
@@ -927,7 +1004,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(modelCatalogCleanup)throw Error('Model catalog shutdown is unconfirmed. This prompt was not sent.');
         if(closing)throw Error('The app is closing. This prompt was not sent.');
         if(runtimeFactory){if(contextBusy(context))throw Error('This chat already has a running or unresolved request.');}else requireNavigationIdle();if(t.mode==='muse')requireWritable(t,project);if(t.archived)throw Error('Restore this archived chat before sending.');if(t.validationRun?.status==='running')throw Error('Wait for validation or cancel it first.');if(action.fromQueue&&action.requiredChecks?.length){const snap=await snapshot(project.root);const missing=missingChecks(t,snap.revision,validateCheckScripts(action.requiredChecks));if(missing.length)throw Error('Run passing checks for this revision before this workflow phase: '+missing.join(', '));}if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
-        const files=fileReferences(action.files),images=imageReferences(action.images);const imagePaths=await imageStore.resolve(t.projectId,images);if(images.length&&t.mode!=='muse')throw Error('Screenshots require a Muse chat.');if(!action.fromQueue&&!action.fromSchedule&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};const {attachments,snap:contextSnapshot}=await selectedSources(files,project);
+        const files=fileReferences(action.files),images=imageReferences(action.images),annotations=validateBrowserAnnotations(action.annotations);const imagePaths=await imageStore.resolve(t.projectId,images);if(images.length&&t.mode!=='muse')throw Error('Screenshots require a Muse chat.');if(!action.fromQueue&&!action.fromSchedule&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,annotations,mode:action.mode??'chat',updatedAt:now()};const {attachments,snap:contextSnapshot}=await selectedSources(files,project);
         if(closing)throw Error('The app is closing. This prompt was not sent.');
         if(t.mode==='muse'){
           if(!runtime)throw Error('Muse is unavailable. Connect an installed Muse CLI first.');
@@ -947,15 +1024,15 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           const durable=!planning&&runtimeState.durableSessions===true?prepareNativeSession(t.nativeSession,project.root,runtimeState):null;
           const targetSession=durable?.session.id??recentSessionId(t,runtime.snapshot?.()??runtimeState);
           const recentContext=action.fromQueue?(action.recentContext?validateRecentContext(action.recentContext,t,targetSession):null):action.userAuthored===true?stagedRecentContext(t,targetSession):null;
-          const prepared=composeChatContext({task:t,project:project,memories:state.memories,text:action.text,images,attachments,recentContext,history:planning|| (durable?durable.history:runtimeState.transport!=='msp'||!runtimeState.sessionSeeded),nativeSession:!planning&&(runtimeState.transport==='msp'?!!runtimeState.sessionSeeded:!!durable&&!durable.history)});
+          const prepared=composeChatContext({task:t,project:project,memories:state.memories,text:action.text,images,annotations,attachments,recentContext,history:planning|| (durable?durable.history:runtimeState.transport!=='msp'||!runtimeState.sessionSeeded),nativeSession:!planning&&(runtimeState.transport==='msp'?!!runtimeState.sessionSeeded:!!durable&&!durable.history)});
           const beforePreparation=recentContext?structuredClone(Object.fromEntries(['nativeSession','recentContext','messages','runs','contextSummary','skillReceipts','nativeUsage','runtimeComplete','acceptedRevision'].map(key=>[key,t[key]]))):null;
           if(durable)t.nativeSession=durable.session;
           t.skillReceipts=[];t.nativeUsage=null;t.runtimeComplete=false;t.acceptedRevision=null;context.pending=true;
           const before=runtime.snapshot?.()??runtimeState;
-          const prompt={id:randomUUID(),role:'user',text:action.text.slice(0,16000),files,images,sources:attachments,at:now()};
+          const prompt={id:randomUUID(),role:'user',text:action.text.slice(0,16000),files,images,annotations,sources:attachments,at:now()};
           if(action.fromSchedule)context.schedulePromptId=prompt.id;
           context.turn={taskId:t.id,promptId:prompt.id,planning,captureRoot:project.root,queueItemId:action.fromQueue?action.id:null,recentContext:action.fromQueue?null:recentContext,messageBaseline:runtimeMessageIds(before),previousRunId:before.runId??null,runId:null,started:false,resetSeen:false};
-          t.runs=restoreRuns([...(t.runs??[]),{id:prompt.id,promptId:prompt.id,prompt:prompt.text,runId:null,status:'queued',startedAt:prompt.at,activities:[]}],{interrupt:false});
+          replaceRuns(t,[...(t.runs??[]),{id:prompt.id,promptId:prompt.id,prompt:prompt.text,runId:null,status:'queued',startedAt:prompt.at,activities:[]}],{interrupt:false});
           t.messages.push(prompt);t.messages=t.messages.slice(-150);
           const {prompt:contextPrompt,...contextSummary}=prepared;t.contextSummary={...contextSummary,receipt:contextReceipt(prepared,{project,memories:state.memories,attachments,revision:contextSnapshot.revision})};
           let recentTransaction=false;
@@ -980,10 +1057,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
             const rejected=e?.inputAdmission==='not-sent'||executions.list(t.id).find(r=>r.id===prompt.id)?.result==='rejected',unknownNative=runtimeState.transport==='msp'&&durable&&!rejected;
             executions.patch(prompt.id,{phase:'settled',result:rejected?'rejected':'unknown',reason:String(e.message).slice(0,1000)});runChanges.unavailable(t.id,prompt.id,'The request did not finish with a confirmed outcome.');
             if(unknownNative){t.nativeSession={...durable.session,status:'needs-recovery'};const run=t.runs.find(r=>r.id===prompt.id);if(run){run.status='interrupted';run.endedAt=now();}prompt.outcome='interrupted';}
-            else if(!context.turn?.started){t.nativeSession=previousSession;if(!action.fromQueue&&!action.fromSchedule&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,mode:action.mode??'chat',updatedAt:now()};history.remove(t.id,prompt.id);t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}
+            else if(!context.turn?.started){t.nativeSession=previousSession;if(!action.fromQueue&&!action.fromSchedule&&!state.drafts[draftKey(t.projectId,t.id)])state.drafts[draftKey(t.projectId,t.id)]={text:action.text,files,images,annotations,mode:action.mode??'chat',updatedAt:now()};history.remove(t.id,prompt.id);t.messages=t.messages.filter(item=>item.id!==prompt.id);t.runs=(t.runs??[]).filter(item=>item.id!==prompt.id);}
             context.pending=false;context.turn=null;throw Object.assign(new Error(String(e.message??e)),{queueDeliveryUnknown:action.fromQueue&&!rejected});
           }
-        }else{t.messages.push({id:randomUUID(),role:'user',text:action.text,at:now()},{id:randomUUID(),role:'system',text:'Added to the local task journal. Manual and demo messages do not call a model.',at:now()});}if(!action.fromQueue&&!action.fromSchedule&&state.drafts[draftKey(t.projectId,t.id)]?.text===action.text)delete state.drafts[draftKey(t.projectId,t.id)];saveRecord(t);
+        }else{t.messages.push({id:randomUUID(),role:'user',text:action.text,files,images,annotations,at:now()},{id:randomUUID(),role:'system',text:'Added to the local task journal. Manual and demo messages do not call a model.',at:now()});}if(!action.fromQueue&&!action.fromSchedule&&state.drafts[draftKey(t.projectId,t.id)]&&draftPayload(state.drafts[draftKey(t.projectId,t.id)])===draftPayload({text:action.text,files,images,annotations,mode:action.mode??'chat'}))delete state.drafts[draftKey(t.projectId,t.id)];saveRecord(t);
   };
 
   const deliverQueued=async(t,item,owner,{runQueue=false}={})=>{
@@ -1080,7 +1157,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           if(!verifiedApprovalPause)progress.activities=progress.activities.map(item=>['queued','working','waiting'].includes(item.status)?{...item,status:next.status==='cancelled'?'cancelled':'interrupted'}:item);
         }
         for(const item of task.messages)if(item.id===progress.promptId||item.turnId===progress.promptId)item.outcome=progress.status;
-        task.runs=restoreRuns(task.runs,{interrupt:false});
+        replaceRuns(task,task.runs,{interrupt:false});
         if(['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)){
           if(verifiedApprovalPause){
             const requests=[...(Array.isArray(next.pendingRequests)?next.pendingRequests.slice(0,32):[]),next.pending].filter(p=>p&&p.sessionId===next.sessionId&&['input','approval'].includes(p.kind));
@@ -1094,8 +1171,8 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(rejected){
           const key=draftKey(task.projectId,task.id);
           if(!turn.queueItemId){
-            const draft=state.drafts[key],original=!draft||draft.text===rejected.text&&JSON.stringify(draft.files??[])===JSON.stringify(rejected.files??[])&&JSON.stringify(draft.images??[])===JSON.stringify(rejected.images??[]);
-            if(original){if(!draft)state.drafts[key]={text:rejected.text,files:rejected.files??[],images:rejected.images??[],mode:'chat',updatedAt:now()};restageRecentContext(task,turn.recentContext);}
+            const draft=state.drafts[key],original=!draft||draft.text===rejected.text&&JSON.stringify(draft.files??[])===JSON.stringify(rejected.files??[])&&JSON.stringify(draft.images??[])===JSON.stringify(rejected.images??[])&&JSON.stringify(draft.annotations??[])===JSON.stringify(rejected.annotations??[]);
+            if(original){if(!draft)state.drafts[key]={text:rejected.text,files:rejected.files??[],images:rejected.images??[],annotations:rejected.annotations??[],mode:'chat',updatedAt:now()};restageRecentContext(task,turn.recentContext);}
             else if(turn.recentContext&&!task.recentContext?.prepared&&!task.recentContext?.stagedDigest)task.recentContext={...restoreRecentContext(task.recentContext),prepared:turn.recentContext};
           }
           history.remove(task.id,rejected.id);task.messages=task.messages.filter(m=>m.id!==rejected.id);
@@ -1279,10 +1356,10 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'queueMessage':{pauseGoalDriver(state.task?.goal?.driver,'Queued user input takes priority');
         if(requireTask().queueEnabled===false)throw Error('Queuing is turned off for this chat. Send a message or turn queuing back on.');
         const t=requireTask();if(t.mode!=='muse'||t.archived)throw Error('Open an active Muse chat to queue a request.');if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
-        if(!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid conversation mode.');if((t.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');const files=fileReferences(action.files),images=imageReferences(action.images);await selectedSources(files);await imageStore.resolve(t.projectId,images);
+        if(!['chat','plan'].includes(action.mode??'chat'))throw Error('Invalid conversation mode.');if((t.promptQueue??[]).length>=5)throw Error('The queue holds up to five prompts.');const files=fileReferences(action.files),images=imageReferences(action.images),annotations=validateBrowserAnnotations(action.annotations);await selectedSources(files);await imageStore.resolve(t.projectId,images);
         const recentContext=stagedRecentContext(t,recentSessionId(t,context.runtime?.snapshot?.()));
         const runOptions=validateRunOptions(action.runOptions??t.runOptions);
-        t.promptQueue??=[];t.promptQueue.push({id:randomUUID(),text:action.text.trim(),files,images,mode:action.mode??'chat',runOptions,...(recentContext?{recentContext}:{}),at:now()});consumeRecentContext(t,recentContext);
+        t.promptQueue??=[];t.promptQueue.push({id:randomUUID(),text:action.text.trim(),files,images,annotations,mode:action.mode??'chat',runOptions,...(recentContext?{recentContext}:{}),at:now()});consumeRecentContext(t,recentContext);const draft=state.drafts[draftKey(t.projectId,t.id)];if(draft&&draftPayload(draft)===draftPayload({text:action.text,files,images,annotations,mode:action.mode??'chat'}))delete state.drafts[draftKey(t.projectId,t.id)];
         const r=runtime?.snapshot?.()??state.runtime,waiting=isNativeRequestPause(r);
         if(!closing&&!t.queueHold&&context.pending&&(['running','starting','submitting'].includes(r.status)||waiting))t.queuePaused=false;break;
       }
@@ -1293,16 +1370,16 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         const t=requireTask(),item=queuedPrompt(t,action),r=runtime?.snapshot?.(),turn=context.turn;
         const unavailable=queuedSteeringUnavailable(item);if(unavailable)throw Error(unavailable);
         if(!context.pending||!turn||!r?.steeringSupported||r.status!=='running'||r.foregroundActive===false||r.turnId!==action.expectedTurnId)throw Error('The target turn changed or does not support steering.');
-        const project=state.projects.find(p=>p.id===t.projectId),files=fileReferences(item.files),images=imageReferences(item.images);
+        const project=state.projects.find(p=>p.id===t.projectId),files=fileReferences(item.files),images=imageReferences(item.images),annotations=validateBrowserAnnotations(item.annotations);
         const {attachments}=await selectedSources(files,project),imagePaths=await imageStore.resolve(t.projectId,images);
-        const prepared=composeChatContext({task:t,project,memories:state.memories,text:item.text,images,attachments,history:false,nativeSession:true});
+        const prepared=composeChatContext({task:t,project,memories:state.memories,text:item.text,images,annotations,attachments,history:false,nativeSession:true});
         const before=runtime.snapshot();if(context.turn!==turn||!context.pending||before.turnId!==action.expectedTurnId)throw Error('The target turn changed while preparing this prompt.');
         const previousCommand=before.steering?.commandId;pauseGoalDriver(t.goal?.driver,'User steering takes priority');
         item.delivery='sending';saveRecord(t);persist();
         try{
           await runtime.steer({text:prepared.prompt,imagePaths,expectedTurnId:action.expectedTurnId});
           const receipt=runtime.snapshot().steering;if(receipt?.turnId!==action.expectedTurnId||receipt.commandId===previousCommand||receipt.status!=='accepted')throw Error('Steering acknowledgement could not be verified.');
-          t.messages.push({id:randomUUID(),role:'user',text:item.text,files,images,sources:attachments,at:now(),turnId:turn.promptId});
+          t.messages.push({id:randomUUID(),role:'user',text:item.text,files,images,annotations,sources:attachments,at:now(),turnId:turn.promptId});
           t.promptQueue=t.promptQueue.filter(entry=>entry.id!==item.id);t.queueError=null;
         }catch(error){
           const receipt=runtime.snapshot().steering;
@@ -1362,13 +1439,13 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
         if(state.activeProject?.id!==project.id)await selectProject(project,null);
         await startTask(side?'Side chat':original.request,original.mode==='demo'?'manual':original.mode,queuedItem?.runOptions??original.runOptions);
         const child=state.task;child.requestOrigin=side?'placeholder':!native&&original.mode!=='muse'&&resolveRequestOrigin(original)==='initial'?'initial':'history';child.title=`${side?'Side chat':'Fork'} - ${original.title}`.slice(0,100);child.chatRelation={kind:side?'side':'fork',parentTaskId:parent.id,parentTitle:parent.title,context:side?'fresh':native?'native':'retained',createdAt:now(),...(!side&&selected?{messageId:selected.id}:{})};
-        if(side){child.messages=[];if(queuedItem||action.text)state.drafts[draftKey(child.projectId,child.id)]={text:queuedItem?.text??action.text,files:queuedItem?.files??[],images:queuedItem?.images??[],mode:queuedItem?.mode??'chat',updatedAt:now()};}
+        if(side){child.messages=[];if(queuedItem||action.text)state.drafts[draftKey(child.projectId,child.id)]={text:queuedItem?.text??action.text,files:queuedItem?.files??[],images:queuedItem?.images??[],annotations:queuedItem?.annotations??[],mode:queuedItem?.mode??'chat',updatedAt:now()};}
         else{
           child.forkedFrom=original.id;
-          child.messages=original.messages.slice(0,index).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,contextTruncated:m.contextTruncated===true,at:m.at,sources:m.sources,files:m.files,images:m.images,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));
+          child.messages=original.messages.slice(0,index).filter(m=>m.role!=='system').map(m=>({id:randomUUID(),role:m.role,text:m.text,contextTruncated:m.contextTruncated===true,at:m.at,sources:m.sources,files:m.files,images:m.images,annotations:m.annotations,outcome:original.runs?.find(r=>r.promptId===(m.turnId??m.id))?.status??m.outcome}));
           if(native){child.nativeSession={...original.nativeSession,id:forkReceipt.childSessionId,seeded:true,status:'ready'};child.forkReceipts=[forkReceipt];message('system','Native conversation fork. Its saved history resumes independently after normal connection and tool review.');}
           else message('system','Saved conversation context copied through the selected point. Current project files are unchanged.');
-          if(selected?.role==='user')state.drafts[draftKey(child.projectId,child.id)]={text:selected.text,files:selected.files??[],images:selected.images??[],mode:'chat',updatedAt:now()};
+          if(selected?.role==='user')state.drafts[draftKey(child.projectId,child.id)]={text:selected.text,files:selected.files??[],images:selected.images??[],annotations:selected.annotations??[],mode:'chat',updatedAt:now()};
         }
         if(queuedItem){
           const pending=source.promptQueue,key=draftKey(child.projectId,child.id);
@@ -1389,7 +1466,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       }
       case 'integrateReview':{
         requireNavigationIdle();const child=requireTask(),contract=child.reviewContract;if(!contract||action.taskId!==child.id)throw Error('Review chat changed.');if(!child.runtimeComplete||executions.list(child.id)[0]?.result!=='completed')throw Error('Wait for a confirmed reviewer result.');const parent=taskRecords.get(contract.parentTaskId),project=state.projects.find(p=>p.id===contract.parentProjectId);if(!parent||!project||parent.archived)throw Error('Parent chat is unavailable.');if(contextBusy(contexts.get(parent.id)))throw Error('Wait for the parent run to finish.');if((await snapshot(project.root)).revision!==contract.sourceRevision||(await current()).revision!==contract.inputRevision)throw Error('Review is stale: source or review files changed. Start a fresh review.');
-        const answer=child.messages.findLast(m=>m.role==='assistant');if(answer?.contextTruncated)throw Error('Review output was shortened. Ask for a smaller structured report.');const report=parseReview(answer?.text);const key=draftKey(project.id,parent.id),draft=state.drafts[key];if(draft?.text||draft?.files?.length||draft?.images?.length)throw Error('The parent already has a draft. Save or send it before integrating this review.');const reviewText=`Independent ${contract.role} findings from chat ${child.id}, revision ${contract.sourceRevision}. Review these claims before applying changes.\n\n${JSON.stringify(report,null,2)}`;if(reviewText.length>16000)throw Error('Review is too large for a draft. Ask for a shorter structured report.');state.drafts[key]={text:reviewText,files:[],images:[],mode:'chat',updatedAt:now()};contract.integratedAt=now();saveRecord(child);await selectProject(project,parent.id);break;
+        const answer=child.messages.findLast(m=>m.role==='assistant');if(answer?.contextTruncated)throw Error('Review output was shortened. Ask for a smaller structured report.');const report=parseReview(answer?.text);const key=draftKey(project.id,parent.id),draft=state.drafts[key];if(draft?.text||draft?.files?.length||draft?.images?.length||draft?.annotations?.length)throw Error('The parent already has a draft. Save or send it before integrating this review.');const reviewText=`Independent ${contract.role} findings from chat ${child.id}, revision ${contract.sourceRevision}. Review these claims before applying changes.\n\n${JSON.stringify(report,null,2)}`;if(reviewText.length>16000)throw Error('Review is too large for a draft. Ask for a shorter structured report.');state.drafts[key]={text:reviewText,files:[],images:[],mode:'chat',updatedAt:now()};contract.integratedAt=now();saveRecord(child);await selectProject(project,parent.id);break;
       }
       case 'cancelReviewers':{
         const parent=requireTask();for(const id of parent.reviewChildren??[]){const child=contexts.get(id);if(child?.pending)await child.runtime?.disconnect?.();}break;
@@ -1470,10 +1547,11 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       case 'steerMessage':{
         const t=requireTask(),r=runtime?.snapshot?.();if(action.taskId!==t.id||!context.pending||!context.turn||!r?.steeringSupported||r.turnId!==action.expectedTurnId)throw Error('The target turn changed or does not support steering.');
         if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000)throw Error('Use a correction up to 16,000 characters.');
+        const annotations=validateBrowserAnnotations(action.annotations),preparedText=annotations.length?composeChatContext({task:t,project:state.activeProject,memories:state.memories,text:action.text,annotations,history:false,nativeSession:true}).prompt:action.text;
         const turn=context.turn,previousCommand=r.steering?.commandId;pauseGoalDriver(t.goal?.driver,'User steering takes priority');
-        try{await runtime.steer({text:action.text,expectedTurnId:action.expectedTurnId});}
+        try{await runtime.steer({text:preparedText,expectedTurnId:action.expectedTurnId});}
         finally{const receipt=runtime.snapshot().steering;if(receipt?.turnId===action.expectedTurnId&&receipt.commandId!==previousCommand){t.steeringReceipts=[...(t.steeringReceipts??[]).filter(x=>x.commandId!==receipt.commandId),{...receipt,text:action.text,at:now()}].slice(-20);saveRecord(t);}}
-        t.messages.push({id:randomUUID(),role:'user',text:action.text,at:now(),turnId:turn.promptId});const key=draftKey(t.projectId,t.id);if(state.drafts[key]?.text===action.text&&!state.drafts[key]?.files?.length&&!state.drafts[key]?.images?.length)delete state.drafts[key];saveRecord(t);break;
+        t.messages.push({id:randomUUID(),role:'user',text:action.text,annotations,at:now(),turnId:turn.promptId});const key=draftKey(t.projectId,t.id);if(state.drafts[key]&&draftPayload(state.drafts[key])===draftPayload({text:action.text,annotations,files:[],images:[],mode:'chat'}))delete state.drafts[key];saveRecord(t);break;
       }
       case 'prepareRecentContext':case 'stageRecentContext':case 'removeRecentContext':case 'setRecentContextPreference':{
         const t=requireTask();validateBinding(action.projectId,action.taskId);if(action.taskId!==t.id||t.mode!=='muse'||t.archived)throw Error('Open the original active Muse chat.');
@@ -1533,6 +1611,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
   await maintainSourceObjects();
   const sourceGcTimer=setInterval(()=>void maintainSourceObjects(),60000);sourceGcTimer.unref?.();
   const archiveTimer=setInterval(()=>{queue=queue.then(async()=>{if(closed||closing)return;if(inbox.prune())emit();await purgeArchived();}).catch(error=>{state.error=error.message;emit();});},60*60*1000);archiveTimer.unref?.();
-  return{getState,capturedSessionImages(taskId){const s=getState();if(s.task?.id!==taskId||s.task.projectId!==s.activeProject?.id)throw Error('Open the original chat.');return runChanges.images(taskId,s.activeProject.root,(s.task.runs??[]).map(run=>run.id));},collectSourceObjects,cancelSourceScan:()=>{invalidateRefresh();sourceSnapshots.cancel();},discoverySourceBusy:sourceId=>[...new Set([context,...contexts.values()])].some(c=>contextBusy(c)&&c.runtime?.snapshot?.().toolDiscovery?.sources?.some(row=>row.id===sourceId)),discoveryOwnerSnapshot,discoveryAuth,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,listSavedPrompts,readPromptShelf,transferCodeDraft,parkCodeDraft,restoreSavedPrompt,removeSavedPrompt,readMcpServers,inspectDiscoverySources,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!modelCatalogCleanup&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectSourceDiff,inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,findChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='refresh')return requestRefresh();if(action?.type!=='saveDraft')invalidateRefresh();if(action?.type==='inspectChild')return inspectChild(action);if(action?.type==='refreshModels'&&modelCatalogPending)return modelCatalogPending;const refreshEpoch=modelCatalogEpoch;const op=queue.then(async()=>{if(closed||closing&&!['queueMessage','saveDraft'].includes(action?.type))throw Error('Controller closed.');state.error=null;const draftOnly=action?.type==='saveDraft',quiet=draftOnly||action?.type==='refresh'||action?.type==='answerInput'&&action.operation==='engage';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');if(['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse'].includes(action.type)){discoveryReview=null;discoveryInspectEpoch++;}if(action.type!=='refreshModels'||refreshEpoch===modelCatalogEpoch)await handle(action);if(authSourceRef&&['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse','connectMuse'].includes(action.type))await discoveryOAuth?.()?.inspectSource(authSourceRef).catch(()=>{});}catch(e){state.error=e.message;}finally{if(draftOnly)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});if(action?.type==='refreshModels'){modelCatalogPending=op;void op.finally(()=>{if(modelCatalogPending===op)modelCatalogPending=null;}).catch(()=>{});}return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(sourceGcTimer);clearTimeout(sourceGcContinuation);invalidateRefresh();sourceSnapshots.cancel();modelCatalogEpoch++;modelCatalog=null;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);await Promise.all([...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.()));if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);closed=true;await sourceSnapshots.close();clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
+  for(const row of initialVisuals)if(state.projects.some(project=>project.id===row.projectId))queueVisualCleanup(row.projectId,row.images);
+  return{getState,beginVisual,capturedSessionImages(taskId){const s=getState();if(s.task?.id!==taskId||s.task.projectId!==s.activeProject?.id)throw Error('Open the original chat.');return runChanges.images(taskId,s.activeProject.root,(s.task.runs??[]).map(run=>run.id));},collectSourceObjects,cancelSourceScan:()=>{invalidateRefresh();sourceSnapshots.cancel();},discoverySourceBusy:sourceId=>[...new Set([context,...contexts.values()])].some(c=>contextBusy(c)&&c.runtime?.snapshot?.().toolDiscovery?.sources?.some(row=>row.id===sourceId)),discoveryOwnerSnapshot,discoveryAuth,getUpdateBlockers,tickCodeSchedules,prepareConversationImport,conversationImport,saveCodeDraft,listSavedPrompts,readPromptShelf,transferCodeDraft,parkCodeDraft,restoreSavedPrompt,removeSavedPrompt,readMcpServers,inspectDiscoverySources,resetCodeConnections,readAnalytics(options){for(const task of taskRecords.values())analytics.sync(task);if(state.task)analytics.sync(state.task);return analytics.read(options);},canRestartForUpdate:()=>!closing&&!closed&&!modelCatalogCleanup&&!state.busy&&!checkProcess&&!imports.isBusy()&&!schedules.isBusy()&&![...new Set([context,...contexts.values()])].some(c=>contextBusy(c)||c.task?.goal?.driver?.armed||c.task?.promptQueue?.length&&!c.task.queuePaused),recordDelivery(id,status){if(!closed){executions.delivery(id,status);emit();}},inspectFileReview,readFileReview,inspectSourceDiff,inspectCheckpoint,inspectContext,inspectProjectActions,inspectRunChanges,prepareRunFeedback,searchChats,readChatHistory,findChatHistory,readCapturedOutput,semanticNavigate,inspectWorktrees,importImage,readImage,subscribe(fn){listeners.add(fn);return()=>listeners.delete(fn);},dispatch(action){if(!closing&&!closed)flushRuntime();if(closing||closed)return Promise.reject(Error('Controller closed.'));if(action?.type==='refresh')return requestRefresh();if(action?.type!=='saveDraft')invalidateRefresh();if(action?.type==='inspectChild')return inspectChild(action);if(action?.type==='refreshModels'&&modelCatalogPending)return modelCatalogPending;const refreshEpoch=modelCatalogEpoch;const op=queue.then(async()=>{if(closed||closing&&!['queueMessage','saveDraft'].includes(action?.type))throw Error('Controller closed.');state.error=null;const draftOnly=action?.type==='saveDraft',quiet=draftOnly||action?.type==='refresh'||action?.type==='answerInput'&&action.operation==='engage';if(!quiet){state.busy=true;emit();}try{if(!action||typeof action.type!=='string')throw Error('Invalid action.');if(['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse'].includes(action.type)){discoveryReview=null;discoveryInspectEpoch++;}if(action.type!=='refreshModels'||refreshEpoch===modelCatalogEpoch)await handle(action);if(authSourceRef&&['selectTask','selectProject','openProject','newTask','recoverSession','disconnectMuse','connectMuse'].includes(action.type))await discoveryOAuth?.()?.inspectSource(authSourceRef).catch(()=>{});}catch(e){state.error=e.message;}finally{if(draftOnly)persist();else{state.busy=false;emit();}}return getState();});queue=op.catch(()=>{});if(action?.type==='refreshModels'){modelCatalogPending=op;void op.finally(()=>{if(modelCatalogPending===op)modelCatalogPending=null;}).catch(()=>{});}return op;},close(){if(closePromise)return closePromise;closing=true;clearInterval(sourceGcTimer);clearTimeout(sourceGcContinuation);invalidateRefresh();sourceSnapshots.cancel();modelCatalogEpoch++;modelCatalog=null;clearInterval(codeScheduleTimer);for(const owner of contexts.values())clearTimeout(owner.scheduleDeadline);flushRuntime();clearInterval(archiveTimer);if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}closePromise=(async()=>{await Promise.all([queue,imports.close(),...[...semanticQueries].map(service=>service.dispose()),...[...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.())]);await Promise.all([...new Set([context,...contexts.values()])].map(c=>c.runtime?.disconnect?.()));if(state.task){state.task.queuePaused=true;state.task.queueHold=true;}await cleanup(false);for(const c of new Set([context,...contexts.values()])){c.unsubscribe?.();if(c.task)saveRecord(c.task);}persist();if(state.task)state.task.executionReceipts=executions.list(state.task.id);await Promise.allSettled([...visualJobs]);await Promise.allSettled([...imageLocks.values()]);for(const projectId of visualCleanupPending.keys())await flushVisualCleanup(projectId);await Promise.allSettled([...visualCleanupJobs]);closed=true;await fileReviewPager.close();await sourceSnapshots.close();clearTimeout(runtimeTimer);runtimeDirty.clear();listeners.clear();db.close();})();return closePromise;}};
 }
 import {confirmedInputText} from '../shared/user-input.mjs';

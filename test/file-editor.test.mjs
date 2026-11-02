@@ -48,3 +48,14 @@ test('navigation can open an unchanged source file while keeping task and path b
  await open({taskId:'t',path:'source.ts',source:'navigation'});assert.equal(launches.length,1);
  for(const input of [{taskId:'other',path:'source.ts',source:'navigation'},{taskId:'t',path:'../editor.exe',source:'navigation'},{taskId:'t',path:'source.ts',source:'untrusted'}])await assert.rejects(open(input));
 });
+
+test('review opens an unchanged current file only after membership and owner revalidation',async t=>{
+ const root=await mkdtemp(path.join(os.tmpdir(),'muse-review-editor-'));t.after(()=>rm(root,{recursive:true,force:true}));
+ await mkdir(path.join(root,'project'));await writeFile(path.join(root,'project','readme.md'),'Current file');await writeFile(path.join(root,'editor.exe'),'fixture');
+ const state={activeProject:{root:path.join(root,'project')},task:{id:'t',changes:[]}},launches=[];let checks=0,admitted=true;
+ const options={dataDir:root,getState:()=>state,choose:async()=>path.join(root,'editor.exe'),candidates:[],validateReviewPath:async input=>{checks++;if(!admitted||input.path!=='readme.md'||state.task.id!==input.taskId)throw Error('Review changed.');},launch:async(...args)=>launches.push(args)};
+ await createFileEditor(options)({taskId:'t',path:'readme.md',source:'review',editor:'vscode'});assert.equal(checks,2);assert.equal(launches.length,1);
+ admitted=false;await assert.rejects(createFileEditor(options)({taskId:'t',path:'readme.md',source:'review'}),/Review changed/);
+ admitted=true;await assert.rejects(createFileEditor({...options,choose:async()=>{admitted=false;return path.join(root,'editor.exe');}})({taskId:'t',path:'readme.md',source:'review',editor:'choose'}),/Review changed/);
+ await assert.rejects(createFileEditor(options)({taskId:'t',path:'../editor.exe',source:'review'}));assert.equal(launches.length,1);
+});

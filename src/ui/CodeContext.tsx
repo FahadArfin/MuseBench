@@ -7,11 +7,12 @@ import {FileText,Search,Check,RefreshCw} from 'lucide-react';
 import type {Action,CodeContextResult,ContextFile,Project,Task} from '../shared/types';
 import {Modal} from './WorkspacePanels';
 import './code-context.css';
+import type {BrowserAnnotation} from '../shared/browser-annotations.mjs';
 
-export function CodeContext({project,taskId,text,files,onFiles,act,busy,close,task}:{task?:Task|null;project:Project;taskId:string|null;text:string;files:ContextFile[];onFiles:(files:ContextFile[])=>void;act:(action:Action)=>Promise<unknown>;busy:boolean;close:()=>void}){
+export function CodeContext({project,taskId,text,files,annotations,onFiles,act,busy,close,task}:{annotations?:BrowserAnnotation[];task?:Task|null;project:Project;taskId:string|null;text:string;files:ContextFile[];onFiles:(files:ContextFile[])=>void;act:(action:Action)=>Promise<unknown>;busy:boolean;close:()=>void}){
  const [tab,setTab]=useState<'files'|'instructions'|'lessons'|'context'>('files'),[query,setQuery]=useState(''),[instructions,setInstructions]=useState(project.instructions??''),[revision,setRevision]=useState(0),[preview,setPreview]=useState('');
  const owner=JSON.stringify([project.id,taskId]);
- const {value:info,error,pending:loading}=useLatestRead<CodeContextResult>({owner,key:JSON.stringify([text,files]),revision,read:()=>window.musebench!.inspectCodeContext({projectId:project.id,taskId,text,files})});
+ const {value:info,error,pending:loading}=useLatestRead<CodeContextResult>({owner,key:JSON.stringify([text,files,annotations]),revision,read:()=>window.musebench!.inspectCodeContext({projectId:project.id,taskId,text,files,annotations})});
  useLayoutEffect(()=>{setPreview('');setQuery('');},[owner]);
  useLayoutEffect(()=>{setInstructions(project.instructions??'');},[project.id]);
  const toggle=(file:ContextFile)=>onFiles(files.some(f=>f.path===file.path)?files.filter(f=>f.path!==file.path):[...files,file]);

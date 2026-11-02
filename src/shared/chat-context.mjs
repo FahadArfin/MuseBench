@@ -1,3 +1,4 @@
+import {validateBrowserAnnotations,browserAnnotationsText} from './browser-annotations.mjs';
 import {imageAnnotationNotes} from './image-annotations.mjs';
 export const CONTEXT_LIMIT=64000;
 export const FILE_CONTEXT_LIMIT=24000;
@@ -8,7 +9,7 @@ export function fileReferences(value=[]){
 export function restoreSourceSnapshots(value){
  if(!Array.isArray(value)||value.length>8)return[];let size=0;return value.filter(item=>{if(!item||typeof item.path!=='string'||typeof item.hash!=='string'||typeof item.text!=='string')return false;size+=JSON.stringify(item).length;return size<=FILE_CONTEXT_LIMIT;}).map(({path,hash,text})=>({path,hash,text}));
 }
-export function composeChatContext({task,project,memories='',text='',images=[],attachments=[],history=true,nativeSession=false,recentContext=null}){
+export function composeChatContext({task,project,memories='',text='',images=[],annotations=[],attachments=[],history=true,nativeSession=false,recentContext=null}){
  if(typeof text!=='string'||text.length>16000)throw Error('Use a prompt up to 16,000 characters.');
  attachments=[...attachments].sort((a,b)=>a.path<b.path?-1:a.path>b.path?1:0);
  const instructionSnapshot={version:1,scope:'app-settings',personal:memories?'included':'empty',project:project?.instructions?'included':'empty'};
@@ -22,6 +23,8 @@ export function composeChatContext({task,project,memories='',text='',images=[],a
   attachments.length?`Selected source snapshots (JSON data; verify the current files before editing):\n${JSON.stringify(attachments.map(({path,hash,text})=>({path,hash,text})))}`:'',
   recentContext?.section??'',
  ].filter(Boolean);
+ const annotationContext=browserAnnotationsText(annotations);
+ if(annotationContext)parts.push(annotationContext);
  const notes=imageAnnotationNotes(images);
  const ending=`\n\nCurrent request:\n${text}${notes?"\n\n"+notes:""}`;
  const previous=history?(task?.messages??[]).filter(m=>['user','assistant'].includes(m.role)&&m.text):[];
@@ -30,11 +33,11 @@ export function composeChatContext({task,project,memories='',text='',images=[],a
  for(let i=previous.length-1;i>=0;i--){
   const message=previous[i],run=task?.runs?.find(r=>r.promptId===(message.turnId??message.id));
   const outcome=run?.status??message.outcome;
-  const entry={role:message.role,text:message.text+(imageAnnotationNotes(message.images)?"\n\n"+imageAnnotationNotes(message.images):""),...(message.sources?.length?{historicalSourceSnapshots:restoreSourceSnapshots(message.sources)}:{}),...(outcome&&outcome!=='completed'?{outcome}:{} )};
+  const entry={role:message.role,text:message.text+(imageAnnotationNotes(message.images)?"\n\n"+imageAnnotationNotes(message.images):""),...(message.annotations?.length?{historicalBrowserAnnotations:{referenceOnly:true,annotations:validateBrowserAnnotations(message.annotations)}}:{}),...(message.sources?.length?{historicalSourceSnapshots:restoreSourceSnapshots(message.sources)}:{}),...(outcome&&outcome!=='completed'?{outcome}:{} )};
   let encoded=JSON.stringify(entry);
   if(encoded.length+2>room){
    // Keep an explicit suffix of the nearest message when a complete message will not fit.
-   if(room>400){let size=Math.min(entry.text.length,room-200);while(size>0){encoded=JSON.stringify({...entry,historicalSourceSnapshots:undefined,text:`[Earlier part omitted] ${entry.text.slice(-size)}`});if(encoded.length+2<=room)break;size-=Math.max(1,Math.ceil((encoded.length+2-room)/2));}if(size>0){selected.unshift(encoded);includedSources.unshift({id:message.id??'unknown',role:message.role,truncated:true});truncatedMessages++;}}
+   if(room>400){let size=Math.min(entry.text.length,room-200);while(size>0){encoded=JSON.stringify({...entry,historicalSourceSnapshots:undefined,historicalBrowserAnnotations:undefined,text:`[Earlier part omitted] ${entry.text.slice(-size)}`});if(encoded.length+2<=room)break;size-=Math.max(1,Math.ceil((encoded.length+2-room)/2));}if(size>0){selected.unshift(encoded);includedSources.unshift({id:message.id??'unknown',role:message.role,truncated:true});truncatedMessages++;}}
    break;
   }
   selected.unshift(encoded);includedSources.unshift({id:message.id??'unknown',role:message.role,truncated:message.contextTruncated===true});if(message.contextTruncated)truncatedMessages++;room-=encoded.length+2;

@@ -1,10 +1,11 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { ArrowLeft, ArrowUpRight, Bot, Check, ChevronDown, ChevronRight, Circle, Clock3, FileCode2, Files, GitBranch, LoaderCircle, MessageSquare, Pause, Square, Terminal, Wrench, X } from 'lucide-react';
-import type { ActivityItem, FileChange, ShellResult, WorkRun, WorkStatus } from '../shared/types';
+import type { Action, AppState, RuntimeState, Task, ActivityItem, FileChange, ShellResult, WorkRun, WorkStatus } from '../shared/types';
 import {MotionDisclosure} from './MotionDisclosure';
 import {normalizeWorkspaceBatchSummary,workspaceBatchSummary} from '../shared/workspace-tool-activity.mjs';
 import {useSurfaceMotion} from './useSurfaceMotion';
 import {WorkLog} from './WorkLog';
+import {SubagentBrowser} from './SubagentBrowser';
 import './work-activity.css';
 
 const isLive = (status: WorkStatus) => status === 'working' || status === 'waiting' || status === 'queued';
@@ -102,8 +103,9 @@ function RunDetails({ run, shellResults, highlightId }: { run: WorkRun; shellRes
   return <div className="work-run-details">
     {run.activities.length ? <div className="work-activity-list">{run.activities.map(item => <ActivityDetails key={item.id} item={item} highlighted={item.id === highlightId} />)}</div> : <p className="work-empty-detail">{isLive(run.status) ? 'Waiting for the runtime to report activity.' : 'No activity details were reported for this request.'}</p>}
     {!!results.length && <div className="work-command-results"><p className="work-subheading">Command results <span>{results.length}</span></p>{results.map(result => <CommandResult key={`${result.runId}:${result.callId}`} result={result} />)}</div>}
+    {!!run.visuals?.length&&<WorkLog activities={run.visuals}/>}
     {run.reason && <p className={`work-run-reason ${run.status === 'failed' ? 'work-run-error' : ''}`}>{run.reason}</p>}
-    {run.truncated && <p className="work-bound-note">This is a partial activity history. Some earlier details or output were omitted.</p>}
+    {(run.truncated||run.visualsTruncated) && <p className="work-bound-note">This is a partial activity history. Some earlier details or output were omitted.</p>}
   </div>;
 }
 
@@ -117,7 +119,7 @@ export function RunActivity({ run, shellResults = [], onOpen }: { run: WorkRun; 
   const heading = run.status === 'working' ? 'Working' : run.status === 'completed' ? 'Worked' : statusLabels[run.status];
   return <section className={`run-activity ${live ? 'run-activity-live' : ''}`} aria-label="Request activity" data-run-id={run.id}>
     <div className="run-activity-heading"><button type="button" className="run-activity-toggle" aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(value => !value)}><span className={`work-status-icon work-status-${run.status}`}><StatusIcon status={run.status} /></span><span className="run-activity-label">{heading}{duration ? ` ${run.status==='completed'||run.status==='working'?'for':'after'} ${duration}` : ''}</span><ChevronRight size={13} className={`work-disclosure ${open ? 'is-open' : ''}`} aria-hidden="true" /></button></div>
-    <WorkLog activities={run.activities} shellResults={shellResults.filter(result => run.ownedRunIds?.includes(result.runId) || result.runId === run.runId)}/>
+    <WorkLog activities={run.activities} visuals={run.visuals} shellResults={shellResults.filter(result => run.ownedRunIds?.includes(result.runId) || result.runId === run.runId)}/>
     {live && <div className="run-current-action" role="status" aria-live="polite"><span className="run-current-line" />{current ? <><span className="run-current-detail" title={current.detail||itemTitle(current)}>{current.detail||itemTitle(current)}</span></> : <span>{run.status === 'waiting' ? 'Waiting for your input' : run.status === 'queued' ? 'Waiting to start' : 'Muse is thinking…'}</span>}</div>}
     <MotionDisclosure id={detailsId} open={open} innerClassName="run-activity-expanded" unmountWhenClosed>{()=><><RunDetails run={run} shellResults={shellResults} /><button type="button" className="work-text-button" onClick={onOpen}>View in Sub-Agents<ArrowUpRight size={13} aria-hidden="true" /></button></>}</MotionDisclosure>
   </section>;
@@ -127,7 +129,8 @@ type ThreadGroup = 'Waiting' | 'Working' | 'Resolved';
 const threadGroup = (status: WorkStatus): ThreadGroup => status === 'waiting' || status === 'queued' ? 'Waiting' : status === 'working' ? 'Working' : 'Resolved';
 const groups: ThreadGroup[] = ['Waiting', 'Working', 'Resolved'];
 
-export function WorkThreads({ runs, onClose, onStop, onSelectRun, active = true, selectedRunId, shellResults = [] }: {
+export function WorkThreads({ runs, onClose, onStop, onSelectRun, active = true, selectedRunId, shellResults = [], task, runtime, busy=false, act, selectedChildId, drafts, onDraft }: {
+  task?:Task; runtime?:RuntimeState; busy?:boolean; act?:(action:Action)=>Promise<AppState|null>; selectedChildId?:string; drafts?:Record<string,string>; onDraft?:(id:string,value:string,expected?:string)=>void;
   runs: WorkRun[];
   onClose: () => void;
   onStop: (runId: string) => void;
@@ -136,9 +139,11 @@ export function WorkThreads({ runs, onClose, onStop, onSelectRun, active = true,
   selectedRunId?: string | null;
   shellResults?: ShellResult[];
 }) {
-  const [tab, setTab] = useState<'tasks' | 'agents'>('tasks');
+  const [tab, setTab] = useState<'tasks' | 'agents'>(selectedRunId||!runtime?'tasks':'agents');
   const [selected, setSelected] = useState<string | null>(selectedRunId ?? null);
   const [selectedAgent, setSelectedAgent] = useState<string>();
+  const [nativeSelected,setNativeSelected]=useState<string|null>(selectedChildId??null);
+  useEffect(()=>{if(selectedChildId){setNativeSelected(selectedChildId);setSelected(null);setTab('agents');}},[selectedChildId]);
   const pane = useRef<HTMLElement>(null);
   const content = useRef<HTMLDivElement>(null);
   useSurfaceMotion(content,`${tab}:${selected}:${selectedAgent??''}`,active);
@@ -151,7 +156,7 @@ export function WorkThreads({ runs, onClose, onStop, onSelectRun, active = true,
   const selectedRun = runs.find(run => run.id === selected);
   const agents = runs.flatMap(run => run.activities.filter(item => (item.kind === 'agent'||item.workflow)).map(item => ({ run, item })));
   const sortedRuns = [...runs].reverse();
-  useEffect(() => { if (selectedRunId != null) { setSelected(selectedRunId); setSelectedAgent(undefined); } }, [selectedRunId]);
+  useEffect(() => { if (selectedRunId != null) { setSelected(selectedRunId); setSelectedAgent(undefined); setTab('tasks'); } }, [selectedRunId]);
   useEffect(() => {
     if (!active) return;
     const previous = document.activeElement as HTMLElement | null;
@@ -170,9 +175,10 @@ export function WorkThreads({ runs, onClose, onStop, onSelectRun, active = true,
   return <aside ref={pane} className="work-threads" aria-label="Sub-Agents" hidden={!active} inert={!active}>
     <header className="work-threads-heading"><span><GitBranch size={15} aria-hidden="true" /><strong>Sub-Agents</strong></span><button ref={closeButton} type="button" className="icon-button" aria-label="Close Sub-Agents" onClick={onClose}><X size={16} aria-hidden="true" /></button></header>
     {selectedRun ? <div ref={content} className="work-thread-detail"><div className="work-thread-backbar"><button type="button" className="work-text-button" onClick={() => { setSelected(null); setSelectedAgent(undefined); }}><ArrowLeft size={14} aria-hidden="true" />All {tab === 'agents' ? 'agents' : 'tasks'}</button><Status status={selectedRun.status} /></div><div className="work-thread-detail-scroll"><div className="work-thread-prompt"><span className="work-field-label">Request</span><h2>{selectedRun.prompt || 'Untitled request'}</h2><div className="work-thread-time"><Clock3 size={12} aria-hidden="true" /><time dateTime={selectedRun.startedAt}>{new Date(selectedRun.startedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time>{elapsed(selectedRun, now) && <span>· {elapsed(selectedRun, now)} elapsed</span>}</div></div><div className="work-thread-section-title"><h3>{selectedRun.activities.some(item => item.id === selectedAgent && item.kind === 'agent') ? 'Agent activity' : 'Activity'}</h3><span>{actionCount(selectedRun, shellResults)} actions{selectedRun.truncated ? ' retained' : ''}</span></div><RunDetails run={selectedRun} shellResults={shellResults} highlightId={selectedAgent} /></div><footer className="work-thread-footer"><button type="button" className="work-continue-button" onClick={() => { onSelectRun(selectedRun.id); onClose(); }}><MessageSquare size={14} aria-hidden="true" />Continue in chat<ArrowUpRight size={13} aria-hidden="true" /></button>{isLive(selectedRun.status) && <button type="button" className="work-stop-button" onClick={() => onStop(selectedRun.id)}><Square size={11} aria-hidden="true" />Stop</button>}</footer></div> : <>
-      <div className="work-thread-tabs" role="tablist" aria-label="Thread type" onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 'tasks' : event.key === 'End' ? 'agents' : tab === 'tasks' ? 'agents' : 'tasks'; changeTab(next); document.getElementById(`${tabsId}-${next}`)?.focus(); } }}><button type="button" id={`${tabsId}-tasks`} role="tab" aria-selected={tab === 'tasks'} aria-controls={`${tabsId}-panel`} tabIndex={tab === 'tasks' ? 0 : -1} onClick={() => changeTab('tasks')}>Tasks<span>{runs.length}</span></button><button type="button" id={`${tabsId}-agents`} role="tab" aria-selected={tab === 'agents'} aria-controls={`${tabsId}-panel`} tabIndex={tab === 'agents' ? 0 : -1} onClick={() => changeTab('agents')}>Agents & workflows<span>{agents.length}</span></button></div>
+      <div className="work-thread-tabs" role="tablist" aria-label="Thread type" onKeyDown={event => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) { event.preventDefault(); const next = event.key === 'Home' ? 'tasks' : event.key === 'End' ? 'agents' : tab === 'tasks' ? 'agents' : 'tasks'; changeTab(next); document.getElementById(`${tabsId}-${next}`)?.focus(); } }}><button type="button" id={`${tabsId}-tasks`} role="tab" aria-selected={tab === 'tasks'} aria-controls={`${tabsId}-panel`} tabIndex={tab === 'tasks' ? 0 : -1} onClick={() => changeTab('tasks')}>Tasks<span>{runs.length}</span></button><button type="button" id={`${tabsId}-agents`} role="tab" aria-selected={tab === 'agents'} aria-controls={`${tabsId}-panel`} tabIndex={tab === 'agents' ? 0 : -1} onClick={() => changeTab('agents')}>Agents & workflows<span>{agents.length+(runtime?.children?.items??[]).filter(item=>item.kind==='subagent').length}</span></button></div>
       <div ref={content} className="work-thread-list" id={`${tabsId}-panel`} role="tabpanel" aria-labelledby={`${tabsId}-${tab}`} tabIndex={0}>
-        {tab === 'tasks' && !runs.length ? <div className="work-threads-empty"><MessageSquare size={24} aria-hidden="true" /><h3>No tasks yet</h3><p>Send a request in this chat to see its activity here.</p></div> : tab === 'agents' && !agents.length ? <div className="work-threads-empty"><Bot size={24} aria-hidden="true" /><h3>No agents or workflows reported</h3><p>This Muse connection reports workflow progress. Individual child-agent updates are not exposed.</p></div> : groups.map(group => {
+        {tab==='agents'&&task&&runtime&&act&&onDraft&&<SubagentBrowser active={active} task={task} runtime={runtime} busy={busy} act={act} selectedId={nativeSelected} onSelect={setNativeSelected} drafts={drafts??{}} onDraft={onDraft}/>}
+        {tab === 'tasks' && !runs.length ? <div className="work-threads-empty"><MessageSquare size={24} aria-hidden="true" /><h3>No tasks yet</h3><p>Send a request in this chat to see its activity here.</p></div> : tab === 'agents' && ((runtime?.children?.items??[]).some(item=>item.kind==='subagent'&&item.itemId===nativeSelected)||!agents.length) ? null : groups.map(group => {
           const groupRuns = sortedRuns.filter(run => threadGroup(run.status) === group);
           const groupAgents = agents.filter(({ item }) => threadGroup(item.status) === group);
           const count = tab === 'tasks' ? groupRuns.length : groupAgents.length;
@@ -183,7 +189,7 @@ export function WorkThreads({ runs, onClose, onStop, onSelectRun, active = true,
             return <div className="work-thread-entry" key={run.id}><button type="button" className="work-thread-row" onClick={() => showRun(run)}><span className={`work-thread-row-icon work-status-${run.status}`}><StatusIcon status={run.status} size={15} /></span><span className="work-thread-row-copy"><strong>{run.prompt || 'Untitled request'}</strong><span>{current && isLive(run.status) ? current.detail || itemTitle(current) : statusLabels[run.status]}{elapsed(run, now) && <> · {elapsed(run, now)}</>}</span></span><ChevronRight size={14} aria-hidden="true" /></button>{!!children.length && <div className="work-thread-children">{children.slice(-3).map(item => <button type="button" className="work-thread-child" key={item.id} onClick={() => showRun(run, item.id)}><span className={`work-status-icon work-status-${item.status}`}><StatusIcon status={item.status} size={11} /></span><span title={item.detail || itemTitle(item)}>{itemTitle(item)}</span><span className="work-child-status">{statusLabels[item.status]}</span></button>)}{children.length > 3 && <button type="button" className="work-thread-more" onClick={() => showRun(run)}>View all {children.length} actions<ChevronRight size={11} aria-hidden="true" /></button>}</div>}</div>;
           }) : groupAgents.map(({ run, item }) => <button type="button" className="work-thread-row" key={`${run.id}:${item.id}`} onClick={() => showRun(run, item.id)}><span className={`work-thread-row-icon work-status-${item.status}`}><Bot size={15} aria-hidden="true" /></span><span className="work-thread-row-copy"><strong>{itemTitle(item)}</strong><span>{statusLabels[item.status]}{item.detail ? ` · ${item.detail}` : ''}</span></span><ChevronRight size={14} aria-hidden="true" /></button>)}</section>;
         })}
-      </div><footer className="work-threads-note">{tab==='agents'?'Observed workflow progress. Individual child controls are unavailable on this connection.':'Activity reported by Muse for this chat.'}</footer>
+      </div><footer className="work-threads-note">{tab==='agents'?'Native agents are scoped to this connection. Workflow rows show reported request activity.':'Activity reported by Muse for this chat.'}</footer>
     </>}
   </aside>;
 }
@@ -201,7 +207,7 @@ export function ChangedFiles({ files, onOpenFile, onOpenAll }: { files: FileChan
   const deferred = files.some(file => file.omitted);
   const renderFile=(file:FileChange)=><button type="button" className="changed-file-row" key={file.path} onClick={() => onOpenFile(file.path)} title={`View ${file.path} · ${file.status}`}>
         <span className="changed-file-path">{file.path}</span>
-        {file.binary||file.omitted ? <span className="changed-file-binary">{file.binary?'Binary':'On demand'}</span> : <span className="changed-file-counts" aria-label={`${file.approximate ? 'Approximately ' : ''}${countLabel(safeCount(file.additions))} additions, ${countLabel(safeCount(file.deletions))} deletions`}>
+        {file.binary||file.omitted ? <span className="changed-file-binary">{file.binary?'Binary':'Compare'}</span> : <span className="changed-file-counts" aria-label={`${file.approximate ? 'Approximately ' : ''}${countLabel(safeCount(file.additions))} additions, ${countLabel(safeCount(file.deletions))} deletions`}>
           {file.approximate && <span title="Estimated line counts">≈</span>}
           <span className="work-additions">+{countLabel(safeCount(file.additions))}</span><span className="work-deletions">−{countLabel(safeCount(file.deletions))}</span>
         </span>}
@@ -211,8 +217,8 @@ export function ChangedFiles({ files, onOpenFile, onOpenAll }: { files: FileChan
     <div className="changed-files-heading">
       <span className="changed-files-icon"><Files size={16} aria-hidden="true" /></span>
       <div className="changed-files-summary">
-        <strong id={headingId} title="Changes since this chat started">Edited {files.length} {files.length === 1 ? 'file' : 'files'}</strong>
-        {deferred?<span className="changed-files-totals">Comparisons on demand</span>:<span className="changed-files-totals" aria-label={`${approximate ? 'Approximately ' : ''}${countLabel(additions)} additions, ${countLabel(deletions)} deletions`}>
+        <strong id={headingId} title="Workspace changes since this chat started">Edited {files.length} {files.length === 1 ? 'file' : 'files'}</strong>
+        {deferred?<span className="changed-files-totals">Workspace changes</span>:<span className="changed-files-totals" aria-label={`${approximate ? 'Approximately ' : ''}${countLabel(additions)} additions, ${countLabel(deletions)} deletions`}>
           {approximate && <span className="changed-files-approx" title="Estimated line counts">≈</span>}
           <span className="work-additions">+{countLabel(additions)}</span><span className="work-deletions">−{countLabel(deletions)}</span>
         </span>}

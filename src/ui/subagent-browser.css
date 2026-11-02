@@ -1,0 +1,12 @@
+.subagent-browser,.subagent-detail{padding:14px;min-width:0}
+.subagent-browser section+section{margin-top:24px}.subagent-browser h3{color:var(--muted);font-size:12px;font-weight:500;margin:5px 0 12px}
+.subagent-row{width:100%;display:flex;gap:12px;align-items:center;text-align:left;padding:11px 8px;border:0;border-radius:9px;background:transparent;color:var(--text)}
+.subagent-row:hover,.subagent-row:focus-visible{background:var(--surface-hover)}.subagent-avatar{color:#ae95df;flex:none}.subagent-avatar.is-active{color:#75b6ff}
+.subagent-row>span:nth-child(2){flex:1;min-width:0}.subagent-row strong,.subagent-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.subagent-row strong{font-size:13px;font-weight:500}.subagent-row small{font-size:12px;color:var(--muted);margin-top:5px}
+.subagent-detail header{display:flex;gap:10px;align-items:flex-start;margin:20px 0}.subagent-detail h2{font-size:16px;margin:0 0 6px;overflow-wrap:anywhere}.subagent-status,.subagent-empty{font-size:12px;color:var(--muted)}
+.subagent-detail h3{font-size:13px}.subagent-detail p,.subagent-detail pre{overflow-wrap:anywhere;white-space:pre-wrap}.subagent-objective,.subagent-result{font-size:13px;line-height:1.6}.subagent-result pre{font:inherit}
+.subagent-message{margin-top:20px}.subagent-message label{display:block;font-size:12px;margin-bottom:9px}.subagent-message-box{border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:10px;display:flex;gap:8px;align-items:flex-end}
+.subagent-message-box textarea{border:0;background:transparent;color:var(--text);resize:vertical;width:100%;min-width:0;min-height:70px;max-height:240px;font:inherit;font-size:13px;outline:none}.subagent-message-box:focus-within{border-color:#69aaff}
+.subagent-message-box button{display:grid;place-items:center;border:0;border-radius:50%;width:30px;height:30px;background:#2479dc;color:white;flex:none}.subagent-message-box button:disabled{opacity:.4}.subagent-message p{font-size:11px;line-height:1.5}.subagent-message [role=alert]{color:#ffaaa1}
+.subagent-more,.subagent-receipts{margin-top:18px;font-size:12px}.subagent-receipts ol{list-style:none;padding:0}.subagent-receipts li{padding:10px 0;border-bottom:1px solid var(--border)}.subagent-receipts li>span{display:block;color:var(--muted);margin-top:4px}.subagent-receipts li p{margin-bottom:0}
+@media(prefers-reduced-motion:reduce){.subagent-browser .work-spin{animation:none}}

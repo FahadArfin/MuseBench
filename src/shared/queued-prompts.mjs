@@ -1,3 +1,4 @@
+import {validateBrowserAnnotations} from './browser-annotations.mjs';
 export function queuedSteeringUnavailable(item) {
  return item.mode==='plan'||item.workflow||item.handoff||item.recentContext||item.requiredChecks?.length?'This prompt must run as a separate turn.':null;
 }
@@ -27,7 +28,7 @@ export function queuedPrompt(task, action, {allowUnknown=false}={}) {
 export function editQueuedPrompt(task,action){
  const item=queuedPrompt(task,action);
  if(typeof action.text!=='string'||!action.text.trim()||action.text.length>16000||!['chat','plan'].includes(action.mode))throw Error('Use a prompt up to 16,000 characters and a valid conversation mode.');
- return {...item,text:action.text,mode:action.mode,revision:(item.revision??0)+1};
+ return {...item,...(action.annotations!==undefined?{annotations:validateBrowserAnnotations(action.annotations)}:{}),text:action.text,mode:action.mode,revision:(item.revision??0)+1};
 }
 
 export function queuedSideChatPrompt(task,action){

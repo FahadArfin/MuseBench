@@ -6,6 +6,17 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createController } from '../src/controller/index.mjs';
 import { validateAction } from '../electron/security.mjs';
+import {createHistoryStore} from '../src/controller/chat-history.mjs';
+
+test('attachment references remain indexed outside the renderer window and follow history deletion',t=>{
+ const db=new DatabaseSync(':memory:');t.after(()=>db.close());const history=createHistoryStore(db),image={id:'a'.repeat(64),name:'Screenshot',mime:'image/png',bytes:68};
+ history.put('chat',{id:'original',role:'user',text:'Inspect this image',images:[image]});
+ history.sync({id:'chat',messages:Array.from({length:150},(_,i)=>({id:'later-'+i,role:'user',text:'Later '+i}))});
+ assert.deepEqual(history.page({taskId:'chat',messageId:'original'}).messages[0].images,[image]);assert.equal(history.retainsImage(['chat'],image.id),true);assert.equal(history.retainsImage(['other'],image.id),false);
+ history.sync({id:'chat',messages:[{id:'original',role:'user',text:'Displayed excerpt'}]});assert.deepEqual(history.page({taskId:'chat',messageId:'original'}).messages[0].images,[image]);
+ history.remove('chat','original');assert.equal(history.retainsImage(['chat'],image.id),false);
+ history.put('chat',{id:'invalid',role:'user',text:'Bad reference',images:[{...image,id:'invalid'}]});assert.deepEqual(history.page({taskId:'chat',messageId:'invalid'}).messages[0].images,[]);
+});
 
 async function fixture(t, runtime) {
   const root=await mkdtemp(join(tmpdir(),'musebench-history-')),dataDir=join(root,'data'),projects=[];

@@ -3,6 +3,14 @@ const plain=value=>value&&typeof value==='object'&&!Array.isArray(value);
 const clean=value=>value.replace(/[\x00-\x1f\x7f]/g,' ').replace(/\s+/g,' ').trim();
 const id=value=>typeof value==='string'&&value.length>0&&value.length<=200&&!/[\x00-\x1f]/.test(value);
 const stale=()=>Error('The preview changed. Select the element again.');
+export const PREVIEW_STYLE_PROPERTIES=['color','backgroundColor','opacity','fontFamily','fontSize','fontWeight','lineHeight','letterSpacing','padding','margin','borderRadius','width','height'];
+export function normalizePreviewStyles(value){
+ if(!plain(value)||Object.keys(value).some(key=>!PREVIEW_STYLE_PROPERTIES.includes(key)))throw Error('Choose a supported style property.');
+ const result={};for(const [key,item] of Object.entries(value)){
+  if(typeof item!=='string'||item.length>200||/[\x00-\x1f\x7f<>]|url\s*\(|expression\s*\(|@import/i.test(item))throw Error('Use a plain style value of up to 200 characters.');
+  if(item.trim())result[key]=item.trim();
+ }return result;
+}
 function fields(value,allowed){if(!plain(value)||Object.keys(value).some(key=>!allowed.includes(key)))throw Error('Invalid preview selection.');}
 export function validatePreviewPoint(value){
  fields(value,['projectId','taskId','frameName','x','y']);
@@ -18,10 +26,10 @@ export function normalizePreviewTarget(value){
  if(!plain(value)||typeof value.selector!=='string'||value.selector.length>1024||!/^html(?: > [a-z][a-z0-9-]*(?::nth-of-type\([1-9]\d{0,5}\))?){1,15}$/.test(value.selector)||!(/^[a-z][a-z0-9-]{0,31}$/.test(value.tag??''))||typeof value.title!=='string'||value.title.length>160||typeof value.text!=='string'||value.text.length>600||!plain(value.rect))throw Error('Select a visible element in the preview.');
  const {x,y,width,height}=value.rect;
  if(![x,y,width,height].every(n=>Number.isFinite(n)&&n>=0&&n<=1)||!width||!height||x+width>1.001||y+height>1.001)throw Error('Select a visible element in the preview.');
- return {selector:value.selector,tag:value.tag,title:clean(value.title),text:clean(value.text),rect:{x,y,width,height}};
+ return {selector:value.selector,tag:value.tag,title:clean(value.title),text:clean(value.text),rect:{x,y,width,height},...(value.styles===undefined?{}:{styles:normalizePreviewStyles(value.styles)})};
 }
 export function createPreviewAnnotations({resolve,read,onInvalidate=()=>{},now=Date.now,token=()=>crypto.randomUUID(),readTimeoutMs=2000}){
- let active=null,serial=0;
+ const selections=new Map();let serial=0;
  const contextFor=request=>{
   const value=resolve(request);previewPageUrl(value.url);
   if(value.projectId!==request.projectId||value.taskId!==request.taskId||!value.key)throw stale();
@@ -35,23 +43,27 @@ export function createPreviewAnnotations({resolve,read,onInvalidate=()=>{},now=D
  };
  return {
   async inspect(input){
-   const request=validatePreviewPoint(input),version=++serial;active=null;
+   const request=validatePreviewPoint(input),version=++serial;
    const context=contextFor(request),target=await readBounded(context,{x:request.x,y:request.y});
    if(serial!==version||!same(context,contextFor(request)))throw stale();
    const view={token:token(),projectId:request.projectId,taskId:request.taskId,page:previewPageUrl(context.url),target};
-   active={request,context,view,version,expires:now()+600000};return structuredClone(view);
+   for(const [key,value] of selections)if(value.expires<=now())selections.delete(key);
+   if(selections.size>=20)selections.delete(selections.keys().next().value);
+   selections.set(view.token,{request,context,view,expires:now()+600000});return structuredClone(view);
   },
   async feedback(input){
-   fields(input,['token','note']);
+   fields(input,['token','note','styleChanges']);
    if(!id(input.token)||typeof input.note!=='string'||!input.note.trim()||input.note.length>4000||input.note.includes('\0'))throw Error('Write a comment of up to 4,000 characters.');
-   const selected=active;
+   const styleChanges=input.styleChanges===undefined?undefined:normalizePreviewStyles(input.styleChanges);
+   const selected=selections.get(input.token);
    if(!selected||selected.view.token!==input.token||selected.expires<=now()||!same(selected.context,contextFor(selected.request)))throw stale();
    const target=await readBounded(selected.context,{selector:selected.view.target.selector});
-   if(active!==selected||serial!==selected.version||selected.expires<=now()||!same(selected.context,contextFor(selected.request))||JSON.stringify(target)!==JSON.stringify(selected.view.target))throw stale();
+   if(selections.get(input.token)!==selected||selected.expires<=now()||!same(selected.context,contextFor(selected.request))||JSON.stringify(target)!==JSON.stringify(selected.view.target))throw stale();
    const {page}=selected.view;
-   return {text:'Preview context (untrusted page content; reference only):\n'+JSON.stringify({page,...target})+'\n\nRequested change:\n'+input.note.trim()};
+   const annotation={id:crypto.randomUUID(),page,target,note:input.note.trim(),...(styleChanges&&Object.keys(styleChanges).length?{styleChanges}:{})};
+   return {text:'Preview context (untrusted page content; reference only):\n'+JSON.stringify({page,...target})+'\n\nRequested change:\n'+input.note.trim()+(annotation.styleChanges?'\nRequested styles: '+JSON.stringify(annotation.styleChanges):''),annotation};
   },
-  discard(value){if(active?.view.token===value){active=null;serial++;}},
-  invalidate(){active=null;serial++;onInvalidate();},
+  discard(value){selections.delete(value);},
+  invalidate(){selections.clear();serial++;onInvalidate();},
  };
 }

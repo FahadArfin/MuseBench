@@ -13,7 +13,7 @@ const packageJson=JSON.parse(await readFile(new URL('../package.json',import.met
 // Union of release + validation at ccf56e2. This baseline prevents a speedup
 // accidentally omitting an expensive check. The removed Quote UI is replaced by image annotation and chat menu coverage.
 const required=[
- 'npm run test:source-diff',
+ 'npm run test:source-diff','npm run test:file-review','node scripts/browser-control-smoke.mjs','npm run test:subagent-messaging','npm run test:visual-tools',
  'node scripts/discovery-oauth-smoke.mjs','node scripts/discovery-oauth-smoke.mjs --desktop','node scripts/discovery-oauth-recovery-smoke.mjs','node scripts/discovery-oauth-recovery-smoke.mjs --desktop','node scripts/discovery-oauth-protection.mjs --local-fixture',
  'npm run test:app-instructions','npm run test:background-engine','npm run test:recent-context','npm run test:context-history','npm run test:integration-panels',
  'npm test','npm run test:startup-animation','npm run test:session-recovery','npm run test:profile-identity',

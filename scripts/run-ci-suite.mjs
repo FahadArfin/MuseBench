@@ -17,11 +17,11 @@ export const CI_SUITES={
  'chats-a':npm('code-responsiveness','prompt-shelf','code-chat-relations','update-details','renderer-state','workspace-focus','app-instructions','context-history','chat-menu-tools','image-annotations'),
  'chats-b':npm('transcript-position','profile-identity','chat-organization','session-recovery','chat-history-find','chat-navigation','recent-context','transcript-render'),
  native:[
-  ...npm('source-diff'),
+  ...npm('source-diff','file-review'),['node','scripts/browser-control-smoke.mjs'],
   ['node','scripts/discovery-oauth-smoke.mjs'],['node','scripts/discovery-oauth-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-recovery-smoke.mjs'],['node','scripts/discovery-oauth-recovery-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-protection.mjs','--local-fixture'],
   ['node','scripts/mobile-settings-smoke.mjs'],['node','scripts/native-control-smoke.mjs'],['node','test/native-control-http-ui-smoke.mjs'],['node','scripts/native-navigation-smoke.mjs'],
   ['node','scripts/session-mcp-smoke.mjs'],['node','scripts/session-mcp-smoke.mjs','--desktop'],
-  ...npm('activity','child-inspection','child-restart','native-failure','native-retry','native-question','reply-copy','model-settings','meta-chat-history','work-activity','project-actions','run-changes','connection-diagnostics','workspace-analysis','tool-discovery','discovery-approvals','background-engine'),
+  ...npm('activity','visual-tools','subagent-messaging','child-inspection','child-restart','native-failure','native-retry','native-question','reply-copy','model-settings','meta-chat-history','work-activity','project-actions','run-changes','connection-diagnostics','workspace-analysis','tool-discovery','discovery-approvals','background-engine'),
  ],
 };
 

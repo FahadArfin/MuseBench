@@ -1,29 +1,37 @@
-import {useId,useState} from 'react';
+import {useEffect,useId,useRef,useState} from 'react';
 import {ChevronDown,RefreshCw} from 'lucide-react';
 import {MotionDisclosure} from './MotionDisclosure';
 import type {Action,AppState,NativeChild,RuntimeState,Task} from '../shared/types';
 
 const label=(kind:string,tool?:string)=>kind==='userMessage'?'You':kind==='agentMessage'?'Muse':kind==='toolCall'?tool??'Tool':kind==='userShell'?'Shell':kind;
-export function ChildActivity({item,task,runtime,act}:{item:NativeChild;task:Task;runtime:RuntimeState;act:(a:Action)=>Promise<AppState|null>}){
- const id=useId(),[open,setOpen]=useState(false),[reading,setReading]=useState(false),[visible,setVisible]=useState(25),[error,setError]=useState('');
+export function ChildActivity({item,task,runtime,act,defaultOpen=false,autoRefresh=false}:{defaultOpen?:boolean;autoRefresh?:boolean;item:NativeChild;task:Task;runtime:RuntimeState;act:(a:Action)=>Promise<AppState|null>}){
+ const id=useId(),[open,setOpen]=useState(defaultOpen),[reading,setReading]=useState(false),[visible,setVisible]=useState(25),[error,setError]=useState('');
  const entry=runtime.childInspections?.find(i=>i.itemId===item.itemId&&i.childSessionId===item.childSessionId&&i.sessionId===runtime.sessionId);
  const available=!!runtime.permissionVerified&&!!runtime.sessionId&&!!item.childSessionId;
- const loading=reading||entry?.status==='loading',data=entry?.data,history=data?.history;
+ const retained=useRef<typeof entry>(undefined);
+ if(entry?.status==='ready'&&entry.data)retained.current=entry;
+ const previous=retained.current;
+ const displayed=entry?.status==='loading'&&previous?.sessionId===runtime.sessionId&&previous?.itemId===item.itemId&&previous?.childSessionId===item.childSessionId?previous:entry;
+ const loading=reading||entry?.status==='loading',data=displayed?.data,history=data?.history;
+ const readLock=useRef(false);
  const read=async()=>{
-  if(!available||loading)return;setOpen(true);setReading(true);setError('');
+  if(!available||loading||readLock.current)return;readLock.current=true;setOpen(true);setReading(true);setError('');
   try{const result=await act({type:'inspectChild',taskId:task.id,sessionId:runtime.sessionId!,itemId:item.itemId,revision:item.revision});if(result?.error)setError('Could not read this child activity. Refresh to try again.');}
   catch{setError('Could not read this child activity. Refresh to try again.');}
-  finally{setReading(false);}
+  finally{readLock.current=false;setReading(false);}
  };
+ useEffect(()=>{if(defaultOpen&&!entry)void read();},[defaultOpen,available]);
+ const latestRead=useRef(read);latestRead.current=read;
+ useEffect(()=>{if(!autoRefresh||!available||!open)return;const timer=setInterval(()=>{if(document.visibilityState==='visible')void latestRead.current();},4000);return()=>clearInterval(timer);},[autoRefresh,available,open]);
  const toggle=()=>{if(open)setOpen(false);else if(!entry)void read();else setOpen(true);};
  if(!item.childSessionId)return <p className="popover-help">Muse has not reported a readable child session.</p>;
  return <div className="child-activity">
   <button type="button" className="child-activity-toggle" aria-expanded={open} aria-controls={id} disabled={!available&&!entry} onClick={toggle}><ChevronDown size={14} aria-hidden className={open?'expanded':''}/>{open?'Hide activity':entry?'Show activity':'Read activity'}</button>
   <MotionDisclosure id={id} open={open} innerClassName="child-activity-content">
-   <div className="child-activity-toolbar"><span>{loading?'Reading activity…':entry?.readAt?`Snapshot · ${new Date(entry.readAt).toLocaleTimeString()}`:'Child activity'}</span><button type="button" aria-label="Refresh child activity" title="Refresh child activity" disabled={!available||loading} onClick={()=>void read()}><RefreshCw size={14} aria-hidden/></button></div>
+   <div className="child-activity-toolbar"><span>{loading?data?'Refreshing activity…':'Reading activity…':displayed?.readAt?`Snapshot · ${new Date(displayed.readAt).toLocaleTimeString()}`:'Child activity'}</span><button type="button" aria-label="Refresh child activity" title="Refresh child activity" disabled={!available||loading} onClick={()=>void read()}><RefreshCw size={14} aria-hidden/></button></div>
    {loading&&<p role="status">Reading from Muse…</p>}
    {(error||entry?.error)&&<p role="alert">{error||entry?.error}</p>}
-   {entry&&entry.revision!==item.revision&&<p className="popover-help">The child changed since this read. Refresh for its latest activity.</p>}
+   {displayed&&displayed.revision!==item.revision&&<p className="popover-help">The child changed since this read. Refresh for its latest activity.</p>}
    {!available&&<p className="popover-help">Connect to read this child again.</p>}
    {data&&<>
     <dl className="child-activity-facts"><dt>Status</dt><dd>{data.session.status??'Not reported'}</dd>{data.session.modelId&&<><dt>Model</dt><dd>{data.session.modelId}</dd></>}{data.session.workspaceRoot&&<><dt>Workspace</dt><dd>{data.session.workspaceRoot}</dd></>}</dl>

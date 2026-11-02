@@ -87,7 +87,7 @@ test('screenshot follows draft, queue and native image argument without embeddin
  state=await h.controller.dispatch({type:'resumeQueue'});assert.equal(state.error,null);
  const args=h.calls.findLast(c=>c.args.includes('meta')).args;assert.ok(args.includes('--image'));assert.match(args[args.indexOf('--image')+1],/code-images/);assert.deepEqual(state.task.messages.find(m=>m.role==='user').images,[image]);assert.ok(!JSON.stringify(state).includes('base64'));
  await h.controller.dispatch({type:'disconnectMuse'});await h.controller.close();
- const reopened=await createController({dataDir:h.dataDir});try{assert.equal(reopened.getState().drafts[`${projectId}:${taskId}`].images[0].id,image.id);assert.match(await reopened.readImage({projectId,image}),/^data:image\/png/);}finally{await reopened.close();}
+ const reopened=await createController({dataDir:h.dataDir});try{assert.equal(reopened.getState().drafts[`${projectId}:${taskId}`],undefined,'queuing consumes the matching draft');assert.deepEqual(reopened.readChatHistory({taskId,limit:20}).messages.find(message=>message.images?.length)?.images,[image]);assert.match(await reopened.readImage({projectId,image}),/^data:image\/png/);}finally{await reopened.close();}
 });
 
 test('independent read-only plans preserve an existing durable conversation and resume it afterwards',async t=>{

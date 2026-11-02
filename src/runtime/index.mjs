@@ -10,6 +10,7 @@ import {createChildTracker} from './children.mjs';
 import {projectChildRead} from './child-inspection.mjs';
 import {projectMcpInventory} from './mcp-inventory.mjs';
 import {createPublicWebMcpConfig} from './public-web-mcp.mjs';
+import {browserExecConfig} from './browser-mcp.mjs';
 import {createCompactionTracker} from './compaction.mjs';
 import {checkConfiguration} from './configuration-review.mjs';
 import {validateRunOptions} from '../shared/run-options.mjs';
@@ -143,7 +144,7 @@ function displayPending(value,revision) {
 
 /** One process/session owner. Startup and model submission are separate explicit
  * actions. Injection replaces the external process boundary for contract tests. */
-export function createRuntime({credentials,environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,workspaceMcp,discoveryMcp,publicWebMcp=createPublicWebMcpConfig,extensionReview,verifyConfiguration=checkConfiguration,timeoutMs=10000}={}) {
+export function createRuntime({credentials,environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,workspaceMcp,discoveryMcp,browserMcp,publicWebMcp=createPublicWebMcpConfig,extensionReview,verifyConfiguration=checkConfiguration,timeoutMs=10000}={}) {
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000)throw Error('Invalid runtime timeout.');
  const candidates=discoverMuseBinaries({environment,platform});
  const childEnvironment=curateEnvironment(environment);let credentialContext=null;
@@ -151,7 +152,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const forkObservers=new Set();
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,forkPending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
  let projectMcpRevision=null,executionRevision=null;
- let discoveryLease=null;
+ let discoveryLease=null,browserLease=null;
  const deferredInputs=new Map(),settledInputs=new Set(),settledApprovals=new Set();
  const requests=new Map(),inputResponses=new Map(),approvalAttempts=new Set();
  const restoreAwaiting=new Set();let openingEvents=[],nativeCatalog=null,modelReading=false;
@@ -202,8 +203,9 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  const release=async()=>{
   const old=owner;owner=null;
   const lease=discoveryLease;discoveryLease=null;
-  if(!old&&!lease)return 'not-started';
-  try{try{if(old)await bounded(old.close(),timeoutMs+2500);}finally{await lease?.close();}return 'confirmed';}
+  const browser=browserLease;browserLease=null;
+  if(!old&&!lease&&!browser)return 'not-started';
+  try{try{if(old)await bounded(old.close(),timeoutMs+2500);}finally{try{await lease?.close();}finally{await browser?.close();}}return 'confirmed';}
   catch{return 'unconfirmed';}
  };
  const disconnect=async(reason='Disconnected. Connect again to start a new Muse session.')=>{
@@ -288,7 +290,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   }
  }
 
- async function connect({binary=state.binary,workspaceRoot,fullAccess=false,sessionId=null,workspaceTools=false,workspaceToolset,toolDiscovery,discoveryTaskId}={}) {
+ async function connect({binary=state.binary,workspaceRoot,fullAccess=false,sessionId=null,workspaceTools=false,workspaceToolset,toolDiscovery,discoveryTaskId,browserTaskId}={}) {
   const discovery=toolDiscovery===undefined?undefined:discoverySelection(toolDiscovery);
   if(discovery&&typeof discoveryMcp!=='function')throw Error('Reviewed on-demand tools are unavailable.');
   if(typeof fullAccess!=='boolean')throw Error('Full access must be explicitly selected.');
@@ -331,6 +333,11 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    const webServer=await publicWebMcp({env:childEnvironment});assertCurrent(token);
    if(typeof webServer?.command!=='string'||!isAbsolute(webServer.command)||!Array.isArray(webServer.args)||webServer.args.some(arg=>typeof arg!=='string')||JSON.stringify(webServer).length>32768)throw Error('Invalid trusted public web MCP configuration.');
    let sessionConfig={mcpServers:{musebench_web:{...structuredClone(webServer),transport:'stdio',framing:'lineDelimitedJson',mode:'required'}}},openingCommandId;
+   if(browserMcp&&browserTaskId){
+    const lease=await browserMcp(workspace,{taskId:browserTaskId,isCurrent:()=>token===epoch&&!closing&&state.permissionVerified&&state.status==='running'});if(token!==epoch){await lease?.close();assertCurrent(token);}browserLease=lease;
+    browserExecConfig(lease?.config);if(typeof lease.close!=='function')throw Error('Invalid trusted browser MCP lease.');
+    sessionConfig.mcpServers.musebench_browser={...structuredClone(lease.config),transport:'stdio',framing:'lineDelimitedJson',mode:'required'};
+   }
    if(discovery){
     if(!host.initializeResult.grantedCapabilities?.includes('sessionMcp'))throw Error('Native host did not grant the sessionMcp capability.');
     const lease=await discoveryMcp(workspace,discovery,{owner:{taskId:discoveryTaskId,root:workspace,epoch:token},isCurrent:()=>token===epoch&&!closing,sessionId});if(token!==epoch){await lease?.close();assertCurrent(token);}discoveryLease=lease;assertCurrent(token);

@@ -14,7 +14,19 @@ test('preview evidence is bounded, plain, source-labelled and only prepares unse
  const f=setup(),view=await f.service.inspect(input);assert.equal(view.page,'http://127.0.0.1:3456/path');assert.equal(view.taskId,'chat');assert.equal(view.target.text,'Build a project');
  const result=await f.service.feedback({token:view.token,note:'Make this blue'});
  assert.match(result.text,/Make this blue/);assert.match(result.text,/untrusted page content/i);assert.match(result.text,/"selector":/);assert.doesNotMatch(result.text,/secret|private|hidden/);
- assert.deepEqual(Object.keys(result),['text']);
+ assert.equal(result.annotation.note,'Make this blue');assert.equal(result.annotation.page,view.page);assert.deepEqual(result.annotation.target,view.target);
+});
+test('several live selections can prepare notes with bounded requested styles',async()=>{
+ let count=0;const context={key:{},url:'http://127.0.0.1:3456/',projectId:'project',taskId:'chat'};
+ const service=mod.createPreviewAnnotations({resolve:()=>context,read:async()=>({...target(),styles:{color:'rgb(0, 0, 0)',padding:'12px'}}),token:()=> 'selection-'+(++count)});
+ const first=await service.inspect(input),second=await service.inspect({...input,x:.6});
+ const result=await service.feedback({token:first.token,note:'Blue and spacious',styleChanges:{color:'#1565ff',padding:'24px'}});
+ assert.deepEqual(result.annotation.styleChanges,{color:'#1565ff',padding:'24px'});assert.equal(result.annotation.target.styles.color,'rgb(0, 0, 0)');
+ assert.match((await service.feedback({token:second.token,note:'Second'})).text,/Second/);
+ await assert.rejects(service.feedback({token:first.token,note:'No URLs',styleChanges:{color:'url(secret)'}}));
+ await assert.rejects(service.feedback({token:first.token,note:'No extra',styleChanges:{position:'fixed'}}));
+ service.discard(first.token);await assert.rejects(service.feedback({token:first.token,note:'Old'}));
+ assert.match((await service.feedback({token:second.token,note:'Still here'})).text,/Still here/);
 });
 test('strict public requests reject arbitrary scripts/selectors, malformed coordinates and oversized notes',async()=>{
  const f=setup();

@@ -1,3 +1,4 @@
+import {imageReferences} from '../shared/code-images.mjs';
 import {validateHistoryFind,literalOccurrences,historyHit} from '../shared/history-find.mjs';
 import {literalIndex} from '../shared/literal-search.mjs';
 // App-received history is independent of the bounded renderer/context window.
@@ -5,7 +6,8 @@ import {literalIndex} from '../shared/literal-search.mjs';
 const CAP=1024*1024, PAGE_TEXT=12000;
 const tokens=text=>[...new Set(text.toLowerCase().match(/[\p{L}\p{N}_]+/gu)??[])];
 const valid=m=>m&&typeof m.id==='string'&&typeof m.text==='string'&&['user','assistant','system'].includes(m.role);
-const metadataFor=(m,prior={},snapshot=false)=>JSON.stringify({...prior,id:m.id,role:m.role,at:prior.at??m.at,turnId:m.turnId,outcome:m.outcome??prior.outcome,captureTruncated:snapshot?prior.captureTruncated:m.text.length>CAP});
+const safeImages=value=>{try{return imageReferences(value);}catch{return[];}};
+const metadataFor=(m,prior={},snapshot=false)=>JSON.stringify({...prior,id:m.id,role:m.role,at:prior.at??m.at,turnId:m.turnId,outcome:m.outcome??prior.outcome,...(m.annotations!==undefined?{annotations:m.annotations}:{}),...(m.images!==undefined?{images:safeImages(m.images)}:{}),captureTruncated:snapshot?prior.captureTruncated:m.text.length>CAP});
 export function createHistoryStore(db){
  db.function('history_lower',{deterministic:true},text=>text.toLowerCase());
  db.exec(`CREATE TABLE IF NOT EXISTS history_coverage(task_id TEXT PRIMARY KEY,coverage TEXT NOT NULL);
@@ -13,7 +15,12 @@ export function createHistoryStore(db){
  CREATE INDEX IF NOT EXISTS history_task_sequence ON chat_history(task_id,seq);
  CREATE TABLE IF NOT EXISTS history_terms(task_id TEXT NOT NULL,term TEXT NOT NULL,message_id TEXT NOT NULL,PRIMARY KEY(task_id,term,message_id));
  CREATE INDEX IF NOT EXISTS history_message_terms ON history_terms(task_id,message_id);
+ CREATE TABLE IF NOT EXISTS history_images(task_id TEXT NOT NULL,message_id TEXT NOT NULL,image_id TEXT NOT NULL,PRIMARY KEY(task_id,message_id,image_id));
+ CREATE INDEX IF NOT EXISTS history_image_owner ON history_images(task_id,image_id);
+ CREATE TRIGGER IF NOT EXISTS history_images_delete AFTER DELETE ON chat_history BEGIN DELETE FROM history_images WHERE task_id=old.task_id AND message_id=old.message_id; END;
  CREATE TRIGGER IF NOT EXISTS history_delete AFTER DELETE ON chat_history BEGIN DELETE FROM history_terms WHERE task_id=old.task_id AND message_id=old.message_id; END;`);
+ const clearImages=db.prepare('DELETE FROM history_images WHERE task_id=? AND message_id=?'),addImage=db.prepare('INSERT OR IGNORE INTO history_images VALUES(?,?,?)'),findImage=db.prepare('SELECT 1 FROM history_images WHERE task_id=? AND image_id=? LIMIT 1');
+ const syncImages=(taskId,messageId,metadata)=>{clearImages.run(taskId,messageId);for(const image of safeImages(JSON.parse(metadata).images)){addImage.run(taskId,messageId,image.id);if(image.annotation?.source)addImage.run(taskId,messageId,image.annotation.source.id);}};
  const lookup=db.prepare('SELECT * FROM chat_history WHERE task_id=? AND message_id=?');
  const coverage=db.prepare('INSERT OR IGNORE INTO history_coverage VALUES(?,?)');
  const write=db.prepare('INSERT INTO chat_history(task_id,message_id,role,text,metadata) VALUES(?,?,?,?,?) ON CONFLICT(task_id,message_id) DO UPDATE SET role=excluded.role,text=excluded.text,metadata=excluded.metadata');
@@ -35,7 +42,7 @@ export function createHistoryStore(db){
  function writeMessage(taskId,m,old){
   const text=m.text.slice(0,CAP),metadata=metadataFor(m,old?JSON.parse(old.metadata):{});
   if(old?.text===text&&old.metadata===metadata&&old.role===m.role)return;
-  write.run(taskId,m.id,m.role,text,metadata);
+  write.run(taskId,m.id,m.role,text,metadata);syncImages(taskId,m.id,metadata);
   if(old?.text!==text){
    const next=new Set(tokens(text)),previous=new Set(old?tokens(old.text):[]);
    for(const term of previous)if(!next.has(term))removeTerm.run(taskId,term,m.id);
@@ -45,7 +52,7 @@ export function createHistoryStore(db){
  }
  function updateMetadata(taskId,m,old){
   const metadata=metadataFor(m,JSON.parse(old.metadata),true);
-  if(metadata!==old.metadata||m.role!==old.role)writeMetadata.run(m.role,metadata,taskId,m.id);
+  if(metadata!==old.metadata||m.role!==old.role){writeMetadata.run(m.role,metadata,taskId,m.id);syncImages(taskId,m.id,metadata);}
   return{message_id:m.id,role:m.role,metadata};
  }
  function put(taskId,m,{snapshot=false}={}){
@@ -119,5 +126,5 @@ export function createHistoryStore(db){
   const older=rows.length&&hasOlder.get(taskId,rows[0].seq);
   return{messages,total,before:!messageId&&older?rows[0].message_id:null,coverage:readCoverage.get(taskId)?.coverage??'app-received'};
  }
- return{put,sync,search,find,page,remove:(task,id)=>db.prepare('DELETE FROM chat_history WHERE task_id=? AND message_id=?').run(task,id),deleteTask(task){db.prepare('DELETE FROM chat_history WHERE task_id=?').run(task);db.prepare('DELETE FROM history_coverage WHERE task_id=?').run(task);}};
+ return{put,sync,search,find,page,retainsImage:(taskIds,imageId)=>taskIds.some(taskId=>Boolean(findImage.get(taskId,imageId))),remove:(task,id)=>db.prepare('DELETE FROM chat_history WHERE task_id=? AND message_id=?').run(task,id),deleteTask(task){db.prepare('DELETE FROM chat_history WHERE task_id=?').run(task);db.prepare('DELETE FROM history_coverage WHERE task_id=?').run(task);}};
 }

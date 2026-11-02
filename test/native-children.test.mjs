@@ -61,3 +61,12 @@ test('workflow ownership is correlated from observed child identity when omitted
  assert.throws(()=>t.prepare({itemId:'i',revision:1,action:'followupTask',body:'Next'}),/available/);
  assert.deepEqual(childActions(t.snapshot().items.find(i=>i.itemId==='i')),['readResult','close']);
 });
+
+test('only native-reported valid child durations are retained',()=>{
+ const tracker=createChildTracker();
+ for(const [index,durationMs] of [1234,-1,Infinity,NaN,'1234',1.5].entries()){
+  tracker.observe({itemId:'duration-'+index,kind:'subagent',revision:1,status:'completed',durationMs});
+ }
+ const rows=tracker.snapshot().items;assert.equal(rows[0].durationMs,1234);
+ for(const row of rows.slice(1))assert.equal(row.durationMs,undefined);
+});

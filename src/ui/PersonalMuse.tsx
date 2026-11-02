@@ -1,3 +1,4 @@
+import {MetaIcon} from './MetaIcon';
 import {MetaChatHistory} from './MetaChatHistory';
 import {TypedText} from './TypedText';
 import {MotionDisclosure} from './MotionDisclosure';
@@ -6,7 +7,7 @@ import {NavigationButtons} from './NavigationHistory';
 import {useContext} from 'react';
 import {BrowserPreviewContext} from './BrowserPreviewContext';
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject, type ReactNode } from 'react';
-import { Plus, CalendarDays, Images, Shapes, Clapperboard, ArrowLeft, ArrowRight, Bot, ChevronDown, ChevronRight, ExternalLink, Globe2, Info, Library, Lightbulb, LoaderCircle, MessageCircle, MessagesSquare, MoreHorizontal, Newspaper, PanelLeft, PanelLeftClose, RefreshCw, Search, Settings2, ShieldCheck, SquarePen, Target, Terminal, X, type LucideIcon } from 'lucide-react';
+import { Plus, CalendarDays, Images, Shapes, Clapperboard, ArrowLeft, ArrowRight, Bot, ChevronDown, ChevronRight, ExternalLink, Globe2, Info, Library, Lightbulb, LoaderCircle, MessageCircle, MoreHorizontal, Newspaper, PanelLeft, PanelLeftClose, RefreshCw, Search, Settings2, ShieldCheck, SquarePen, Target, Terminal, X, type LucideIcon } from 'lucide-react';
 import type { PersonalCommand, PersonalDestination, PersonalLibrary, PersonalLibraryGroup, PersonalServiceAction, PersonalState, PersonalWarmTarget } from '../shared/types';
 import './personal-muse.css';
 
@@ -25,12 +26,12 @@ const emptyLibrary: PersonalLibrary = {
 };
 
 export function ProductSwitcher({ product, onChange, sidebarToggle }: {product: MuseProduct;onChange: (product: MuseProduct) => void;sidebarToggle?: ReactNode;}) {
-  const ProductIcon=product==='code'?Terminal:MessagesSquare;
+  const ProductIcon=product==='code'?Terminal:MetaIcon;
   return <div className="product-switcher">
     <div key={product} data-launch-brand={product} className={`brand-button product-name product-name-${product}`} aria-label={product==='code'?'Muse Code':'Muse AI'}><ProductIcon className="product-brand-icon" size={28} strokeWidth={1.8} aria-hidden="true"/><TypedText text={product==='code'?'Muse Code':'Muse AI'} delay={300} interval={85}/></div>
     {sidebarToggle}
     <div className="product-mode-switch" role="group" aria-label="Choose workspace">
-      <button type="button" aria-label="Muse AI" aria-pressed={product==='personal'} title="Muse AI · Chat, ideas, goals and Work" onClick={()=>onChange('personal')}><MessagesSquare size={18} strokeWidth={1.8} aria-hidden="true"/></button>
+      <button type="button" aria-label="Muse AI" aria-pressed={product==='personal'} title="Muse AI · Chat, ideas, goals and Work" onClick={()=>onChange('personal')}><MetaIcon size={20}/></button>
       <button type="button" aria-label="Muse Code" aria-pressed={product==='code'} title="Muse Code" onClick={()=>onChange('code')}><Terminal size={18} strokeWidth={1.8} aria-hidden="true"/></button>
     </div>
   </div>;
@@ -161,7 +162,7 @@ export function PersonalNavigation({ metaChats, metaAccountId, schedules, agentP
       </nav></div>
       </MotionDisclosure>
       <nav className="meta-native-navigation" aria-label="Meta AI navigation">
-        <button type="button" className={`navigation-row personal-service-heading personal-meta-chat ${metaOpen?'active':''}`} aria-current={destination==='chat'?'page':undefined} aria-label="Chat" aria-expanded={metaOpen} aria-controls={metaSectionId} disabled={!available.chat} title="Regular Meta AI chat" {...warmOnIntent('meta-chat')} onClick={() => openService('meta')}><MessageCircle size={20} /><span className="personal-service-label"><strong>Meta AI Chat</strong><small>Chat &amp; create</small></span><ChevronRight className="personal-service-chevron" size={15} aria-hidden="true"/></button>
+        <button type="button" className={`navigation-row personal-service-heading personal-meta-chat ${metaOpen?'active':''}`} aria-current={destination==='chat'?'page':undefined} aria-label="Chat" aria-expanded={metaOpen} aria-controls={metaSectionId} disabled={!available.chat} title="Regular Meta AI chat" {...warmOnIntent('meta-chat')} onClick={() => openService('meta')}><MetaIcon size={20} /><span className="personal-service-label"><strong>Meta AI Chat</strong><small>Chat &amp; create</small></span><ChevronRight className="personal-service-chevron" size={15} aria-hidden="true"/></button>
         <MotionDisclosure id={metaSectionId} className="personal-service-content" open={metaOpen}>
     {([{action:'newChat',label:'New chat',icon:SquarePen},{action:'search',label:'Search',icon:Search},{action:'media',label:'Media',icon:Images},{action:'artifacts',label:'Artifacts',icon:Shapes},{action:'scheduled',label:'Scheduled',icon:CalendarDays},{action:'vibes',label:'Vibes',icon:Clapperboard}] as const).map(item=><button key={item.action} type="button" aria-label={item.label} aria-current={item.action==='scheduled'&&schedules?'page':undefined} className={`navigation-row ${item.action==='scheduled'&&schedules?'active':''}`} disabled={!available.chat} {...warmOnIntent(item.action==='newChat'?'meta-chat':`meta-${item.action}`)} onClick={()=>onCommand({type:'metaAction',action:item.action})}><item.icon size={17}/><span>{item.label}</span>{destination==='chat'&&item.action==='search'&&<kbd>Ctrl K</kbd>}{destination==='chat'&&item.action==='newChat'&&<kbd>Ctrl N</kbd>}</button>)}
     <MetaChatHistory key={metaAccountId??'signed-out'} history={metaChats} onCommand={onCommand} available={available.chat}/>

@@ -66,18 +66,14 @@ export async function checkMotionRefinements({page,pass,report,shot}){
  pass('Activity and native tool details interpolate, reverse, preserve keyboard use and release closed output');
 
  await page.getByRole('button',{name:'View changes',exact:true}).click();await settle(page);
- const diff=page.locator('.diff-file-toggle').first();
- await page.locator('.diff-code').first().focus();
- report.samples.diffCollapse=await frames(diff);
- assert(interpolates(report.samples.diffCollapse),'File diff collapse must interpolate');
- assert(await diff.evaluate(button=>document.activeElement===button));
- assert.equal(await page.locator('.diff-code').count(),0,'Collapsed diffs release their code rows');
- report.samples.diffExpand=await frames(diff);assert(interpolates(report.samples.diffExpand));
- await shot('file-diff');
- const editor=page.locator('.diff-editor-menu > summary').first();
- await editor.click();assert(await page.getByRole('button',{name:'Open in VS Code',exact:true}).isVisible());
- await editor.press('Escape');await page.getByRole('button',{name:'Close details panel',exact:true}).click();
- pass('Diff collapse preserves focus and laziness; the positioned editor menu remains usable');
+ const review=page.getByRole('complementary',{name:'File changes',exact:true});
+ await review.locator('.file-diff-scroll').first().waitFor();
+ assert.equal(await review.locator('.file-diff-view').count(),1,'The file browser mounts only its selected comparison');
+ const files=review.locator('[role="treeitem"][aria-selected]');await files.first().focus();await page.keyboard.press('End');await page.keyboard.press('Enter');
+ await review.locator('.file-diff-scroll').first().waitFor();assert.equal(await review.locator('.file-diff-view').count(),1);
+ assert(await review.getByRole('button',{name:'Open in VS Code',exact:true}).isVisible());await shot('file-diff');
+ await page.getByRole('button',{name:'Close details panel',exact:true}).click();
+ pass('File-tree keyboard selection keeps one comparison mounted and its editor action visible');
 
  await page.getByRole('button',{name:'Toggle Sub-Agents panel',exact:true}).click();await settle(page);
  const nav=await page.getByRole('tab',{name:/Agents & workflows/}).evaluate(button=>new Promise(resolve=>{

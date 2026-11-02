@@ -1,6 +1,9 @@
+import {createVisualTools} from './visual-tools.mjs';
+import {createVisualNormalizer,decodeVisualInRenderer} from './normalize-visual.mjs';
 import {bindSessionToolsNavigation} from './session-tools-lifecycle.mjs';
 import {createTemporaryChat} from './temporary-chat.mjs';
 import {createChatBrowser} from './chat-browser.mjs';
+import {createBrowserMcpConfig} from './browser-mcp-config.mjs';
 import {createSessionMedia} from './session-media.mjs';
 import {createChatMenuTools} from './chat-menu-tools.mjs';
 import {chatLinkTask} from '../src/shared/chat-menu-tools.mjs';
@@ -104,7 +107,9 @@ else {
     const discoveryStore=await createDiscoveryOAuthStore({dataDir,protection:{available:async()=>safeStorage.isEncryptionAvailable()&&!['basic_text','plaintext'].includes(safeStorage.getSelectedStorageBackend?.()),encrypt:text=>safeStorage.encryptStringAsync(text),decrypt:bytes=>safeStorage.decryptStringAsync(bytes)}});
     discoveryOAuth=createDiscoveryOAuth({store:discoveryStore,flow:createDiscoveryOAuthFlow({networkFactory:({url,limits})=>createRemoteNetwork({url},{limits})}),callbackFactory:createDiscoveryOAuthCallback,resolveSource:discoveryMcp.resolveAuthSource,getSourceSnapshot:discoveryMcp.getAuthSourceSnapshot,ownerSnapshot:()=>controller?.discoveryOwnerSnapshot(),runtimeOwnerSnapshot:discoveryMcp.runtimeOwnerSnapshot,admitSourceMutation:id=>!controller||controller.discoverySourceBusy(id)?null:discoveryMcp.admitSourceMutation(id),withIdleLease:discoveryMcp.withIdleLease,openBrowser:url=>shell.openExternal(url),onSafeUpdate:event=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:discovery-auth-update',event);}});
     codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>temporaryChat?.isBusy()||onboardingOwners.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:async()=>{await temporaryChat?.close();return controller.resetCodeConnections();},readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
-    const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,discoveryMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp,discoveryMcp});
+    const normalizeVisual=createVisualNormalizer(nativeImage,{decodeWebp:async dataUrl=>{const contents=ui?.window?.webContents;if(!contents||contents.isDestroyed())throw Error('Open MuseBench to inspect WebP images.');return contents.executeJavaScriptInIsolatedWorld(991,[{code:'('+decodeVisualInRenderer.toString()+')('+JSON.stringify(dataUrl)+')'}]);}});
+    const browserMcp=createBrowserMcpConfig({getBrowser:()=>ui?.chatBrowser,getVisuals:()=>ui?.visualTools,normalizeImage:normalizeVisual,beginVisual:binding=>controller.beginVisual(binding)});
+    const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,discoveryMcp,browserMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp,discoveryMcp,browserMcp});
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.14 can stall before shell launch inside the user profile.
     // New working copies have their own location; saved originals stay put.
@@ -262,7 +267,7 @@ else {
     });};
     handler('musebench:background-engine',command=>background.command(command));
     handler('musebench:launch-complete',()=>launch.complete());
-    const openFileEditor=createFileEditor({dataDir,getState:()=>controller.getState(),choose:async()=>{
+    const openFileEditor=createFileEditor({dataDir,getState:()=>controller.getState(),validateReviewPath:async input=>{const review=await controller.inspectFileReview({taskId:input.taskId,scope:'all'});if(!review.files.some(file=>file.path===input.path&&file.afterHash&&file.status!=='deleted'))throw Error('This file is no longer in the current project.');},choose:async()=>{
       const result=await dialog.showOpenDialog(window,{title:'Choose your preferred text editor',properties:['openFile'],...(process.platform==='win32'?{filters:[{name:'Editor application',extensions:['exe']}]}:{})});
       return result.canceled?null:result.filePaths[0];
     }});
@@ -278,6 +283,7 @@ else {
     handler('musebench:code-browser',input=>chatBrowser.command(input));
     handler('musebench:side-chat',input=>{if(input?.type==='send'&&(closing||codeBilling.blocksWork()||onboardingOwners.isBusy()))throw Error('Finish sign-in or billing changes before sending.');return temporaryChat.command(input);});
     const media=createSessionMedia({getState:()=>controller.getState(),readHistory:input=>controller.readChatHistory(input),capturedImages:id=>controller.capturedSessionImages(id),readUpload:input=>controller.readImage(input),thumbnail:bytes=>{const image=nativeImage.createFromBuffer(bytes);if(image.isEmpty())throw Error('This image could not be decoded.');const size=image.getSize(),scale=Math.min(1,256/size.width,192/size.height);return image.resize({width:Math.max(1,Math.round(size.width*scale)),height:Math.max(1,Math.round(size.height*scale)),quality:'good'}).toDataURL();}});
+    view.visualTools=createVisualTools({getState:()=>controller.getState(),getMedia:()=>media,normalizeImage:normalizeVisual});
     handler('musebench:session-media',input=>media.command(input));
     window.once('closed',()=>{chatBrowser.close();void temporaryChat.close().catch(()=>{});});
     let chatLinkReady=false;
@@ -302,6 +308,8 @@ else {
     handler('musebench:code-context',input=>controller.inspectContext(input));
     handler('musebench:checkpoint',input=>controller.inspectCheckpoint(input));
     handler('musebench:source-diff',input=>controller.inspectSourceDiff(input));
+    handler('musebench:file-review',input=>controller.inspectFileReview(input));
+    handler('musebench:file-review-read',input=>controller.readFileReview(input));
     handler('musebench:semantic-navigation',input=>controller.semanticNavigate(input));
     handler('musebench:captured-output',input=>controller.readCapturedOutput(input));
     handler('musebench:chat-history-find',input=>controller.findChatHistory(input));

@@ -9,6 +9,13 @@ import {createRuntime, curateEnvironment, discoverMuseBinaries} from '../src/run
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 import {permissionDetails} from '../src/ui/permissions.mjs';
 
+test('interactive browser MCP uses its connection-owned task and revokes on disconnect',async t=>{
+ let binding,closed=0;const h=await harness(t,{browserMcp:async(root,options)=>{binding={root,...options};return {config:{command:process.execPath,args:[join(process.cwd(),'src/runtime/browser-mcp.mjs')],env:{MUSEBENCH_BROWSER_ENDPOINT:'http://127.0.0.1:23456/call',MUSEBENCH_BROWSER_TOKEN:'a'.repeat(43)}},close:async()=>{closed++;}};}});
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,browserTaskId:'chat'});assert.equal(binding.taskId,'chat');assert.equal(binding.isCurrent(),false);
+ const server=h.calls.find(c=>c.method==='session/start').params.config.mcpServers.musebench_browser;assert.equal(server.mode,'required');assert.equal(server.transport,'stdio');assert.equal(server.env.MUSEBENCH_BROWSER_TOKEN,'a'.repeat(43));assert.equal(server.env.META_API_KEY,undefined);assert.ok(!JSON.stringify(h.runtime.snapshot()).includes('a'.repeat(43)));
+ await h.runtime.send({text:'Inspect the browser.'});assert.equal(binding.isCurrent(),true);await h.runtime.disconnect();assert.equal(binding.isCurrent(),false);assert.equal(closed,1);
+});
+
 test('disconnect discards the live catalog before a billing source can change',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.refreshModels();assert.ok(h.runtime.snapshot().modelCatalog);
  await h.runtime.disconnect();assert.equal(h.runtime.snapshot().modelCatalog,undefined);

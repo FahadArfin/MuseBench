@@ -1,3 +1,4 @@
+import {validateBrowserAnnotations} from '../src/shared/browser-annotations.mjs';
 import {discoverySelection} from '../src/shared/tool-discovery.mjs';
 export {validateDiscoveryAuthCommand} from '../src/shared/discovery-auth.mjs';
 import {validateScheduleAction} from '../src/shared/code-schedules.mjs';
@@ -37,7 +38,8 @@ export function validateAction(action) {
   if(action.type==='recoverSession'&&!['continue','fresh'].includes(action.choice))throw Error('Invalid session recovery.');
   if(action.type==='moveQueued'){string('taskId',200);string('id',200);if(action.beforeId!==null)string('beforeId',200);}
   if(action.type==='removeQueued'&&action.taskId!==undefined){string('taskId',200);if(!Number.isSafeInteger(action.expectedRevision)||action.expectedRevision<0)throw Error('Invalid queued revision.');}
-  if(['beginQueueEdit','editQueued','sendQueued','steerQueued','openQueuedSideChat'].includes(action.type)){string('taskId',200);string('id',200);if(!Number.isSafeInteger(action.expectedRevision)||action.expectedRevision<0)throw Error('Invalid queued revision.');if(action.type==='editQueued'){string('text',16000);if(!['chat','plan'].includes(action.mode))throw Error('Invalid conversation mode.');}if(action.type==='steerQueued')string('expectedTurnId',200);const keys=['type','taskId','id','expectedRevision',...(action.type==='steerQueued'?['expectedTurnId']:[]),...(action.type==='editQueued'?['text','mode']:[])];if(Object.keys(action).some(key=>!keys.includes(key)))throw Error('Invalid queue fields.');}
+  if(['beginQueueEdit','editQueued','sendQueued','steerQueued','openQueuedSideChat'].includes(action.type)){string('taskId',200);string('id',200);if(!Number.isSafeInteger(action.expectedRevision)||action.expectedRevision<0)throw Error('Invalid queued revision.');if(action.type==='editQueued'){string('text',16000);if(!['chat','plan'].includes(action.mode))throw Error('Invalid conversation mode.');}if(action.type==='steerQueued')string('expectedTurnId',200);const keys=['type','taskId','id','expectedRevision',...(action.type==='steerQueued'?['expectedTurnId']:[]),...(action.type==='editQueued'?['text','mode','annotations']:[])];if(Object.keys(action).some(key=>!keys.includes(key)))throw Error('Invalid queue fields.');}
+  if(['sendMessage','queueMessage','saveDraft','editQueued','steerMessage'].includes(action.type)&&action.annotations!==undefined)action={...action,annotations:validateBrowserAnnotations(action.annotations)};
   if(action.type==='moveSidebarItem')validateSidebarMove(action);
   if(action.type==='createProject')projectDetails(action);
   if(action.type==='restoreCheckpoint'){for(const key of ['taskId','id','revision'])if(typeof action[key]!=='string'||!action[key]||action[key].length>200)throw Error('Invalid checkpoint binding.');if(!Array.isArray(action.paths)||!action.paths.length||action.paths.length>100||action.paths.some(p=>typeof p!=='string'||p.length>1000))throw Error('Invalid restore selection.');}

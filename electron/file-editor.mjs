@@ -9,7 +9,7 @@ const launchEditor=(executable,args)=>new Promise((resolve,reject)=>{
  child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});
 });
 
-export function createFileEditor({dataDir,getState,choose,launch=launchEditor,platform=process.platform,candidates=platform==='win32'?[
+export function createFileEditor({dataDir,getState,choose,validateReviewPath,launch=launchEditor,platform=process.platform,candidates=platform==='win32'?[
  path.join(process.env.LOCALAPPDATA||'','Programs','Microsoft VS Code','Code.exe'),
  path.join(process.env.ProgramFiles||'','Microsoft VS Code','Code.exe'),
 ]:platform==='darwin'?['/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code','/usr/local/bin/code']:['/usr/bin/code','/usr/local/bin/code']}) {
@@ -17,10 +17,12 @@ export function createFileEditor({dataDir,getState,choose,launch=launchEditor,pl
  const valid=async value=>isNativeExecutable(value,platform)&&((await stat(value)).isFile()||platform==='darwin'&&value.endsWith('.app')&&(await stat(value)).isDirectory());
  return async input=>{
   if(!input||typeof input.taskId!=='string'||typeof input.path!=='string'||input.path.length>4096||/[\x00-\x1f:]/.test(input.path)||path.isAbsolute(input.path)||!['preferred','vscode','choose'].includes(input.editor??'preferred'))throw Error('Invalid editor request.');
-  if(input.source!==undefined&&input.source!=='navigation')throw Error('Invalid editor source.');
+  if(input.source!==undefined&&!['navigation','review'].includes(input.source))throw Error('Invalid editor source.');
   const navigation=input.source==='navigation'&&/\.(?:[cm]?[jt]s|[jt]sx)$/i.test(input.path);
+  const review=input.source==='review'&&typeof validateReviewPath==='function';
   const state=getState(),file=state.task?.changes.find(file=>file.path===input.path);
-  if(state.task?.id!==input.taskId||!state.activeProject||!file&&!navigation)throw Error('This file is no longer in the active task.');
+  if(state.task?.id!==input.taskId||!state.activeProject||!file&&!navigation&&!review)throw Error('This file is no longer in the active task.');
+  if(review)await validateReviewPath(input);
   if(file?.status==='deleted')throw Error('This file was deleted.');
   const root=await realpath(state.activeProject.root),target=path.resolve(root,input.path);
   if(!inside(root,target))throw Error('File is outside the project.');
@@ -36,7 +38,8 @@ export function createFileEditor({dataDir,getState,choose,launch=launchEditor,pl
   if(!executable)return {opened:false};
   if(!await valid(executable))throw Error('Choose a local editor application.');
   const current=getState();
-  if(current.task?.id!==input.taskId||current.activeProject?.root!==state.activeProject.root||!navigation&&!current.task.changes.some(item=>item.path===input.path&&item.status!=='deleted'))throw Error('This file is no longer in the active task.');
+  if(current.task?.id!==input.taskId||current.activeProject?.root!==state.activeProject.root||!navigation&&!review&&!current.task.changes.some(item=>item.path===input.path&&item.status!=='deleted'))throw Error('This file is no longer in the active task.');
+  if(review)await validateReviewPath(input);
   if(await realpath(target)!==resolved||!(await stat(resolved)).isFile())throw Error('The file moved. Reopen its changes and try again.');
   // The renderer never supplies an executable or shell command. Paths are separate arguments.
   if(platform==='darwin'&&executable.endsWith('.app'))await launch('/usr/bin/open',['-a',executable,resolved]);

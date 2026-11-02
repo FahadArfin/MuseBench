@@ -1,22 +1,24 @@
 import {useId,useState} from 'react';
-import {Bot,ChevronRight,FilePenLine,FileSearch,FileText,Globe,LoaderCircle,Terminal,Wrench} from 'lucide-react';
+import {Bot,ChevronRight,FilePenLine,FileSearch,FileText,Image,Globe,LoaderCircle,Terminal,Wrench} from 'lucide-react';
 import type {ActivityItem,ShellResult} from '../shared/types';
 import {groupWorkLog,workLogItemLabel,type WorkLogCategory,type WorkLogGroup,type WorkLogItem} from '../shared/work-log.mjs';
 import {MotionDisclosure} from './MotionDisclosure';
 import './work-log.css';
+import {CodeImages} from './CodeImages';
 
 function WorkIcon({category}:{category:WorkLogCategory}){
- const Icon=({command:Terminal,edit:FilePenLine,read:FileText,search:FileSearch,webSearch:Globe,webRead:Globe,agent:Bot,tool:Wrench})[category];
+ const Icon=({image:Image,command:Terminal,edit:FilePenLine,read:FileText,search:FileSearch,webSearch:Globe,webRead:Globe,agent:Bot,tool:Wrench})[category];
  return <Icon size={14} aria-hidden="true"/>;
 }
 const live=(status:string)=>['working','waiting','queued'].includes(status);
 function WorkOutput({item}:{item:WorkLogItem}){
  const result=item.shellResult,output=result?.output??item.output;
  return <div className="work-log-output">
+  {item.visual&&item.images?.length?<><CodeImages projectId={item.visual.projectId} images={item.images}/></>:null}
   {result?.command&&<><span>Command</span><pre tabIndex={0} aria-label="Command details">{result.command}</pre></>}
   {item.subject&&!result&&<p className="work-log-subject">{item.subject}</p>}
   {item.detail&&!['Completed','Running','Waiting to start','Native tool completed','Native tool request in progress'].includes(item.detail)&&<p>{item.detail}</p>}
-  <pre tabIndex={0} aria-label="Activity output">{output||(live(item.status)?'No output reported yet.':'No output reported.')}</pre>
+  {!item.visual&&<pre tabIndex={0} aria-label="Activity output">{output||(live(item.status)?'No output reported yet.':'No output reported.')}</pre>}
   {result&&<p>Exit {result.exitCode} · {result.terminalStatus==='failed'?'Failed':result.exitCode===0?'Completed':'Failed'}</p>}
   {(item.truncated||result?.truncated)&&<p>Only part of this output is retained.</p>}
  </div>;
@@ -45,8 +47,8 @@ function WorkGroup({group}:{group:WorkLogGroup}){
   <MotionDisclosure id={id} open={open} innerClassName={`work-log-items ${single?'work-log-single':''}`} unmountWhenClosed>{()=>group.items.map(item=><WorkRow key={item.id} item={item} initialOpen={single}/>)}</MotionDisclosure>
  </div>;
 }
-export function WorkLog({activities,shellResults=[]}:{activities:ActivityItem[];shellResults?:ShellResult[]}){
- const groups=groupWorkLog(activities,shellResults);
+export function WorkLog({activities,shellResults=[],visuals=[]}:{activities:ActivityItem[];shellResults?:ShellResult[];visuals?:ActivityItem[]}){
+ const groups=[...groupWorkLog(activities,shellResults),...groupWorkLog(visuals.slice(-12))];
  if(!groups.length)return null;
  return <div className="work-log" role="group" aria-label="Work log">{groups.map(group=><WorkGroup key={group.id} group={group}/>)}</div>;
 }

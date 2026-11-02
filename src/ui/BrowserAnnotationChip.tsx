@@ -1,0 +1,25 @@
+import {useState} from 'react';
+import {createPortal} from 'react-dom';
+import {Layers,Mic,Pencil,Square,Trash2,X} from 'lucide-react';
+import type {BrowserAnnotation} from '../shared/browser-annotations.mjs';
+import {validateBrowserAnnotations} from '../shared/browser-annotations.mjs';
+import {Modal} from './WorkspacePanels';
+import {useDictation} from './useDictation';
+import './browser-annotation-chip.css';
+
+export function BrowserAnnotationChip({annotations,onChange,disabled=false,context=''}:{annotations:BrowserAnnotation[];onChange?:(items:BrowserAnnotation[])=>void;disabled?:boolean;context?:string}){
+ const [hover,setHover]=useState(false),[pinned,setPinned]=useState(false),[editing,setEditing]=useState<string|null>(null),[error,setError]=useState('');
+ if(!annotations.length)return null;
+ const change=(next:BrowserAnnotation[])=>{if(disabled)return false;try{const checked=validateBrowserAnnotations(next);onChange?.(checked);setError('');return true;}catch(e){setError(String(e).replace(/^Error: /,''));return false;}};
+ const selected=annotations.find(item=>item.id===editing),open=hover||pinned;
+ return <div className="browser-annotation-attachment" onMouseEnter={()=>setHover(true)} onMouseLeave={()=>setHover(false)} onFocusCapture={()=>setHover(true)} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node))setHover(false);}} onKeyDown={event=>{if(event.key==='Escape'&&!editing){event.preventDefault();event.stopPropagation();setPinned(false);setHover(false);}}}>
+  <div className="browser-annotation-chip"><button type="button" aria-label={`Annotations (${annotations.length})`} aria-expanded={open} onClick={()=>setPinned(v=>!v)}><Layers size={13}/><span>Annotations ({annotations.length})</span></button>{onChange&&<button type="button" className="icon-button" disabled={disabled} aria-label="Remove browser annotations" onClick={()=>change([])}><X size={12}/></button>}</div>
+  {open&&<div className="browser-annotation-popover" role="region" aria-label="Browser annotations"><header><strong>{annotations.length} page {annotations.length===1?'annotation':'annotations'}</strong><small>Reference context</small></header><ol>{annotations.map((item,i)=><li key={item.id}><div><span className="annotation-reference-number">{i+1}</span><code>{item.target.tag}</code><span className="annotation-reference-page" title={item.page}>{item.page}</span>{onChange&&<><button type="button" className="icon-button" disabled={disabled} aria-label={`Edit annotation ${i+1}`} onClick={()=>{setEditing(item.id);setPinned(false);setHover(false);}}><Pencil size={13}/></button><button type="button" className="icon-button" disabled={disabled} aria-label={`Delete annotation ${i+1}`} onClick={()=>change(annotations.filter(row=>row.id!==item.id))}><Trash2 size={13}/></button></>}</div><p>{item.note}</p>{item.styleChanges&&Object.keys(item.styleChanges).length>0&&<small>{Object.entries(item.styleChanges).map(([name,value])=>`${name}: ${value}`).join(' · ')}</small>}</li>)}</ol></div>}
+  {error&&<span role="alert">{error}</span>}
+  {selected&&onChange&&createPortal(<div onKeyDown={event=>{if(event.ctrlKey||event.metaKey)event.stopPropagation();}}><AnnotationNote key={selected.id} annotation={selected} disabled={disabled} context={context} onClose={()=>setEditing(null)} onSave={note=>{if(change(annotations.map(item=>item.id===selected.id?{...item,note}:item)))setEditing(null);}}/></div>,document.body)}
+ </div>;
+}
+function AnnotationNote({annotation,disabled,context,onClose,onSave}:{disabled:boolean;annotation:BrowserAnnotation;context:string;onClose:()=>void;onSave:(note:string)=>void}){
+ const [note,setNote]=useState(annotation.note);const voice=useDictation(!disabled,`${context}:browser-annotation:${annotation.id}`,setNote,4000);
+ return <Modal title="Edit page annotation" close={onClose} className="browser-annotation-note-dialog"><p className="muted"><code>{annotation.target.tag}</code> · {annotation.page}</p><label>Requested change<textarea data-autofocus aria-label="Annotation comment" rows={5} maxLength={4000} value={note} onChange={event=>setNote(event.target.value)}/></label><div className="annotation-note-actions"><button type="button" className={`icon-button ${voice.recording?'recording':''}`} aria-label={voice.recording?'Stop annotation dictation':'Dictate annotation'} title="Dictate this comment" disabled={voice.state.available===false||voice.state.status==='stopping'} onClick={()=>void voice.toggle()}>{voice.recording?<Square size={14}/>:<Mic size={16}/>}</button><span className="sr-only" role="status">{voice.recording?'Recording annotation':''}</span><small>{note.length}/4000</small><button type="button" className="button" onClick={onClose}>Cancel</button><button type="button" className="button primary" disabled={disabled||!note.trim()||voice.recording} onClick={()=>onSave(note)}>Save</button></div>{voice.state.error&&<p role="alert">{voice.state.error}</p>}{voice.overflow&&<label>Extra dictated text<textarea aria-label="Extra dictated annotation" readOnly value={voice.overflow}/></label>}</Modal>;
+}

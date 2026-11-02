@@ -1,5 +1,7 @@
+export type {BrowserAnnotation,BrowserStyleSnapshot} from './browser-annotations.mjs';
+import type {BrowserAnnotation,BrowserStyleSnapshot} from './browser-annotations.mjs';
 export interface NativeForkReceipt {sessionId:string;commandId:string;lastTurnId?:string;childSessionId?:string;leaveCommandId?:string;status:'submitting'|'verifying'|'releasing'|'released'|'rejected'|'unknown';at:string;reason?:string;release?:{outcome:'released';viewCursor:string};}
-export interface NativeChild {subagentId?:string;workflowRunId?:string;childSessionId?:string;itemId:string;turnId?:string;kind:'subagent'|'workflow';revision:number;status:string;controlStatus?:string;objective?:string;label?:string;fallbackText?:string;truncated?:boolean;controlsUnavailable?:boolean;result?:{summary?:string;text?:string;errorKind?:string};children?:{childId:string;attempt:number;status:string;terminal?:string;label?:string;failureReason?:string}[];}
+export interface NativeChild {durationMs?:number;subagentId?:string;workflowRunId?:string;childSessionId?:string;itemId:string;turnId?:string;kind:'subagent'|'workflow';revision:number;status:string;controlStatus?:string;objective?:string;label?:string;fallbackText?:string;truncated?:boolean;controlsUnavailable?:boolean;result?:{summary?:string;text?:string;errorKind?:string};children?:{childId:string;attempt:number;status:string;terminal?:string;label?:string;failureReason?:string}[];}
 export interface ChildControlReceipt {commandId:string;sessionId:string;itemId:string;revision:number;action:string;status:string;body?:string;childId?:string;attempt?:number;at:string;reason?:string;}
 export interface CompactionReceipt {commandId:string;sessionId:string;turnId:string;status:string;reason?:string;at:string;itemId?:string;tokensBefore?:number;tokensAfter?:number;summarizedThrough?:string;}
 export interface DictationState { id: string | null; status: 'idle' | 'starting' | 'listening' | 'stopping' | 'error'; available: boolean | null; language: string | null; text: string; error: string | null; }
@@ -10,10 +12,11 @@ export type CheckStatus = 'not-run' | 'running' | 'passed' | 'failed' | 'cancell
 export interface Project {lessons?:import('./project-lessons.mjs').ProjectLesson[];validationScripts?:string[];worktree?:{id:string;sourceRoot:string;branch:string;base:string}; repositoryUrl?:string|null; branch?:string|null; id: string; name: string; root: string; demo: boolean; scripts: Record<string,string>; instructions?:string; }
 export interface FileChange { path: string; status: 'added' | 'modified' | 'deleted'; additions: number; deletions: number; before: string; after: string; binary?: boolean; approximate?: boolean; omitted?:boolean; beforeHash?:string|null; afterHash?:string|null; revision?:string; checkpointId?:string; }
 export interface MuseBenchBridge {inspectSourceDiff(input:{taskId:string;path:string;revision:string;beforeHash:string|null;afterHash:string|null;checkpointId?:string}):Promise<FileChange>;}
+export interface MuseBenchBridge {inspectFileReview(input:import('./file-review.mjs').FileReviewInspection):Promise<import('./file-review.mjs').FileReviewView>;readFileReview(input:import('./file-review.mjs').FileReviewRead):Promise<import('./file-review.mjs').FileReviewPage>;}
 export type WorkStatus = 'queued'|'working'|'waiting'|'completed'|'failed'|'cancelled'|'interrupted';
-export interface ActivityItem {callId?:string;subject?:string;workspaceBatch?:import('./workspace-tool-activity.mjs').WorkspaceBatchSummary;workflow?:{parentRunId:string;parallelLimit:number};id:string;kind:'model'|'tool'|'agent';title:string;tool:string;status:WorkStatus;detail:string;output:string;truncated?:boolean;agentId?:string;}
-export interface WorkRun {id:string;promptId:string;prompt:string;runId:string|null;ownedRunIds?:string[];status:WorkStatus;startedAt:string;endedAt?:string;reason?:string;activities:ActivityItem[];truncated?:boolean;}
-export interface Message { contextTruncated?:boolean; id: string; role: 'user' | 'assistant' | 'system'; text: string; at: string; turnId?:string; outcome?:WorkStatus; images?:CodeImage[];files?:ContextFile[]; sources?:(ContextFile&{text:string})[]; }
+export interface ActivityItem {images?:CodeImage[];visual?:{projectId:string;kind:'view'|'capture'};callId?:string;subject?:string;workspaceBatch?:import('./workspace-tool-activity.mjs').WorkspaceBatchSummary;workflow?:{parentRunId:string;parallelLimit:number};id:string;kind:'model'|'tool'|'agent';title:string;tool:string;status:WorkStatus;detail:string;output:string;truncated?:boolean;agentId?:string;}
+export interface WorkRun {visuals?:ActivityItem[];visualsTruncated?:boolean;id:string;promptId:string;prompt:string;runId:string|null;ownedRunIds?:string[];status:WorkStatus;startedAt:string;endedAt?:string;reason?:string;activities:ActivityItem[];truncated?:boolean;}
+export interface Message { annotations?:BrowserAnnotation[]; contextTruncated?:boolean; id: string; role: 'user' | 'assistant' | 'system'; text: string; at: string; turnId?:string; outcome?:WorkStatus; images?:CodeImage[];files?:ContextFile[]; sources?:(ContextFile&{text:string})[]; }
 export interface ShellResult { callId: string; runId: string; toolName: 'powershell'; command: string; output: string; exitCode: number; terminalStatus: 'completed' | 'failed'; terminalReason?: string; truncated: boolean; outcome: string; }
 export interface Check { action?:{id:string;name:string;definitionRevision:string;cwd:string;shell:string;platform:string;timeoutSeconds:number}; id: string; script: string; command: string; status: CheckStatus; revision: string; exitCode: number | null; log: string; startedAt: string; endedAt?: string; }
 export interface Checkpoint { id: string; taskId: string; title: string; revision: string; createdAt: string; }
@@ -53,21 +56,21 @@ export type Action = import('./code-schedules.mjs').CodeScheduleAction | import(
   | {type:'updatePlan';plan:string;criteria:string[]} | {type:'approvePlan'} | {type:'applyDemo'}
   | {type:'refresh'} | {type:'runCheck';script:string} | {type:'cancelCheck'}
   | {type:'startPreview';script:string} | {type:'stopPreview'} | {type:'inspectPreview';revision:string}
-  | {type:'accept';revision:string} | {type:'sendMessage';text:string;mode?:'chat'|'plan';images?:CodeImage[];files?:ContextFile[]}
-  | {type:'connectMuse';binary?:string;fullAccess?:boolean;transport?:'exec'|'msp';workspaceTools?:boolean;workspaceToolset?:import('./workspace-analysis.mjs').WorkspaceToolset;toolDiscovery?:import('./tool-discovery.mjs').DiscoverySelection} | {type:'childControl';taskId:string;sessionId:string;itemId:string;revision:number;action:string;body?:string;childId?:string;attempt?:number} | {type:'compactSession';taskId:string;sessionId:string;turnId:string} | {type:'steerMessage';taskId:string;expectedTurnId:string;text:string} | {type:'disconnectMuse'} | {type:'runtimeDecision';decision:string} | ({type:'answerInput';taskId:string}&import('./user-input.mjs').InputAction)
+  | {type:'accept';revision:string} | {type:'sendMessage';text:string;mode?:'chat'|'plan';images?:CodeImage[];files?:ContextFile[];annotations?:BrowserAnnotation[]}
+  | {type:'connectMuse';binary?:string;fullAccess?:boolean;transport?:'exec'|'msp';workspaceTools?:boolean;workspaceToolset?:import('./workspace-analysis.mjs').WorkspaceToolset;toolDiscovery?:import('./tool-discovery.mjs').DiscoverySelection} | {type:'childControl';taskId:string;sessionId:string;itemId:string;revision:number;action:string;body?:string;childId?:string;attempt?:number} | {type:'compactSession';taskId:string;sessionId:string;turnId:string} | {type:'steerMessage';taskId:string;expectedTurnId:string;text:string;annotations?:BrowserAnnotation[]} | {type:'disconnectMuse'} | {type:'runtimeDecision';decision:string} | ({type:'answerInput';taskId:string}&import('./user-input.mjs').InputAction)
   | {type:'clearError'}
   | {type:'setProjectInstructions';projectId:string;text:string}
-  | {type:'saveDraft';projectId:string;taskId:string|null;text:string;images?:CodeImage[];files?:ContextFile[];mode?:'chat'|'plan'}
+  | {type:'saveDraft';projectId:string;taskId:string|null;text:string;images?:CodeImage[];files?:ContextFile[];annotations?:BrowserAnnotation[];mode?:'chat'|'plan'}
   | {type:'deleteTask';id:string;allowUnarchived?:boolean}
   | {type:'setTaskFlags';id:string;pinned?:boolean;archived?:boolean}
   | {type:'forkTask';taskId?:string;messageId?:string} | {type:'createSideChat';taskId:string;text?:string}
   | {type:'openQueuedSideChat';taskId:string;id:string;expectedRevision:number}
   | {type:'setQueuing';taskId:string;enabled:boolean}
-  | {type:'queueMessage';text:string;images?:CodeImage[];files?:ContextFile[];mode?:'chat'|'plan';runOptions?:RunOptions}
+  | {type:'queueMessage';text:string;images?:CodeImage[];files?:ContextFile[];annotations?:BrowserAnnotation[];mode?:'chat'|'plan';runOptions?:RunOptions}
   | {type:'moveQueued';taskId:string;id:string;beforeId:string|null}
   | {type:'beginQueueEdit'|'sendQueued';taskId:string;id:string;expectedRevision:number}
   | {type:'steerQueued';taskId:string;id:string;expectedRevision:number;expectedTurnId:string}
-  | {type:'editQueued';taskId:string;id:string;expectedRevision:number;text:string;mode:'chat'|'plan'}
+  | {type:'editQueued';taskId:string;id:string;expectedRevision:number;text:string;mode:'chat'|'plan';annotations?:BrowserAnnotation[]}
   | {type:'removeQueued';id:string;taskId?:string;expectedRevision?:number} | {type:'pauseQueue'|'resumeQueue'};
 export type PersonalDestination = 'bot' | 'chat' | 'ideas' | 'goals';
 export interface PersonalLibraryItem { id: string; kind: 'chat' | 'idea' | 'goal'; title: string; main?: boolean; }
@@ -88,7 +91,7 @@ export type PersonalCommand = {type:'metaChats';action:'pin';id:string;pinned:bo
 export type ChatAppId='vscode'|'visualstudio'|'explorer'|'terminal'|'gitbash'|'wsl';
 export interface ChatToolCommand {taskId:string;type:'apps'|'preview'|'copy'|'share'|'open';format?:'link'|'markdown'|'directory';app?:ChatAppId;token?:string;}
 export interface ChatToolResult {status:'ready'|'copied'|'saved'|'cancelled'|'opened';apps?:{id:ChatAppId;label:string;available:boolean}[];markdown?:string;token?:string;}
-export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void; analytics(options:{days:7|30;offset:number}):Promise<import("./analytics").AnalyticsData>; openProjectFile(input:{taskId:string;path:string;editor?:'preferred'|'vscode'|'choose';source?:'navigation'}):Promise<{opened:boolean}>; copyText?(text:string):Promise<void>; copyReply?(text:string):Promise<void>; configureNotifications(value:{completion:boolean;attention:boolean;sound:boolean}):Promise<{supported:boolean}>; commandInfo(type:"billing"|"skills"|"usage"|"export"|"mention"|"close"):Promise<{status:string;message?:string;usage?:import("./account-usage.mjs").AccountUsage;skills?:import("./slash-commands.mjs").MuseSkill[];rows?:{label:string;value:string}[];path?:string}>; dictation(command: 'status'|'refresh'|'start'|'stop'|'cancel'):Promise<DictationState>; onDictation(callback:(state:DictationState)=>void):()=>void; getState(): Promise<AppState>; dispatch(action: Action): Promise<AppState>; chooseProject(): Promise<string|null>; chooseBinary(): Promise<string|null>; onState(callback:(state:AppState)=>void):()=>void; openExternal(url:string):Promise<void>; personalState():Promise<PersonalState>; personal(command:PersonalCommand):Promise<PersonalState>; onPersonalState(callback:(state:PersonalState)=>void):()=>void; onPersonalShortcut(callback:(shortcut:string)=>void):()=>void; }
+export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void; analytics(options:{days:7|30;offset:number}):Promise<import("./analytics").AnalyticsData>; openProjectFile(input:{taskId:string;path:string;editor?:'preferred'|'vscode'|'choose';source?:'navigation'|'review'}):Promise<{opened:boolean}>; copyText?(text:string):Promise<void>; copyReply?(text:string):Promise<void>; configureNotifications(value:{completion:boolean;attention:boolean;sound:boolean}):Promise<{supported:boolean}>; commandInfo(type:"billing"|"skills"|"usage"|"export"|"mention"|"close"):Promise<{status:string;message?:string;usage?:import("./account-usage.mjs").AccountUsage;skills?:import("./slash-commands.mjs").MuseSkill[];rows?:{label:string;value:string}[];path?:string}>; dictation(command: 'status'|'refresh'|'start'|'stop'|'cancel'):Promise<DictationState>; onDictation(callback:(state:DictationState)=>void):()=>void; getState(): Promise<AppState>; dispatch(action: Action): Promise<AppState>; chooseProject(): Promise<string|null>; chooseBinary(): Promise<string|null>; onState(callback:(state:AppState)=>void):()=>void; openExternal(url:string):Promise<void>; personalState():Promise<PersonalState>; personal(command:PersonalCommand):Promise<PersonalState>; onPersonalState(callback:(state:PersonalState)=>void):()=>void; onPersonalShortcut(callback:(shortcut:string)=>void):()=>void; }
 export interface RuntimeState {childrenBusy?:boolean;foregroundActive?:boolean;rootTurnId?:string;ownedTurnIds?:string[];childWorkPending?:number;childControlsSupported?:boolean;children?:{items:NativeChild[];truncated:boolean};childReceipts?:ChildControlReceipt[];operationBusy?:boolean;compactionSupported?:boolean;compaction?:CompactionReceipt|null;interactiveAvailable?:boolean;steeringSupported?:boolean;turnId?:string|null;steering?:{status:string;commandId:string;turnId:string}|null;fullAccess?:boolean;modelCatalog?:import("./models.mjs").NativeModelCatalog;permissionVerified?:boolean;cleanup?:string;}
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;
  sideChat?(input:import('./session-tools-types').SideChatCommand):Promise<import('./session-tools-types').SideChatState>;
@@ -138,7 +141,7 @@ export interface AppState {activityInbox?:ActivityEvent[];}
 export interface ContextFile {path:string;hash:string;}
 export type ImageMark={kind:'comment';x:number;y:number;text:string}|{kind:'pen'|'arrow'|'rect';color:string;points:{x:number;y:number}[]};
 export interface CodeImage {id:string;name:string;mime:string;bytes:number;annotation?:{source:Omit<CodeImage,'annotation'>;marks:ImageMark[]};}
-export interface CodeDraft {images?:CodeImage[];text:string;files:ContextFile[];mode:'chat'|'plan';updatedAt?:string;}
+export interface CodeDraft {annotations?:BrowserAnnotation[];images?:CodeImage[];text:string;files:ContextFile[];mode:'chat'|'plan';updatedAt?:string;}
 export interface SavedPrompt {id:string;draft:CodeDraft;}
 export interface PromptShelfOwner {projectId:string;taskId:string|null;}
 export interface PromptShelfResult {draft:CodeDraft|null;entries:SavedPrompt[];}
@@ -163,7 +166,7 @@ export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<Chat
  discoveryAuth(input:import('./discovery-auth.mjs').DiscoveryAuthCommand):Promise<import('./discovery-auth.mjs').SafeAuthState>;
  onDiscoveryAuthUpdate(callback:(event:{taskId:string;sourceId:string})=>void):()=>void;
  readMcpServers(input:{taskId:string;sessionId:string}):Promise<McpInventory>;
- inspectCodeContext(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[]}):Promise<CodeContextResult>;
+ inspectCodeContext(input:{projectId:string;taskId:string|null;text:string;files:ContextFile[];annotations?:BrowserAnnotation[]}):Promise<CodeContextResult>;
  findChatHistory(input:HistoryFindInput):Promise<HistoryFindResult>;
  readChatHistory(input:{taskId:string;before?:string;messageId?:string;offset?:number;limit?:number}):Promise<HistoryPage>;
  searchChats(input:{query:string;includeArchived:boolean}):Promise<ChatSearchResult[]>;
@@ -183,7 +186,7 @@ export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<Chat
  parkCodeDraft(input:PromptShelfOwner&{expected:CodeDraft}):Promise<PromptShelfResult>;
  restoreSavedPrompt(input:PromptShelfOwner&{id:string;expected:CodeDraft}):Promise<PromptShelfResult>;
  removeSavedPrompt(input:PromptShelfOwner&{id:string}):Promise<PromptShelfResult>;
- saveCodeDraft(input:{images?:CodeImage[];projectId:string;taskId:string|null;text:string;files:ContextFile[];mode:'chat'|'plan'}):Promise<void>;
+ saveCodeDraft(input:{annotations?:BrowserAnnotation[];images?:CodeImage[];projectId:string;taskId:string|null;text:string;files:ContextFile[];mode:'chat'|'plan'}):Promise<void>;
 }
 
 export interface ManagedWorktree {archiveCommit?:string;archivedAt?:string;recoveredFrom?:string;id:string;path:string;branch:string;base:string;commit:string;sourceRoot:string;createdAt:string;status:string;available:boolean;locked?:boolean;}
@@ -220,7 +223,7 @@ export interface AppState {codeSchedules?:import('./code-schedules.mjs').CodeSch
 
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;
  inspectPreviewTarget(input:import('./preview-annotations.mjs').PreviewPoint):Promise<import('./preview-annotations.mjs').PreviewSelection>;
- preparePreviewFeedback(input:{token:string;note:string}):Promise<{text:string}>;
+ preparePreviewFeedback(input:{token:string;note:string;styleChanges?:Partial<BrowserStyleSnapshot>}):Promise<{text:string;annotation?:BrowserAnnotation}>;
  discardPreviewTarget(token:string):Promise<void>;
  onPreviewInvalidated(callback:()=>void):()=>void;
 }

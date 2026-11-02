@@ -4,13 +4,14 @@ export function toolCategory(tool){
  const key=name(tool);
  if(['powershell','shell','bash','command','terminal'].includes(key))return 'command';
  if(['write_file','edit_file','apply_patch'].includes(key))return 'edit';
+ if(['visual_view','visual_capture'].includes(key))return 'image';
  if(['read_file'].includes(key))return 'read';
  if(['search','grep','glob','list_directory'].includes(key)||/workspace_tool_(search|call|batch)$/.test(key))return 'search';
  if(key==='web_search')return 'webSearch';
  if(['web_fetch','mcp__musebench_web__read_web_page'].includes(key))return 'webRead';
  return 'tool';
 }
-const words={command:['Ran','Run','a command','commands'],edit:['Edited','Edit','a file','files'],read:['Read','Read','a file','files'],search:['Searched','Search','files','files'],webSearch:['Searched','Search','the web','the web'],webRead:['Read','Read','a webpage','webpages'],tool:['Used','Use','a tool','tools'],agent:['Agent','Agent','activity','activities']};
+const words={image:['Viewed','View','an image','images'],command:['Ran','Run','a command','commands'],edit:['Edited','Edit','a file','files'],read:['Read','Read','a file','files'],search:['Searched','Search','files','files'],webSearch:['Searched','Search','the web','the web'],webRead:['Read','Read','a webpage','webpages'],tool:['Used','Use','a tool','tools'],agent:['Agent','Agent','activity','activities']};
 export function toolSubject(tool,args){
  if(typeof args!=='string'||args.length>65536)return '';
  let value;try{value=JSON.parse(args);}catch{return '';}
@@ -27,6 +28,8 @@ export function toolSubject(tool,args){
 export function workLogItemLabel(item){
  const category=item.category??toolCategory(item.tool),[past,verb,noun]=words[category]??words.tool;
  const subject=clean(item.subject);
+ if(item.visual?.kind==='capture')return item.status==='completed'?'Captured a screenshot':'Capture a screenshot';
+ if(item.visual?.kind==='view')return item.status==='completed'?'Viewed an image':'View an image';
  if(item.kind==='agent')return `${clean(item.title,160)||'Agent'} · ${item.status==='completed'?'finished':item.status==='working'?'working':item.status}`;
  if(item.status==='completed')return `${past} ${subject||noun}`;
  if(item.status==='working')return `${category==='command'?'Running':category==='edit'?'Editing':category==='read'||category==='webRead'?'Reading':category==='search'||category==='webSearch'?'Searching':'Using'} ${subject||noun}`;
@@ -54,7 +57,7 @@ export function groupWorkLog(activities=[],shellResults=[]){
   const result=category==='command'&&source.callId?results.get(source.callId):null;
   if(result)used.add(result.callId);
   const item={...source,category,subject:clean(result?.command??source.subject),...(result?{shellResult:result,...(result.terminalStatus==='failed'||result.exitCode!==0?{status:'failed'}:{})}:{})};
-  if(source.kind==='agent'){current=null;add(item);current=null;}else add(item);
+  if(source.kind==='agent'||source.visual){current=null;add(item);current=null;}else add(item);
  }
  // Historical receipts without a native call binding are intentionally separate;
  // their order/association with an old lifecycle row cannot be reconstructed.

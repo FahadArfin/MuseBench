@@ -69,5 +69,9 @@ export function capturePreviewTarget(doc,request){
   }
  }
  const left=Math.max(0,box.left),top=Math.max(0,box.top),right=Math.min(width,box.right),bottom=Math.min(height,box.bottom);
- return {selector,tag:element.tagName.toLowerCase(),title:(doc.title??'').slice(0,160),text:text.slice(0,600),rect:{x:left/width,y:top/height,width:(right-left)/width,height:(bottom-top)/height}};
+ const computed=win.getComputedStyle(element),styles={};
+ for(const key of ['color','backgroundColor','opacity','fontFamily','fontSize','fontWeight','lineHeight','letterSpacing','padding','margin','borderRadius','width','height']){
+  const value=computed[key];if(typeof value==='string'&&value.length<=200&&!/[\x00-\x1f\x7f<>]|url\s*\(|expression\s*\(|@import/i.test(value))styles[key]=value;
+ }
+ return {selector,tag:element.tagName.toLowerCase(),title:(doc.title??'').slice(0,160),text:text.slice(0,600),rect:{x:left/width,y:top/height,width:(right-left)/width,height:(bottom-top)/height},styles};
 }

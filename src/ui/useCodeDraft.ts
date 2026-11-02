@@ -1,5 +1,5 @@
 import {useRef,useState,type SetStateAction} from 'react';
-import type {CodeDraft,CodeImage,ContextFile,MuseBenchBridge,PromptShelfResult} from '../shared/types';
+import type {BrowserAnnotation,CodeDraft,CodeImage,ContextFile,MuseBenchBridge,PromptShelfResult} from '../shared/types';
 const empty=():CodeDraft=>({text:'',files:[],images:[],mode:'chat'});
 export function useCodeDraft(bridge:MuseBenchBridge|undefined,projectId:string|undefined,taskId:string|null,drafts:Record<string,CodeDraft>|undefined,onError:(error:string)=>void){
  const key=projectId?`${projectId}:${taskId??'new'}`:'unassigned';
@@ -65,5 +65,5 @@ export function useCodeDraft(bridge:MuseBenchBridge|undefined,projectId:string|u
   catch(error){if(attempted){await Promise.allSettled([recoverOwner(targetProject,null),recoverOwner(targetProject,targetTask)]);}else{unlock(sourceKey);unlock(targetKey);}throw error;}
  }
 
- return{transferDraftTo,draftRecoveryError:recoveryErrors[key],recoverDraft:()=>projectId?recoverOwner(projectId,taskId):Promise.reject(Error('Choose a project.')),draftKey:key,draftLocked:!!fences[key],canMutate,shelfOperation,images:draft.images??[],setImages:(images:CodeImage[])=>update({images}),message:draft.text,setMessage:setText,files:draft.files??[],setFiles:(files:ContextFile[])=>update({files}),messageMode:draft.mode??'chat',setMessageMode:(mode:'chat'|'plan')=>update({mode}),setDraftFor,appendDraftText};
+ return{transferDraftTo,draftRecoveryError:recoveryErrors[key],recoverDraft:()=>projectId?recoverOwner(projectId,taskId):Promise.reject(Error('Choose a project.')),draftKey:key,draftLocked:!!fences[key],canMutate,shelfOperation,annotations:draft.annotations??[],setAnnotations:(value:SetStateAction<BrowserAnnotation[]>)=>{if(canMutate())update({annotations:typeof value==='function'?value(current.current.draft.annotations??[]):value});},images:draft.images??[],setImages:(images:CodeImage[])=>update({images}),message:draft.text,setMessage:setText,files:draft.files??[],setFiles:(files:ContextFile[])=>update({files}),messageMode:draft.mode??'chat',setMessageMode:(mode:'chat'|'plan')=>update({mode}),setDraftFor,appendDraftText};
 }

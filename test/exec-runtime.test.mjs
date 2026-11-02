@@ -23,6 +23,14 @@ function records({terminal='completed',text='Done',reason=null,model=true,shellR
 const jsonl=values=>values.map(value=>JSON.stringify(value)).join('\n')+'\n';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('exec injects a scoped browser MCP only into ordinary model runs and revokes the lease',async t=>{
+ let binding,closed=0;const browserMcp=async(root,options)=>{binding={root,...options};return {config:{command:process.execPath,args:[join(process.cwd(),'src/runtime/browser-mcp.mjs')],env:{MUSEBENCH_BROWSER_ENDPOINT:'http://127.0.0.1:23456/call',MUSEBENCH_BROWSER_TOKEN:'a'.repeat(43)}},close:async()=>{closed++;}};};
+ const h=await harness(t,{browserMcp});await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,browserTaskId:'chat'});assert.equal(binding.taskId,'chat');assert.equal(binding.isCurrent(),false);
+ await h.runtime.send({text:'Inspect my browser.'});const model=h.calls.at(-1);assert.equal(binding.isCurrent(),true);assert.ok(model.args.some(a=>a.startsWith('mcp_servers.musebench_browser=')));assert.equal(model.options.env.MUSEBENCH_BROWSER_TOKEN,'a'.repeat(43));assert.ok(h.calls.slice(0,-1).every(c=>!c.options.env.MUSEBENCH_BROWSER_TOKEN));assert.ok(!JSON.stringify(model.args).includes('a'.repeat(43)));assert.ok(!JSON.stringify(h.runtime.snapshot()).includes('a'.repeat(43)));
+ await h.runtime.disconnect();assert.equal(binding.isCurrent(),false);assert.equal(closed,1);
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,browserTaskId:'chat'});await h.runtime.send({text:'Plan only.',mode:'plan'});assert.ok(!h.calls.at(-1).args.some(a=>a.startsWith('mcp_servers.musebench_browser=')));assert.equal(binding.isCurrent(),false);
+});
+
 test('exec compact status follows running and unconfirmed cleanup without transcript clones',async t=>{
  const h=await harness(t,{stopFails:true,timeoutMs:15});assert.equal(typeof h.runtime.statusSnapshot,'function');
  const check=()=>{const s=h.runtime.snapshot();let copies=0;const clone=globalThis.structuredClone;const mocked=t.mock.method(globalThis,'structuredClone',value=>{copies++;return clone(value);});let actual;try{actual=h.runtime.statusSnapshot();}finally{mocked.mock.restore();}assert.equal(copies,0);assert.deepEqual(actual,{status:s.status??null,cleanup:s.cleanup??null,pending:!!s.pending,operationBusy:!!s.operationBusy,childrenBusy:!!s.childrenBusy});return actual;};

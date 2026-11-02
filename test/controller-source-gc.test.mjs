@@ -38,6 +38,12 @@ test('a new external checkpoint invalidates a previously cached reference invent
  f.age();const result=await f.c.collectSourceObjects();assert.equal(result.deleted,1);assert.equal(await f.exists(retained),true);assert.equal(await f.exists(orphan),false);
 });
 
+test('controller collection marks full pending and completed run manifests after inventory was cached',async t=>{
+ const f=await fixture(t);await f.c.collectSourceObjects();const before=await f.object('run source before'),after=await f.object('run source after'),pending=await f.object('pending source before'),orphan=await f.object('unretained source after run');
+ const insert=f.db.prepare('INSERT INTO run_changes(task_id,run_id,json) VALUES(?,?,?)');insert.run(f.taskId,'captured',JSON.stringify({taskId:f.taskId,runId:'captured',status:'complete',beforeFiles:{a:before},afterFiles:{a:after},capturedFiles:[{path:'a',status:'modified'}],files:[]}));insert.run(f.taskId,'pending',JSON.stringify({taskId:f.taskId,runId:'pending',status:'pending',baseline:{a:pending}}));f.age();let deleted=0;for(let i=0;i<8;i++){const result=await f.c.collectSourceObjects();deleted+=result.deleted;if(result.done)break;}
+ assert.equal(deleted,1);for(const descriptor of [before,after,pending])assert.equal(await f.exists(descriptor),true);assert.equal(await f.exists(orphan),false);
+});
+
 test('an external reference writer blocks deletion until its checkpoint is visible',async t=>{
  const f=await fixture(t),retained=await f.object('reference committed by a concurrent writer');f.age();
  f.db.exec('BEGIN IMMEDIATE');
