@@ -11,7 +11,7 @@ let server,browser,app,page;
 const report={variant,checks:[],errors:[],providerRequests:0};
 const pass=name=>{report.checks.push(name);console.log('PASS '+name);};
 try{
- server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:`node_modules/.vite-settings-${variant}`,server:{host:'127.0.0.1',port:0}});await server.listen();
+ server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:`node_modules/.vite-settings-${variant}`,server:{host:'127.0.0.1',port:0,strictPort:false}});await server.listen();
  const url=`http://127.0.0.1:${server.httpServer.address().port}/preview.html`;
  if(desktop){const env={...process.env,MUSEBENCH_PARITY_DATA:path.join(output,'profile')};delete env.ELECTRON_RUN_AS_NODE;app=await electron.launch({args:['scripts/preview-parity-electron.mjs'],env});const ready=app.waitForEvent('window');await app.evaluate(({BrowserWindow},url)=>{const w=new BrowserWindow({width:1508,height:1043,useContentSize:true,show:false,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,sandbox:true}});void w.loadURL(url);},url);page=await ready;}
  else {browser=await chromium.launch({headless:true});page=await browser.newPage({viewport:{width:1508,height:1043}});}

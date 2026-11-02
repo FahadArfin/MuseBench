@@ -19,7 +19,7 @@ export interface FileChangesBrowserProps {
 const errorText=(error:unknown)=>error instanceof Error?error.message:String(error);
 const latestRun=(task:Task)=>[...(task.runs??[])].reverse().find(run=>!['queued','working','waiting'].includes(run.status))??task.runs?.at(-1);
 const TREE_PAGE_SIZE=200;
-function runLabel(run:WorkRun|undefined,id:string){return run?run.prompt.replace(/\s+/g,' ').trim().slice(0,92)||'Prompt '+id.slice(0,8):'Captured prompt '+id.slice(0,8);}
+function runLabel(run:WorkRun|undefined,id:string){return run?(run.prompt??'').replace(/\s+/g,' ').trim().slice(0,92)||'Prompt '+id.slice(0,8):'Captured prompt '+id.slice(0,8);}
 function Counts({additions,deletions,unknown=false}:{additions:number;deletions:number;unknown?:boolean}){
  return <span className="file-review-counts" title={unknown?'Some files do not have line counts. Totals include counted files.':`${additions} additions, ${deletions} deletions`} aria-label={unknown?`${additions} known additions, ${deletions} known deletions; some counts unavailable`:`${additions} additions, ${deletions} deletions`}><span className="file-review-added">+{unknown&&!additions?'…':additions}</span><span className="file-review-removed">−{unknown&&!deletions?'…':deletions}</span>{unknown&&(additions>0||deletions>0)&&<span>…</span>}</span>;
 }
