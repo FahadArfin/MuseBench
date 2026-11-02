@@ -42,6 +42,9 @@ test('parallel groups retain every previous check exactly once with real command
  assert.deepEqual([...shared.jobs.check.strategy.matrix.suite].sort(),Object.keys(CI_SUITES).sort());
  assert.equal(shared.jobs.check.strategy['fail-fast'],false);
  assert.equal(shared.jobs.check['runs-on'],'windows-latest');
+ assert.ok(Object.hasOwn(CI_SUITES,'chats-a'));
+ assert.ok(Object.hasOwn(CI_SUITES,'chats-b'));
+ assert.equal(Object.hasOwn(CI_SUITES,'chats'),false);
  assert.equal(shared.jobs.check['continue-on-error'],undefined);
  assert.ok(shared.jobs.check.steps.some(s=>s.run==='node scripts/run-ci-suite.mjs ${{ matrix.suite }}'));
 });
@@ -83,9 +86,9 @@ test('unknown CLI group fails before running commands',()=>{
  assert.notEqual(result.status,0);assert.match(result.stderr,/Unknown CI suite/);
 });
 
-test('renderer delivery checks run preview and desktop in chats and upload only clean fixture reports',async()=>{
+test('renderer delivery checks run preview and desktop in chat shards and upload only clean fixture reports',async()=>{
  assert.equal(packageJson.scripts['test:renderer-state'],'node scripts/renderer-state-smoke.mjs && node scripts/renderer-state-smoke.mjs --desktop');
- assert.ok(CI_SUITES.chats.some(check=>check.join(' ')==='npm run test:renderer-state'));
+ assert.ok([...CI_SUITES['chats-a'],...CI_SUITES['chats-b']].some(check=>check.join(' ')==='npm run test:renderer-state'));
  const shared=await workflow('windows-checks');
  const paths=shared.jobs.check.steps.filter(step=>step.uses==='actions/upload-artifact@v4').flatMap(step=>String(step.with.path).split('\n'));
  assert.ok(paths.includes('artifacts/renderer-state/**/report.json'));

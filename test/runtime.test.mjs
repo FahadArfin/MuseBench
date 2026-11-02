@@ -14,6 +14,44 @@ test('disconnect discards the live catalog before a billing source can change',a
  await h.runtime.disconnect();assert.equal(h.runtime.snapshot().modelCatalog,undefined);
 });
 
+test('interactive startup registers the trusted required public web reader with a curated child environment',async t=>{
+ const h=await harness(t,{credentials:async({environment})=>({source:'api',environment:{...environment,META_API_KEY:'model-only-secret'},verify:async()=>{}})});
+ assert.equal(h.runtime.snapshot().publicWebEnabled,false);await h.connect();
+ const initialize=h.calls.find(call=>call.method==='initialize');assert.deepEqual(initialize.params.capabilities.requestedCapabilities,['sessionMcp']);
+ const server=h.calls.find(call=>call.method==='session/start').params.config.mcpServers.musebench_web;
+ assert.equal(server.command,process.execPath);assert.match(server.args[0],/public-web-mcp\.mjs$/);assert.equal(server.transport,'stdio');assert.equal(server.framing,'lineDelimitedJson');assert.equal(server.mode,'required');assert.equal(server.env.ELECTRON_RUN_AS_NODE,'1');
+ assert.equal(server.env.META_API_KEY,undefined);assert.equal(server.env.NODE_OPTIONS,undefined);assert.equal(server.env.HOME,h.profile);
+ assert.ok(h.calls.find(call=>call.method==='spawn').spec.args.includes('tools.web_fetch.enabled=false'));
+ assert.equal(h.runtime.snapshot().publicWebEnabled,true);assert.equal(h.runtime.snapshot().webSearchEnabled,false);assert.equal(h.runtime.snapshot().webFetchEnabled,false);
+ await h.runtime.disconnect();assert.equal(h.runtime.snapshot().publicWebEnabled,false);
+});
+
+test('interactive public reader requires its native capability before session creation',async t=>{
+ const h=await harness(t);h.host.initializeResult.grantedCapabilities=[];
+ await assert.rejects(h.connect(),/sessionMcp.*public webpage/);assert.equal(h.calls.some(call=>call.method==='session/start'),false);assert.equal(h.runtime.snapshot().publicWebEnabled,false);
+});
+
+test('interactive public reader config merges with reviewed workspace and discovery servers',async t=>{
+ const h=await harness(t,{workspaceMcp:root=>({transport:'stdio',command:'node',args:['workspace',root]}),discoveryMcp:async()=>({config:{transport:'stdio',command:'node',args:['discovery'],mode:'required'},verify:async()=>{},close:async()=>{}})});
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true,toolDiscovery:{sources:[{id:'global:fixture',revision:'a'.repeat(64)}],reviewed:true}});
+ assert.deepEqual(Object.keys(h.calls.find(call=>call.method==='session/start').params.config.mcpServers).sort(),['musebench_discovery','musebench_web','musebench_workspace']);assert.equal(h.runtime.snapshot().publicWebEnabled,true);
+});
+
+test('interactive permission failure and protocol invalidation clear public reader availability',async t=>{
+ for(const action of ['permission','protocol']){
+  const h=await harness(t);
+  if(action==='permission'){h.host.connection.request=async method=>method==='permissionProfile/list'?{profiles:[]}:{session:h.session()};await h.connect();}
+  else{await h.connect();assert.equal(h.runtime.snapshot().publicWebEnabled,true);h.protocolError(Error('Fixture protocol invalidation'));}
+  assert.equal(h.runtime.snapshot().publicWebEnabled,false);
+ }
+});
+
+test('interactive plan is rejected as not sent before any native admission or configuration work',async t=>{
+ const h=await harness(t);await h.connect();const before=h.calls.length;
+ await assert.rejects(h.runtime.send({text:'Plan a change',mode:'plan'}),error=>error.inputAdmission==='not-sent'&&/read-only planning.*exec runtime/i.test(error.message));
+ assert.equal(h.calls.length,before);assert.equal(h.runtime.snapshot().status,'idle');assert.equal(h.runtime.snapshot().permissionVerified,true);assert.equal(h.runtime.snapshot().planReadOnlyEnforced,false);
+});
+
 const pin='sha256:c94c3d1f2f51e6424074b9ec43eac3eedcf532d3dcd77351ec1383a87d3049c6';
 test('native retry observation stays nonterminal, clears across connection replacement, and never dispatches work',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Fixture only'});
@@ -222,7 +260,7 @@ async function harness(t,options={}) {
  t.after(()=>rm(root,{recursive:true,force:true}));
  const calls=[]; let notification=()=>{}, serverRequest=()=>{}, protocolError=()=>{}, resolveExit;
  const session=()=>({sessionId:'session-one',workspaceRoot:root,status:'idle',activeTurnId:null,turnCount:0,providerId:'meta',modelId:'muse-spark-1.2',approvalMode:{mode:'onRequest',source:'sessionOverride',lastCommandId:null},permissionState:permissions()});
- const host={initializeResult:{serverInfo:{name:'muse-session-server',version:'1.4.14'},schema:{version:1,fingerprint:pin},sandboxAvailability:'available',experimentalApi:true},exited:new Promise(resolve=>{resolveExit=resolve;}),close:async()=>{calls.push({method:'close'});return {code:0,signal:null};}};
+ const host={initializeResult:{serverInfo:{name:'muse-session-server',version:'1.4.14'},schema:{version:1,fingerprint:pin},sandboxAvailability:'available',experimentalApi:true,grantedCapabilities:['sessionMcp']},exited:new Promise(resolve=>{resolveExit=resolve;}),close:async()=>{calls.push({method:'close'});return {code:0,signal:null};}};
  host.connection={
   mintCommandId:()=> '0198f0ab-9999-7000-8000-000000000001',
   onNotification:fn=>{notification=fn;},onServerRequest:fn=>{serverRequest=fn;},onProtocolError:fn=>{protocolError=fn;},
@@ -459,7 +497,7 @@ test('explicit connect verifies Ask me and explicit send streams the authoritati
  const h=await harness(t);await h.connect();
  assert.equal(h.runtime.snapshot().status,'idle');assert.equal(h.runtime.snapshot().liveVerified,false);
  const start=h.calls.find(c=>c.method==='session/start');assert.equal(start.params.permissionProfile,':ask-me');assert.equal(start.params.approvalMode,'onRequest');
- assert.deepEqual(h.calls.find(c=>c.method==='initialize').params.capabilities,{experimentalApi:true,userInputDialogs:true});
+ assert.deepEqual(h.calls.find(c=>c.method==='initialize').params.capabilities,{experimentalApi:true,userInputDialogs:true,requestedCapabilities:['sessionMcp']});
  assert.equal(h.calls.find(c=>c.method==='spawn').spec.env.META_API_KEY,undefined);
  assert.equal(h.calls.some(c=>c.method==='turn/start'),false);
  await h.runtime.send({text:'Improve the page',mode:'chat'});

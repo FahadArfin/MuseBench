@@ -7,6 +7,8 @@ const fields = ['schema_version', 'id', 'stream', 'sequence', 'recorded_at', 're
   'durability', 'causation_id', 'payload_type', 'payload_schema_version', 'payload'];
 const live = status => ['queued', 'working', 'waiting'].includes(status);
 const BACKGROUND_CLIENT = 'muse-runtime-background-terminal';
+const uuid5 = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-5[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
+const uuid7 = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-7[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(value);
 
 /**
  * A bounded conversation around the unchanged single-run exec authority.
@@ -23,7 +25,7 @@ const BACKGROUND_CLIENT = 'muse-runtime-background-terminal';
  * finish requires the caller's confirmed process exit, never a turn boundary.
  */
 export function createExecConversationFold({
-  allowSessionOffset = false, maxText = 200000, maxRecords = 20000, maxShellBytes = 200000, maxShellResults = 64,
+  allowSessionOffset = false, allowMcpStartupOmissions = false, maxText = 200000, maxRecords = 20000, maxShellBytes = 200000, maxShellResults = 64,
   maxHandoffs = 4, maxActivityItems = 120, maxActivityBytes = 200000,
 } = {}) {
   const limits = { maxText, maxRecords, maxShellBytes, maxShellResults };
@@ -32,11 +34,18 @@ export function createExecConversationFold({
     || maxHandoffs > 4 || maxActivityItems > 120 || maxActivityBytes > 200000) {
     throw Error('Muse exec conversation limits must be positive safe integers within the supported bounds.');
   }
+  if (typeof allowMcpStartupOmissions !== 'boolean') throw Error('Muse MCP startup omission option must be a boolean.');
   const runs = [], sequences = new Map(), recordIds = new Set(), commands = new Set(), runIds = new Set();
   const workflows = new Map(), workflowCalls = new Set(), taskIds = new Set(), workflowRunIds = new Set(), workIds = new Set();
   let sessionId = null, recordCount = 0, handoffs = 0, failure = null, finished = null;
   const fail = message => { failure ??= Error(`Muse exec conversation error: ${message}`); throw failure; };
   const active = () => runs.at(-1);
+  // 1.4.14 exec omits MCP-startup's first projected slot and its catalog
+  // publication. Admit only the captured root startup prefix and a single
+  // catalog slot between a synthetic UUIDv5 startup link and the first UUIDv7
+  // model-task link. Model/tool lifecycle, output, usage and terminal sequences
+  // remain contiguous. This option never supplies a missing tool result.
+  const mcpStartup = { phase: allowMcpStartupOmissions ? 'command' : null, gapUsed: false, modelTaskId: null };
   const unresolved = () => [...workflows.values()].filter(workflow => !workflow.consumed);
   const newRun = () => {
     const fold = createExecEventFold(limits);
@@ -91,6 +100,44 @@ export function createExecConversationFold({
   }
   const snapshot = () => structuredClone(finished ?? aggregate());
 
+  const nativeAccepted = record => record.payload_type === 'runtime.command.accepted'
+    && record.record_type === 'reconciliation' && record.durability === 'durable'
+    && record.payload.kind === 'command_accepted' && record.payload.command_kind === 'turn.submit'
+    && record.payload.client_id === null && uuid7(record.payload.command_id)
+    && record.causation_id === record.payload.command_id;
+  const correlatedTask = record => {
+    const p = record.payload, run = active();
+    return runs.length === 1 && run?.started && !run.state.terminal && run.state.providerId === 'meta'
+      && record.stream.kind === 'session' && record.record_type === 'event' && record.durability === 'durable'
+      && p.command_id === run.state.commandId && record.causation_id === run.state.commandId
+      && p.run_stream?.kind === 'run' && p.run_stream.id === run.state.runId
+      && p.task_stream?.kind === 'task' && p.task_stream.id === p.task_id;
+  };
+  const nativeTaskLink = (record, synthetic) => record.payload_type === 'task.stream.linked'
+    && record.payload.kind === 'task_stream_linked' && correlatedTask(record)
+    && (synthetic ? uuid5(record.id) && uuid5(record.payload.task_id) : uuid7(record.id) && uuid7(record.payload.task_id));
+  const nativeControl = (record, type) => record.payload_type === type && record.stream.kind === 'session'
+    && record.record_type === 'event' && record.durability === 'durable'
+    && record.causation_id === active()?.state.commandId;
+  function advanceMcpStartup(record, catalogGap) {
+    if (!mcpStartup.phase) return;
+    const type = record.payload_type;
+    if (catalogGap) {
+      mcpStartup.gapUsed = true; mcpStartup.modelTaskId = record.payload.task_id; mcpStartup.phase = 'model-proposed'; return;
+    }
+    const next = {
+      command: () => nativeAccepted(record) ? 'linked' : null,
+      linked: () => nativeControl(record, 'session.run.linked') ? 'model' : null,
+      model: () => nativeControl(record, 'run.model.configured') && record.payload.provider_id === 'meta' ? 'input-or-start' : null,
+      'input-or-start': () => type === 'turn.input.user' && record.payload.kind === 'turn_input_user'
+        && record.record_type === 'status' && record.durability === 'ephemeral' ? 'run-start'
+        : nativeControl(record, 'run.lifecycle.started') ? 'startup-link' : null,
+      'run-start': () => nativeControl(record, 'run.lifecycle.started') ? 'startup-link' : null,
+      'startup-link': () => nativeTaskLink(record, true) ? 'model-link' : null,
+    };
+    mcpStartup.phase = next[mcpStartup.phase]?.() ?? null;
+  }
+
   function validateEnvelope(record) {
     if (recordCount >= maxRecords) fail('Record count exceeds the global record limit.');
     if (!object(record) || record.schema_version !== 1 || record.payload_schema_version !== 1
@@ -110,8 +157,22 @@ export function createExecConversationFold({
     if (record.stream.kind === 'exec.usage' && record.payload_type !== 'run.usage') fail('Unexpected event in the usage stream.');
     if (!Number.isSafeInteger(record.sequence) || record.sequence < 1 || recordIds.has(record.id)) fail('Duplicate record id or invalid sequence.');
     const key = `${record.stream.kind}:${record.stream.id}`;
-    if (record.sequence !== (sequences.get(key) ?? (allowSessionOffset && record.stream.kind === 'session' ? record.sequence - 1 : 0)) + 1) fail('Non-contiguous global stream sequence.');
-    return key;
+    const previous = sequences.get(key);
+    const initialMcpOffset = allowMcpStartupOmissions && recordCount === 0 && record.stream.kind === 'session'
+      && record.sequence === 2 && nativeAccepted(record);
+    const catalogGap = allowMcpStartupOmissions && !mcpStartup.gapUsed && mcpStartup.phase === 'model-link'
+      && previous !== undefined && record.sequence === previous + 2 && nativeTaskLink(record, false);
+    if (record.sequence !== (previous ?? (allowSessionOffset && record.stream.kind === 'session' ? record.sequence - 1 : 0)) + 1
+      && !initialMcpOffset && !catalogGap) fail('Non-contiguous global stream sequence.');
+    if (mcpStartup.phase === 'model-proposed') {
+      const p = record.payload;
+      if (!correlatedTask(record) || record.payload_type !== 'task.lifecycle.proposed' || p.kind !== 'task_lifecycle'
+        || p.task_id !== mcpStartup.modelTaskId || p.event?.kind !== 'proposed'
+        || p.event.task_id !== p.task_id || p.event.task_kind !== 'model.meta.response') {
+        fail('MCP startup catalog omission must lead directly to its first native Meta model proposal.');
+      }
+    }
+    return { key, catalogGap };
   }
 
   function requireDurable(record, description) {
@@ -168,7 +229,7 @@ export function createExecConversationFold({
   }
 
   function acceptChecked(record) {
-    const streamKey = validateEnvelope(record);
+    const { key: streamKey, catalogGap } = validateEnvelope(record);
     const p = record.payload, type = record.payload_type;
     let run = active();
     if (!run) run = newRun();
@@ -202,6 +263,7 @@ export function createExecConversationFold({
       if ((type === 'task.stream.linked' || type.startsWith('task.lifecycle.')) && label(p.task_id)) taskIds.add(p.task_id);
       registerWorkflow(record, run);
     }
+    advanceMcpStartup(record, catalogGap);
     recordIds.add(record.id); sequences.set(streamKey, record.sequence); recordCount++;
     return snapshot();
   }

@@ -57,6 +57,61 @@ function sample({ shell = false, failedWorkflow = false } = {}) {
 }
 const consume = (fold, rows) => { for (const row of rows) fold.accept(row); return fold; };
 
+const mcpCapture=(await readFile(new URL('./fixtures/native-mcp-startup.jsonl',import.meta.url),'utf8')).trim().split(/\r?\n/).map(JSON.parse);
+const mcpRows=()=>structuredClone(mcpCapture);
+test('opt-in replays captured native MCP startup omissions without losing terminal or tool authority',()=>{
+ assert.throws(()=>consume(createExecConversationFold(),mcpRows()),/sequence/i);
+ const rows=mcpRows(),result=consume(createExecConversationFold({allowMcpStartupOmissions:true}),rows).finish(0);
+ assert.equal(result.success,true);assert.equal(result.providerId,'meta');assert.equal(result.modelId,'muse-spark-1.3');
+ assert.equal(result.commandId,rows[0].payload.command_id);assert.equal(result.runId,rows[1].payload.run_stream.id);
+ assert.deepEqual(result.ownedRunIds,[result.runId]);assert.equal(result.recordCount,rows.length);
+ assert.match(result.text,/Offline fixture completed/);assert.deepEqual(result.shellResults,[]);
+ const nativeTool=rows.find(row=>row.payload_type==='tool.result');
+ assert.equal(nativeTool.payload.correlation_facts.tool_name,'mcp__musebench_web__read_web_page');
+ assert.match(nativeTool.payload.text,/Example Domain/);
+});
+
+test('MCP opt-in permits exactly the captured one-slot initial omission',()=>{
+ for(const mutate of [row=>row.sequence=3,row=>row.record_type='event',row=>row.durability='ephemeral',row=>row.causation_id='foreign',row=>row.payload.client_id='other-client']){
+  const rows=mcpRows();mutate(rows[0]);assert.throws(()=>consume(createExecConversationFold({allowMcpStartupOmissions:true}),rows));
+ }
+});
+
+test('MCP catalog omission requires the precise correlated synthetic-to-model task-link boundary',()=>{
+ const mutations=[
+  rows=>rows[5].id='018f0000-0000-4000-8000-00000000c356',
+  rows=>{rows[5].payload.task_id='8156b277-d1fd-45da-b89f-0ee4075e017a';rows[5].payload.task_stream.id=rows[5].payload.task_id;},
+  rows=>rows[6].sequence++,rows=>rows[6].durability='ephemeral',rows=>rows[6].record_type='status',
+  rows=>rows[6].payload.command_id='foreign',rows=>rows[6].payload.run_stream.id='foreign',rows=>rows[6].causation_id='foreign',
+  rows=>rows[6].payload.task_stream.id='foreign',rows=>rows[6].payload.task_id=rows[5].payload.task_id,
+  rows=>rows[6].id='018f0000-0000-5000-8000-00000000c358',
+  rows=>rows[5].payload.kind='other',
+  rows=>rows[1].record_type='status',rows=>rows[2].durability='ephemeral',rows=>rows[4].causation_id='foreign',
+ ];
+ for(const mutate of mutations){const rows=mcpRows();mutate(rows);assert.throws(()=>consume(createExecConversationFold({allowMcpStartupOmissions:true}),rows));}
+});
+
+test('a permitted MCP startup gap must immediately lead to its first Meta model proposal',()=>{
+ for(const mutate of [
+  row=>row.payload.event.task_kind='tool.powershell',row=>row.payload.event.task_id='foreign',
+  row=>row.payload.task_id='foreign',row=>row.payload.task_stream.id='foreign',row=>row.record_type='status',
+  row=>row.payload_type='task.lifecycle.started',row=>{row.payload_type='run.output.delta';row.payload={kind:'run_output_delta',command_id:row.payload.command_id,run_stream:row.payload.run_stream,text:'forged output'};},
+ ]){const rows=mcpRows();mutate(rows[7]);assert.throws(()=>consume(createExecConversationFold({allowMcpStartupOmissions:true}),rows));}
+ const rows=mcpRows().filter(row=>row.sequence!==10);for(const row of rows)if(row.stream.kind==='session'&&row.sequence>10)row.sequence--;
+ assert.throws(()=>consume(createExecConversationFold({allowMcpStartupOmissions:true}),rows));
+});
+
+test('MCP startup exceptions never admit later model, tool, usage or terminal gaps',()=>{
+ for(const sequence of [11,15,18,25,26,34,37]){
+  const rows=mcpRows().filter(row=>!(row.stream.kind==='session'&&row.sequence===sequence));
+  assert.throws(()=>consume(createExecConversationFold({allowMcpStartupOmissions:true}),rows).finish(0),/sequence|terminal|missing/i);
+ }
+ const usage=mcpRows();usage.find(row=>row.stream.kind==='exec.usage').sequence=2;
+ assert.throws(()=>consume(createExecConversationFold({allowMcpStartupOmissions:true}),usage),/sequence/i);
+ assert.throws(()=>consume(createExecConversationFold({allowMcpStartupOmissions:true}),mcpRows()).finish(1),/exit|contradict/i);
+ const foreign=mcpRows();foreign.at(-1).payload.command_id='foreign';assert.throws(()=>consume(createExecConversationFold({allowMcpStartupOmissions:true}),foreign),/command/i);
+});
+
 test('verified workflow continuation retains root attribution and renders only observed workflow activity', () => {
   const fold = consume(createExecConversationFold(), sample().rows);
   const result = fold.finish(0);
@@ -197,6 +252,7 @@ test('process mismatch, cumulative output bounds and global record bounds are pr
 });
 
 test('limits are validated before accepting records', () => {
+  for(const value of ['true',1,null,{}])assert.throws(()=>createExecConversationFold({allowMcpStartupOmissions:value}),/boolean/i);
   for (const option of ['maxText', 'maxRecords', 'maxShellBytes', 'maxShellResults', 'maxHandoffs', 'maxActivityItems', 'maxActivityBytes']) {
     for (const value of [0, -1, Infinity, 0.5]) assert.throws(() => createExecConversationFold({ [option]: value }), /limit/i);
   }

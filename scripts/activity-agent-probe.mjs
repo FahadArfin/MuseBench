@@ -74,7 +74,8 @@ function observedSpawn(command, nativeArgs, options) {
     assert.equal(nativeArgs[nativeArgs.indexOf('--workspace') + 1], workspace);
     assert.equal(nativeArgs[nativeArgs.indexOf('--permission-profile') + 1], ':ask-me');
     assert.equal(nativeArgs[nativeArgs.indexOf('--max-model-steps') + 1], '8');
-    for (const flag of ['--json', '--no-session-log', '--disable-web-tools', '--disable-reminders', '--disable-request-user-input', '--no-foreign-personal-context']) assert(nativeArgs.includes(flag));
+    for (const flag of ['--json', '--no-session-log', '--disable-reminders', '--disable-request-user-input', '--no-foreign-personal-context']) assert(nativeArgs.includes(flag));
+    assert(!nativeArgs.includes('--disable-web-tools'));assert(nativeArgs.includes('tools.web_fetch.enabled=false'));
     assert(nativeArgs.includes('hooks={}')); assert(nativeArgs.includes('managed_hooks_path=null'));
     for (const flag of ['--disable-sandbox', '--disable-approval', '--yolo', '--trust-workspace']) assert(!nativeArgs.includes(flag));
     report.permissionArgumentsVerified = true;

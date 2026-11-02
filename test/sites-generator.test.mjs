@@ -44,7 +44,7 @@ test('explicit generation uses its own guarded workspace and preserves original 
   assert.equal(state.error,null);assert.equal(state.busy,true);assert.equal(state.task.mode,'muse');assert.equal(state.task.runs.at(-1).status,'working');
   assert.equal(state.task.messages.findLast(entry=>entry.role==='user').text,'Make a launch page.');assert.equal(state.task.runs.at(-1).prompt,'Make a launch page.');
   assert.equal(h.runtime.calls.find(call=>call.type==='connect').workspaceRoot,h.root());
-  const sent=h.runtime.calls.find(call=>call.type==='send');assert.match(sent.text,/public\/index\.html/);assert.match(sent.text,/read_file|write_file/);assert.match(sent.text,/do not publish|never publish/i);assert.deepEqual(sent.runOptions,{reasoning:'high',approval:'ask'});
+  const sent=h.runtime.calls.find(call=>call.type==='send');assert.match(sent.text,/public\/index\.html/);assert.match(sent.text,/read_file|write_file/);assert.match(sent.text,/do not publish|never publish/i);assert.deepEqual(sent.runOptions,{reasoning:'high',approval:'ask',budget:'extended'});
   assert.match(await readFile(path.join(h.root(),'public/index.html'),'utf8'),/Original page/);assert.equal(JSON.parse(await readFile(path.join(h.root(),'package.json'),'utf8')).private,true);
   assert.deepEqual(h.outputs,[]);
 });

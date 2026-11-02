@@ -19,7 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [unit, appearance, navigation, extensions, chats, native]
+        suite: [unit, appearance, navigation, extensions, chats-a, chats-b, native]
     steps:
       - uses: actions/checkout@v4
         with:

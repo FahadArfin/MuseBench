@@ -2,7 +2,7 @@ import {spawnSync} from 'node:child_process';
 import {writeFile} from 'node:fs/promises';
 import {runChecks} from './run-ci-suite.mjs';
 
-if(process.argv.length!==2)throw Error('Release preflight does not accept arguments.');
+if(process.argv.length>3||(process.argv[2]&&process.argv[2]!=='--force'))throw Error('Release preflight accepts only --force.');
 if(process.platform!=='win32')throw Error('Run the Windows release preflight on Windows.');
 const git=(...args)=>{
  const result=spawnSync('git',args,{encoding:'utf8'});
@@ -19,6 +19,6 @@ const report=await runChecks([
  ['node','scripts/child-restart-smoke.mjs'],
  ['node','scripts/child-restart-smoke.mjs','--desktop'],
  ['node','scripts/meta-chat-history-smoke.mjs'],
-],{suite:'release-preflight'});
+],{suite:'release-preflight',reuse:true,force:process.argv[2]==='--force'});
 await writeFile('artifacts/ci-timings/release-preflight.json',JSON.stringify({...report,source},null,2)+'\n');
 if(!report.success)process.exitCode=1;

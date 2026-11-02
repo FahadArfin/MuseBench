@@ -19,7 +19,7 @@ test('a controller-owned Muse turn survives an explicit one-time approval and re
     request:async method=>method==='permissionProfile/list'?{profiles:[{profileId:':ask-me',available:true,reviewerAuthority:'human'}]}:method==='model/list'?{providerId:'meta',profileId:null,source:'providerCatalog',models:[{providerId:'meta',profileId:null,modelId:'fixture-model',isDefault:true,variants:['high'],defaultReasoningEffort:'high'}]}:{session:session()},
     command:async(method,params,options)=>{commands.push({method,params});if(method==='session/start')return{session:session(),viewCursor:'start'};if(method==='turn/start')return{commandId:options.commandId,status:'accepted',disposition:'started',startedNewTurn:true,turnId:'turn-integration'};if(method==='approval/decide')return{terminal:true};throw Error(method);},
   };
-  const host={connection,initializeResult:{serverInfo:{version:TARGET.hostVersion},schema:{version:TARGET.schemaVersion,fingerprint:TARGET.fingerprint},sandboxAvailability:'available',experimentalApi:true},exited:new Promise(()=>{}),close:async()=>({code:0,signal:null})};
+  const host={connection,initializeResult:{serverInfo:{version:TARGET.hostVersion},schema:{version:TARGET.schemaVersion,fingerprint:TARGET.fingerprint},sandboxAvailability:'available',grantedCapabilities:['sessionMcp'],experimentalApi:true},exited:new Promise(()=>{}),close:async()=>({code:0,signal:null})};
   const runtime=createRuntime({environment:{PATH:'',HOME:base,USERPROFILE:base},probeVersion:async()=>TARGET.hostVersion,loadSdk:async()=>({sdkVersion:TARGET.sdkVersion,sdk:{EXPECTED_SCHEMA_FINGERPRINT:TARGET.fingerprint,spawnMspConnection:()=>({initialize:async()=>host,close:host.close})}})});
   let controller;
   try{

@@ -151,7 +151,7 @@ export interface HistoryFindInput {projectId:string;taskId:string;query:string;c
 export interface HistoryFindResult {hit:{messageId:string;role:string;offset:number;length:number;excerptOffset:number;excerpt:string;captureTruncated:boolean}|null;coverage:string;wrapped:boolean;}
 export interface HistoryPage {messages:(Omit<Message,'at'>&{at:string|null;textLength:number;offset:number;captureTruncated?:boolean})[];total:number;before:string|null;coverage:string;}
 export interface McpInventory {sessionId:string;readAt:string;servers:{name:string;source:'settings'|'plugin'|'session'|'unknown';transport:'stdio'|'streamableHttp'|'unknown';oauth:'loggedIn'|'loggedOut'|'notSupported'|'unknown'}[];omitted:number;simulation?:boolean;}
-export interface RuntimeState {connectionEpoch?:number;}
+export interface RuntimeState {connectionEpoch?:number;webSearchEnabled?:boolean;webFetchEnabled?:boolean;publicWebEnabled?:boolean;planning?:boolean;effectiveFullAccess?:boolean;effectiveShellEnabled?:boolean;}
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;
  inspectDiscoverySources(input:{taskId:string}):Promise<import('./tool-discovery.mjs').DiscoveryInspection>;
  discoveryAuth(input:import('./discovery-auth.mjs').DiscoveryAuthCommand):Promise<import('./discovery-auth.mjs').SafeAuthState>;

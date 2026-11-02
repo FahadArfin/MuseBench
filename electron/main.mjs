@@ -99,7 +99,7 @@ else {
     codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>onboardingOwners.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
     const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,discoveryMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp,discoveryMcp});
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
-    // Muse 1.4.13 can stall before shell launch inside the user profile.
+    // Muse 1.4.14 can stall before shell launch inside the user profile.
     // New working copies have their own location; saved originals stay put.
     const projectsDir = projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride
       : process.platform === 'win32' ? path.join(path.parse(dataDir).root,'MuseBenchWorkspaces',createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0,12)) : undefined;

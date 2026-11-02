@@ -943,17 +943,18 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           if(images.length&&runtimeState.transport!=='exec'&&runtimeState.imagesSupported!==true)throw Error('This native connection does not support screenshots.');
           delete t.queueError;
           const previousSession=t.nativeSession?structuredClone(t.nativeSession):null;
-          const durable=runtimeState.durableSessions===true?prepareNativeSession(t.nativeSession,project.root,runtimeState):null;
+          const planning=action.mode==='plan';
+          const durable=!planning&&runtimeState.durableSessions===true?prepareNativeSession(t.nativeSession,project.root,runtimeState):null;
           const targetSession=durable?.session.id??recentSessionId(t,runtime.snapshot?.()??runtimeState);
           const recentContext=action.fromQueue?(action.recentContext?validateRecentContext(action.recentContext,t,targetSession):null):action.userAuthored===true?stagedRecentContext(t,targetSession):null;
-          const prepared=composeChatContext({task:t,project:project,memories:state.memories,text:action.text,images,attachments,recentContext,history:durable?durable.history:runtimeState.transport!=='msp'||!runtimeState.sessionSeeded,nativeSession:runtimeState.transport==='msp'?!!runtimeState.sessionSeeded:!!durable&&!durable.history});
+          const prepared=composeChatContext({task:t,project:project,memories:state.memories,text:action.text,images,attachments,recentContext,history:planning|| (durable?durable.history:runtimeState.transport!=='msp'||!runtimeState.sessionSeeded),nativeSession:!planning&&(runtimeState.transport==='msp'?!!runtimeState.sessionSeeded:!!durable&&!durable.history)});
           const beforePreparation=recentContext?structuredClone(Object.fromEntries(['nativeSession','recentContext','messages','runs','contextSummary','skillReceipts','nativeUsage','runtimeComplete','acceptedRevision'].map(key=>[key,t[key]]))):null;
           if(durable)t.nativeSession=durable.session;
           t.skillReceipts=[];t.nativeUsage=null;t.runtimeComplete=false;t.acceptedRevision=null;context.pending=true;
           const before=runtime.snapshot?.()??runtimeState;
           const prompt={id:randomUUID(),role:'user',text:action.text.slice(0,16000),files,images,sources:attachments,at:now()};
           if(action.fromSchedule)context.schedulePromptId=prompt.id;
-          context.turn={taskId:t.id,promptId:prompt.id,captureRoot:project.root,queueItemId:action.fromQueue?action.id:null,recentContext:action.fromQueue?null:recentContext,messageBaseline:runtimeMessageIds(before),previousRunId:before.runId??null,runId:null,started:false,resetSeen:false};
+          context.turn={taskId:t.id,promptId:prompt.id,planning,captureRoot:project.root,queueItemId:action.fromQueue?action.id:null,recentContext:action.fromQueue?null:recentContext,messageBaseline:runtimeMessageIds(before),previousRunId:before.runId??null,runId:null,started:false,resetSeen:false};
           t.runs=restoreRuns([...(t.runs??[]),{id:prompt.id,promptId:prompt.id,prompt:prompt.text,runId:null,status:'queued',startedAt:prompt.at,activities:[]}],{interrupt:false});
           t.messages.push(prompt);t.messages=t.messages.slice(-150);
           const {prompt:contextPrompt,...contextSummary}=prepared;t.contextSummary={...contextSummary,receipt:contextReceipt(prepared,{project,memories:state.memories,attachments,revision:contextSnapshot.revision})};
@@ -969,7 +970,11 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
             finally{invalidatePersistence();if(beforePreparation){Object.assign(t,beforePreparation);context.pending=false;context.turn=null;taskRecords.set(t.id,structuredClone(t));}}
             throw error;
           }
-          try{await runtime.send({text:contextPrompt,imagePaths,...(durable?{sessionId:durable.session.id,resumeSession:Boolean(previousSession)}:{}),mode:action.mode??'chat',runOptions:restoreRunOptions(action.fromQueue?action.runOptions:t.runOptions)});}
+          const nativeOptions=restoreRunOptions(action.fromQueue?action.runOptions:t.runOptions);
+          // Exec presets are saved per chat, but the interactive host has no native
+          // budget contract. The composer labels this as unavailable on MSP.
+          if(runtimeState.transport==='msp')delete nativeOptions.budget;
+          try{await runtime.send({text:contextPrompt,imagePaths,...(durable?{sessionId:durable.session.id,resumeSession:Boolean(previousSession)}:{}),mode:action.mode??'chat',runOptions:nativeOptions});}
           catch(e){
             if(e?.inputAdmission==='not-sent'&&!action.fromQueue)restageRecentContext(t,recentContext);
             const rejected=e?.inputAdmission==='not-sent'||executions.list(t.id).find(r=>r.id===prompt.id)?.result==='rejected',unknownNative=runtimeState.transport==='msp'&&durable&&!rejected;
@@ -1048,7 +1053,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
       if(turn?.started&&next.transport==='exec'&&turn.resetSeen&&!turn.runId&&typeof next.runId==='string'&&next.runId!==turn.previousRunId)turn.runId=next.runId;
       if(turn?.started&&next.transport==='msp'&&next.inputAccepted===true&&next.turnId&&!turn.runId&&next.rootTurnId)turn.runId=next.rootTurnId;
       const ownsTurn=Boolean(turn?.started&&(next.transport==='msp'?turn.runId&&next.rootTurnId===turn.runId&&(!task.nativeSession||task.nativeSession.id===next.nativeSessionId):next.transport!=='exec'||turn.runId&&next.runId===turn.runId));
-      if(ownsTurn&&task.nativeSession&&task.nativeSession.id===next.nativeSessionId&&next.inputAccepted===true)task.nativeSession.seeded=true;
+      if(ownsTurn&&!turn.planning&&task.nativeSession&&task.nativeSession.id===next.nativeSessionId&&next.inputAccepted===true)task.nativeSession.seeded=true;
       if(ownsTurn){
         if(turn.captureScheduled&&['running','starting','submitting'].includes(next.status))runChanges.unavailable(task.id,turn.promptId,'The native run resumed after this source capture.');
         executions.patch(turn.promptId,{phase:'running',result:'unknown',runId:turn.runId,nativeSessionId:next.nativeSessionId??task.nativeSession?.id??null,processId:Number.isInteger(next.pid)?next.pid:null,acceptance:next.inputAccepted===true?'accepted':'unknown'});
@@ -1082,7 +1087,7 @@ export async function createController({dataDir,projectsDir,newProjectsDir,templ
           }else inboxEvents.push({source:'run',sourceId:progress.id,kind:next.status==='completed'&&ownsTurn&&next.cleanup==='confirmed'?'run_completed':next.status==='cancelled'&&ownsTurn&&next.cleanup==='confirmed'?'run_stopped':'run_attention'});
         }
       }
-      if(turn&&task.nativeSession&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)&&!verifiedApprovalPause)task.nativeSession=settleNativeSession(task.nativeSession,next,ownsTurn);
+      if(turn&&!turn.planning&&task.nativeSession&&['completed','failed','cancelled','uncertain','unavailable','blocked'].includes(next.status)&&!verifiedApprovalPause)task.nativeSession=settleNativeSession(task.nativeSession,next,ownsTurn);
       if(turn&&next.inputAccepted===false&&!turn.runId&&['failed','cancelled','unavailable'].includes(next.status)&&next.cleanup==='confirmed'){
         const rejected=task.messages.find(m=>m.id===turn.promptId);
         if(rejected){

@@ -48,6 +48,44 @@ test('Full access is explicit, skips sandbox readiness, and preserves human appr
  assert.doesNotMatch(h.runtime.snapshot().permissionDescription,/sandboxed command mode/);
 });
 
+test('planning narrows an incoming Full access connection to actual native file reads and search',async t=>{
+ let extensionCalls=0;
+ const h=await harness(t,{extensionReview:{allowProject:async()=>{extensionCalls++;return true;},nativeHooks:async()=>{extensionCalls++;return {Stop:[{hooks:[{type:'command',commandWindows:'echo reviewed'}]}]};}}});
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,fullAccess:true});extensionCalls=0;
+ await h.runtime.send({text:'Plan the changes using source evidence.',mode:'plan',runOptions:{reasoning:'high',approval:'never'}});
+ const args=h.calls.at(-1).args,s=h.runtime.snapshot();
+ assert.equal(s.planReadOnlyEnforced,true);assert.equal(s.planning,true);assert.equal(s.fullAccess,true);assert.equal(s.effectiveFullAccess,false);assert.equal(s.effectiveShellEnabled,false);
+ assert.equal(s.permissionProfile,':read-only');assert.match(s.permissionDescription,/read-only/i);assert.doesNotMatch(s.permissionDescription,/not read-only|hooks run outside|Full access:/i);
+ assert.ok(s.permissionArguments.includes('run.toolset=["read_file","search"]'));
+ for(const flag of ['--disable-write','--disable-shell','--disable-web-tools','--no-session-log'])assert.ok(args.includes(flag),flag);
+ for(const flag of ['--disable-sandbox','--trust-workspace','--session-id','--approval-judge'])assert.equal(args.includes(flag),false,flag);
+ assert.ok(args.includes(':read-only'));assert.ok(args.includes('hooks={}'));assert.ok(args.includes('managed_hooks_path=null'));assert.ok(args.includes('run.toolset=["read_file","search"]'));
+ assert.equal(extensionCalls,0);assert.ok(h.calls.some(call=>call.args[0]==='sandbox'));
+ assert.match(args.at(-1),/only.*read_file.*search/i);assert.doesNotMatch(args.at(-1),/web_search is enabled|Use only Muse's managed powershell/);
+ h.model().stdout.emit('data',Buffer.from(jsonl(records())));h.model().finish();await tick();
+ await h.runtime.send({text:'Implement the approved change.'});
+ const ordinary=h.calls.at(-1).args,after=h.runtime.snapshot();
+ assert.equal(after.planReadOnlyEnforced,false);assert.equal(after.planning,false);assert.equal(after.effectiveFullAccess,true);assert.equal(after.effectiveShellEnabled,true);
+ assert.equal(after.permissionProfile,':ask-me');assert.ok(ordinary.includes('--disable-sandbox'));assert.ok(!ordinary.includes('--disable-write'));assert.ok(extensionCalls>0);
+});
+
+test('planning never resumes or exports a retained write-capable session',async t=>{
+ const h=await harness(t,{durableSessions:true});await h.connect();
+ await h.runtime.send({text:'Plan safely.',mode:'plan',sessionId:'retained-write-session',resumeSession:true});
+ const args=h.calls.at(-1).args;
+ assert.ok(args.includes('--no-session-log'));assert.equal(args.includes('--session-id'),false);assert.equal(h.calls.some(call=>call.args[0]==='export'),false);
+ assert.equal(h.runtime.snapshot().planReadOnlyEnforced,true);
+ await h.runtime.disconnect();assert.equal(h.runtime.snapshot().planReadOnlyEnforced,false);assert.equal(h.runtime.snapshot().planning,false);
+});
+
+test('reviewed extension configuration still blocks planning before model dispatch',async t=>{
+ const h=await harness(t,{verifyConfiguration:async()=>({})});await h.connect();
+ const config=join(h.profile,'.config','muse');await mkdir(config,{recursive:true});
+ await writeFile(join(config,'settings.json'),JSON.stringify({mcpServers:{reviewed:{type:'stdio',command:'node',args:['reviewed.mjs']}}}));
+ await assert.rejects(h.runtime.send({text:'Plan without side effects.',mode:'plan'}),error=>error.inputAdmission==='not-sent'&&/MCP|review|configuration/i.test(error.message));
+ assert.equal(h.calls.filter(call=>call.args.includes('meta')).length,0);assert.equal(h.runtime.snapshot().planReadOnlyEnforced,false);assert.equal(h.runtime.snapshot().status,'blocked');
+});
+
 test('disconnect and default reconnect do not retain Full access',async t=>{
  const h=await harness(t);
  await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,fullAccess:true});
@@ -72,8 +110,23 @@ test('reasoning and approval selections reach each native run without disabling 
   assert.equal(argv[argv.indexOf('--reasoning-effort')+1],'xhigh');
   for(const arg of args)assert(argv.includes(arg));
   for(const arg of ['--disable-sandbox','--yolo','--trust-workspace','--disable-approval','--enable-shell-tool'])assert(!argv.includes(arg));
-  assert(argv.includes('--disable-web-tools'));assert(argv.includes('hooks={}'));
+  assert.equal(argv.includes('--disable-web-tools'),false);
+  assert.ok(argv.includes('tools.web_fetch.enabled=false'));
+  assert(argv.includes('hooks={}'));
  }
+});
+
+test('sandboxed chats inside the Windows profile retain native search when shell execution is disabled',async t=>{
+ const h=await harness(t);await h.runtime.connect({binary:h.binary,workspaceRoot:h.profile});
+ assert.equal(h.runtime.snapshot().shellEnabled,false);
+ assert.equal(h.runtime.snapshot().webSearchEnabled,true);
+ assert.equal(h.runtime.snapshot().webFetchEnabled,false);
+ await h.runtime.send({text:'Research current news and cite sources.'});
+ const args=h.calls.at(-1).args;
+ assert.ok(args.includes('--disable-shell'));assert.equal(args.includes('--disable-web-tools'),false);
+ assert.ok(args.includes('tools.web_fetch.enabled=false'));
+ assert.equal(args.includes('--disable-sandbox'),false);assert.ok(args.includes(':ask-me'));
+ assert.match(args.at(-1),/web_search/);assert.match(args.at(-1),/source links/i);
 });
 
 test('reviewed project hooks reach only model runs, with native sandbox and global-hook exclusion retained',async t=>{
@@ -275,7 +328,7 @@ test('profile workspaces retain file tools and explain shell unavailability',asy
  await h.runtime.connect({binary:h.binary,workspaceRoot:workspace});let state=h.runtime.snapshot();
  assert.equal(state.shellEnabled,false);assert.match(state.shellUnavailableReason,/profile|Windows/i);
  await h.runtime.send({text:'Edit project files'});const args=h.calls.at(-1).args;
- assert.ok(args.includes('--disable-shell'));assert.equal(args.at(-1),'Edit project files');
+ assert.ok(args.includes('--disable-shell'));assert.ok(args.at(-1).endsWith('Edit project files'));
  assert.equal(h.runtime.snapshot().permissionVerified,true);
 });
 
@@ -358,10 +411,10 @@ test('explicit budget reaches native step limit and runtime deadline metadata',a
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Investigate',runOptions:{reasoning:'high',approval:'ask',budget:'extended'}});
  const args=h.calls.findLast(c=>c.args.includes('meta')).args;assert.equal(args[args.indexOf('--max-model-steps')+1],'32');const state=h.runtime.snapshot();assert.equal(state.runLimits.steps,32);assert.equal(state.runLimits.wallTimeMs,900000);assert.equal(state.runLimits.tokenBudget,null);
 });
-test('model selection revalidates efforts, forwards exact model and retains sandbox and disabled web',async t=>{
+test('model selection revalidates efforts, forwards exact model and retains sandbox with native search',async t=>{
  let calls=0;const catalog={source:'providerCatalog',models:[{id:'muse-spark-test',efforts:['low','high'],isDefault:true}]};const h=await harness(t,{loadModels:async()=>{calls++;return catalog;}});await h.connect();await h.runtime.refreshModels();
  await assert.rejects(h.runtime.send({text:'No',runOptions:{model:'muse-spark-test',reasoning:'ultra',approval:'ask'}}),/reasoning/);assert.equal(h.calls.some(c=>c.args.includes('meta')),false);
- await h.runtime.send({text:'Test',runOptions:{model:'muse-spark-test',reasoning:'low',approval:'ask'}});const args=h.calls.at(-1).args;assert.equal(args[args.indexOf('--model')+1],'muse-spark-test');assert.equal(args.includes('--disable-web-tools'),true);assert.equal(args.includes('--disable-sandbox'),false);assert.ok(args.includes('hooks={}'));assert.equal(calls,3);
+ await h.runtime.send({text:'Test',runOptions:{model:'muse-spark-test',reasoning:'low',approval:'ask'}});const args=h.calls.at(-1).args;assert.equal(args[args.indexOf('--model')+1],'muse-spark-test');assert.equal(args.includes('--disable-web-tools'),false);assert.ok(args.includes('tools.web_fetch.enabled=false'));assert.equal(args.includes('--disable-sandbox'),false);assert.ok(args.includes('hooks={}'));assert.equal(calls,3);
 });
 test('disconnect during catalog lookup cannot start a later model request',async t=>{
  let release;const h=await harness(t,{loadModels:()=>new Promise(resolve=>{release=resolve;})});await h.connect();const pending=h.runtime.send({text:'Test',runOptions:{model:'muse-spark-test',reasoning:'low',approval:'ask'}});const failed=assert.rejects(pending,/interrupted|disconnected/i);const close=h.runtime.disconnect();release({source:'providerCatalog',models:[]});await failed;await close;assert.equal(h.calls.some(c=>c.args.includes('meta')),false);

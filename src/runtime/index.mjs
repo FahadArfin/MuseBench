@@ -9,6 +9,7 @@ import {childWorking} from '../shared/child-actions.mjs';
 import {createChildTracker} from './children.mjs';
 import {projectChildRead} from './child-inspection.mjs';
 import {projectMcpInventory} from './mcp-inventory.mjs';
+import {createPublicWebMcpConfig} from './public-web-mcp.mjs';
 import {createCompactionTracker} from './compaction.mjs';
 import {checkConfiguration} from './configuration-review.mjs';
 import {validateRunOptions} from '../shared/run-options.mjs';
@@ -142,11 +143,11 @@ function displayPending(value,revision) {
 
 /** One process/session owner. Startup and model submission are separate explicit
  * actions. Injection replaces the external process boundary for contract tests. */
-export function createRuntime({credentials,environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,workspaceMcp,discoveryMcp,extensionReview,verifyConfiguration=checkConfiguration,timeoutMs=10000}={}) {
+export function createRuntime({credentials,environment=process.env,platform=process.platform,loadSdk=loadInstalledSdk,probeVersion=probeInstalledVersion,workspaceMcp,discoveryMcp,publicWebMcp=createPublicWebMcpConfig,extensionReview,verifyConfiguration=checkConfiguration,timeoutMs=10000}={}) {
  if(!Number.isInteger(timeoutMs)||timeoutMs<1||timeoutMs>60000)throw Error('Invalid runtime timeout.');
  const candidates=discoverMuseBinaries({environment,platform});
  const childEnvironment=curateEnvironment(environment);let credentialContext=null;
- let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false};
+ let state={transport:'msp',status:'unavailable',reason:candidates.length?'Select Connect to verify your trusted official Muse executable.':'Install Muse from the official setup page, then select its native executable to connect.',binary:candidates[0]??null,sdkVersion:TARGET.sdkVersion,sessionId:null,liveVerified:false,messages:[],pending:null,setupUrl:SETUP_URL,permissionVerified:false,permissionProfile:null,planReadOnlyEnforced:false,publicWebEnabled:false,webSearchEnabled:false,webFetchEnabled:false};
  const forkObservers=new Set();
  let owner=null,adapter=null,unsubscribe=null,epoch=0,connecting=false,sending=false,forkPending=false,steering=false,deciding=false,closing=null,blockedReason=null,pending=null,pendingRevision=0,workspace=null;
  let projectMcpRevision=null,executionRevision=null;
@@ -187,7 +188,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   if(s.rootTurnId&&s.rootTurnId!==workspaceActivityTurn){workspaceActivity.reset();workspaceActivityTurn=s.rootTurnId;}
   if(['completed','failed','cancelled','unavailable','uncertain','closed'].includes(s.status))workspaceActivity.finish(s.status);
   const terminalUnavailable=['unavailable','uncertain','closed'].includes(s.status);
-  if(terminalUnavailable){childReads.clear();state={...state,childInspections:[]};clearPending();blockedReason=null;interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Connection lost before compaction was confirmed.');syncCompaction();}
+  if(terminalUnavailable){childReads.clear();state={...state,childInspections:[],publicWebEnabled:false,webSearchEnabled:false};clearPending();blockedReason=null;interruptChildCommands();clearTimeout(compactionTimer);compaction.interrupt('Connection lost before compaction was confirmed.');syncCompaction();}
   if(s.pending&&!pending){putPending({kind:s.pending.approvalId?'approval':'input',...s.pending});}
   const terminal=['completed','failed','cancelled'].includes(s.status)?`${s.turnId}:${s.status}`:null;
   if(terminal&&terminal!==lastTerminal){for(const [key,target] of childWork){const i=children.snapshot().items.find(i=>i.itemId===target.itemId);if(childWorkSettled(i,target,true))childWork.delete(key);}lastTerminal=terminal;awaitingChildReport=children.snapshot().items.some(childWorking)||childWork.size>0;}
@@ -213,7 +214,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('disconnected');adapter=null;
   closing=Promise.resolve().then(release);
   childReads.clear();
-  update({status:'unavailable',reason,fullAccess:false,sessionSeeded:false,sessionId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:'pending',childInspections:[],modelCatalog:undefined});
+  update({status:'unavailable',reason,fullAccess:false,sessionSeeded:false,sessionId:null,pending:null,permissionVerified:false,permissionProfile:null,publicWebEnabled:false,webSearchEnabled:false,cleanup:'pending',childInspections:[],modelCatalog:undefined});
   const cleanup=await closing;closing=null;
   if(token===epoch)update({cleanup,childrenBusy:cleanup==='unconfirmed',...(cleanup==='unconfirmed'?{reason:'Muse shutdown could not be confirmed. Check the native process before reconnecting.'}:{})});
   return snapshot();
@@ -224,7 +225,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   unsubscribe?.();unsubscribe=null;adapter?.disconnect('permissions-unverified');adapter=null;
   closing=Promise.resolve().then(release);
   childReads.clear();
-  update({status:'blocked',reason:permissionReason,permissionVerified:false,sessionId:null,pending:null,cleanup:'pending',childInspections:[]});
+  update({status:'blocked',reason:permissionReason,permissionVerified:false,sessionId:null,pending:null,publicWebEnabled:false,webSearchEnabled:false,cleanup:'pending',childInspections:[]});
   const cleanup=await closing;closing=null;
   if(token===epoch)update({cleanup,...(cleanup==='unconfirmed'?{reason:permissionReason+' Host shutdown could not be confirmed; check the native process before reconnecting.'}:{})});
   return snapshot();
@@ -304,7 +305,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   const preserveReceipts=sessionId&&state.nativeSessionId===sessionId;
   workspaceActivity.reset();workspaceActivityTurn=null;
   const token=++epoch;connecting=true;blockedReason=null;clearPending();restoreAwaiting.clear();openingEvents=[];nativeCatalog=null;deferredInputs.clear();if(!preserveReceipts){settledInputs.clear();settledApprovals.clear();inputResponses.clear();approvalAttempts.clear();uncertainChildren.clear();update({inputResponse:null,inputResponses:[],childReceipts:[],steering:null});}childReads.clear();update({childInspections:[]});compaction.reset();children.reset();awaitingChildReport=false;lastTerminal=null;childCommands.clear();childWork.clear();update({children:children.snapshot(),childrenBusy:false,childWorkPending:0});syncCompaction();
-  update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,workspaceTools,workspaceToolset:workspaceTools?toolset:undefined,toolDiscovery:discovery?discoveryIdentity({sources:discovery.sources}):undefined,activity:workspaceActivity.snapshot(),sessionSeeded:false,sessionId:null,messages:[],restoredMessages:[],restoration:null,modelCatalog:undefined,modelId:null,pending:null,permissionVerified:false,permissionProfile:null,cleanup:undefined});
+  update({status:'connecting',reason:'Checking the selected Muse installation.',binary,fullAccess,workspaceTools,workspaceToolset:workspaceTools?toolset:undefined,toolDiscovery:discovery?discoveryIdentity({sources:discovery.sources}):undefined,activity:workspaceActivity.snapshot(),sessionSeeded:false,sessionId:null,messages:[],restoredMessages:[],restoration:null,modelCatalog:undefined,modelId:null,pending:null,permissionVerified:false,permissionProfile:null,publicWebEnabled:false,webSearchEnabled:false,cleanup:undefined});
   let openedSession;
   try{
    binary=await realpath(binary);workspace=await realpath(workspaceRoot);assertCurrent(token);
@@ -318,21 +319,24 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    const configuration=await verifyConfiguration({environment:credentialContext?.environment??childEnvironment,platform,workspaceRoot:workspace,extensionReview});assertCurrent(token);projectMcpRevision=configuration?.projectMcpRevision??null;executionRevision=configuration?.executionRevision??null;
    const trustProject=await extensionReview?.allowProject(workspace,{environment:credentialContext?.environment??childEnvironment,platform})===true;assertCurrent(token);
    const hooks=await extensionReview?.nativeHooks(workspace)??{};assertCurrent(token);
-   const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),...(trustProject?['--trust-workspace']:[]),'-c','hooks='+JSON.stringify(hooks),'-c','managed_hooks_path=null'],cwd:workspace,env:{...(credentialContext?.environment??childEnvironment)},shutdownTimeoutMs:timeoutMs});
+   const handshake=sdk.spawnMspConnection({command:binary,args:['serve',...(fullAccess?['--disable-sandbox']:[]),...(trustProject?['--trust-workspace']:[]),'-c','hooks='+JSON.stringify(hooks),'-c','managed_hooks_path=null','-c','tools.web_fetch.enabled=false'],cwd:workspace,env:{...(credentialContext?.environment??childEnvironment)},shutdownTimeoutMs:timeoutMs});
    owner=handshake;
-   const host=await bounded(handshake.initialize({clientInfo:{name:'musebench',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:true,...(workspaceTools||discovery?{requestedCapabilities:['sessionMcp']}:{})}}),timeoutMs);assertCurrent(token);
+   const host=await bounded(handshake.initialize({clientInfo:{name:'musebench',version:'0.1.0'},capabilities:{experimentalApi:true,userInputDialogs:true,requestedCapabilities:['sessionMcp']}}),timeoutMs);assertCurrent(token);
    owner=host;
    const gate=compatibility({sdkVersion,initializeResult:host.initializeResult,fullAccess});
    if(!gate.available)throw Error(gate.reason==='sandbox-unverified'?sandboxFailureReason(host.initializeResult,platform):`Muse compatibility check failed: ${gate.reason}.`);
    const raw=host.connection;
    if(!raw||!['request','command','mintCommandId','onNotification','onServerRequest','onProtocolError'].every(name=>typeof raw[name]==='function'))throw Error('The Muse SDK connection is incomplete.');
-   let sessionConfig,openingCommandId;
+   if(!host.initializeResult.grantedCapabilities?.includes('sessionMcp'))throw Error('Native host did not grant the sessionMcp capability required for public webpage reading.');
+   const webServer=await publicWebMcp({env:childEnvironment});assertCurrent(token);
+   if(typeof webServer?.command!=='string'||!isAbsolute(webServer.command)||!Array.isArray(webServer.args)||webServer.args.some(arg=>typeof arg!=='string')||JSON.stringify(webServer).length>32768)throw Error('Invalid trusted public web MCP configuration.');
+   let sessionConfig={mcpServers:{musebench_web:{...structuredClone(webServer),transport:'stdio',framing:'lineDelimitedJson',mode:'required'}}},openingCommandId;
    if(discovery){
     if(!host.initializeResult.grantedCapabilities?.includes('sessionMcp'))throw Error('Native host did not grant the sessionMcp capability.');
     const lease=await discoveryMcp(workspace,discovery,{owner:{taskId:discoveryTaskId,root:workspace,epoch:token},isCurrent:()=>token===epoch&&!closing,sessionId});if(token!==epoch){await lease?.close();assertCurrent(token);}discoveryLease=lease;assertCurrent(token);
     const server=discoveryLease?.config;
     if(server?.transport!=='stdio'||server.mode!=='required'||typeof server.command!=='string'||!Array.isArray(server.args)||typeof discoveryLease.verify!=='function'||typeof discoveryLease.close!=='function')throw Error('Invalid trusted on-demand MCP configuration.');
-    sessionConfig={mcpServers:{musebench_discovery:structuredClone(server)}};
+    sessionConfig={mcpServers:{...sessionConfig.mcpServers,musebench_discovery:structuredClone(server)}};
    }
    if(workspaceTools){
     if(!host.initializeResult.grantedCapabilities?.includes('sessionMcp'))throw Error('Native host did not grant the sessionMcp capability.');
@@ -395,14 +399,14 @@ export function createRuntime({credentials,environment=process.env,platform=proc
    for(const item of adapter.snapshot().restoredChildren??[])children.observe(item);
    for(const item of adapter.snapshot().restoredCompactions??[])compaction.observe(item,adapter.snapshot().sessionId,'restored');syncCompaction();
    connecting=false;
-   update({forkSupported:host.initializeResult.sessionDurability===undefined||host.initializeResult.sessionDurability==='durable',questionsSupported:true,steeringSupported:true,compactionSupported:true,childControlsSupported:true,imagesSupported:true,modelsSupported:true,hooksSupported:true,durableSessions:host.initializeResult.sessionDurability===undefined||host.initializeResult.sessionDurability==='durable',modelId:openedSession?.modelId??null,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Planning instructions are not a read-only boundary.'});
+   update({forkSupported:host.initializeResult.sessionDurability===undefined||host.initializeResult.sessionDurability==='durable',questionsSupported:true,steeringSupported:true,compactionSupported:true,childControlsSupported:true,imagesSupported:true,modelsSupported:true,hooksSupported:true,publicWebEnabled:true,durableSessions:host.initializeResult.sessionDurability===undefined||host.initializeResult.sessionDurability==='durable',modelId:openedSession?.modelId??null,permissionVerified:true,permissionProfile:':ask-me',permissionDescription:fullAccess?'Interactive Full access: shell filesystem/network sandbox disabled. Ask me human approval remains separate.':'Ask me: workspace and temporary-file writes in the OS sandbox; human review of actions that require approval. Read-only planning requires the exec runtime.'});
    const held=openingEvents;openingEvents=[];for(const entry of held){assertCurrent(token);if(entry.kind==='request')routeRequest(entry.frame);else routeNotification(entry.frame);}assertCurrent(token);syncChildren();syncAdapter(adapter.snapshot());assertCurrent(token);
    return snapshot();
   }catch(error){
    if(token===epoch){
     unsubscribe?.();unsubscribe=null;adapter?.disconnect('connection-failed');adapter=null;
     closing=Promise.resolve().then(release);update({cleanup:'pending'});const cleanup=await closing;closing=null;
-    if(token===epoch)update({status:'unavailable',reason:error.message,permissionVerified:false,pending:null,cleanup});
+    if(token===epoch)update({status:'unavailable',reason:error.message,permissionVerified:false,publicWebEnabled:false,webSearchEnabled:false,pending:null,cleanup});
    }
    throw error;
   }finally{if(token===epoch)connecting=false;}
@@ -437,7 +441,8 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  async function send({text,mode='chat',runOptions,imagePaths=[]}={}) {
   let dispatched=false;
   try{
-  const options=validateRunOptions(runOptions);
+  if(mode==='plan')throw Error('Interactive Muse cannot enforce a read-only planning turn. Switch to the exec runtime to create a plan without granting write or shell access. No turn was sent.');
+  const options=validateRunOptions(runOptions===undefined?{reasoning:'high',approval:'ask'}:runOptions);
   if(options.approval!=='ask'||options.budget)throw Error('Interactive mode requires Ask for approval and no exec budget preset.');
   if(typeof text!=='string'||!text.trim()||text.length>64000||!['chat','plan'].includes(mode))throw Error('Enter a prepared request up to 64,000 characters and a supported chat or plan mode.');
   if(!owner||!adapter||connecting||sending||forkPending||childCommands.size||state.childrenBusy||compaction.pending()||blockedReason||!state.permissionVerified||!usable.has(state.status))throw Error('Muse is blocked or its permissions have not been verified. Connect a compatible session first.');

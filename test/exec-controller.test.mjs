@@ -90,6 +90,20 @@ test('screenshot follows draft, queue and native image argument without embeddin
  const reopened=await createController({dataDir:h.dataDir});try{assert.equal(reopened.getState().drafts[`${projectId}:${taskId}`].images[0].id,image.id);assert.match(await reopened.readImage({projectId,image}),/^data:image\/png/);}finally{await reopened.close();}
 });
 
+test('independent read-only plans preserve an existing durable conversation and resume it afterwards',async t=>{
+ const h=await harness(t,{durableSessions:true});await h.send();
+ const id=h.controller.getState().task.nativeSession.id,first=h.calls.findLast(c=>c.args.includes('meta'));
+ first.child.stdout.emit('data',Buffer.from(jsonl(frames({sessionId:id,runId:'before-plan'}))));first.child.finish();await tick();
+ const saved=structuredClone(h.controller.getState().task.nativeSession);
+ let state=await h.controller.dispatch({type:'sendMessage',text:'Only plan a possible change.',mode:'plan'});
+ assert.equal(state.error,null);assert.deepEqual(state.task.nativeSession,saved);
+ const plan=h.calls.findLast(c=>c.args.includes('meta'));assert.ok(plan.args.includes('--no-session-log'));assert.ok(!plan.args.includes('--session-id'));assert.ok(!plan.args.some(x=>x.startsWith('mcp_servers.')));
+ plan.child.stdout.emit('data',Buffer.from(jsonl(frames({sessionId:'independent-read-only-plan',runId:'plan-run',text:'Proposed plan.'}))));plan.child.finish();await tick();
+ state=h.controller.getState();assert.deepEqual(state.task.nativeSession,saved);assert.ok(state.task.messages.some(m=>m.text==='Proposed plan.'));
+ state=await h.controller.dispatch({type:'sendMessage',text:'Continue the original chat.'});assert.equal(state.error,null);
+ const next=h.calls.findLast(c=>c.args.includes('meta'));assert.equal(next.args[next.args.indexOf('--session-id')+1],id);assert.ok(!next.args.includes('--disable-write'));
+});
+
 test('durable Code chat reuses its native session without replaying history and requires recovery after stop',async t=>{
  const h=await harness(t,{durableSessions:true});let state=await h.controller.dispatch({type:'sendMessage',text:'Remember the first request'});assert.equal(state.error,null);
  const sessionId=state.task.nativeSession.id,call=h.calls.findLast(c=>c.args.includes('meta'));
