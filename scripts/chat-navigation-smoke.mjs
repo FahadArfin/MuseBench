@@ -35,10 +35,13 @@ try{
  await page.reload();
  await page.getByRole('button',{name:'Collapse Project 0',exact:true}).waitFor();
  assert.equal(await page.locator('.project-toggle[aria-expanded="true"]').count(),1,'Reload must restore only the projects the user left expanded');
- await page.getByRole('button',{name:'Expand Project 40',exact:true}).click();
+ const emptyFolder=page.getByRole('button',{name:'Project 40 has no chats',exact:true});
+ assert.equal(await emptyFolder.isDisabled(),true);assert.equal(await page.locator('#project-chats-p40').count(),0);
  assert.equal(await page.getByText('No chats yet',{exact:true}).count(),0);
- await page.getByRole('button',{name:'Collapse Project 40',exact:true}).click();
- pass('Projects start collapsed, remember individual choices after reload, and empty projects have no placeholder');
+ await page.evaluate(()=>{const key='musebench.code.expanded-projects.v1';localStorage.setItem(key,JSON.stringify([...JSON.parse(localStorage.getItem(key)??'[]'),'p40']));});
+ await page.reload();await page.getByRole('button',{name:'Collapse Project 0',exact:true}).waitFor();
+ assert.equal(await emptyFolder.isDisabled(),true);assert.equal(await emptyFolder.getAttribute('aria-expanded'),'false');assert.equal(await page.locator('#project-chats-p40').count(),0);
+ pass('Projects remember expansion after reload; empty projects stay compact even with a saved expanded preference');
  const first=page.getByRole('button',{name:'Chat 0000',exact:true});await first.waitFor();await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  await page.evaluate(()=>{window.navigationFixture.titleReads=0;window.navigationFixture.durations=[];});
  await page.getByRole('textbox',{name:'Draft',exact:true}).pressSequentially('abcdefghij');
