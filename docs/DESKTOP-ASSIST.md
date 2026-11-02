@@ -45,3 +45,7 @@ inspection, shared UI and the real Windows/Electron/MCP round trip in isolated
 profiles. `node scripts/desktop-native-smoke.mjs --manual-focus` additionally
 checks native input in a disposable fixture after the user focuses it. Neither
 check uses a paid model request or changes the installed profile.
+
+## Hosted CI sessions
+
+The native driver refuses elevated, locked and non-interactive sessions. GitHub-hosted Windows runners can fall into this category. In that environment the read-only native smoke asserts that all ten desktop operations return the specific session refusal, with no desktop data or uncertain input outcome. It explicitly reports no successful UI Automation/screenshot/input coverage. The same smoke still runs the real isolated UIA, target screenshot and identity/protected-control checks on an eligible local session; unexpected local refusals fail. Host/renderer behavior and native lifecycle/key guard tests remain required in CI. The product guard is unchanged.

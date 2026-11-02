@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import {execFileSync,spawn} from 'node:child_process';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,mkdirSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {setTimeout as wait} from 'node:timers/promises';
 import {createDesktopHelper} from '../electron/desktop-helper.mjs';
+import {verifySessionDenial} from './desktop-session-denial.mjs';
 
 if(process.platform!=='win32')throw Error('Native desktop smoke requires an active Windows desktop.');
 await import('./build-windows-desktop.mjs');
@@ -20,7 +21,14 @@ async function fixture(){
  assert.match(child.output,/ready/,'isolated native fixture opens');return child;
 }
 const check=async input=>{const result=await helper.call(input);assert.equal(result.ok,true,JSON.stringify(result));return result;};
-try {
+async function run(){
+ const probe=await helper.call({op:'apps'});
+ if(readonly&&process.env.GITHUB_ACTIONS==='true'&&probe.ok===false&&probe.error?.code==='session_unavailable'){
+  const report=await verifySessionDenial(input=>helper.call(input));
+  mkdirSync('artifacts/desktop-native',{recursive:true});writeFileSync('artifacts/desktop-native/report.json',JSON.stringify(report,null,2));
+  console.log('Desktop native session-denial smoke passed: hosted runner cannot use desktop operations; all ten operations refused before input. UIA, PNG and input success are not covered in this environment.');return;
+ }
+ assert.equal(probe.ok,true,JSON.stringify(probe));
  const child=await fixture();
  const inventory=await check({op:'apps'});const app=inventory.apps.find(app=>app.executable.toLowerCase()===exe.toLowerCase());assert.ok(app,'running fixture executable listed: '+JSON.stringify(await helper.call({op:'windows',executable:exe})));assert.ok(!('title' in app));
  const listing=await check({op:'windows',executable:exe});const window=listing.windows.find(window=>window.pid===child.pid);assert.ok(window);
@@ -48,6 +56,8 @@ try {
  }
  const blocked=await helper.call({op:'windows',executable:process.execPath});assert.equal(blocked.ok,false);
  console.log(readonly?'Desktop native read-only smoke passed: isolated UIA, target PNG, stale identity, protected control, foreign runtime ID and host rejection. Input/focus/drag were not run.':'Desktop native smoke passed: isolated UIA, target PNG, click, Unicode text, drag, scroll dispatch, stale identity, protected control, foreign runtime ID, focus loss and host rejection.');
-}finally{
+ mkdirSync('artifacts/desktop-native',{recursive:true});writeFileSync('artifacts/desktop-native/report.json',JSON.stringify({status:'passed',mode:readonly?'read-only':'input',desktopFunctionalCoverage:true,inputTested:!readonly,checks:['UIA','PNG','stale identity','protected control','foreign element','blocked host']},null,2));
+}
+try{await run();}finally{
  await helper.close();for(const child of children){child.stdin.write('close\n');await Promise.race([new Promise(r=>child.once('close',r)),wait(1500)]);if(child.exitCode===null)child.kill();}rmSync(dir,{recursive:true,force:true});
 }

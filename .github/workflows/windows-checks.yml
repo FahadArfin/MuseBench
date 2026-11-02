@@ -85,6 +85,7 @@ jobs:
             artifacts/sidebar-drag/**/report.json
             artifacts/native-control/report.json
             artifacts/desktop-assist/**/report.json
+            artifacts/desktop-native/report.json
             artifacts/desktop-assist-ui/**/report.json
             artifacts/composer-predictions/**/report.json
             artifacts/native-navigation/report.json
