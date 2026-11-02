@@ -28,3 +28,7 @@
 - Existing Electron queue flow passed all seven checks: `artifacts/queue-composer/desktop-WHPKes/report.json`.
 - Independent review found completion eligibility, per-reply attempt identity, and queued-prompt eligibility issues. Shared gates and regression tests fixed all three; reviewer confirmed fixes and cancellation/cleanup ownership.
 - Batch remains local. No installed app/profile modification, install, restart or publication.
+
+## Release follow-up
+
+CI diagnostics exposed a deferred caret race after Tab acceptance: the animation-frame callback could reset a newer Select All to the end and prevent Delete from clearing the draft. A controlled held-frame regression reproduced the failure. Caret placement now runs in the matching React layout commit, with owner/text/focus checks; it cannot run after the next user selection. Normal and sixfold CPU-throttled keyboard flows pass, including the regression. The fixture records mount/focus/draft diagnostics on failure.

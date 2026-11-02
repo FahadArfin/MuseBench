@@ -39,6 +39,12 @@ export function ChatComposer(p:Props){
  const settingsLocked=locked||!!p.runtime?.pending||!!p.runtime?.childrenBusy||!!p.runtime?.operationBusy||!!p.runtime?.restoringRequests;
  const slash=useSlashPalette({value:p.value,onChange:p.onChange,onCommand:(id,args,prefix)=>{if(id==='voice'){p.onChange(prefix);void voice.toggle();}else p.onCommand(id,args,prefix);},onLoadSkills:p.onLoadSkills,skills:p.skills,skillsStatus:p.skillsStatus,active:p.active&&!locked,context:p.context,options:p.options,plan:p.messageMode==='plan',theme:p.theme,model:p.model});
  const [predictionFocus,setPredictionFocus]=useState(false),[atEnd,setAtEnd]=useState(true),[composing,setComposing]=useState(false),[inputScroll,setInputScroll]=useState(0);
+ const predictionCaret=useRef<{text:string;context:string}|null>(null);
+ useLayoutEffect(()=>{
+  const pending=predictionCaret.current;if(!pending)return;predictionCaret.current=null;
+  const input=p.inputRef.current;
+  if(pending.context===p.context&&pending.text===p.value&&input&&document.activeElement===input&&input.value===pending.text)input.setSelectionRange(pending.text.length,pending.text.length);
+ });
  const prediction=useComposerPrediction(p.predictionTask,!!p.showPredictions,!!p.musePredictions,p.active&&predictionReady(p.predictionTask,p.runtime)&&!p.busy&&!p.running&&!voice.recording&&!p.uploadingImages&&!p.runtime?.pending&&!p.runtime?.restoringRequests&&p.messageMode==='chat'&&!menu&&!skillsOpen&&!slash.open&&!p.images.length&&!p.annotations?.length&&!p.recentContextIncluded);
  const suffix=predictionFocus&&atEnd&&!composing&&!p.value.startsWith('/')?predictionSuffix(prediction.text,p.value):'';
  const trackCaret=(input:HTMLTextAreaElement)=>setAtEnd(input.selectionStart===input.selectionEnd&&input.selectionEnd===input.value.length);
@@ -46,7 +52,7 @@ export function ChatComposer(p:Props){
   if(event.nativeEvent.isComposing||event.nativeEvent.keyCode===229||composing)return false;
   if(event.key==='Escape'&&suffix){event.preventDefault();event.stopPropagation();prediction.dismiss();return true;}
   if(event.key!=='Tab'||event.shiftKey||event.ctrlKey||event.altKey||event.metaKey||!suffix||event.currentTarget.selectionStart!==p.value.length||event.currentTarget.selectionEnd!==p.value.length)return false;
-  event.preventDefault();const accepted=p.value+suffix;p.onChange(accepted);prediction.dismiss();requestAnimationFrame(()=>{const input=p.inputRef.current;if(input&&document.activeElement===input&&input.value===accepted)input.setSelectionRange(accepted.length,accepted.length);});return true;
+  event.preventDefault();const accepted=p.value+suffix;predictionCaret.current={text:accepted,context:p.context};p.onChange(accepted);prediction.dismiss();return true;
  };
  const close=()=>{setMenu(null);opener.current?.focus();};
  const open=(kind:typeof menu,event:React.MouseEvent<HTMLButtonElement>)=>{opener.current=event.currentTarget;setMenu(menu===kind?null:kind);};
