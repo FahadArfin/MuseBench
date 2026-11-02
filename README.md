@@ -10,6 +10,12 @@ change your account. See [browser preview](docs/BROWSER-PREVIEW.md) and the
 
 A local Windows workspace for Muse: code with Muse CLI, keep your personal chats nearby, and create dashboards, animated explainers, reports and presentations in Work.
 
+[Built-in file viewer](docs/FILE-VIEWER.md) previews HTML, Markdown, PDF, Word and PowerPoint beside Code chats, with navigation, source views and draft file comments.
+
+[Muse Desktop Assist](docs/DESKTOP-ASSIST.md) adds on-demand control of approved Windows apps, with app permissions, screenshots and an immediate Stop control.
+
+[Composer predictions](docs/COMPOSER-PREDICTIONS.md) offer faint follow-ups in Muse Code: Tab accepts an editable draft, then Enter sends. Local suggestions are enabled by default; background Muse generation is optional.
+
 MuseBench is an independent application. It is not affiliated with or endorsed by Meta. The supplied Patchlight handoff and source archive are preserved; their extracted contents live in `reference/patchlight`.
 
 ## Open the app

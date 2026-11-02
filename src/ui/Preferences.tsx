@@ -5,6 +5,7 @@ import {Link2, Plug, Puzzle, Bell, BookOpen, Brain, Check, Code2, CreditCard, Da
 import {Modal} from './WorkspacePanels';
 import {SettingsServicePanel} from './SettingsServicePanel';
 import {BackgroundSettings} from './BackgroundSettings';
+import {DesktopAssistSettings} from './DesktopAssist';
 import {normalizePreferences, readPreferences, resolveTheme, writePreferences, type Preferences} from './preferences.mjs';
 import {findSettings, type SettingsCategory} from './settings-catalog.mjs';
 import {REASONING_LEVELS} from '../shared/run-options.mjs';
@@ -53,7 +54,7 @@ export function SettingRow({title, description, children}: {title: string; descr
 function Toggle({label, value, change}: {label: string; value: boolean; change: (value:boolean) => void}) {
   return <button type="button" role="switch" aria-label={label} aria-checked={value} className={`preference-toggle ${value ? 'on' : ''}`} onClick={() => change(!value)}><span>{value && <Check size={10}/>}</span></button>;
 }
-const icons = {customize:BookOpen,connectors:Link2,plugins:Puzzle,mcp:Plug,hooks:Terminal,connections:Link2,general:Settings2,notifications:Bell,voice:Mic,shortcuts:Keyboard,code:Code2,memory:Brain,skills:BookOpen,connection:Terminal,mobile:Monitor,control:Terminal,account:User,billing:CreditCard,data:Database,updates:Info,about:Info};
+const icons = {customize:BookOpen,connectors:Link2,plugins:Puzzle,mcp:Plug,hooks:Terminal,connections:Link2,general:Settings2,notifications:Bell,voice:Mic,shortcuts:Keyboard,code:Code2,memory:Brain,skills:BookOpen,connection:Terminal,mobile:Monitor,control:Terminal,desktop:Monitor,account:User,billing:CreditCard,data:Database,updates:Info,about:Info};
 const effortNames:Record<string,string>={none:'None',minimal:'Minimal',low:'Low',medium:'Medium',high:'High',xhigh:'Extra high',max:'Max',ultra:'Ultra'};
 type Props={initialCategory?:SettingsCategory;customizeRunning:boolean;onCustomizeChanged:()=>void;openAccountSettings:(command:AccountSettingsCommand)=>void;preferences:Preferences;onChange:Dispatch<SetStateAction<Preferences>>;close:()=>void;openConnection:()=>void;state:AppState;busy:boolean;act:(action:Action)=>Promise<AppState|null>;openPersonal:(destination:PersonalDestination)=>void};
 
@@ -98,6 +99,7 @@ export function SettingsDialog({preferences, onChange, close, openConnection, st
         {query&&<p className="settings-search-summary" role="status">{categories.length} matching {categories.length===1?'section':'sections'}</p>}
         {catalogTab&&<CustomizeDialog embedded onTabChange={tab=>{setQuery('');setCategory(tab);}} activeTab={catalogTab} initialTab={catalogTab} running={customizeRunning} onBusyChange={setCustomizeBusy} close={close} onChanged={onCustomizeChanged} onConnection={()=>{if(!customizeBusy)setCategory('connection');}} onMetaApps={()=>{if(!customizeBusy)openAccountSettings({type:'metaSettings',section:'apps'});}} onPersonal={action=>{if(!customizeBusy)openAccountSettings({type:'serviceAction',action});}}/>}
         {active==='connections'&&<SettingsConnections openCustomize={openCustomize} openAccountSettings={openAccountSettings}/>}
+        {active==='desktop'&&<DesktopAssistSettings taskId={state.task?.id}/>}
         {active==='general'&&<>
           <section className="settings-section" aria-labelledby="appearance-heading"><h3 id="appearance-heading">Appearance</h3>
             <SettingRow title="Theme"><div className="theme-segments" role="group" aria-label="Theme">{([{value:'system',label:'System theme',icon:Monitor},{value:'light',label:'Light theme',icon:Sun},{value:'dark',label:'Dark theme',icon:Moon}] as const).map(({value,label,icon:Icon})=><button type="button" key={value} title={label} aria-label={label} aria-pressed={preferences.theme===value} onClick={()=>update('theme',value)}><Icon size={17}/></button>)}</div></SettingRow>
@@ -106,7 +108,7 @@ export function SettingsDialog({preferences, onChange, close, openConnection, st
             <SettingRow title="Transcript width" description="Message and composer width in Muse Code."><select aria-label="Transcript width" value={preferences.transcriptWidth} onChange={e=>update('transcriptWidth',e.target.value as Preferences['transcriptWidth'])}><option value="narrow">Narrow</option><option value="wide">Wide</option></select></SettingRow>
             <SettingRow title="Reduce motion" description="Keep transitions and animations to a minimum."><Toggle label="Reduce motion" value={preferences.reducedMotion} change={value=>update('reducedMotion',value)}/></SettingRow>
           </section>
-          <section className="settings-section"><h3>Composer</h3><SettingRow title="Enter to send" description={preferences.enterToSend?'Enter sends your message. Shift+Enter adds a new line.':'Ctrl+Enter sends your message. Enter adds a new line.'}><Toggle label="Enter to send" value={preferences.enterToSend} change={value=>update('enterToSend',value)}/></SettingRow></section>
+          <section className="settings-section"><h3>Composer</h3><SettingRow title="Preview generated files" description="Open a linked document beside the chat after a new reply, when your prompt is empty."><Toggle label="Preview generated files" value={preferences.autoPreviewFiles} change={value=>update('autoPreviewFiles',value)}/></SettingRow><SettingRow title="Show predictions" description="Faint follow-up suggestions from the current chat. Tab accepts an editable draft; it never sends."><Toggle label="Show predictions" value={preferences.showPredictions} change={value=>update('showPredictions',value)}/></SettingRow><SettingRow title="Predict with Muse" description="Use one background Muse request after a reply for better predictions. Uses normal Muse allowance. Otherwise, suggestions stay local."><Toggle label="Predict with Muse" value={preferences.musePredictions} change={value=>update('musePredictions',value)}/></SettingRow><SettingRow title="Enter to send" description={preferences.enterToSend?'Enter sends your message. Shift+Enter adds a new line.':'Ctrl+Enter sends your message. Enter adds a new line.'}><Toggle label="Enter to send" value={preferences.enterToSend} change={value=>update('enterToSend',value)}/></SettingRow></section>
           <BackgroundSettings/>
           <p className="settings-note">Preferences save automatically on this computer.</p>
         </>}

@@ -945,3 +945,10 @@ test('missing cursors and old connection notifications cannot project workspace 
  listeners[0]({method:'item/completed',params:{sessionId:'session-one',viewCursor:'old',item:replayBatch()}});assert.equal(h.runtime.snapshot().activity.items.length,0,'Old connection cannot project into the replacement');
  h.emit({method:'item/completed',params:{sessionId:'session-one',item:replayBatch()}});assert.equal(h.runtime.snapshot().activity.items.length,0,'Malformed native events cannot project receipts');assert.equal(h.runtime.snapshot().status,'unavailable');
 });
+
+test('interactive desktop MCP uses its connection-owned task and revokes on disconnect',async t=>{
+ let binding,closed=0;const h=await harness(t,{desktopMcp:async(root,options)=>{binding={root,...options};return {config:{command:process.execPath,args:[join(process.cwd(),'src/runtime/desktop-mcp.mjs')],env:{MUSEBENCH_DESKTOP_ENDPOINT:'http://127.0.0.1:23456/call',MUSEBENCH_DESKTOP_TOKEN:'a'.repeat(43)}},close:async()=>{closed++;}};}});
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,browserTaskId:'chat'});assert.equal(binding.taskId,'chat');assert.equal(binding.isCurrent(),false);
+ const server=h.calls.find(c=>c.method==='session/start').params.config.mcpServers.musebench_desktop;assert.equal(server.mode,'required');assert.equal(server.transport,'stdio');assert.equal(server.env.MUSEBENCH_DESKTOP_TOKEN,'a'.repeat(43));assert.equal(server.env.META_API_KEY,undefined);assert.ok(!JSON.stringify(h.runtime.snapshot()).includes('a'.repeat(43)));
+ await h.runtime.send({text:'Inspect the browser.'});assert.equal(binding.isCurrent(),true);await h.runtime.disconnect();assert.equal(binding.isCurrent(),false);assert.equal(closed,1);
+});

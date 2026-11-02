@@ -7,6 +7,9 @@ export const DEFAULT_PREFERENCES = Object.freeze({
   font: 'system',
   reducedMotion: false,
   enterToSend: true,
+  autoPreviewFiles: true,
+  showPredictions: true,
+  musePredictions: false,
   sidebarCollapsed: false,
   transcriptWidth: 'narrow',
   defaultReasoning: 'high',
@@ -22,7 +25,7 @@ export function normalizePreferences(value) {
   for (const [key, allowed] of Object.entries({theme:['dark','light','system'],textSize:['small','medium','large'],font:['system','mono'],transcriptWidth:['narrow','wide'],defaultReasoning:REASONING_LEVELS,defaultApproval:APPROVAL_MODES})) {
     if (Object.hasOwn(value,key) && allowed.includes(value[key])) preferences[key] = value[key];
   }
-  for (const key of ['reducedMotion','enterToSend','sidebarCollapsed','notifyCompletion','notifyAttention','notificationSound']) {
+  for (const key of ['autoPreviewFiles','showPredictions','musePredictions','reducedMotion','enterToSend','sidebarCollapsed','notifyCompletion','notifyAttention','notificationSound']) {
     if (Object.hasOwn(value,key) && typeof value[key] === 'boolean') preferences[key] = value[key];
   }
   return preferences;

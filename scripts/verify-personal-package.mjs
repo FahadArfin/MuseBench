@@ -49,12 +49,12 @@ for (const family of ['inter', 'jetbrains-mono']) {
 }
 const checked = files.map(file => {
   const source = readFileSync(path.join(root, file));
-  const packaged = asar.extractFile(archive, path.normalize(file));
+  const packaged = file.startsWith('dist/file-viewer/')?readFileSync(path.join(resources,'file-viewer',file.slice('dist/file-viewer/'.length))):asar.extractFile(archive, path.normalize(file));
   assert(source.equals(packaged), `${file} differs in the packaged application`);
   return { file, sha256: sha(source) };
 });
 const nativeHelpers = {};
-for (const helper of process.platform==='win32'?['MuseBenchJob', 'MuseBenchSpeech']:[]) {
+for (const helper of process.platform==='win32'?['MuseBenchJob', 'MuseBenchSpeech', 'MuseBenchDesktop']:[]) {
   for (const suffix of ['.exe', '.build.json']) {
     const name = helper + suffix;
     assert(readFileSync(path.join(root, 'native/bin', name)).equals(readFileSync(path.join(resources, 'native', name))));

@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {createServer} from 'vite';
+import {chromium} from 'playwright';
+import {mkdir,writeFile} from 'node:fs/promises';
+await mkdir('artifacts/file-viewer-preview',{recursive:true});
+const server=await createServer({configFile:'vite.preview.config.mjs',logLevel:'error',server:{port:0,strictPort:false}});let browser,page;const report={checks:[],errors:[],simulation:true};
+try{
+ await server.listen();browser=await chromium.launch();page=await browser.newPage({viewport:{width:1450,height:1000}});page.setDefaultTimeout(15000);page.on('pageerror',error=>report.errors.push(error.message));await page.goto(server.resolvedUrls.local[0]);await page.getByRole('button',{name:'Muse Code',exact:true}).click();await page.getByRole('button',{name:'Toggle session tools',exact:true}).click();const panel=page.getByRole('complementary',{name:'Chat session tools'});await panel.getByRole('button',{name:'Files',exact:true}).click();await panel.getByRole('button',{name:'fixture.pdf',exact:true}).click();const frame=panel.frameLocator('iframe[title^="File preview:"]');await frame.getByText('PDF fixture page 1').waitFor();await panel.getByRole('button',{name:'Next page',exact:true}).click();await frame.getByText('PDF fixture page 2').waitFor();assert.deepEqual(report.errors,[]);report.checks.push('Shared Files UI previews and navigates a real sample PDF through the isolated preview HTTP adapter');report.status='passed';console.log('PASS '+report.checks[0]);await page.screenshot({path:'artifacts/file-viewer-preview/pdf.png'});await page.evaluate(()=>document.documentElement.dataset.theme='light');await page.screenshot({path:'artifacts/file-viewer-preview/pdf-light.png'});
+}catch(error){report.status='failed';report.failure=error.stack;console.error(error);await page?.screenshot({path:'artifacts/file-viewer-preview/failure.png'}).catch(()=>{});process.exitCode=1;}
+finally{await writeFile('artifacts/file-viewer-preview/report.json',JSON.stringify(report,null,2));await browser?.close();await server.close();}

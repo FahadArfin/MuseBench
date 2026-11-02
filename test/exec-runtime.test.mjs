@@ -23,6 +23,11 @@ function records({terminal='completed',text='Done',reason=null,model=true,shellR
 const jsonl=values=>values.map(value=>JSON.stringify(value)).join('\n')+'\n';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('prediction mode has no native tools, MCP, hooks, session retention or elevated access',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Return a JSON follow-up only.',mode:'prediction',runOptions:{reasoning:'minimal',approval:'ask'}});const args=h.model().args??h.calls.at(-1).args;
+ assert.ok(args.includes('run.toolset=[]'));assert.ok(!args.includes('run.toolset=["read_file","search"]'));assert.ok(args.includes('--disable-write'));assert.ok(args.includes('--disable-shell'));assert.ok(args.includes('--disable-web-tools'));assert.ok(args.includes('--no-session-log'));assert.ok(!args.some(arg=>arg.startsWith('mcp_servers.')));assert.equal(args[args.indexOf('--max-model-steps')+1],'1');assert.doesNotMatch(args.at(-1),/Plan the requested work/);
+});
+
 test('exec injects a scoped browser MCP only into ordinary model runs and revokes the lease',async t=>{
  let binding,closed=0;const browserMcp=async(root,options)=>{binding={root,...options};return {config:{command:process.execPath,args:[join(process.cwd(),'src/runtime/browser-mcp.mjs')],env:{MUSEBENCH_BROWSER_ENDPOINT:'http://127.0.0.1:23456/call',MUSEBENCH_BROWSER_TOKEN:'a'.repeat(43)}},close:async()=>{closed++;}};};
  const h=await harness(t,{browserMcp});await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,browserTaskId:'chat'});assert.equal(binding.taskId,'chat');assert.equal(binding.isCurrent(),false);
@@ -430,3 +435,11 @@ test('disconnect during catalog lookup cannot start a later model request',async
 
 test('selected model mismatch fails before accepting a completed run',async t=>{const h=await harness(t,{loadModels:async()=>({models:[{id:'expected-model',efforts:['high']}]})});await h.connect();await h.runtime.send({text:'Test',runOptions:{model:'expected-model',reasoning:'high',approval:'ask'}});h.model().stdout.emit('data',Buffer.from(jsonl(records())));await tick();assert.equal(h.runtime.snapshot().status,'uncertain');assert.match(h.runtime.snapshot().reason,/identity/);});
 test('one-run project trust is included only after matching explicit review',async t=>{let trusted=false;const h=await harness(t,{extensionReview:{allowProject:async()=>trusted}});await h.connect();await h.runtime.send({text:'untrusted'});assert.equal(h.calls.at(-1).args.includes('--trust-workspace'),false);await h.runtime.disconnect();await h.connect();trusted=true;await h.runtime.send({text:'reviewed'});assert.equal(h.calls.at(-1).args.includes('--trust-workspace'),true);assert.ok(h.calls.at(-1).args.includes('hooks={}'));});
+
+test('exec injects a scoped desktop MCP only into ordinary model runs and revokes the lease',async t=>{
+ let binding,closed=0;const desktopMcp=async(root,options)=>{binding={root,...options};return {config:{command:process.execPath,args:[join(process.cwd(),'src/runtime/desktop-mcp.mjs')],env:{MUSEBENCH_DESKTOP_ENDPOINT:'http://127.0.0.1:23456/call',MUSEBENCH_DESKTOP_TOKEN:'a'.repeat(43)}},close:async()=>{closed++;}};};
+ const h=await harness(t,{desktopMcp});await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,browserTaskId:'chat'});assert.equal(binding.taskId,'chat');assert.equal(binding.isCurrent(),false);
+ await h.runtime.send({text:'Inspect my browser.'});const model=h.calls.at(-1);assert.equal(binding.isCurrent(),true);assert.ok(model.args.some(a=>a.startsWith('mcp_servers.musebench_desktop=')));assert.equal(model.options.env.MUSEBENCH_DESKTOP_TOKEN,'a'.repeat(43));assert.ok(h.calls.slice(0,-1).every(c=>!c.options.env.MUSEBENCH_DESKTOP_TOKEN));assert.ok(!JSON.stringify(model.args).includes('a'.repeat(43)));assert.ok(!JSON.stringify(h.runtime.snapshot()).includes('a'.repeat(43)));
+ await h.runtime.disconnect();assert.equal(binding.isCurrent(),false);assert.equal(closed,1);
+ await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,browserTaskId:'chat'});await h.runtime.send({text:'Plan only.',mode:'plan'});assert.ok(!h.calls.at(-1).args.some(a=>a.startsWith('mcp_servers.musebench_desktop=')));assert.equal(binding.isCurrent(),false);
+});

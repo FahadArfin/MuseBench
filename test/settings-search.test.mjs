@@ -17,6 +17,13 @@ test('settings search matches controls and synonyms across groups, and has a rea
  assert.deepEqual(findSettings('nonexistent-feature'),[]);
  assert.equal(new Set(SETTINGS_CATEGORIES.map(x=>x.id)).size,SETTINGS_CATEGORIES.length);
 });
+
+test('Desktop Assist is searchable and separate from internal App control',()=>{
+ assert.equal(SETTINGS_CATEGORIES.find(item=>item.id==='desktop')?.label,'Desktop Assist');
+ for(const query of ['Desktop Assist','Windows apps','revoke','stop'])assert(findSettings(query).some(item=>item.id==='desktop'),query);
+ assert.doesNotThrow(()=>validateNativeCall('navigate',{target:'settings',section:'desktop'}));
+ assert.equal(SETTINGS_CATEGORIES.filter(item=>item.id==='control').length,1);
+});
 test('search finds exact visible control labels and suggested queries',()=>{
  for(const [query,id] of [['Enter to send','general'],['Reduce motion','general'],['Task completions','notifications'],['Needs attention','notifications'],['Your instructions','memory'],['approvals','code'],['Recognition language','voice'],['Export current Code chat','data']])assert(findSettings(query).some(item=>item.id===id),query);
 });

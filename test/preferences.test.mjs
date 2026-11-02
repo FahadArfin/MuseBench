@@ -72,3 +72,5 @@ test('legacy Enter preference upgrades once and later explicit opt-outs survive 
   writePreferences({...upgraded,enterToSend:false},storage);
   assert.equal(readPreferences(storage).enterToSend,false);
 });
+
+test('prediction preferences default to local suggestions and persist explicit Muse opt-in',()=>{const saved=new Map(),storage={getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)};assert.equal(DEFAULT_PREFERENCES.showPredictions,true);assert.equal(DEFAULT_PREFERENCES.musePredictions,false);writePreferences({...DEFAULT_PREFERENCES,showPredictions:false,musePredictions:true},storage);const restored=readPreferences(storage);assert.equal(restored.showPredictions,false);assert.equal(restored.musePredictions,true);assert.equal(normalizePreferences({musePredictions:'yes'}).musePredictions,false);});

@@ -305,6 +305,8 @@ export function createPreviewBridge():MuseBenchBridge {
  let nativeEnabled=false,backgroundEnabled=false;
  const integrationPanels=createPreviewIntegrationPanels(customize,()=>JSON.stringify([state.activeProject?.id,state.activeProject?.root,state.task?.id]),()=>customizeBlocked(state));
  return {
+  fileViewerUrl:'/__file-preview-assets/frame.html',
+  filePreview:async command=>{const response=await fetch('/__file-preview-command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(command)});const result=await response.json();if(!response.ok)throw Error(result.error||'Sample document unavailable.');return result;},
   nativeControl:async command=>{if(command.type==='enable')nativeEnabled=true;if(command.type==='disable')nativeEnabled=false;return{enabled:nativeEnabled,running:nativeEnabled,transport:'streamable-http',scope:'Preview',simulation:true,connectionConfig:null,httpConnectionConfig:null,startupError:null};},
   backgroundEngine:async command=>{if(command.type==='set')backgroundEnabled=command.enabled;return{enabled:backgroundEnabled,running:true,windowOpen:true,simulation:true};},
   mobileDevice:async command=>{if(command.type==='start')mobile={...mobile,running:true,port:43191,addresses:['192.168.1.10']};if(command.type==='stop')mobile={...mobile,running:false,pairing:null,addresses:[]};if(command.type==='pair')mobile={...mobile,pairing:{link:'Preview only — pair from the installed desktop app.',expiresAt:Date.now()+600000}};if(command.type==='revoke')mobile={...mobile,devices:mobile.devices.filter(d=>d.id!==command.id)};return copy(mobile);},

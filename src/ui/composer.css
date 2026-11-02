@@ -1,4 +1,10 @@
 .chat-composer.codex-composer { border-radius: 23px; background: var(--surface-hover); padding: 12px 11px 8px; border-color: color-mix(in srgb,var(--border) 70%,transparent); box-shadow: none; }
+.composer-input { position: relative; min-width: 0; }
+.composer-prediction-layer { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.composer-prediction-text { padding: 0 2px; font-family: inherit; font-size: 13px; font-weight: 400; line-height: 1.6; white-space: pre-wrap; overflow-wrap: break-word; color: color-mix(in srgb,var(--muted) 76%,transparent); }
+.composer-prediction-prefix { color: transparent; }
+.composer-prediction-hint { display: block; padding: 0 2px; color: var(--muted); font-size: 10px; }
+.composer-prediction-hint kbd { border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; }
 .codex-composer textarea { min-height: 52px; padding: 0 2px; font-size: 13px; line-height: 1.6; }
 .codex-composer .composer-toolbar { gap: 5px; margin-top: 5px; min-height: 32px; }
 .composer-control { position: relative; flex-shrink: 0; }

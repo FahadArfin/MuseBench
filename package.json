@@ -27,7 +27,7 @@
     "test:billing-desktop": "node scripts/billing-smoke.mjs --desktop",
     "dev": "node scripts/dev.mjs",
     "start": "node scripts/start.mjs",
-    "build": "node scripts/build-native.mjs && tsc --noEmit && vite build && node scripts/build-native-mcp.mjs",
+    "build": "node scripts/build-native.mjs && tsc --noEmit && vite build && node scripts/build-file-viewer.mjs && node scripts/build-native-mcp.mjs",
     "release:preflight": "npm run build && node scripts/release-preflight.mjs",
     "pretest": "node -e \"require('electron')\" && node scripts/build-native.mjs",
     "test": "node --test --test-concurrency=4 test/*.test.mjs reference/patchlight/adapter/test/*.test.mjs",
@@ -84,16 +84,23 @@
     "test:tool-discovery": "node scripts/discovery-tools-smoke.mjs && node scripts/discovery-tools-smoke.mjs --desktop",
     "test:discovery-approvals": "node scripts/discovery-approval-smoke.mjs && node scripts/discovery-approval-smoke.mjs --desktop",
     "test:workspace-analysis": "node scripts/workspace-analysis-smoke.mjs && node scripts/workspace-analysis-smoke.mjs --desktop",
-    "test:meta-chat-history": "node scripts/meta-chat-history-smoke.mjs"
+    "test:meta-chat-history": "node scripts/meta-chat-history-smoke.mjs",
+    "test:desktop-assist": "node scripts/desktop-native-smoke.mjs --read-only && node scripts/desktop-assist-ui-smoke.mjs && node scripts/desktop-assist-smoke.mjs",
+    "test:composer-predictions": "node scripts/composer-predictions-smoke.mjs",
+    "test:file-viewer": "node scripts/file-viewer-smoke.mjs && node scripts/file-viewer-app-smoke.mjs && node scripts/file-viewer-preview-smoke.mjs",
+    "test:file-renderers": "node scripts/file-renderers-smoke.mjs"
   },
   "dependencies": {
+    "@aiden0z/pptx-renderer": "1.4.0",
     "@fontsource-variable/inter": "5.3.0",
     "@fontsource-variable/jetbrains-mono": "5.3.0",
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@muse-code/sdk": "1.4.14",
+    "docx-preview": "0.4.1",
     "electron-updater": "6.8.11",
     "lucide-react": "^0.468.0",
+    "pdfjs-dist": "6.5.438",
     "qrcode": "1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -148,7 +155,8 @@
       "reference/patchlight/adapter/evidence/LICENSE",
       "templates/**/*",
       "package.json",
-      "src/shared/*.mjs"
+      "src/shared/*.mjs",
+      "!dist/file-viewer/**/*"
     ],
     "win": {
       "target": "dir",
@@ -170,6 +178,14 @@
         {
           "from": "native/bin/MuseBenchSpeech.build.json",
           "to": "native/MuseBenchSpeech.build.json"
+        },
+        {
+          "from": "native/bin/MuseBenchDesktop.exe",
+          "to": "native/MuseBenchDesktop.exe"
+        },
+        {
+          "from": "native/bin/MuseBenchDesktop.build.json",
+          "to": "native/MuseBenchDesktop.build.json"
         }
       ]
     },
@@ -212,6 +228,12 @@
       "hardenedRuntime": false,
       "gatekeeperAssess": false,
       "notarize": false
-    }
+    },
+    "extraResources": [
+      {
+        "from": "dist/file-viewer",
+        "to": "file-viewer"
+      }
+    ]
   }
 }

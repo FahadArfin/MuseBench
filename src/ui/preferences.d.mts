@@ -4,6 +4,9 @@ export interface Preferences {
   font: 'system' | 'mono';
   reducedMotion: boolean;
   enterToSend: boolean;
+  autoPreviewFiles: boolean;
+  showPredictions: boolean;
+  musePredictions: boolean;
   sidebarCollapsed: boolean;
   transcriptWidth: 'narrow' | 'wide';
   defaultReasoning: import('../shared/types').RunOptions['reasoning'];

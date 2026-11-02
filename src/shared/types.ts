@@ -121,6 +121,8 @@ export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<Chat
 }
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;mobileDevice(command:import('./mobile-types').MobileDeviceCommand):Promise<import('./mobile-types').MobileDeviceState>;}
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;
+ desktopAssist?(command:import('./desktop-assist-types').DesktopAssistCommand):Promise<import('./desktop-assist-types').DesktopAssistState>;
+ onDesktopAssist?(listener:(state:import('./desktop-assist-types').DesktopAssistState)=>void):()=>void;
  nativeControl(command:{type:'status'|'enable'|'disable';transport?:'http'|'stdio'}):Promise<import('./native-control-types').NativeControlState>;
  backgroundEngine(command:{type:'status'}|{type:'set';enabled:boolean}):Promise<{enabled:boolean;running:boolean;windowOpen:boolean;trayAvailable?:boolean;simulation?:boolean}>;
  onNativeRequest?(callback:(request:import('./native-control-types').NativeRequest)=>Promise<unknown>):()=>void;
@@ -233,4 +235,12 @@ export interface TrayTicket {id:string;command:TrayCommand;}
 export interface MuseBenchBridge {
  onTrayCommand?(listener:(ticket:TrayTicket)=>Promise<boolean>):()=>void;
  onBackgroundEngine?(listener:(state:{enabled:boolean;running:boolean;windowOpen:boolean;trayAvailable?:boolean})=>void):()=>void;
+}
+
+export interface MuseBenchBridge {composerPrediction?(command:import('./prediction-types').PredictionCommand):Promise<import('./prediction-types').PredictionResult>;}
+
+export interface MuseBenchBridge {
+ fileViewerUrl?:string;
+ filePreview?(command:import('./file-preview-types').FilePreviewCommand):Promise<import('./file-preview-types').FilePreviewResult>;
+ savePreviewFile?(command:{taskId:string;token:string}):Promise<{saved?:boolean;cancelled?:boolean}>;
 }

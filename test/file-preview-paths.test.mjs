@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {localPreviewPath,previewKind,linkedPreviewFiles} from '../src/shared/file-preview.mjs';
+test('only supported local project references become preview links',()=>{assert.equal(previewKind('reports/Report.DOCX'),'docx');assert.equal(localPreviewPath('reports/report.pdf','C:\\work'), 'reports/report.pdf');assert.equal(localPreviewPath('file:///C:/work/report.pdf','C:\\work'),'report.pdf');for(const file of ['../secret.pdf','https://evil/a.pdf','javascript:alert(1)','file:///C:/elsewhere/a.pdf','a.exe','%2e%2e/a.md'])assert.equal(localPreviewPath(file,'C:\\work'),null);});
+test('output detection ignores inline prose, unsafe links and duplicate references',()=>{assert.deepEqual(linkedPreviewFiles('Saved [deck](out/demo.pptx), [again](out/demo.pptx) and [web](https://example.com/x.pdf).','C:/work'),['out/demo.pptx']);});

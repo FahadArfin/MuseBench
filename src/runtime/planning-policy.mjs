@@ -60,3 +60,11 @@ export function applyPlanningArgs(args){
  }
  return [...prefix,...policyArgs,...suffix];
 }
+
+/** Predictions receive conversation text only. No native tools or retained
+ * session can be inherited from the ordinary workspace runtime. */
+export function applyPredictionArgs(args){
+ const bounded=applyPlanningArgs(args).map(value=>value==='run.toolset=["read_file","search"]'?'run.toolset=[]':value);
+ const index=bounded.indexOf('--max-model-steps');if(index>=0)bounded[index+1]='1';
+ return bounded;
+}

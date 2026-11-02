@@ -15,9 +15,9 @@ export const CI_SUITES={
  // Balanced against run 41352072866: 225.6s and 220.5s of tests, formerly
  // 446.1s on one runner. Each shard retains its own sequential fixture lifetime.
  'chats-a':npm('code-responsiveness','prompt-shelf','code-chat-relations','update-details','renderer-state','workspace-focus','app-instructions','context-history','chat-menu-tools','image-annotations'),
- 'chats-b':npm('transcript-position','profile-identity','chat-organization','session-recovery','chat-history-find','chat-navigation','recent-context','transcript-render'),
+ 'chats-b':npm('composer-predictions','transcript-position','profile-identity','chat-organization','session-recovery','chat-history-find','chat-navigation','recent-context','transcript-render'),
  native:[
-  ...npm('source-diff','file-review'),['node','scripts/browser-control-smoke.mjs'],
+  ...npm('source-diff','file-review','desktop-assist','file-viewer','file-renderers'),['node','scripts/browser-control-smoke.mjs'],
   ['node','scripts/discovery-oauth-smoke.mjs'],['node','scripts/discovery-oauth-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-recovery-smoke.mjs'],['node','scripts/discovery-oauth-recovery-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-protection.mjs','--local-fixture'],
   ['node','scripts/mobile-settings-smoke.mjs'],['node','scripts/native-control-smoke.mjs'],['node','test/native-control-http-ui-smoke.mjs'],['node','scripts/native-navigation-smoke.mjs'],
   ['node','scripts/session-mcp-smoke.mjs'],['node','scripts/session-mcp-smoke.mjs','--desktop'],

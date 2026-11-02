@@ -84,6 +84,9 @@ jobs:
             artifacts/chat-navigation/**/report.json
             artifacts/sidebar-drag/**/report.json
             artifacts/native-control/report.json
+            artifacts/desktop-assist/**/report.json
+            artifacts/desktop-assist-ui/**/report.json
+            artifacts/composer-predictions/**/report.json
             artifacts/native-navigation/report.json
             output/playwright/native-control-http/report.json
             output/playwright/dictation-reliability/report.json
@@ -101,3 +104,7 @@ jobs:
             artifacts/meta-settings/**/report.json
             artifacts/settings-connections/**/report.json
             artifacts/source-diff/**/report.json
+            artifacts/file-renderers/result.json
+            artifacts/file-viewer/**/report.json
+            artifacts/file-viewer-app/**/report.json
+            artifacts/file-viewer-preview/report.json
