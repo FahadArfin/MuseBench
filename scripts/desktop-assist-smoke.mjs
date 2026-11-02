@@ -14,7 +14,8 @@ if(process.platform!=='win32')throw Error('Desktop Assist smoke requires Windows
 await import('./build-windows-desktop.mjs');
 const root=process.cwd(),temp=await mkdtemp(path.join(tmpdir(),'muse-desktop-roundtrip-'));
 const output=await mkdtemp(await mkdir(path.resolve('artifacts/desktop-assist/'),{recursive:true}).then(()=>path.resolve('artifacts/desktop-assist/fixture-')));
-const exe=path.join(temp,'Fixture.exe'),report={checks:[],providerCalls:0,userAppInput:false};
+const denialFixture=process.argv.includes('--session-denial-fixture');
+const exe=path.join(temp,'Fixture.exe'),report={checks:[],providerCalls:0,userAppInput:false,syntheticSession:denialFixture};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const until=async predicate=>{const deadline=Date.now()+20000;while(!await predicate()){assert(Date.now()<deadline,'Desktop fixture timed out.');await wait(30);}};
 let fixture,app,mcp;
@@ -28,7 +29,7 @@ try{
  await writeFile(path.join(temp,'preload.cjs'),`const{contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('musebench',{desktopAssist:command=>ipcRenderer.invoke('fixture:desktop',command),onDesktopAssist:listener=>{const receive=(_e,value)=>listener(value);ipcRenderer.on('fixture:state',receive);return()=>ipcRenderer.removeListener('fixture:state',receive);}});`);
  const modules=['electron/desktop-assist.mjs','electron/desktop-helper.mjs','electron/desktop-mcp-config.mjs','electron/normalize-visual.mjs'].map(file=>pathToFileURL(path.join(root,file)).href);
  const entry=path.join(temp,'main.cjs');
- await writeFile(entry,`const{app,BrowserWindow,ipcMain,nativeImage}=require('electron');app.setPath('userData',${JSON.stringify(path.join(temp,'profile'))});app.whenReady().then(async()=>{const[{createDesktopAssist},{createDesktopHelper},{createDesktopMcpConfig},{createVisualNormalizer}]=await Promise.all(${JSON.stringify(modules)}.map(url=>import(url)));const window=new BrowserWindow({width:820,height:900,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,preload:${JSON.stringify(path.join(temp,'preload.cjs'))}}});const state={task:{id:'fixture-chat',mode:'muse'},activeProject:{root:${JSON.stringify(temp)}},runtime:{status:'running',permissionVerified:true}};const visuals=[];const service=await createDesktopAssist({dataDir:${JSON.stringify(path.join(temp,'data'))},getState:()=>state,helper:createDesktopHelper({helperPath:${JSON.stringify(path.join(root,'native/bin/MuseBenchDesktop.exe'))},timeoutMs:10000}),normalizeImage:createVisualNormalizer(nativeImage),beginVisual:()=>value=>visuals.push(value),onState:value=>window.webContents.send('fixture:state',value)});const lease=await createDesktopMcpConfig({getDesktop:()=>service})(${JSON.stringify(temp)},{taskId:'fixture-chat'});globalThis.fixture={service,lease,visuals,state};ipcMain.handle('fixture:desktop',(_e,command)=>service.command(command));await window.loadFile(${JSON.stringify(path.join(temp,'fixture.html'))});});`);
+ await writeFile(entry,`const{app,BrowserWindow,ipcMain,nativeImage}=require('electron');app.setPath('userData',${JSON.stringify(path.join(temp,'profile'))});app.whenReady().then(async()=>{const[{createDesktopAssist},{createDesktopHelper},{createDesktopMcpConfig},{createVisualNormalizer}]=await Promise.all(${JSON.stringify(modules)}.map(url=>import(url)));const window=new BrowserWindow({width:820,height:900,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,preload:${JSON.stringify(path.join(temp,'preload.cjs'))}}});const state={task:{id:'fixture-chat',mode:'muse'},activeProject:{root:${JSON.stringify(temp)}},runtime:{status:'running',permissionVerified:true}};const visuals=[];const helper=createDesktopHelper({helperPath:${JSON.stringify(path.join(root,'native/bin/MuseBenchDesktop.exe'))},timeoutMs:10000});if(${JSON.stringify(denialFixture)})helper.call=async()=>({ok:false,error:{code:"session_unavailable",message:"An unlocked non-administrator user session is required."},uncertain:false});const service=await createDesktopAssist({dataDir:${JSON.stringify(path.join(temp,'data'))},getState:()=>state,helper,normalizeImage:createVisualNormalizer(nativeImage),beginVisual:()=>value=>visuals.push(value),onState:value=>window.webContents.send('fixture:state',value)});const lease=await createDesktopMcpConfig({getDesktop:()=>service})(${JSON.stringify(temp)},{taskId:'fixture-chat'});globalThis.fixture={service,lease,visuals,state,helper};ipcMain.handle('fixture:desktop',(_e,command)=>service.command(command));await window.loadFile(${JSON.stringify(path.join(temp,'fixture.html'))});});`);
  app=await electron.launch({cwd:root,args:[entry],env:{...process.env,ELECTRON_RUN_AS_NODE:undefined}});
  const page=await app.firstWindow();await page.getByRole('switch',{name:'Enable Desktop Assist'}).waitFor();
  const config=await app.evaluate(()=>globalThis.fixture.lease.config);
@@ -36,7 +37,22 @@ try{
  let pending='',nextId=0;const responses=new Map();mcp.stdout.on('data',chunk=>{pending+=chunk;let end;while((end=pending.indexOf('\n'))>=0){const line=pending.slice(0,end);pending=pending.slice(end+1);if(line)responses.set(JSON.parse(line).id,JSON.parse(line));}});
  const request=async(method,params)=>{const id=++nextId;mcp.stdin.write(JSON.stringify({jsonrpc:'2.0',id,method,params})+'\n');await until(()=>responses.has(id));const reply=responses.get(id);responses.delete(id);assert(!reply.error,JSON.stringify(reply.error));return reply.result;};
  const tool=async(name,args={})=>{const result=await request('tools/call',{name:'desktop_'+name,arguments:args});assert(!result.isError,result.content?.[0]?.text);return{...JSON.parse(result.content[0].text).untrustedDesktopData,content:result.content};};
+ async function exercise(){
  await request('initialize',{protocolVersion:'2025-11-25'});
+ const probe=await app.evaluate(()=>globalThis.fixture.helper.call({op:'apps'}));
+ if((process.env.GITHUB_ACTIONS==='true'||denialFixture)&&probe.ok===false&&probe.error?.code==='session_unavailable'){
+  report.mode='session-denial';report.desktopFunctionalCoverage=false;
+  const denied=await request('tools/call',{name:'desktop_apps',arguments:{}});
+  assert.equal(denied.isError,true);assert.equal(denied.content.length,1);assert.equal(denied.content[0].type,'text');assert.equal(denied.content[0].text,probe.error.message);
+  report.checks.push('Session refusal propagates through Electron and authenticated stdio MCP without desktop content');
+  await page.getByRole('switch',{name:'Enable Desktop Assist'}).click();await until(async()=>await page.getByRole('switch',{name:'Enable Desktop Assist'}).getAttribute('aria-checked')==='false');assert.equal((await tool('status')).enabled,false);
+  const disabled=await request('tools/call',{name:'desktop_apps',arguments:{}});assert.equal(disabled.isError,true);
+  await page.getByRole('switch',{name:'Enable Desktop Assist'}).click();await until(async()=>await page.getByRole('switch',{name:'Enable Desktop Assist'}).getAttribute('aria-checked')==='true');assert.equal((await tool('status')).enabled,true);
+  const stillDenied=await request('tools/call',{name:'desktop_apps',arguments:{}});assert.equal(stillDenied.isError,true);assert.equal(stillDenied.content[0].text,probe.error.message);
+  const state=await app.evaluate(()=>({active:globalThis.fixture.service.snapshot().active,pending:globalThis.fixture.service.snapshot().pending,visuals:globalThis.fixture.visuals.length}));
+  assert.deepEqual(state,{active:null,pending:null,visuals:0});report.checks.push('UI enable/disable remains available but cannot bypass the session guard or produce screenshots');return;
+ }
+ assert.equal(probe.ok,true,JSON.stringify(probe));report.mode='native-read-only';report.desktopFunctionalCoverage=true;
  const {apps}=await tool('apps'),target=apps.find(a=>a.name==='Fixture');assert(target);assert.equal(target.allowed,false);
  const windowsResult=tool('windows',{appId:target.id});
  await page.getByRole('button',{name:'Allow once',exact:true}).first().waitFor();
@@ -54,6 +70,8 @@ try{
  const waiting=tool('windows',{appId:target.id});await page.getByRole('button',{name:'Always allow',exact:true}).first().waitFor();await page.getByRole('button',{name:'Always allow',exact:true}).first().click();await waiting;
  await page.getByRole('button',{name:'Revoke Fixture',exact:true}).click();assert.equal(await app.evaluate(()=>globalThis.fixture.service.snapshot().allowedApps.length),0);
  report.checks.push('Stop blocks actual tool access; Resume requires fresh approval; Always allow can be revoked through Settings');
+ }
+ await exercise();
  await app.evaluate(async()=>{await globalThis.fixture.lease.close();await globalThis.fixture.service.close();});
  report.status='passed';console.log(JSON.stringify(report,null,2));
 }catch(error){report.status='failed';report.failure=error.stack;console.error(error);process.exitCode=1;}
