@@ -20,7 +20,7 @@ export function createRunNotifier({isFocused,send,report=()=>{}}) {
     if(!completed&&!attention)continue;
     const delivery=status=>{try{report(run.id,status);}catch{}};
     if((!completed||!preferences.completion)&&(!attention||!preferences.attention)){delivery('suppressed');continue;}
-    try {if(isFocused()){delivery('suppressed');continue;}delivery('submitted');send({title:'MuseBench',body:completed?'Muse Code finished a task.':run.status==='waiting'?'Muse Code needs your attention.':'A Muse Code task stopped. Open MuseBench for details.',silent:!preferences.sound},{id:run.id,delivery});}catch{delivery('failed');}
+    try {if(isFocused()){delivery('suppressed');continue;}delivery('submitted');send({title:'MuseBench',body:completed?'Muse Code finished a task.':run.status==='waiting'?(state.runtime?.pending?.kind==='input'?'Muse has a question for you.':'Muse Code needs your attention.'):'A Muse Code task stopped. Open MuseBench for details.',silent:!preferences.sound},{id:run.id,taskId:state.task.id,delivery});}catch{delivery('failed');}
    }
    while(seen.size>300)seen.delete(seen.keys().next().value);
   },

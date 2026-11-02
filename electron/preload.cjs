@@ -81,6 +81,8 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   workImport: () => ipcRenderer.invoke('musebench:work-import'),
   workExport: format => ipcRenderer.invoke('musebench:work-export', format),
   onWorkState: callback => { const listener = (_event, state) => callback(state); ipcRenderer.on('musebench:work-update', listener); return () => ipcRenderer.removeListener('musebench:work-update', listener); },
+  onBackgroundEngine: callback => {const fn=(_event,state)=>callback(state);ipcRenderer.on('musebench:background-state',fn);return()=>ipcRenderer.removeListener('musebench:background-state',fn);},
+  onTrayCommand: callback => {let active=true;const fn=async(_event,ticket)=>{let handled=false;try{handled=await callback(ticket);}catch{}if(active)void ipcRenderer.invoke('musebench:tray-ack',{id:ticket.id,handled:handled===true}).catch(()=>{});};ipcRenderer.on('musebench:tray-command',fn);void ipcRenderer.invoke('musebench:tray-ready').catch(()=>{});return()=>{active=false;ipcRenderer.removeListener('musebench:tray-command',fn);void ipcRenderer.invoke('musebench:tray-detach').catch(()=>{});};},
   configureNotifications: value => ipcRenderer.invoke('musebench:notifications', value),
   analytics: options => ipcRenderer.invoke('musebench:analytics', options),
   commandInfo: type => ipcRenderer.invoke('musebench:command-info', type),

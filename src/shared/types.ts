@@ -119,7 +119,7 @@ export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<Chat
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;mobileDevice(command:import('./mobile-types').MobileDeviceCommand):Promise<import('./mobile-types').MobileDeviceState>;}
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;
  nativeControl(command:{type:'status'|'enable'|'disable';transport?:'http'|'stdio'}):Promise<import('./native-control-types').NativeControlState>;
- backgroundEngine(command:{type:'status'}|{type:'set';enabled:boolean}):Promise<{enabled:boolean;running:boolean;windowOpen:boolean;simulation?:boolean}>;
+ backgroundEngine(command:{type:'status'}|{type:'set';enabled:boolean}):Promise<{enabled:boolean;running:boolean;windowOpen:boolean;trayAvailable?:boolean;simulation?:boolean}>;
  onNativeRequest?(callback:(request:import('./native-control-types').NativeRequest)=>Promise<unknown>):()=>void;
  onNativeCancel?(callback:(id:string)=>void):()=>void;
  nativeNavigationPhase?(value:{id:string;target:import('./native-control-types').NativeNavigation['target'];section?:string;phase:'committed'|'visual-settled'|'visual-unsettled'}):void;
@@ -223,4 +223,11 @@ export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<Chat
  preparePreviewFeedback(input:{token:string;note:string}):Promise<{text:string}>;
  discardPreviewTarget(token:string):Promise<void>;
  onPreviewInvalidated(callback:()=>void):()=>void;
+}
+
+export type TrayCommand={type:'open-chat';taskId:string;activityIds:string[]}|{type:'new-chat'|'feedback'|'settings'};
+export interface TrayTicket {id:string;command:TrayCommand;}
+export interface MuseBenchBridge {
+ onTrayCommand?(listener:(ticket:TrayTicket)=>Promise<boolean>):()=>void;
+ onBackgroundEngine?(listener:(state:{enabled:boolean;running:boolean;windowOpen:boolean;trayAvailable?:boolean})=>void):()=>void;
 }

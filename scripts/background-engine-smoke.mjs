@@ -29,7 +29,7 @@ try{
  call=async(name,args={},signal)=>{const response=await fetch(`http://127.0.0.1:${native.port}/call`,{method:'POST',signal,headers:{authorization:`Bearer ${native.token}`,'content-type':'application/json'},body:JSON.stringify({name,arguments:args})});const value=await response.json();if(!response.ok)throw Error(value.error);return JSON.parse(value.content[0].text);};
  await call('navigate',{target:'settings',section:'general'});
  const toggle=page.getByRole('switch',{name:'Keep running when the window closes'});assert.equal(await toggle.getAttribute('aria-checked'),'false');await toggle.click();await page.waitForFunction(async()=> (await window.musebench.backgroundEngine({type:'status'})).enabled);
- const before=await call('app_status');const pid=app.process().pid;pass('Desktop setting defaults off and explicitly enables the tray without provider work');
+ const before=await call('app_status');const pid=app.process().pid;pass('Background mode defaults off and explicit opt-in keeps the existing tray without provider work');
  // No provider navigation: hold the account window on its initial blank page.
  await app.evaluate(({BrowserWindow,dialog})=>{const load=BrowserWindow.prototype.loadURL;BrowserWindow.prototype.loadURL=function(url,...args){if(this.getTitle()==='Sign in to Muse'){BrowserWindow.prototype.loadURL=load;return Promise.resolve();}return load.call(this,url,...args);};globalThis.blockedSignIn=[];globalThis.restoreSignInDialog=()=>{dialog.showMessageBox=original;};const original=dialog.showMessageBox;dialog.showMessageBox=async(_window,options)=>{globalThis.blockedSignIn.push(options);return{response:0};};});
  await page.evaluate(()=>window.musebench.onboarding({type:'loginPersonal'}));

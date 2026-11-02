@@ -13,7 +13,7 @@ async function fixture(t,overrides={}){
  t.after(()=>f.engine.close());return f;
 }
 test('background defaults off, persists explicit opt-in, and closes without ending its engine',async t=>{
- const f=await fixture(t);assert.equal(f.engine.snapshot().enabled,false);
+ const f=await fixture(t);assert.equal(f.engine.snapshot().enabled,false);assert.equal(f.trays.length,1);assert.equal(f.trays[0].destroyed,false);
  await f.engine.command({type:'set',enabled:true});assert.equal(f.trays.length,1);
  f.windows=0;f.engine.windowClosed();assert.equal(f.quits,0);assert.equal(f.engine.snapshot().windowOpen,false);
  await f.trays[0].actions.open();assert.equal(f.opened,1);assert.equal(f.engine.snapshot().windowOpen,true);
@@ -32,12 +32,12 @@ test('tray and disk failure cannot strand a headless app or claim an enabled set
  const f=await fixture(t,{createTray:()=>{throw Error('tray unavailable');}});
  await assert.rejects(f.engine.command({type:'set',enabled:true}),/background/i);assert.equal(f.engine.snapshot().enabled,false);
  const g=await fixture(t,{save:async()=>{throw Error('disk');}});
- await assert.rejects(g.engine.command({type:'set',enabled:true}));assert.equal(g.engine.snapshot().enabled,false);assert.equal(g.trays[0].destroyed,true);
+ await assert.rejects(g.engine.command({type:'set',enabled:true}));assert.equal(g.engine.snapshot().enabled,false);assert.equal(g.trays[0].destroyed,false);
 });
-test('disable reopens before removing the tray, rejects invalid input and serializes writes',async t=>{
+test('disable reopens while retaining the app-lifetime tray, rejects invalid input and serializes writes',async t=>{
  const f=await fixture(t);await f.engine.command({type:'set',enabled:true});f.windows=0;
  await Promise.all([f.engine.command({type:'set',enabled:false}),f.engine.command({type:'set',enabled:true})]);
- assert.equal(f.opened,1);assert.equal(f.engine.snapshot().enabled,true);assert.equal(f.trays[0].destroyed,true);assert.equal(f.trays[1].destroyed,false);
+ assert.equal(f.opened,1);assert.equal(f.engine.snapshot().enabled,true);assert.equal(f.trays.length,1);assert.equal(f.trays[0].destroyed,false);
  await assert.rejects(f.engine.command({type:'set',enabled:'yes'}));await assert.rejects(f.engine.command({type:'status',extra:true}));
 });
 test('close during configuration waits for it and disposes the resulting tray once',async t=>{

@@ -26,6 +26,13 @@ test('delivery failures do not interrupt controller updates or re-notify',()=>{
  notify.observe(state('a','working'));assert.doesNotThrow(()=>notify.observe(state('a','completed')));notify.observe(state('a','completed'));assert.equal(attempts,1);
 });
 
+test('native questions use a specific attention message and bind the owning chat without question text',()=>{
+ const sent=[];const notifier=createRunNotifier({isFocused:()=>false,send:(options,receipt)=>sent.push({options,taskId:receipt.taskId})});notifier.configure(prefs);
+ notifier.observe(state('q','working','owner'));notifier.observe({...state('q','waiting','owner'),runtime:{pending:{kind:'input',questions:[{question:'PRIVATE QUESTION'}]}}});
+ assert.equal(sent[0].options.body,'Muse has a question for you.');assert.equal(sent[0].taskId,'owner');assert.doesNotMatch(JSON.stringify(sent),/PRIVATE/);
+ notifier.observe({...state('q','waiting','owner'),runtime:{pending:{kind:'input'}}});assert.equal(sent.length,1);
+});
+
 test('delivery receipts distinguish submission, OS visibility and failure without executing a run',()=>{
  const receipts=[];let callback;const notifier=createRunNotifier({isFocused:()=>false,report:(id,status)=>receipts.push([id,status]),send:(_options,receipt)=>{callback=receipt.delivery;}});notifier.configure({completion:true,attention:false,sound:false});notifier.observe({task:{id:'t',runs:[{id:'r',status:'working'}]}});notifier.observe({task:{id:'t',runs:[{id:'r',status:'completed'}]}});callback('shown');assert.deepEqual(receipts,[['r','submitted'],['r','shown']]);
 });

@@ -7,6 +7,12 @@ import {createController} from '../src/controller/index.mjs';
 import {DatabaseSync} from 'node:sqlite';
 
 const nativeId='11111111-1111-4111-8111-111111111111';
+test('question engagement does not publish a busy state that interrupts answer typing',async t=>{
+ const {c,rt}=await fixture(t);let release,entered;const ready=new Promise(resolve=>entered=resolve),states=[];
+ rt.answerInput=()=>new Promise(resolve=>{release=resolve;entered();});const off=c.subscribe(s=>states.push(s.busy));
+ const operation=c.dispatch({type:'answerInput',taskId:c.getState().task.id,sessionId:nativeId,userInputId:'question',turnId:'turn',revision:1,operation:'engage'});
+ await ready;try{assert.equal(c.getState().busy,false);assert.equal(states.some(Boolean),false);}finally{release();await operation;off();}
+});
 test('source inspection cannot follow a chat change or leave execution review for another owner',async t=>{
  const {c,rt,project}=await fixture(t);let finish;rt.inspectDiscoverySources=()=>new Promise(resolve=>finish=resolve);const old=c.getState().task.id,pending=c.inspectDiscoverySources({taskId:old});await c.dispatch({type:'newTask',request:'Different owner',mode:'muse'});finish({root:project,rows:[]});await assert.rejects(pending,/changed/i);const result=await c.dispatch({type:'connectMuse',transport:'msp',toolDiscovery:{sources:[{id:'global:fixture',revision:'a'.repeat(64)}],reviewed:true}});assert.match(result.error,/review/i);assert.equal(rt.connections.length,0);
 });

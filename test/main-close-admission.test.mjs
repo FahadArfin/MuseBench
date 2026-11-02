@@ -68,7 +68,7 @@ async function fixture(t,options={},finish=()=>{}){
   ipcMain:{handle:(name,callback)=>ipc.set(name,callback)},setImmediate:callback=>immediates.push(callback),
  });
  runInContext(registrations,context,{filename:'electron/main.mjs:close-admission'});
- background=await createBackgroundEngine({dataDir,createTray:()=>assert.fail('Background mode stays disabled'),openWindow:async()=>{},windowOpen:()=>true,
+ background=await createBackgroundEngine({dataDir,createTray:()=>({destroy(){}}),openWindow:async()=>{},windowOpen:()=>true,
   quit,isBusy:()=>context.admissionBusy(),onBlocked:message=>notices.push(message)});
  context.background=background;
  const invoke=(name,command)=>{const request=ipc.get(name)({},command);pending.push(request);return request;};

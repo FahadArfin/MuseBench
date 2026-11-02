@@ -11,6 +11,8 @@ import {createDiscoveryOAuthCallback} from './discovery-oauth-callback.mjs';
 import {createDiscoveryOAuth} from './discovery-oauth.mjs';
 import {createRemoteNetwork} from '../src/runtime/discovery-remote-network.mjs';
 import {validateDiscoveryAuthCommand} from '../src/shared/discovery-auth.mjs';
+import {createNotificationTray} from './notification-tray.mjs';
+import {createTrayNavigation} from './tray-navigation.mjs';
 import {createBackgroundEngine} from './background-engine.mjs';
 import {createRendererStatePublisher} from './renderer-state-publisher.mjs';
 import {createNativeControlRouter} from './native-control-router.mjs';
@@ -77,6 +79,7 @@ const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
 let pendingChatLink=process.argv.map(chatLinkTask).find(Boolean)??null,deliverChatLink;
+let trayNavigation,notificationTray;
 let window, ui, openWindow, background, closeOwned, ownedWorkBusy, controller, temporaryChat, customize, codeBilling, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0, opening=null, pendingQuit=false;
 const retryPendingQuit=()=>{if(pendingQuit&&!opening&&pendingIpc===0){pendingQuit=false;setImmediate(()=>app.quit());}};
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
@@ -155,14 +158,15 @@ else {
         try{await attachWindow(ownWindow,view);firstWindow=false;return ownWindow;}catch(error){ownWindow.destroy();throw error;}
       })().finally(()=>{opening=null;retryPendingQuit();if(pendingWindowClose){pendingWindowClose=false;const requestedWindow=window;if(requestedWindow&&!requestedWindow.isDestroyed())setImmediate(()=>{if(!requestedWindow.isDestroyed())requestedWindow.close();});}});return opening;
     };
-    background=await createBackgroundEngine({dataDir,windowOpen:()=>!!window&&!window.isDestroyed(),openWindow,quit:()=>app.quit(),isBusy:updateBusy,onBlocked:message=>{void showBlocked(message).catch(()=>{});},createTray:actions=>{
-      const tray=new Tray(path.join(root,'electron','assets',process.platform==='win32'?'musebench.ico':'musebench.png'));
-      tray.setToolTip('MuseBench — running in the background');tray.setContextMenu(Menu.buildFromTemplate([{label:'Open MuseBench',click:actions.open},{type:'separator'},{label:'Quit MuseBench',click:actions.quit}]));tray.on('click',actions.open);return tray;
+    trayNavigation=createTrayNavigation({openWindow:()=>openWindow(),send:ticket=>{if(!window||window.isDestroyed())throw Error('Open MuseBench first.');window.webContents.send('musebench:tray-command',ticket);},onFailure:message=>{void showBlocked(message).catch(()=>{});}});
+    background=await createBackgroundEngine({dataDir,windowOpen:()=>!!window&&!window.isDestroyed(),openWindow,quit:()=>app.quit(),isBusy:updateBusy,onBlocked:message=>{void showBlocked(message).catch(()=>{});},onState:value=>{notificationTray?.refresh();if(window&&!window.isDestroyed())window.webContents.send('musebench:background-state',value);},createTray:actions=>{
+      notificationTray=createNotificationTray({Tray,Menu,icon:path.join(root,'electron','assets',process.platform==='win32'?'musebench.ico':'musebench.png'),getState:()=>controller.getState(),getBackground:()=>background?.snapshot()??{enabled:false},onOpen:actions.open,onQuit:actions.quit,onCommand:command=>trayNavigation.request(command),onBackground:async enabled=>{if(closing||updateInstalling)throw Error('MuseBench is closing or updating.');pendingIpc++;try{return await background.command({type:'set',enabled});}finally{pendingIpc--;retryPendingQuit();}},onError:()=>{void showBlocked('Could not complete that tray action. Open MuseBench and try again.').catch(()=>{});}});
+      return notificationTray;
     }});
     const nativeRouter=createNativeControlRouter({app,controller,getView:()=>ui?.nativeService,getBackground:()=>background.snapshot(),isBlocked:()=>closing||updateInstalling||customize.isBusy()||codeBilling.blocksWork()||onboardingOwners.isBusy()});
     nativeControl=await createNativeControlHost({dataDir,service:nativeRouter,connectionConfig:()=>prepareNativeMcpConfig({dataDir,executable:process.execPath,appRoot:root})});
     closeOwned=async()=>{
-      closing=true;ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();
+      closing=true;trayNavigation?.close();ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();
       const discoveryClose=Promise.resolve().then(()=>discoveryOAuth.close()).finally(()=>discoveryStore.close());
       const results=await Promise.allSettled([discoveryClose,onboardingOwners.closeAll(),codeBilling.close(),temporaryChat.close(),nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close(),background.close(),browserLogin.close(),sessionDurability.close()]);
       for(const notification of notifications)notification.close();notifications.clear();
@@ -177,7 +181,7 @@ else {
     const notifier=createRunNotifier({report:(id,status)=>controller.recordDelivery(id,status),isFocused:()=>!!window&&!window.isDestroyed()&&window.isFocused(),send:(options,receipt)=>{
       if(!Notification.isSupported()){receipt.delivery('unsupported');return;}
       const notification=new Notification(options);notifications.add(notification);
-      notification.on('click',()=>{void openWindow?.().catch(()=>{});});
+      notification.on('click',()=>{void trayNavigation.request({type:'open-chat',taskId:receipt.taskId,activityIds:[]}).catch(()=>{});});
       notification.on('close',()=>notifications.delete(notification));
       notification.on('show',()=>receipt.delivery('shown'));
       notification.on('failed',()=>{receipt.delivery('failed');notifications.delete(notification);});
@@ -189,7 +193,7 @@ else {
     sites.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:sites-update',value);});
     spaces.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:spaces-update',value);});
     work.subscribe(publishWork);
-    controller.subscribe(state=>{void temporaryChat.reconcile().catch(()=>{});ui?.chatBrowser?.reconcile();notifier.observe(state);ui?.statePublisher?.publish(state);});
+    controller.subscribe(state=>{notificationTray?.refresh(state);void temporaryChat.reconcile().catch(()=>{});ui?.chatBrowser?.reconcile();notifier.observe(state);ui?.statePublisher?.publish(state);});
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       {label:'MuseBench',submenu:[{label:'Open project…',accelerator:'CmdOrCtrl+O',click:async()=>{if(updateInstalling||closing||customize?.isBusy())return;await openWindow();pendingIpc++;try{const r=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!r.canceled&&!updateInstalling&&!closing){const next=await controller.dispatch({type:'openProject',path:r.filePaths[0]});if(!next.error&&!window.isDestroyed()){ui?.personal.hide();window.webContents.send('musebench:personal-shortcut','code');}}}finally{pendingIpc--;retryPendingQuit();}}},{type:'separator'},{role:'quit'}]},
       {role:'editMenu'}, {label:'View',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},...(!app.isPackaged?[{role:'toggleDevTools'}]:[])]},
@@ -242,11 +246,11 @@ else {
     ipcMain.on('musebench:state-ack',stateAck);ipcMain.on('musebench:state-detach',stateDetach);
     window.webContents.on('did-start-navigation',(event,_url,inPlace,isMainFrame)=>{
       if (!(event.isMainFrame ?? isMainFrame) || (event.isInPlace ?? inPlace)) return;
-      statePublisher.detach();
+      statePublisher.detach();trayNavigation?.detach();
       if (!initialNavigation) launch.complete();
       initialNavigation = false;
     });
-    window.webContents.on('render-process-gone',()=>{void temporaryChat.close().catch(()=>{});view.chatBrowser?.close();launch.complete();statePublisher.detach();});
+    window.webContents.on('render-process-gone',()=>{trayNavigation?.detach();void temporaryChat.close().catch(()=>{});view.chatBrowser?.close();launch.complete();statePublisher.detach();});
     window.once('closed',()=>{launch.close();statePublisher.close();ipcMain.removeListener('musebench:state-ack',stateAck);ipcMain.removeListener('musebench:state-detach',stateDetach);ipcMain.removeListener('musebench:launch-claim',claimLaunch);});
     const handlers=[];
     const handler = (name, fn) => {handlers.push(name);ipcMain.handle(name, async (event,...args) => {
@@ -267,6 +271,10 @@ else {
     handler('musebench:chat-tools',chatTools);
     const chatBrowser=view.chatBrowser=createChatBrowser({window,WebContentsView,getState:()=>controller.getState(),onState:value=>{if(!window.isDestroyed())window.webContents.send('musebench:code-browser-state',value);}});
     const detachSessionTools=bindSessionToolsNavigation(window.webContents,{browser:chatBrowser,sideChat:temporaryChat});window.once('closed',detachSessionTools);
+    window.once('closed',()=>trayNavigation?.detach());
+    handler('musebench:tray-ready',()=>{trayNavigation.ready();return true;});
+    handler('musebench:tray-detach',()=>{trayNavigation.detach();return true;});
+    handler('musebench:tray-ack',value=>trayNavigation.ack(value));
     handler('musebench:code-browser',input=>chatBrowser.command(input));
     handler('musebench:side-chat',input=>{if(input?.type==='send'&&(closing||codeBilling.blocksWork()||onboardingOwners.isBusy()))throw Error('Finish sign-in or billing changes before sending.');return temporaryChat.command(input);});
     const media=createSessionMedia({getState:()=>controller.getState(),readHistory:input=>controller.readChatHistory(input),capturedImages:id=>controller.capturedSessionImages(id),readUpload:input=>controller.readImage(input),thumbnail:bytes=>{const image=nativeImage.createFromBuffer(bytes);if(image.isEmpty())throw Error('This image could not be decoded.');const size=image.getSize(),scale=Math.min(1,256/size.width,192/size.height);return image.resize({width:Math.max(1,Math.round(size.width*scale)),height:Math.max(1,Math.round(size.height*scale)),quality:'good'}).toDataURL();}});

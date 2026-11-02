@@ -1,3 +1,4 @@
+import type {TrayTicket} from '../shared/types';
 import {resolveRequestOrigin} from '../shared/chat-relations.mjs';
 import {NativeContextButton} from './NativeContextUsage';
 import {CodeSchedules} from './CodeSchedules';
@@ -38,6 +39,7 @@ import {CustomizeDialog} from './CustomizeDialog';
 import type {CustomizeTab} from '../shared/customize-types';
 import {RunActivity,WorkThreads,ChangedFiles} from './WorkActivity';
 import {NativeRetryStatus} from './NativeRetryStatus';
+import {NativeQuestionDock} from './NativeQuestion';
 import {CommandDialog,type CommandView} from './CommandDialog';
 import {findCommand,parseSlashSubmission,type MuseSkill} from '../shared/slash-commands.mjs';
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type CSSProperties } from 'react';
@@ -156,6 +158,7 @@ export default function App() {
   const [outputOpen,setOutputOpen]=useState(false);
   const dialogOpen=Boolean(outputOpen||modal||shelfOpen);
   const [nativeDestination,setNativeDestination]=useState({category:'general' as SettingsCategory,revision:0});
+  const [questionReveal,setQuestionReveal]=useState<{taskId:string;userInputId:string;serial:number}|null>(null);
   const [commandView,setCommandView]=useState<CommandView>({id:'help'});
   const [skills,setSkills]=useState<MuseSkill[]>([]),[skillsStatus,setSkillsStatus]=useState('idle');
   const skillsKey=useRef(''),skillsGeneration=useRef(0);
@@ -229,7 +232,7 @@ export default function App() {
   }, [bridge]);
   const act = useCallback(async (action: Action, ownDestination?:string) => {
     if (!bridge) return null;
-    const nonBlocking=action.type==='inspectChild'||action.type==='refresh';
+    const nonBlocking=action.type==='inspectChild'||action.type==='refresh'||action.type==='answerInput'&&action.operation==='engage';
     const destination=shellDestination.current;
     if(!nonBlocking)setPending(true);
     // Results carry action-specific errors/receipts; canonical state arrives
@@ -338,6 +341,20 @@ export default function App() {
     else if (shortcut === 'n' && !dialogOpen) personalSidebarCommand(personalDestination==='chat'?{type:'metaAction',action:'newChat'}:{type:'newMuseChat'});
   }), [bridge, personalCommand, personalDestination, dialogOpen, setPreferences]);
   const showCommand=(id:string,args='',detail='')=>{setCommandView({id,args,detail});setModal('command');};
+  const trayCommandHandler=useRef<(ticket:TrayTicket)=>Promise<boolean>>(async()=>false);
+  trayCommandHandler.current=async({command})=>{
+    if(navigationBusy||dialogOpen)return false;
+    setProfileMenuOpen(false);setMobileNav(false);
+    if(command.type==='open-chat'){
+      const next=await navigateTask(command.taskId);if(!next||next.error||!currentResult(next)||next.task?.id!==command.taskId)return false;
+      if(command.activityIds.length){const read=await act({type:'setActivityRead',ids:command.activityIds,read:true});if(!read||read.error)return false;}
+    }else if(command.type==='new-chat')beginNewChat();
+    else if(command.type==='settings'){setNativeDestination(current=>({category:'notifications',revision:current.revision+1}));setModal('settings');}
+    else if(command.type==='feedback')showCommand('feedback');
+    else return false;
+    return true;
+  };
+  useEffect(()=>{if(!state)return;return bridge?.onTrayCommand?.(ticket=>trayCommandHandler.current(ticket));},[bridge,Boolean(state)]);
   const loadSkills=()=>{
     const key=`${project?.id??''}:${state?.runtime.binary??''}`;
     if(skillsKey.current===key)return;
@@ -546,13 +563,14 @@ export default function App() {
         <main className={`conversation ${!showTask ? 'new-conversation' : ''}`}>
           {showTask && task ? <div data-workspace-area="conversation" data-workspace-default className="conversation-transcript" ref={transcript} onScroll={onTranscriptScroll} tabIndex={0} aria-label="Conversation"><div className="transcript-inner"><ChatRelation task={task} tasks={state.tasks} busy={navigationBusy} onParent={id=>void navigateTask(id)}/>{showInitialRequest&&<article className="message user-message" data-timeline-prompt="" data-transcript-anchor="initial-request"><p>{task.request}</p>{initialPrompt?.images?.length&&project?<CodeImages images={initialPrompt.images} projectId={project.id}/>:null}</article>}{showInitialRequest&&initialPrompt?.text===task.request&&runActivity(initialPrompt.id)}
             {visibleMessages.map(item => <div key={`${task.id}:${item.id}`} id={`turn-${item.id}`} data-transcript-anchor={item.id}><TranscriptMessage item={item} projectId={project?.id} chatId={task.id} branchDisabled={busy||runtimeActive} onBranch={branchResponse} onChanges={openRunChanges}/>{item.role==='user'&&runActivity(item.id)}</div>)}
-            {!task.runs?.length&&<ShellCommands results={task.shellResults ?? []} />}{Boolean(state.runtime.pending) && <button className="permission-banner" onClick={() => setModal('runtime')}><ShieldCheck size={17} /><span>{(state.runtime.pending as {kind?:string})?.kind==='input'?'Muse has a question. Answer to continue.':'Muse needs your decision. Review the permission request.'}</span><ChevronRight size={15} /></button>}
+            {!task.runs?.length&&<ShellCommands results={task.shellResults ?? []} />}{(state.runtime.pending as {kind?:string})?.kind==='approval' && <button className="permission-banner" onClick={() => setModal('runtime')}><ShieldCheck size={17} /><span>Muse needs your decision. Review the permission request.</span><ChevronRight size={15} /></button>}
             {runtimeActive && !task.runs?.some(run=>run.status==='working') && <div className="working-indicator" role="status"><LoaderCircle size={15} className="spin" />Muse is working in your project…<button className="text-link" onClick={() => void act({ type: 'disconnectMuse' })}>Stop</button></div>}
             {!runtimeActive&&!!task.changes.length&&<ChangedFiles key={task.id} files={task.changes} onOpenFile={openFile} onOpenAll={()=>openFile()}/>}
           </div></div> : <div className="new-chat-content"><TerminalWelcome key={`${project?.id??'home'}:${welcomeSerial}`} active={product==='code'&&view==='chat'}/>{!project && <div className="welcome-actions"><button className="button" disabled={busy} onClick={() => void openFolder()}><FolderOpen size={16} />Open a folder</button><button className="text-link" disabled={busy} onClick={createSample}>Try sample project<ChevronRight size={14} /></button></div>}</div>}
           <PromptTimeline transcript={transcript} active={showTask&&product==='code'&&view==='chat'&&!dialogOpen&&!profileMenuOpen&&!mobileNav} context={task?.id??''} onNavigate={releaseForNavigation} />
           <div className="composer-region">{scrolledUp && showTask && <button className="jump-latest icon-button" title="Jump to latest" aria-label="Jump to latest" onClick={jumpToLatest}><ArrowDown size={16} /></button>}
-            {showTask && task?.mode === 'muse' && !runtimeActive && !connected && ['blocked','uncertain','failed','error'].includes(state.runtime.status) && <div className="composer-notice"><Terminal size={13} /><span>Muse needs attention before continuing.</span></div>}
+            {showTask&&task&&<NativeQuestionDock key={task.id} reveal={questionReveal?.taskId===task.id?questionReveal:undefined} runtime={state.runtime} taskId={task.id} busy={busy} act={act}/>}
+            {showTask && task?.mode === 'muse' && !state.runtime.pending && !runtimeActive && !connected && ['blocked','uncertain','failed','error'].includes(state.runtime.status) && <div className="composer-notice"><Terminal size={13} /><span>Muse needs attention before continuing.</span></div>}
             {showTask&&<NativeRetryStatus runtime={state.runtime}/>}
             {showTask&&task?.goal&&<div className="goal-notice"><Target size={13}/><span>{task.goal.status==='paused'?'Paused: ':''}{task.goal.objective}</span>{task.goal.driver?.armed&&<button onClick={()=>void act({type:'pauseGoalContinuation'})}>Stop continuation</button>}<button onClick={()=>showCommand('goal')}>Edit goal</button></div>}
             {showTask&&task?.archived&&<div className="chat-archived-banner">Archived chat<button className="text-link" onClick={()=>void act({type:'setTaskFlags',id:task.id,archived:false})}>Restore to continue</button></div>}
@@ -587,7 +605,7 @@ export default function App() {
     {modal==='worktrees'&&project&&<WorktreeDialog appState={state} project={project} busy={busy||runtimeActive} act={act} onClose={closeModal} onOpened={()=>{closeModal();setCreating(true);setView('project');}}/>}
     {shelfOpen&&bridge&&project&&<PromptShelf key={draftKey} load={()=>bridge.listSavedPrompts({projectId:project.id,taskId:showTask?task!.id:null})} operate={shelfOperation} locked={draftLocked} recoveryError={draftRecoveryError} recover={recoverDraft} close={()=>{setShelfOpen(false);requestAnimationFrame(()=>{if(document.activeElement===document.body||composerShell.current?.contains(document.activeElement))composer.current?.focus();});}}/>}
     {modal==='context'&&project&&<CodeContext task={showTask?task:null} project={project} taskId={showTask?task!.id:null} text={message} files={contextFiles} onFiles={setContextFiles} act={act} busy={busy||runtimeActive} close={closeModal}/>}
-    {modal==='updates'&&<Modal title="MuseBench update" close={closeModal}><AppUpdatePanel/></Modal>}{modal === 'runtime' && <RuntimeDialog state={state} busy={busy} act={async action=>{const next=await act(action);if(!showTask&&next&&!next.error&&currentResult(next)&&['connectMuse','disconnectMuse'].includes(action.type))setDraftFullAccess(next.runtime.fullAccess===true);return next;}} close={closeModal} onError={setLocalError} />}{modal === 'settings' && <SettingsDialog key={nativeDestination.revision} initialCategory={nativeDestination.category} customizeRunning={customizeBlocked(state,workState,sitesState,sitesState?.generation)} onCustomizeChanged={()=>{setShortcutRevision(value=>value+1);skillsKey.current='';loadSkills();}} openAccountSettings={command=>{closeModal();setMobileNav(false);setProduct('personal');setPersonalMode('chat');void personalCommand(command);}} state={state} busy={busy||runtimeActive||Boolean(state.runtime.pending)} act={act} openPersonal={destination=>{closeModal();navigatePersonal(destination);}} preferences={preferences} onChange={setPreferences} close={closeModal} openConnection={() => setModal('runtime')} />}{modal === 'history' && <CheckpointDialog state={state} act={act} close={closeModal} />}
+    {modal==='updates'&&<Modal title="MuseBench update" close={closeModal}><AppUpdatePanel/></Modal>}{modal === 'runtime' && <RuntimeDialog onAnswer={userInputId=>{closeModal();setProduct('code');setCreating(false);setView('chat');if(task)setQuestionReveal(previous=>({taskId:task.id,userInputId,serial:(previous?.serial??0)+1}));}} state={state} busy={busy} act={async action=>{const next=await act(action);if(!showTask&&next&&!next.error&&currentResult(next)&&['connectMuse','disconnectMuse'].includes(action.type))setDraftFullAccess(next.runtime.fullAccess===true);return next;}} close={closeModal} onError={setLocalError} />}{modal === 'settings' && <SettingsDialog key={nativeDestination.revision} initialCategory={nativeDestination.category} customizeRunning={customizeBlocked(state,workState,sitesState,sitesState?.generation)} onCustomizeChanged={()=>{setShortcutRevision(value=>value+1);skillsKey.current='';loadSkills();}} openAccountSettings={command=>{closeModal();setMobileNav(false);setProduct('personal');setPersonalMode('chat');void personalCommand(command);}} state={state} busy={busy||runtimeActive||Boolean(state.runtime.pending)} act={act} openPersonal={destination=>{closeModal();navigatePersonal(destination);}} preferences={preferences} onChange={setPreferences} close={closeModal} openConnection={() => setModal('runtime')} />}{modal === 'history' && <CheckpointDialog state={state} act={act} close={closeModal} />}
     {modal === 'create-project' && <CreateProject root={state.projectCreationRoot??'Documents/MuseBench'} close={closeModal} onExisting={async()=>{await openFolder();setModal(null);}} onCreate={async details=>{const next=await act({type:'createProject',...details});if(!next||next.error)throw Error(next?.error??'Could not create the project.');if(!currentResult(next))return;setProduct('code');setView('project');setCreating(false);setReviewOpen(false);setMobileNav(false);setModal(null);}}/>}
     {modal === 'search' && <ChatLibrary projects={state.projects} onProject={id=>void navigateProject(id)} onOpen={id=>void navigateTask(id)} act={act} busy={navigationBusy} close={closeModal} draftTarget={product==='code'&&project&&!navigationBusy&&!task?.archived?{key:`${project.id}:${showTask?task!.id:'new'}`,label:showTask?task!.title:'New chat'}:null} onExcerpt={appendDraftText}/> }
   </div></NavigationHistoryContext.Provider></AppUpdatesContext.Provider>;
