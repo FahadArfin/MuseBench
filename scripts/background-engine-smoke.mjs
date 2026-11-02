@@ -53,15 +53,16 @@ try{
   assert.equal((await call('diagnostics')).responsive,null);await assert.rejects(call('inspect_ui'),/Open MuseBench/);
   if(i===0){
    // Hold attachWindow after navigation, before its loading promise completes.
-   await app.evaluate(({app,BrowserWindow})=>{const load=BrowserWindow.prototype.loadURL;BrowserWindow.prototype.loadURL=function(url,...args){if(!url.includes('/dist/index.html'))return load.call(this,url,...args);BrowserWindow.prototype.loadURL=load;return load.call(this,url,...args).then(()=>new Promise(resolve=>{globalThis.releaseShellLoad=resolve;}));};app.emit('second-instance');app.emit('activate');});
+   await app.evaluate(({app,BrowserWindow})=>{const load=BrowserWindow.prototype.loadURL;BrowserWindow.prototype.loadURL=function(url,...args){if(!url.includes('/dist/index.html'))return load.call(this,url,...args);BrowserWindow.prototype.loadURL=load;return load.call(this,url,...args).then(()=>new Promise(resolve=>{globalThis.releaseShellLoad=resolve;}));};app.once('browser-window-created',()=>app.emit('activate'));app.emit('second-instance');app.emit('activate');});
    page=await shell();await page.waitForLoadState('load');
    await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/dist/index.html')).close());
-   assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().length),1);
+   report.replacementWindows=await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().map(w=>({id:w.id,title:w.getTitle(),url:w.webContents.getURL()})));
+   assert.equal(report.replacementWindows.length,1,JSON.stringify(report.replacementWindows));
    const deferredClose=page.waitForEvent('close');await app.evaluate(()=>globalThis.releaseShellLoad());await deferredClose;
    assert.equal((await call('app_status')).engine.windowOpen,false);
    pass('A close requested during replacement-window loading is deferred, then completes without duplicate windows');
   }
-  await app.evaluate(({app})=>{app.emit('second-instance');app.emit('second-instance');app.emit('activate');});page=await shell();await page.waitForLoadState('domcontentloaded');
+  await app.evaluate(({app})=>{app.emit('second-instance');app.once('browser-window-created',()=>app.emit('activate'));app.emit('second-instance');app.emit('activate');});page=await shell();await page.waitForLoadState('domcontentloaded');
   assert.equal(await app.evaluate(({BrowserWindow})=>BrowserWindow.getAllWindows().filter(w=>w.webContents.getURL().includes('/dist/index.html')).length),1);
   assert.equal((await page.evaluate(()=>window.musebench.backgroundEngine({type:'status'}))).enabled,true);
   assert.equal((await call('app_status')).engine.windowOpen,true);
@@ -88,4 +89,4 @@ try{
  assert.equal(exit,0);app=null;pass('Turning off background mode restores normal window-close shutdown');
  assert.deepEqual(report.errors,[]);report.status='passed';
 }catch(error){report.status='failed';report.failure=error.stack;report.pages=app?.windows().map(p=>p.url());if(call)report.engineAfterFailure=await call('app_status',{},AbortSignal.timeout(1500)).catch(e=>({error:e.message}));console.error(error);process.exitCode=1;}
-finally{await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log('Report: '+output);await app?.close().catch(()=>{});}
+finally{await writeFile(path.join(output,'report.json'),JSON.stringify(report,null,2));console.log('Report: '+output);if(app){await app.evaluate(()=>{globalThis.releaseShellLoad?.();globalThis.releaseFixturePicker?.({canceled:true,filePaths:[]});globalThis.restoreSignInDialog?.();}).catch(()=>{});await app.close().catch(()=>{});}}

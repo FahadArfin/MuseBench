@@ -154,14 +154,15 @@ else {
       if(closing||updateInstalling)return Promise.reject(Error('MuseBench is closing or updating.'));
       if(opening)return opening;
       if(window&&!window.isDestroyed()){if(window.isMinimized())window.restore();window.show();window.focus();return Promise.resolve(window);}
-      opening=(async()=>{
+      // Install the guard before construction can synchronously emit activate.
+      opening=Promise.resolve().then(async()=>{
     window = new BrowserWindow({ width:1480, height:960, minWidth:390, minHeight:600, show:false, title:'MuseBench', icon:path.join(root,'electron','assets','musebench.ico'), backgroundColor:'#181818', autoHideMenuBar:true,
       ...(process.platform === 'win32' ? {titleBarStyle:'hidden',titleBarOverlay:titleBarOverlay('dark')} : {}),
       webPreferences:{preload:path.join(root,'electron','preload.cjs'),additionalArguments:['--musebench-launch-animation'],contextIsolation:true,nodeIntegration:false,sandbox:true,webviewTag:false,webSecurity:true,spellcheck:false} });
         const ownWindow=window,view={window:ownWindow};ui=view;
         ownWindow.once('closed',()=>{if(window===ownWindow)window=null;});
         try{await attachWindow(ownWindow,view);firstWindow=false;return ownWindow;}catch(error){ownWindow.destroy();throw error;}
-      })().finally(()=>{opening=null;retryPendingQuit();if(pendingWindowClose){pendingWindowClose=false;const requestedWindow=window;if(requestedWindow&&!requestedWindow.isDestroyed())setImmediate(()=>{if(!requestedWindow.isDestroyed())requestedWindow.close();});}});return opening;
+      }).finally(()=>{opening=null;retryPendingQuit();if(pendingWindowClose){pendingWindowClose=false;const requestedWindow=window;if(requestedWindow&&!requestedWindow.isDestroyed())setImmediate(()=>{if(!requestedWindow.isDestroyed())requestedWindow.close();});}});return opening;
     };
     trayNavigation=createTrayNavigation({openWindow:()=>openWindow(),send:ticket=>{if(!window||window.isDestroyed())throw Error('Open MuseBench first.');window.webContents.send('musebench:tray-command',ticket);},onFailure:message=>{void showBlocked(message).catch(()=>{});}});
     background=await createBackgroundEngine({dataDir,windowOpen:()=>!!window&&!window.isDestroyed(),openWindow,quit:()=>app.quit(),isBusy:updateBusy,onBlocked:message=>{void showBlocked(message).catch(()=>{});},onState:value=>{notificationTray?.refresh();if(window&&!window.isDestroyed())window.webContents.send('musebench:background-state',value);},createTray:actions=>{
