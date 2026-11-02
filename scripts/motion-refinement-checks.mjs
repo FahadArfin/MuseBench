@@ -76,6 +76,7 @@ export async function checkMotionRefinements({page,pass,report,shot}){
  pass('File-tree keyboard selection keeps one comparison mounted and its editor action visible');
 
  await page.getByRole('button',{name:'Toggle Sub-Agents panel',exact:true}).click();await settle(page);
+ await page.getByRole('tab',{name:/^Tasks/}).click();await settle(page);
  const nav=await page.getByRole('tab',{name:/Agents & workflows/}).evaluate(button=>new Promise(resolve=>{
   button.click();requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(document.querySelector('.work-thread-list').getAnimations().filter(a=>a.playState==='running').length)));
  }));assert(nav>0,'Sub-Agent tab navigation should fade its content');await settle(page);await shot('sub-agents');

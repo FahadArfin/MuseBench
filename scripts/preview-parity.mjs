@@ -124,7 +124,7 @@ try{
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>document.querySelector('.output-captures button')?.click());await compare('output-head');await click('button','Tail');await compare('output-tail');await click('button','Close dialog');await click('button','Close details panel');
  await click('button','Edit goal');await compare('goal-budgets');await click('button','Start bounded continuation');await compare('goal-preview-stopped');await click('button','Close dialog');
  await click('button','View changes');await compare('file-changes');
- await click('summary','Choose editor for src/ProjectOverview.tsx');await compare('file-editor-menu');
+ await click('button','Open in VS Code');await compare('file-editor-action');
  await click('button','Close details panel');
  for(const text of ['Polish the toolbar','Check keyboard navigation','Review the mobile layout']){for(const page of [browserPage,desktopPage])await page.evaluate(text=>{const input=document.querySelector('textarea[aria-label="Message Muse"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,text);input.dispatchEvent(new Event('input',{bubbles:true}));},text);await click('button','Queue message');}
  await compare('prompt-queue');
