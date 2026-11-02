@@ -169,19 +169,18 @@ try{
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const input=document.querySelector('textarea[aria-label="Message Muse"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'Use sandboxed access for this chat');input.dispatchEvent(new Event('input',{bubbles:true}));});await click('button','Create task');await compare('new-chat-sandbox-default');
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.fullAccess),false,'A new sandboxed chat must not inherit the prior connection Full access');
  for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'connectMuse',transport:'msp',fullAccess:true});await window.musebench.dispatch({type:'sendMessage',text:'/preview-question'});});
- await click('button','Muse has a question. Answer to continue.');await compare('native-question');
- await click('button','Write my own answer: Approach');await compare('native-question-custom-answer');
+ await compare('native-question');
+ await compare('native-question-custom-answer');
  for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const input=document.querySelector('textarea[aria-label="Write an answer: Approach"]');input.focus();Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,'Keep the existing keyboard behavior.');input.dispatchEvent(new Event('input',{bubbles:true}));});await click('button','Send answers');await compare('native-question-answered');
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.inputResponse.outcome),'answered');
- await click('button','Close dialog');
- for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'sendMessage',text:'/preview-question'});});await click('button','Muse has a question. Answer to continue.');await click('button','Decline to answer');await compare('native-question-declined');
+ for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'sendMessage',text:'/preview-question'});});await click('button','Skip');await compare('native-question-declined');
  for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'sendMessage',text:'/preview-questions'});});await compare('native-concurrent-questions');
- for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const select=document.querySelector('select[aria-label="Pending requests"]');select.value='input:preview-question-two';select.dispatchEvent(new Event('change',{bubbles:true}));});await compare('native-second-question');await click('button','Decline to answer');await compare('native-question-still-pending');for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.pendingRequests.length),1);await click('button','Decline to answer');
+ for(const page of [browserPage,desktopPage])await page.evaluate(()=>{const select=document.querySelector('select[aria-label="Pending questions"]');select.value=[...select.options].find(o=>o.textContent.startsWith('2.')).value;select.dispatchEvent(new Event('change',{bubbles:true}));});await compare('native-second-question');await click('button','Skip');await compare('native-question-still-pending');for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.pendingRequests.length),1);await click('button','Skip');
 
  for(const page of [browserPage,desktopPage])assert.equal(await page.evaluate(async()=>(await window.musebench.getState()).runtime.inputResponse.outcome),'cancelled');
 
  for(const page of [browserPage,desktopPage])await page.evaluate(async()=>{await window.musebench.dispatch({type:'disconnectMuse'});await window.musebench.dispatch({type:'connectMuse',transport:'msp',fullAccess:true,workspaceTools:true});});
- await compare('native-restored-session');
+ await click('button','Add to chat');await click('button','Muse connection');await compare('native-restored-session');
  for(const page of [browserPage,desktopPage]){assert.equal(await page.evaluate(()=>document.querySelector('.runtime-details')?.textContent.includes('Restored')),true);assert.equal(await page.evaluate(()=>document.querySelector('.runtime-access input[type="checkbox"]')?.checked),true);}
  await click('button','Disconnect');await compare('semantic-tools-connection-option');
  await click('button','Close dialog');
