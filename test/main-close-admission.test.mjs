@@ -58,7 +58,7 @@ async function fixture(t,options={},finish=()=>{}){
  const heldAction=deferred();
  const lifecycle=createQuitLifecycle({close:async()=>{counts.cleanupRequests++;await Promise.all([billing.close(),background.close()]);},quit});
  context=createContext({codeBilling:billing,closing:false,opening:null,pendingIpc:0,pendingQuit:false,pendingWindowClose:false,updateInstalling:false,
-  view:{},handlers:[],onboardingOwners:idle,discoveryOAuth:idle,nativeControl:idle,mobileHost:idle,customize:idle,
+  view:{},handlers:[],temporaryChat:idle,onboardingOwners:idle,discoveryOAuth:idle,nativeControl:idle,mobileHost:idle,customize:idle,
   controller:{...state,canRestartForUpdate:()=>true},work:state,sites:state,dictation:{snapshot:()=>({status:'idle'})},updateBlocked,
   updateShutdown:{preparing:()=>false},quitLifecycle:lifecycle,allowedWhileBillingBlocked,
   showBlocked:async message=>{notices.push(message);},trustedSender:()=>true,uiURL:'file:///fictional/index.html',billingChanged:()=>{},
@@ -80,6 +80,13 @@ async function fixture(t,options={},finish=()=>{}){
 }
 
 for(const target of ['window','app']){
+ test(`${target} close blocks active or unconfirmed temporary side work`,async t=>{
+  const f=await fixture(t);f.context.temporaryChat={isBusy:()=>true};
+  assert.equal(f.close(target).prevented,true);assert.equal(f.notices.length,1);
+  assert.equal(f.counts.cleanupRequests,0);assert.equal(f.context.pendingQuit,false);
+  f.context.temporaryChat={isBusy:()=>false};assert.equal(f.context.admissionBusy(),false);
+ });
+
  test(`${target} close waits for a read-only billing IPC and completes after it drains`,{timeout:5000},async t=>{
   const started=deferred(),query=deferred();
   const f=await fixture(t,{probe:()=>{started.resolve();return query.promise;}},()=>query.resolve(account));

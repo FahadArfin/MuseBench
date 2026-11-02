@@ -4,6 +4,7 @@ import type { ActivityItem, FileChange, ShellResult, WorkRun, WorkStatus } from 
 import {MotionDisclosure} from './MotionDisclosure';
 import {normalizeWorkspaceBatchSummary,workspaceBatchSummary} from '../shared/workspace-tool-activity.mjs';
 import {useSurfaceMotion} from './useSurfaceMotion';
+import {WorkLog} from './WorkLog';
 import './work-activity.css';
 
 const isLive = (status: WorkStatus) => status === 'working' || status === 'waiting' || status === 'queued';
@@ -113,10 +114,11 @@ export function RunActivity({ run, shellResults = [], onOpen }: { run: WorkRun; 
   const now = useClock(live);
   const duration = elapsed(run, now);
   const current = currentActivity(run);
-  const heading = run.status === 'working' ? current && current.kind !== 'model' ? 'Working' : 'Thinking' : run.status === 'completed' ? 'Worked' : statusLabels[run.status];
+  const heading = run.status === 'working' ? 'Working' : run.status === 'completed' ? 'Worked' : statusLabels[run.status];
   return <section className={`run-activity ${live ? 'run-activity-live' : ''}`} aria-label="Request activity" data-run-id={run.id}>
     <div className="run-activity-heading"><button type="button" className="run-activity-toggle" aria-expanded={open} aria-controls={detailsId} onClick={() => setOpen(value => !value)}><span className={`work-status-icon work-status-${run.status}`}><StatusIcon status={run.status} /></span><span className="run-activity-label">{heading}{duration ? ` ${run.status==='completed'||run.status==='working'?'for':'after'} ${duration}` : ''}</span><ChevronRight size={13} className={`work-disclosure ${open ? 'is-open' : ''}`} aria-hidden="true" /></button></div>
-    {live && <div className="run-current-action" role="status" aria-live="polite"><span className="run-current-line" />{current ? <><span className="run-current-name" title={itemTitle(current)}>{itemTitle(current)}</span>{current.detail && current.detail !== itemTitle(current) && <span className="run-current-detail" title={current.detail}>{current.detail}</span>}</> : <span>{run.status === 'waiting' ? 'Waiting for your input' : run.status === 'queued' ? 'Waiting to start' : 'Muse is thinking…'}</span>}</div>}
+    <WorkLog activities={run.activities} shellResults={shellResults.filter(result => run.ownedRunIds?.includes(result.runId) || result.runId === run.runId)}/>
+    {live && <div className="run-current-action" role="status" aria-live="polite"><span className="run-current-line" />{current ? <><span className="run-current-detail" title={current.detail||itemTitle(current)}>{current.detail||itemTitle(current)}</span></> : <span>{run.status === 'waiting' ? 'Waiting for your input' : run.status === 'queued' ? 'Waiting to start' : 'Muse is thinking…'}</span>}</div>}
     <MotionDisclosure id={detailsId} open={open} innerClassName="run-activity-expanded" unmountWhenClosed>{()=><><RunDetails run={run} shellResults={shellResults} /><button type="button" className="work-text-button" onClick={onOpen}>View in Sub-Agents<ArrowUpRight size={13} aria-hidden="true" /></button></>}</MotionDisclosure>
   </section>;
 }

@@ -7,9 +7,26 @@ const tool='mcp__musebench_workspace__workspace_tool_batch';
 const output=()=>({kind:'workspace-batch',version:1,calls:[{id:'symbols',operation:'workspace_symbols',status:'completed',result:{items:[{name:'value'}],snapshot:'a'.repeat(64)}},{id:'bad',operation:'hover',status:'failed',error:'SEMANTIC_POSITION'}]});
 const item=()=>({itemId:'batch-one',kind:'toolCall',tool,revision:1,turnId:'owned-turn',status:'completed',visibleOutput:JSON.stringify(output())});
 
+test('native observation opt-in exposes actual command arguments without optional workspace tools',()=>{
+ const p=api.createWorkspaceToolActivity({includeNative:true});
+ const command={...item(),tool:'powershell',status:'inProgress',args:'{"command":"git status","env":{"TOKEN":"private"}}',callId:'call-native',visibleOutput:''};
+ p.observe({...command,turnId:'foreign'},['owned-turn']);assert.equal(p.snapshot().items.length,0);
+ p.observe(command,['owned-turn']);let row=p.snapshot().items[0];assert.equal(row.subject,'git status');assert.equal(row.callId,'call-native');assert.equal(row.status,'working');assert.doesNotMatch(JSON.stringify(row),/private|TOKEN/);
+ p.observe({...command,revision:2,status:'failed',statusLine:'Command failed',visibleOutput:'exit 1'},['owned-turn']);row=p.snapshot().items[0];assert.equal(row.status,'failed');assert.equal(row.detail,'Command failed');
+ p.observe(command,['owned-turn']);assert.equal(p.snapshot().items[0].status,'failed');
+});
+
 test('connection IPC rejects unknown or inapplicable toolsets',()=>{
  for(const action of [{workspaceTools:true,transport:'msp',workspaceToolset:'all'},{workspaceTools:false,transport:'msp',workspaceToolset:'analysis-v1'},{workspaceTools:true,transport:'exec',workspaceToolset:'analysis-v1'}])assert.throws(()=>validateAction({type:'connectMuse',...action}));
  validateAction({type:'connectMuse',transport:'msp',workspaceTools:true,workspaceToolset:'analysis-v1'});
+});
+test('held native tool observations terminate when the parent ends',()=>{
+ for(const status of ['cancelled','failed','completed']){
+  const tracker=api.createWorkspaceToolActivity({includeNative:true});
+  tracker.observe({...item(),tool:'powershell',status:'inProgress',held:true},['owned-turn']);
+  assert.equal(tracker.snapshot().items[0].status,'waiting');tracker.finish(status);
+  assert.equal(tracker.snapshot().items[0].status,status==='cancelled'?'cancelled':'interrupted');
+ }
 });
 test('batch summaries accept only owned complete bounded receipts',()=>{
  assert.equal(typeof api.workspaceBatchSummary,'function');

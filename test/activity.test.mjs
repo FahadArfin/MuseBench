@@ -4,6 +4,15 @@ import {createActivityProjection, restoreRuns} from '../src/shared/activity.mjs'
 
 const task = (kind, fields = {}, id = 'task-1') => ({payload_type:`task.lifecycle.${kind}`,payload:{kind:'task_lifecycle',command_id:'command',run_stream:{kind:'run',id:'run'},task_stream:{kind:'task',id},task_id:id,event:{kind,task_id:id,...fields}}});
 const root={commandId:'command',runId:'run'};
+
+test('native intent binds a display call ID and restoration preserves it without accepting a foreign run',()=>{
+ const p=createActivityProjection();p.accept(task('proposed',{task_kind:'tool.powershell'}),root);
+ const intent=task('side_effect_intent',{operation:'tool:powershell',idempotency_key:'tool:call-real'});p.accept(intent,root);
+ assert.equal(p.snapshot().items[0].callId,'call-real');
+ const bad=task('side_effect_intent',{operation:'tool:powershell',idempotency_key:'tool:foreign'});bad.payload.run_stream.id='other';p.accept(bad,root);assert.equal(p.snapshot().items[0].callId,'call-real');
+ const saved={id:'turn',promptId:'prompt',prompt:'Task',runId:'run',status:'completed',startedAt:new Date().toISOString(),activities:p.snapshot().items};
+ assert.equal(restoreRuns([saved])[0].activities[0].callId,'call-real');
+});
 test('native tasks progress independently, retain details, and cannot complete the parent run',()=>{
  const projection=createActivityProjection();
  projection.accept(task('proposed',{task_kind:'tool.powershell'}),root);

@@ -7,6 +7,61 @@ import {DatabaseSync} from 'node:sqlite';
 import {createController} from '../src/controller/index.mjs';
 import {validateAction} from '../electron/security.mjs';
 
+test('queued Steer delivers only the chosen prompt and its attachments to the exact current turn',async t=>{
+ const f=await fixture(t);await f.act({type:'sendMessage',text:'Start working'});
+ const first=await f.add('Wait for later'),second=await f.add('Use this correction'),steered=[];
+ f.runtime.emit({steeringSupported:true,turnId:'queue-1'});
+ f.runtime.steer=async input=>{steered.push(input);f.runtime.emit({steering:{commandId:'steer-one',turnId:input.expectedTurnId,status:'accepted'}});};
+ const action={type:'steerQueued',...bound(f,second),expectedTurnId:'queue-1'};
+ validateAction(action);const s=await f.act(action);
+ assert.equal(steered.length,1);assert.match(steered[0].text,/Use this correction/);assert.match(steered[0].text,/notes.txt/);assert.equal(steered[0].imagePaths.length,1);
+ assert.deepEqual(s.task.promptQueue.map(x=>x.id),[first.id]);assert.equal(s.task.queuePaused,false);assert.equal(s.task.runs.length,1);assert.equal(f.runtime.sent.length,1);
+ assert.deepEqual(s.task.messages.at(-1).images,second.images);assert.equal(s.task.steeringReceipts.at(-1).status,'accepted');
+ assert.match((await f.c.dispatch(action)).error,/changed/i);assert.equal(steered.length,1);
+});
+
+test('queued steering rejects stale owners, revisions, turns and separate-turn planning without sending',async t=>{
+ const f=await fixture(t);await f.act({type:'sendMessage',text:'Start'});const item=await f.add();f.runtime.emit({steeringSupported:true,turnId:'queue-1'});let calls=0;f.runtime.steer=async()=>{calls++;};
+ const action={type:'steerQueued',...bound(f,item),expectedTurnId:'queue-1'};
+ for(const patch of [{taskId:'other'},{expectedRevision:2},{expectedTurnId:'old'}])assert.ok((await f.c.dispatch({...action,...patch})).error);
+ const s=await f.act({type:'editQueued',...bound(f,item),text:item.text,mode:'plan'});
+ assert.match((await f.c.dispatch({...action,expectedRevision:s.task.promptQueue[0].revision})).error,/separate turn/i);assert.equal(calls,0);
+ assert.throws(()=>validateAction({...action,text:'forged replacement'}));
+});
+
+test('unknown queued steering stays durable and cannot automatically replay after turn completion',async t=>{
+ const f=await fixture(t);await f.act({type:'sendMessage',text:'Start'});const item=await f.add();f.runtime.emit({steeringSupported:true,turnId:'queue-1'});let calls=0;
+ f.runtime.steer=async input=>{calls++;f.runtime.emit({steering:{commandId:'lost-ack',turnId:input.expectedTurnId,status:'unknown'}});throw Error('Acknowledgment lost');};
+ const action={type:'steerQueued',...bound(f,item),expectedTurnId:'queue-1'};
+ const failed=await f.c.dispatch(action);assert.match(failed.error,/lost/);assert.equal(failed.task.promptQueue[0].delivery,'unknown');assert.equal(failed.task.queuePaused,true);
+ assert.match((await f.c.dispatch(action)).error,/unknown/i);f.runtime.finish();await new Promise(r=>setTimeout(r,35));assert.equal(f.runtime.sent.length,1);assert.equal(calls,1);
+ await f.reopen();assert.equal(f.c.getState().task.promptQueue[0].delivery,'unknown');
+});
+
+test('a rejected queued steer preserves a retryable prompt and explicit pause survives native questions',async t=>{
+ const f=await fixture(t);await f.act({type:'sendMessage',text:'Start'});const item=await f.add();f.runtime.emit({steeringSupported:true,turnId:'queue-1'});
+ f.runtime.steer=async input=>{f.runtime.emit({steering:{commandId:'refused',turnId:input.expectedTurnId,status:'rejected'}});throw Error('Turn changed');};
+ const s=await f.c.dispatch({type:'steerQueued',...bound(f,item),expectedTurnId:'queue-1'});assert.match(s.error,/changed/);assert.equal(s.task.promptQueue[0].delivery,'ready');assert.equal(s.task.queueHold,true);
+ f.runtime.emit({status:'blocked',sessionId:'current',pending:{kind:'input',sessionId:'current'}});f.runtime.emit({status:'running',pending:null});f.runtime.finish();await new Promise(r=>setTimeout(r,35));assert.equal(f.runtime.sent.length,1);assert.equal(f.c.getState().task.queuePaused,true);
+});
+
+test('queued prompts automatically start only after the current work completes with confirmed cleanup',async t=>{
+ const f=await fixture(t);await f.act({type:'sendMessage',text:'Start'});await f.add('Run next');assert.equal(f.c.getState().task.queuePaused,false);
+ await new Promise(r=>setTimeout(r,35));assert.equal(f.runtime.sent.length,1);f.runtime.finish();
+ for(let i=0;i<80&&f.runtime.sent.length<2;i++)await new Promise(r=>setTimeout(r,10));
+ assert.equal(f.runtime.sent.length,2);assert.match(f.runtime.sent[1].text,/Run next/);assert.equal(f.c.getState().task.promptQueue.length,0);
+});
+
+test('automatic queue survives verified native approval and question pauses before or after queuing',async t=>{
+ for(const kind of ['approval','input'])for(const queueBefore of [true,false]){
+  const f=await fixture(t);await f.act({type:'sendMessage',text:'Start'});if(queueBefore)await f.add('Next request');
+  f.runtime.emit({status:'blocked',sessionId:'current-session',pending:{kind,sessionId:'current-session'}});
+  if(!queueBefore)await f.add('Next request');assert.equal(f.c.getState().task.queuePaused,false);assert.equal(f.runtime.sent.length,1);
+  f.runtime.emit({status:'running',pending:null});f.runtime.finish();for(let i=0;i<80&&f.runtime.sent.length<2;i++)await new Promise(r=>setTimeout(r,10));
+  assert.equal(f.runtime.sent.length,2);assert.match(f.runtime.sent[1].text,/Next request/);
+ }
+});
+
 async function fixture(t){
  const root=await mkdtemp(path.join(os.tmpdir(),'musebench-queue-edit-')),dataDir=path.join(root,'data'),project=path.join(root,'project');await mkdir(project);await writeFile(path.join(project,'notes.txt'),'Read me');
  let state={status:'idle',transport:'exec',permissionVerified:true,messages:[],cleanup:'confirmed'},sequence=0;const listeners=new Set();

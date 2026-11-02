@@ -43,6 +43,11 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
     return()=>{disposed=true;active.clear();ipcRenderer.removeListener('musebench:native-request',listener);ipcRenderer.removeListener('musebench:native-cancel',cancel);};
   },
   onAppUpdate: callback => {const listener=(_event,state)=>callback(state);ipcRenderer.on('musebench:app-update-state',listener);return()=>ipcRenderer.removeListener('musebench:app-update-state',listener);},
+  sideChat: input => ipcRenderer.invoke('musebench:side-chat',input),
+  onSideChat: callback => {const fn=(_event,state)=>callback(state);ipcRenderer.on('musebench:side-chat-state',fn);return()=>ipcRenderer.removeListener('musebench:side-chat-state',fn);},
+  codeBrowser: input => ipcRenderer.invoke('musebench:code-browser',input),
+  onCodeBrowser: callback => {const fn=(_event,state)=>callback(state);ipcRenderer.on('musebench:code-browser-state',fn);return()=>ipcRenderer.removeListener('musebench:code-browser-state',fn);},
+  sessionMedia: input => ipcRenderer.invoke('musebench:session-media',input),
   inspectWorktrees: input => ipcRenderer.invoke('musebench:worktrees',input),
   inspectProjectActions: input => ipcRenderer.invoke('musebench:project-actions',input),
   inspectRunChanges: input => ipcRenderer.invoke('musebench:run-changes',input),

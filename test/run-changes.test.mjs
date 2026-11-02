@@ -54,3 +54,12 @@ test('feedback line numbers match the diff for empty, newline-terminated and unt
  const {store}=setup(t),after={'a':file('after\n'),'b':file('one\ntwo')};begin(store,{'a':file(''),'b':file('before')});store.finish('chat','run',snap(after));const view=store.read('chat','run',after),request={taskId:'chat',runId:'run',revision:view.revision,path:'a',side:'after',start:1,end:1,note:'Valid line'};
  assert.match(store.feedback(request,after).text,/after lines 1/);assert.throws(()=>store.feedback({...request,start:2,end:2},after),/line/i);assert.throws(()=>store.feedback({...request,side:'before'},after),/line/i);assert.match(store.feedback({...request,path:'b',start:2,end:2},after).text,/after lines 2/);assert.throws(()=>store.feedback({...request,path:'b',end:3},after),/line/i);
 });
+
+test('session image metadata uses only complete captures for the exact chat and project root',t=>{
+ const {store}=setup(t),after={'created.png':file('png bytes',true),'source.js':file('text'),'removed.jpg':file('old',true)};
+ begin(store);store.finish('chat','run',snap(after));
+ const images=store.images('chat','/project',['run']);assert.deepEqual(images.map(x=>[x.path,x.status,x.afterHash]),[['created.png','added',hash('png bytes')],['removed.jpg','added',hash('old')]]);
+ assert.deepEqual(store.images('other','/project',['run']),[]);assert.deepEqual(store.images('chat','/elsewhere',['run']),[]);
+ begin(store,after,'pending');assert.deepEqual(store.images('chat','/project',['pending']),[]);
+ store.unavailable('chat','run','Uncertain run');assert.deepEqual(store.images('chat','/project',['run']),[]);
+});

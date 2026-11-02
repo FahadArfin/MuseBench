@@ -233,3 +233,98 @@ Open in side chat transfers the exact queued request into an unsent draft with i
 Verification: 43 controller/chat-relation tests passed (artifacts/queue-menu-green.log), followed by 4 focused checks for plan-mode transfer and unknown-delivery protection (artifacts/queue-menu-additional.log). Browser smoke covers the actual menu actions, parent draft retention, side-chat draft and queue off/on flow (artifacts/queue-menu-browser.log). Typecheck and diff checks passed. Storage-write failure preserves the original queued work; a working parent continues when a side draft is opened. Only offline fixtures were used; no installed app restart, publish or real provider request occurred.
 
 final result: passed
+
+---
+
+# Inline Code work log QA
+
+final result: passed
+
+## Evidence and scope
+
+- Source visual truth: `C:/Users/fahad/AppData/Local/Temp/codex-clipboard-e19a5761-1312-4318-84ef-6cd4b726bc7c.png` (972 × 586 px, collapsed) and `C:/Users/fahad/AppData/Local/Temp/codex-clipboard-c5665d79-6ae6-4eef-80c1-6a8442078593.png` (812 × 613 px, expanded).
+- Rendered production component: `artifacts/work-log/desktop-IbRfcE/collapsed.png`, `expanded.png` (972 × 586 CSS/pixel viewport), and `narrow.png` (390 × 760). Electron, dark appearance, density 1; no rescaling of either source.
+- Combined full-view comparison: `artifacts/work-log/comparison.png`. Sources and implementations appear together at original density. Different sample commands, number of events, and assistant prose make whole-transcript pixel matching inappropriate; the comparison targets the requested activity rows and disclosures. All icons, labels and expanded output are readable in the full-size comparison, so no separate cropped region was required.
+
+## Findings
+
+No outstanding actionable P0/P1/P2 findings for the requested compact work-log interaction.
+
+- Typography: existing MuseBench Inter/sans tokens retained; 13px muted rows, 12px status and 11px monospace output. The reference uses a similar small sans hierarchy. Command summaries truncate on one line and expanded text wraps; no overlaps at 390px.
+- Spacing/layout: transparent inline rows with small category icons and adjacent disclosure arrows match the reference pattern. Expanded child actions remain aligned below the summary; output is indented with a subtle left rule. Existing duration/details control is retained. No card chrome was added.
+- Colors/tokens: existing dark background, muted completed rows and standard foreground output; blue active spinner and semantic failure/wait colors use existing theme tokens. Accepted adaptation to MuseBench's established theme rather than a palette replacement.
+- Image/icon fidelity: standard category icons come from the existing Lucide library. No raster artwork is needed. Reference agent mascots are not copied; actual agent events use the existing bot icon and their reported names.
+- Copy/content: compact summaries such as “Ran a command, searched the web” and “Edited a file, ran a command” match the requested pattern. Active status comes from native observations. The fixture's assistant prose and mascot events intentionally differ from the reference; none are fabricated to fill the UI.
+- Interaction/accessibility: groups start collapsed, keyboard Enter expands them, individual actions expose their matching output, and state survives arriving actions. Focus indicators, disclosure semantics, reduced-motion support and narrow layout were exercised. No page errors were recorded.
+
+## Comparison history and fixes
+
+The first visual comparison found no actionable P0/P1/P2 mismatches. Interaction checks separately caught expansion loss when a single action grew into a group; stable component structure fixed it before visual capture. Fresh code review caught foreign-run receipt duplication; the shared ownership filter and failing-then-passing Electron regression fixed it before final capture. The low-level tracker now also closes held observations consistently at parent termination.
+
+## Implementation checklist
+
+- [x] Compare collapsed and expanded states against both supplied references together.
+- [x] Check fonts, layout rhythm, tokens, icons/assets and copy explicitly.
+- [x] Exercise disclosure keyboard use, streaming stability, retained draft, reduced motion and narrow width in isolated Electron.
+- [x] Check existing full chat renderer and long transcript behavior without changing the installed profile.
+
+## Remaining evidence limits
+
+Fixture observations exercise the production UI; this review does not claim a live paid model turn or an installed-app test. No publication or app restart was performed.
+
+---
+
+# Queue Send / Stop / Steer QA
+
+final result: passed
+
+## Targets and normalization
+
+Source truth: `C:/Users/fahad/AppData/Local/Temp/codex-clipboard-839c6d11-4f48-450f-80d7-8ed5b6efec33.png` (1001 × 289 px), `codex-clipboard-15e08d99-9c73-4e12-a398-5aa78407fbed.png` (836 × 351 px), and `codex-clipboard-7aed866e-1a7c-4ce7-86e2-c23a5530d380.png` (758 × 99 px), all in that same Temp directory. These depict running/empty Stop, a draft with Send, and the compact queue strip with Steer.
+
+Implementation: `artifacts/queue-composer/desktop-vmNGpy/running-empty.png`, `running-draft.png`, `queued-steer.png`, `queued-composer.png`, and `narrow.png`. Full App viewport is 1002 × 760 CSS/pixels; narrow is 390 × 760; density 1. The composer element capture is 690 × 170 px. No density scaling was used. Full-window sample content and screenshot attachments differ; fidelity is judged on the requested controls and queue placement, not transcript length or thumbnail content.
+
+Combined comparison input: `artifacts/queue-composer/comparison.png`. Source and implementation are together at original density. The draft implementation is clipped in the diagnostic HTML to its composer region without scaling; the other implementation views are direct element captures. The controls and iconography are readable here, so additional zoom crops were not necessary. The full App and narrow screenshots were also inspected directly.
+
+## Findings and comparison history
+
+- [P2, fixed] At 390px, a long active model label pushed part of Stop outside the composer. Added a failing button-bounds check, made only the model control shrink, and rechecked the revised narrow capture. Stop is now fully inside the composer, while model text truncates safely. No actionable P0/P1/P2 issue remains.
+- Fonts/typography: existing Inter/sans tokens, small muted queue actions, single-line ellipsized prompt text and normal editable draft text remain consistent with MuseBench. The reference uses a comparable compact hierarchy.
+- Spacing/layout: the queue strip stays attached above the composer; Send and Stop occupy the same single circular action slot. There is no extra active queue-submit button beside Stop. Existing menu, removal, reordering and pause controls remain available.
+- Colors/tokens: retained the established MuseBench blue Send, neutral Stop and muted queue actions. The reference uses a white Send button; retaining the app's existing accent is an intentional theme adaptation.
+- Images/icons: existing Lucide arrow, stop square, Steer arrow, trash and overflow controls are used. No invented raster assets were needed. Screenshot thumbnails in the reference are user attachment content, not new decorative assets to copy into the app.
+- Copy/content: Send puts a prompt in the queue; only the queued row's explicit Steer action injects it into the active turn. Current request and model names are fixture data. Existing context-history and optional goal controls are outside this request's scope.
+- Accessibility/interaction: Enter submits to the queue, Shift+Enter inserts a line, the empty running composer restores Stop, current draft survives steering another queued item, pending questions disable Steer but allow queuing, and unsupported connections retain the queued item. Tested with reduced motion; no renderer errors recorded.
+
+## Verification and limits
+
+Production build/typecheck passed. 203 targeted runtime/controller tests passed, followed by the 20 directly affected queue-recovery tests after the shared pause predicate extraction. Seven isolated Electron/real-preview-bridge checks passed. The final desktop/preview compatibility run also passed with matching controls/styles/geometry. Native steering tests use validated synthetic acknowledgements and screenshot content parts; no paid provider turn or installed-app restart was performed.
+
+
+---
+
+# Session tools rail QA
+
+final result: passed
+
+## Target and captures
+
+Selected target: `C:/Users/fahad/AppData/Local/Temp/codex-clipboard-e04a9358-5d93-444a-aa2e-22aa985b04ba.png` (2148 x 766). Its right rail groups Changes, Subagents, Background processes and Sources. The user requested a similar expandable menu with additional project tools.
+
+Final overview and narrow captures: `artifacts/session-tools/desktop-VTICd8/overview.png` (1480 x 960) and `narrow.png` (390 x 760), device scale 1. Browser, Images and Side chat captures are in `artifacts/session-tools/desktop-5J1Y0J/`. Both source and output were inspected directly. Combined comparison: `artifacts/session-tools/comparison.png`, generated from `comparison.html`, contains natural-size rail crops and the narrow view. Crop coordinates are explicit in the HTML; neither image was scaled. Full-app widths and transcript fixtures differ; comparison focuses on the requested rail.
+
+## Findings and adaptations
+
+- [P2, fixed] Change totals existed in text but a zero flex basis clipped them. Final bounds check and capture confirm visible +7 and -2 totals.
+- Layout: a 286px right rail preserves the transcript/composer. Expandable groups have remembered state and a close control. Browser, gallery and Side chat have 420px detail pages with Back controls. Below 1050px the rail becomes a full-width overlay; the 390px capture has no horizontal overflow. Narrow keyboard navigation stays in the panel; Escape/Close returns to the titlebar toggle.
+- Typography/icons: existing MuseBench Inter tokens and Lucide icons match the app. Muted group headings, item names, chevrons, statuses and colored change totals follow the target hierarchy. Reference avatars and source thumbnails are session content, so no new decorative raster assets were needed.
+- Intentional adaptations: full-height rail follows existing MuseBench docks rather than Codex's floating card. Actual agent labels replace emoji avatars; Sources lists attached files. Processes only names observed commands and managed preview/check jobs. Additional project-tool links extend below the four reference groups.
+- Browser: real Electron WebContentsView has an ephemeral partition, no preload/Node bridge, and denies permissions, popups and downloads. It hides beneath dialogs, remains inside the pane at 125% app zoom, and closes on pane close, owner change, renderer reload and teardown.
+- Side chat: opening starts no native request. Explicit Send starts a separate read-only exec runtime without session logging or main history. Stop retains side messages; Close discards and cancels. Unknown native cleanup remains an update/work blocker. Main draft preservation is verified.
+- Images: actual upload/captured-file bytes use bounded IPC and provenance labels. Workspace images require safe containment, a recognized signature and the captured hash. This is a gallery of existing images, not a new paid image generator.
+
+## Validation and limits
+
+71 targeted backend/lifecycle tests passed, production build/typecheck passed, six isolated Electron flows passed with no renderer errors, and all seven queue regression checks passed. Final overview/narrow captures were inspected after the count fix. Independent review confirmed all identified P2 issues resolved; no remaining P0/P1/P2 was found in the covered flow.
+
+The native model is synthetic for UI verification; no paid provider turn was made. Terminal/VS Code checks verify bound launch intents rather than spawning user applications. The browser is user-operated; general agent browser automation and embedded arbitrary shell input are deferred. The installed app/profile were not restarted or modified. The batch remains local and unpublished.

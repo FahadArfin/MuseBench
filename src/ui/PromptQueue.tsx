@@ -2,6 +2,7 @@ import {useEffect,useId,useLayoutEffect,useRef,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {GripVertical,Pencil,Trash2,CornerDownRight,Pause,Play,MoreHorizontal,MessageCirclePlus,ListEnd} from 'lucide-react';
 import type {QueuedPrompt} from '../shared/types';
+import {queuedSteeringUnavailable} from '../shared/queued-prompts.mjs';
 import './prompt-queue.css';
 
 function QueuePromptMenu({index,disabled,queuingEnabled,sideUnavailable,onEdit,onSideChat,onToggleQueuing}:{index:number;disabled:boolean;queuingEnabled:boolean;sideUnavailable?:string;onEdit:()=>void;onSideChat:()=>void;onToggleQueuing:()=>void}){
@@ -32,8 +33,8 @@ function QueuePromptMenu({index,disabled,queuingEnabled,sideUnavailable,onEdit,o
  </>;
 }
 
-export function PromptQueue({items,busy,running,paused,queuingEnabled=true,onMove,onBeginEdit,onEdit,onRemove,onSend,onPause,onRun,onSideChat,onQueuingChange}:{
- items:QueuedPrompt[];busy:boolean;running:boolean;paused:boolean;queuingEnabled?:boolean;
+export function PromptQueue({items,busy,running,paused,queuingEnabled=true,canSteer=false,onSteer,onMove,onBeginEdit,onEdit,onRemove,onSend,onPause,onRun,onSideChat,onQueuingChange}:{
+ items:QueuedPrompt[];busy:boolean;running:boolean;paused:boolean;queuingEnabled?:boolean;canSteer?:boolean;onSteer?:(item:QueuedPrompt)=>Promise<boolean>;
  onMove:(id:string,beforeId:string|null)=>Promise<boolean>;
  onBeginEdit:(item:QueuedPrompt)=>Promise<boolean>;onEdit:(item:QueuedPrompt,text:string,mode:'chat'|'plan')=>Promise<boolean>;onRemove:(item:QueuedPrompt)=>Promise<boolean>;
  onSend:(item:QueuedPrompt)=>Promise<boolean>;onPause:()=>Promise<boolean>;onRun:()=>Promise<boolean>;
@@ -63,7 +64,7 @@ export function PromptQueue({items,busy,running,paused,queuingEnabled=true,onMov
      onDragEnd={reset}
      onKeyDown={event=>{if(!event.altKey||!['ArrowUp','ArrowDown'].includes(event.key))return;event.preventDefault();if(event.key==='ArrowUp'&&index>0)void move(item.id,items[index-1].id);if(event.key==='ArrowDown'&&index<items.length-1)void move(item.id,items[index+2]?.id??null);}}><GripVertical size={14}/></button>
     <span className="queued-text" title={item.text}>{item.workflow?`${item.workflow.title} · ${item.workflow.index+1}/${item.workflow.total} ${item.workflow.phase}`:item.handoff?`Context from ${item.handoff.sourceTitle}`:item.text}{!!item.images?.length&&` · ${item.images.length} screenshot${item.images.length===1?'':'s'}`}{item.recentContext&&<small>Reviewed recent excerpts included</small>}{item.delivery==='unknown'&&<small>Outcome unknown · Check the session</small>}{item.delivery==='sending'&&<small>Sending…</small>}</span>
-    <button type="button" className="queue-send" aria-label={`Send queued prompt ${index+1} now`} title="Send as the next turn; keep the rest paused" disabled={locked||running||!!editing||['sending','unknown'].includes(item.delivery??'')} onClick={()=>void run(()=>onSend(item))}><CornerDownRight size={13}/><span>Send</span></button>
+    <button type="button" className="queue-send" aria-label={`${running?'Steer':'Send'} queued prompt ${index+1} now`} title={running?(queuedSteeringUnavailable(item)??(canSteer?'Send to the active agent now, using the current turn settings':'Live steering is unavailable; this prompt stays queued')):'Send as the next turn; keep the rest paused'} disabled={locked||!!editing||['sending','unknown'].includes(item.delivery??'')||running&&(!canSteer||!onSteer||!!queuedSteeringUnavailable(item))} onClick={()=>void run(()=>running?onSteer!(item):onSend(item))}><CornerDownRight size={13}/><span>{running?'Steer':'Send'}</span></button>
     <button type="button" className="icon-button" aria-label={`Remove queued prompt ${index+1}`} title="Remove prompt" disabled={locked||!!editing||item.delivery==='sending'} onClick={()=>void run(()=>onRemove(item))}><Trash2 size={14}/></button>
     <QueuePromptMenu index={index} disabled={locked||!!editing||['sending','unknown'].includes(item.delivery??'')} queuingEnabled={queuingEnabled} sideUnavailable={item.recentContext||item.workflow||item.requiredChecks?.length?'Keep reviewed context and workflow checks in the original chat.':undefined} onEdit={()=>edit(item)} onSideChat={()=>void run(()=>onSideChat(item))} onToggleQueuing={()=>void run(()=>onQueuingChange(!queuingEnabled))}/>
    </li>)}

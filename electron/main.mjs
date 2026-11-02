@@ -1,3 +1,7 @@
+import {bindSessionToolsNavigation} from './session-tools-lifecycle.mjs';
+import {createTemporaryChat} from './temporary-chat.mjs';
+import {createChatBrowser} from './chat-browser.mjs';
+import {createSessionMedia} from './session-media.mjs';
 import {createChatMenuTools} from './chat-menu-tools.mjs';
 import {chatLinkTask} from '../src/shared/chat-menu-tools.mjs';
 import {createDiscoveryMcpConfig} from './discovery-mcp-config.mjs';
@@ -43,7 +47,7 @@ import {createWorkExporter} from './work-export.mjs';
 import {writeFile} from 'node:fs/promises';
 import {workDataDirectory} from './work-root.mjs';
 import {createDictation} from './dictation.mjs';
-import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, Tray, shell, session, nativeTheme, Notification, protocol, safeStorage, clipboard, ClipboardItem } from 'electron';
+import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, Tray, shell, session, nativeTheme, Notification, protocol, safeStorage, clipboard, ClipboardItem, nativeImage } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -73,7 +77,7 @@ const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
 protocol.registerSchemesAsPrivileged([{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
 let pendingChatLink=process.argv.map(chatLinkTask).find(Boolean)??null,deliverChatLink;
-let window, ui, openWindow, background, closeOwned, ownedWorkBusy, controller, customize, codeBilling, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0, opening=null, pendingQuit=false;
+let window, ui, openWindow, background, closeOwned, ownedWorkBusy, controller, temporaryChat, customize, codeBilling, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0, opening=null, pendingQuit=false;
 const retryPendingQuit=()=>{if(pendingQuit&&!opening&&pendingIpc===0){pendingQuit=false;setImmediate(()=>app.quit());}};
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 const quitLifecycle=createQuitLifecycle({close:()=>closeOwned?.(),quit:()=>app.quit(),onFailure:async()=>{
@@ -96,7 +100,7 @@ else {
     const discoveryMcp=createDiscoveryMcpConfig({appRoot:root,helperPath,extensionReview,oauth:()=>discoveryOAuth});
     const discoveryStore=await createDiscoveryOAuthStore({dataDir,protection:{available:async()=>safeStorage.isEncryptionAvailable()&&!['basic_text','plaintext'].includes(safeStorage.getSelectedStorageBackend?.()),encrypt:text=>safeStorage.encryptStringAsync(text),decrypt:bytes=>safeStorage.decryptStringAsync(bytes)}});
     discoveryOAuth=createDiscoveryOAuth({store:discoveryStore,flow:createDiscoveryOAuthFlow({networkFactory:({url,limits})=>createRemoteNetwork({url},{limits})}),callbackFactory:createDiscoveryOAuthCallback,resolveSource:discoveryMcp.resolveAuthSource,getSourceSnapshot:discoveryMcp.getAuthSourceSnapshot,ownerSnapshot:()=>controller?.discoveryOwnerSnapshot(),runtimeOwnerSnapshot:discoveryMcp.runtimeOwnerSnapshot,admitSourceMutation:id=>!controller||controller.discoverySourceBusy(id)?null:discoveryMcp.admitSourceMutation(id),withIdleLease:discoveryMcp.withIdleLease,openBrowser:url=>shell.openExternal(url),onSafeUpdate:event=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:discovery-auth-update',event);}});
-    codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>onboardingOwners.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:()=>controller.resetCodeConnections(),readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
+    codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>temporaryChat?.isBusy()||onboardingOwners.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:async()=>{await temporaryChat?.close();return controller.resetCodeConnections();},readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
     const runtimeFactory = () => process.platform === 'win32' ? createCodeRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,workspaceMcp,discoveryMcp,durableSessions:true}) : createRuntime({credentials:codeBilling.credentials,extensionReview,workspaceMcp,discoveryMcp});
     const projectsOverride = process.env.MUSEBENCH_PROJECTS_DIR;
     // Muse 1.4.14 can stall before shell launch inside the user profile.
@@ -104,6 +108,7 @@ else {
     const projectsDir = projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride
       : process.platform === 'win32' ? path.join(path.parse(dataDir).root,'MuseBenchWorkspaces',createHash('sha256').update(dataDir.toLowerCase()).digest('hex').slice(0,12)) : undefined;
     controller = await createController({ dataDir, projectsDir, newProjectsDir: projectsOverride && path.isAbsolute(projectsOverride) ? projectsOverride : path.join(app.getPath('documents'),'MuseBench'), templateDir: path.join(root,'templates','tea-store'), runtimeFactory,discoverModels:createNativeModelDiscovery({credentials:codeBilling.credentials}),discoveryOAuth:()=>discoveryOAuth });
+    temporaryChat=createTemporaryChat({getState:()=>controller.getState(),runtimeFactory:()=>createExecRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,durableSessions:false}),onState:value=>{if(window&&!window.isDestroyed())window.webContents.send('musebench:side-chat-state',value);}});
     // Windows can redirect the app's known Roaming folder under its package
     // identity. Anchor Work's strict path checks to that trusted physical root.
     const workDataDir=await workDataDirectory(dataDir);
@@ -131,9 +136,9 @@ else {
     dictation = createDictation({helperPath: app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchSpeech.exe') : path.join(root,'native','bin','MuseBenchSpeech.exe'), onState: value => { if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:dictation-update',value); }});
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{if(!window||window.isDestroyed())throw Error('Open MuseBench to choose a folder.');const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
     mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||onboardingOwners.isBusy()})});
-    ownedWorkBusy=()=>discoveryOAuth.isBusy()||nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||onboardingOwners.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
+    ownedWorkBusy=()=>temporaryChat.isBusy()||discoveryOAuth.isBusy()||nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||onboardingOwners.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
     const updateBusy=()=>pendingIpc>0||ownedWorkBusy();
-    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['tool-signin','Tool sign-in',discoveryOAuth.isBusy()],['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',onboardingOwners.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
+    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['side-chat','Temporary side chat',temporaryChat.isBusy()],['tool-signin','Tool sign-in',discoveryOAuth.isBusy()],['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',onboardingOwners.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
     let firstWindow=true,blockedDialog=false,pendingWindowClose=false;
     const showBlocked=async message=>{if(blockedDialog||closing)return;blockedDialog=true;try{await openWindow();await dialog.showMessageBox(window,{type:'info',title:'MuseBench is still working',message,detail:updateBlockers().map(row=>row.label+': '+row.detail).join('\n'),buttons:['Keep running']});}finally{blockedDialog=false;}};
     openWindow=()=>{
@@ -159,7 +164,7 @@ else {
     closeOwned=async()=>{
       closing=true;ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();
       const discoveryClose=Promise.resolve().then(()=>discoveryOAuth.close()).finally(()=>discoveryStore.close());
-      const results=await Promise.allSettled([discoveryClose,onboardingOwners.closeAll(),codeBilling.close(),nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close(),background.close(),browserLogin.close(),sessionDurability.close()]);
+      const results=await Promise.allSettled([discoveryClose,onboardingOwners.closeAll(),codeBilling.close(),temporaryChat.close(),nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close(),background.close(),browserLogin.close(),sessionDurability.close()]);
       for(const notification of notifications)notification.close();notifications.clear();
       if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
     };
@@ -184,7 +189,7 @@ else {
     sites.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:sites-update',value);});
     spaces.subscribe(value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:spaces-update',value);});
     work.subscribe(publishWork);
-    controller.subscribe(state=>{notifier.observe(state);ui?.statePublisher?.publish(state);});
+    controller.subscribe(state=>{void temporaryChat.reconcile().catch(()=>{});ui?.chatBrowser?.reconcile();notifier.observe(state);ui?.statePublisher?.publish(state);});
     Menu.setApplicationMenu(Menu.buildFromTemplate([
       {label:'MuseBench',submenu:[{label:'Open project…',accelerator:'CmdOrCtrl+O',click:async()=>{if(updateInstalling||closing||customize?.isBusy())return;await openWindow();pendingIpc++;try{const r=await dialog.showOpenDialog(window,{properties:['openDirectory']});if(!r.canceled&&!updateInstalling&&!closing){const next=await controller.dispatch({type:'openProject',path:r.filePaths[0]});if(!next.error&&!window.isDestroyed()){ui?.personal.hide();window.webContents.send('musebench:personal-shortcut','code');}}}finally{pendingIpc--;retryPendingQuit();}}},{type:'separator'},{role:'quit'}]},
       {role:'editMenu'}, {label:'View',submenu:[{role:'reload'},{role:'resetZoom'},{role:'zoomIn'},{role:'zoomOut'},{role:'togglefullscreen'},...(!app.isPackaged?[{role:'toggleDevTools'}]:[])]},
@@ -241,7 +246,7 @@ else {
       if (!initialNavigation) launch.complete();
       initialNavigation = false;
     });
-    window.webContents.on('render-process-gone',()=>{launch.complete();statePublisher.detach();});
+    window.webContents.on('render-process-gone',()=>{void temporaryChat.close().catch(()=>{});view.chatBrowser?.close();launch.complete();statePublisher.detach();});
     window.once('closed',()=>{launch.close();statePublisher.close();ipcMain.removeListener('musebench:state-ack',stateAck);ipcMain.removeListener('musebench:state-detach',stateDetach);ipcMain.removeListener('musebench:launch-claim',claimLaunch);});
     const handlers=[];
     const handler = (name, fn) => {handlers.push(name);ipcMain.handle(name, async (event,...args) => {
@@ -260,6 +265,13 @@ else {
     handler('musebench:open-file',openFileEditor);
     const chatTools=createChatMenuTools({getState:()=>controller.getState(),readHistory:input=>controller.readChatHistory(input),clipboard,openPath:folder=>shell.openPath(folder),save:async title=>{const result=await dialog.showSaveDialog(window,{title:'Share chat as Markdown',defaultPath:title+'.md',filters:[{name:'Markdown',extensions:['md']}]});return result.canceled?null:result.filePath;}});
     handler('musebench:chat-tools',chatTools);
+    const chatBrowser=view.chatBrowser=createChatBrowser({window,WebContentsView,getState:()=>controller.getState(),onState:value=>{if(!window.isDestroyed())window.webContents.send('musebench:code-browser-state',value);}});
+    const detachSessionTools=bindSessionToolsNavigation(window.webContents,{browser:chatBrowser,sideChat:temporaryChat});window.once('closed',detachSessionTools);
+    handler('musebench:code-browser',input=>chatBrowser.command(input));
+    handler('musebench:side-chat',input=>{if(input?.type==='send'&&(closing||codeBilling.blocksWork()||onboardingOwners.isBusy()))throw Error('Finish sign-in or billing changes before sending.');return temporaryChat.command(input);});
+    const media=createSessionMedia({getState:()=>controller.getState(),readHistory:input=>controller.readChatHistory(input),capturedImages:id=>controller.capturedSessionImages(id),readUpload:input=>controller.readImage(input),thumbnail:bytes=>{const image=nativeImage.createFromBuffer(bytes);if(image.isEmpty())throw Error('This image could not be decoded.');const size=image.getSize(),scale=Math.min(1,256/size.width,192/size.height);return image.resize({width:Math.max(1,Math.round(size.width*scale)),height:Math.max(1,Math.round(size.height*scale)),quality:'good'}).toDataURL();}});
+    handler('musebench:session-media',input=>media.command(input));
+    window.once('closed',()=>{chatBrowser.close();void temporaryChat.close().catch(()=>{});});
     let chatLinkReady=false;
     deliverChatLink=()=>{if(chatLinkReady&&pendingChatLink&&!window.isDestroyed()){const id=pendingChatLink;pendingChatLink=null;window.webContents.send('musebench:chat-link',id);}};
     handler('musebench:chat-link-ready',()=>{chatLinkReady=true;deliverChatLink();});

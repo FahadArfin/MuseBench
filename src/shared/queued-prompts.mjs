@@ -1,3 +1,10 @@
+export function queuedSteeringUnavailable(item) {
+ return item.mode==='plan'||item.workflow||item.handoff||item.recentContext||item.requiredChecks?.length?'This prompt must run as a separate turn.':null;
+}
+export function isNativeRequestPause(runtime) {
+ return runtime?.status==='blocked'&&runtime.permissionVerified===true&&typeof runtime.sessionId==='string'&&['approval','input'].includes(runtime.pending?.kind)&&runtime.pending.sessionId===runtime.sessionId;
+}
+
 export function moveQueuedPrompt(task, action) {
  if (!task || task.id !== action.taskId || task.archived) throw Error('Open the original active chat to reorder its queue.');
  const queue = task.promptQueue ?? [];

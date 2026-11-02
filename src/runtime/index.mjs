@@ -165,7 +165,7 @@ export function createRuntime({credentials,environment=process.env,platform=proc
  let revisionCounter=0;
  let awaitingChildReport=false,lastTerminal=null;
  const children=createChildTracker(),childCommands=new Set(),uncertainChildren=new Set(),childWork=new Map();
- const workspaceActivity=createWorkspaceToolActivity();let workspaceActivityTurn=null;
+ const workspaceActivity=createWorkspaceToolActivity({includeNative:true});let workspaceActivityTurn=null;
  const childReads=new Set();
  let mcpReadEpoch=null;
  const compaction=createCompactionTracker();let compactionTimer;
@@ -371,11 +371,11 @@ export function createRuntime({credentials,environment=process.env,platform=proc
      return await fn(request);
     }),
    };
-   const observeToolItem=workspaceTools||discovery?(item,scope)=>{
+   const observeToolItem=(item,scope)=>{
     if(token!==epoch||owner!==host)return;
     if(scope.rootTurnId&&scope.rootTurnId!==workspaceActivityTurn){workspaceActivity.reset();workspaceActivityTurn=scope.rootTurnId;}
     workspaceActivity.observe(item,scope.ownedTurnIds);
-   }:null;
+   };
    const observeContextItem=item=>{if(token!==epoch||owner!==host||!state.permissionVerified)return;compaction.observe(item,state.sessionId);syncCompaction();};
    adapter=new MuseSessionAdapter({connection,sdkVersion,initializeResult:host.initializeResult,fullAccess,observeContextItem,allowContinuation:s=>children.snapshot().items.some(i=>s.ownedTurnIds?.includes(i.turnId)),observeToolItem,timeoutMs});
    unsubscribe=adapter.subscribe(syncAdapter);
@@ -529,12 +529,12 @@ export function createRuntime({credentials,environment=process.env,platform=proc
   }catch(error){if(submitted&&token===epoch&&requests.has('input:'+request.userInputId))publishInput({...receipt,status:error.code===-32057?'rejected':'unknown'});throw error;}finally{if(token===epoch)deciding=false;}
  }
 
- async function steer({text,expectedTurnId}={}){
-  if(typeof text!=='string'||!text.trim()||text.length>16000)throw Error('Use a correction up to 16,000 characters.');
+ async function steer({text,expectedTurnId,imagePaths=[]}={}){
+  if(typeof text!=='string'||!text.trim()||text.length>64000)throw Error('Use a prepared correction up to 64,000 characters.');
   if(steering||state.steering?.status==='unknown')throw Error('Inspect the previous steering outcome before sending another correction.');
   if(!owner||!state.permissionVerified||state.status!=='running'||pending||!expectedTurnId||adapter.snapshot().turnId!==expectedTurnId)throw Error('The target turn is no longer running or needs your attention.');
   const token=epoch,sessionId=state.sessionId,commandId=owner.connection.mintCommandId();let submitted=false;steering=true;
-  try{await verifyWorkConfiguration(token);if(state.status!=='running'||pending||adapter.snapshot().turnId!==expectedTurnId)throw Error('The target turn changed while its configuration was checked.');update({steering:{commandId,turnId:expectedTurnId,status:'submitting'}});submitted=true;const ack=await bounded(owner.connection.command('turn/steer',{sessionId,expectedTurnId,input:[{type:'text',text}]},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack?.turnId!==expectedTurnId||ack.status!=='accepted')throw Error('Steering acknowledgement could not be verified.');update({steering:{commandId,turnId:expectedTurnId,status:'accepted'}});return snapshot();}
+  try{const images=await readImages(imagePaths);assertCurrent(token);await verifyWorkConfiguration(token);if(state.status!=='running'||pending||adapter.snapshot().turnId!==expectedTurnId)throw Error('The target turn changed while its configuration was checked.');update({steering:{commandId,turnId:expectedTurnId,status:'submitting'}});submitted=true;const ack=await bounded(owner.connection.command('turn/steer',{sessionId,expectedTurnId,input:[{type:'text',text},...images]},{commandId,maxAttempts:1}),timeoutMs);assertCurrent(token);if(ack?.commandId!==commandId||ack?.turnId!==expectedTurnId||ack.status!=='accepted')throw Error('Steering acknowledgement could not be verified.');update({steering:{commandId,turnId:expectedTurnId,status:'accepted'}});return snapshot();}
   catch(error){if(submitted&&token===epoch)update({steering:{commandId,turnId:expectedTurnId,status:error.code===-32030?'rejected':'unknown'}});throw error;}finally{if(token===epoch)steering=false;}
  }
  async function childControl(input={}){

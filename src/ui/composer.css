@@ -2,6 +2,9 @@
 .codex-composer textarea { min-height: 52px; padding: 0 2px; font-size: 13px; line-height: 1.6; }
 .codex-composer .composer-toolbar { gap: 5px; margin-top: 5px; min-height: 32px; }
 .composer-control { position: relative; flex-shrink: 0; }
+.composer-control.composer-model-control { min-width: 0; flex-shrink: 1; }
+.composer-model-control .reasoning-chip { max-width: 100%; }
+.composer-model-control .reasoning-chip strong { min-width: 0; }
 .access-chip,.reasoning-chip { display: flex; align-items: center; gap: 6px; min-height: 30px; padding: 4px 7px; border-radius: 7px; font-size: 12px; }
 .access-chip:hover:not(:disabled),.reasoning-chip:hover:not(:disabled) { background: color-mix(in srgb,var(--muted) 14%,transparent); }
 .access-chip { color: var(--muted); }

@@ -344,6 +344,14 @@ test('interactive Full access retains schema and Ask me verification while relax
  const h=await harness(t);h.host.initializeResult.sandboxAvailability='unavailable';await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,fullAccess:true});assert.equal(h.runtime.snapshot().permissionVerified,true);assert.equal(h.runtime.snapshot().fullAccess,true);assert.ok(h.calls.find(c=>c.method==='spawn').spec.args.includes('--disable-sandbox'));await h.runtime.disconnect();assert.equal(h.runtime.snapshot().fullAccess,false);
 });
 
+test('live steering carries validated screenshots as native content parts',async t=>{
+ const h=await harness(t);await h.connect();await h.runtime.send({text:'Original'});const image=join(h.root,'steer.png');await writeFile(image,Buffer.from('89504e470d0a1a0a00000000','hex'));
+ const original=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>{if(method==='turn/steer'){h.calls.push({method,params,opts});return{commandId:opts.commandId,status:'accepted',turnId:params.expectedTurnId};}return original(method,params,opts);};
+ await h.runtime.steer({text:'Look at this screenshot',imagePaths:[image],expectedTurnId:'turn-one'});
+ const input=h.calls.find(c=>c.method==='turn/steer').params.input;assert.equal(input[0].type,'text');assert.equal(input[1].type,'image');assert.equal(input[1].mediaType,'image/png');
+ const count=h.calls.length;await assert.rejects(h.runtime.steer({text:'Invalid image',imagePaths:[join(h.root,'missing.png')],expectedTurnId:'turn-one'}));assert.equal(h.calls.length,count);
+});
+
 test('live steering uses exact turn identity once and verifies the acknowledgement',async t=>{
  const h=await harness(t);await h.connect();await h.runtime.send({text:'Original'});const original=h.host.connection.command;h.host.connection.command=async(method,params,opts)=>{if(method==='turn/steer'){h.calls.push({method,params,opts});return{commandId:opts.commandId,status:'accepted',turnId:params.expectedTurnId};}return original(method,params,opts);};
  await assert.rejects(h.runtime.steer({text:'Correction',expectedTurnId:'different'}),/turn/i);await h.runtime.steer({text:'Correction',expectedTurnId:'turn-one'});const calls=h.calls.filter(c=>c.method==='turn/steer');assert.equal(calls.length,1);assert.equal(calls[0].params.expectedTurnId,'turn-one');assert.equal(calls[0].opts.maxAttempts,1);assert.equal(h.runtime.snapshot().steering.status,'accepted');
@@ -884,6 +892,14 @@ test('workspace analysis uses the explicitly selected toolset and rejects unknow
  await assert.rejects(h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:false,workspaceToolset:'analysis-v1'}),/tools/);
  await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true,workspaceToolset:'analysis-v1'});assert.deepEqual(requests,[{toolset:'analysis-v1'}]);assert.equal(h.runtime.snapshot().workspaceToolset,'analysis-v1');assert.equal(h.calls.some(c=>c.method==='turn/start'),false);
 });
+test('interactive native work is visible with workspace tools off and remains observational',async t=>{
+ const h=await harness(t);await h.runtime.connect({binary:h.binary,workspaceRoot:h.root});await h.runtime.send({text:'Inspect source'});
+ const item={itemId:'native-command',kind:'toolCall',tool:'powershell',callId:'native-call',args:'{"command":"git status --short"}',turnId:'turn-one',revision:1,status:'inProgress',visibleOutput:''};
+ h.emit({method:'item/started',params:{sessionId:'other',item,viewCursor:'foreign'}});assert.equal(h.runtime.snapshot().activity.items.length,0);
+ h.emit({method:'item/started',params:{sessionId:'session-one',item,viewCursor:'native-start'}});assert.equal(h.runtime.snapshot().activity.items[0].subject,'git status --short');assert.equal(h.runtime.snapshot().activity.items[0].status,'working');
+ h.emit({method:'item/completed',params:{sessionId:'session-one',item:{...item,revision:2,status:'completed',visibleOutput:'Clean'},viewCursor:'native-end'}});assert.equal(h.runtime.snapshot().activity.items[0].output,'Clean');assert.equal(h.runtime.snapshot().status,'running');
+});
+
 test('interactive workspace tool receipts are observed only for the owning session and turn',async t=>{
  const h=await harness(t,{workspaceMcp:()=>({transport:'stdio',command:'node',args:['gateway']})});h.host.initializeResult.grantedCapabilities=['sessionMcp'];await h.runtime.connect({binary:h.binary,workspaceRoot:h.root,workspaceTools:true});await h.runtime.send({text:'Inspect'});
  const item={itemId:'batch',kind:'toolCall',tool:'mcp__musebench_workspace__workspace_tool_batch',turnId:'turn-one',revision:1,status:'completed',visibleOutput:JSON.stringify({kind:'workspace-batch',version:1,calls:[{id:'a',operation:'hover',status:'completed',result:{items:[]}}]})};

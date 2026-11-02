@@ -1,3 +1,4 @@
+import {toolSubject,toolCategory} from './work-log.mjs';
 import {workspaceOperations} from './workspace-analysis.mjs';
 const names=new Set(workspaceOperations('analysis-v1').map(x=>x.name));
 const prefix='mcp__musebench_workspace__workspace_tool_';
@@ -27,22 +28,22 @@ export function workspaceBatchSummary(tool,output,truncated=false){
  }catch{return null;}
 }
 /** Observation only: never authorizes native controls or marks the parent done. */
-export function createWorkspaceToolActivity(){
+export function createWorkspaceToolActivity({includeNative=false}={}){
  const rows=new Map();let truncated=false;
  return{
   reset(){rows.clear();truncated=false;},
   observe(item,ownedTurns=[]){
-   if(item?.kind!=='toolCall'||!tools.has(item.tool)||!ownedTurns.includes(item.turnId)||typeof item.itemId!=='string'||!item.itemId||item.itemId.length>200||!Number.isInteger(item.revision)||item.revision<1)return false;
+   if(item?.kind!=='toolCall'||(!tools.has(item.tool)&&(!includeNative||typeof item.tool!=='string'||!item.tool||item.tool.length>160))||!ownedTurns.includes(item.turnId)||typeof item.itemId!=='string'||!item.itemId||item.itemId.length>200||!Number.isInteger(item.revision)||item.revision<1)return false;
    if((rows.get(item.itemId)?.revision??0)>=item.revision)return false;
    if(!rows.has(item.itemId)&&rows.size>=120){truncated=true;return false;}
    const statuses={inProgress:'working',completed:'completed',failed:'failed',cancelled:'cancelled',declined:'failed',rejected:'failed',interrupted:'interrupted'};
-   const status=statuses[item.status]??'interrupted',output=typeof item.visibleOutput==='string'?item.visibleOutput:'';
+   const status=item.held===true&&item.status==='inProgress'?'waiting':statuses[item.status]??'interrupted',output=typeof item.visibleOutput==='string'?item.visibleOutput:'';
    const workspaceBatch=status==='completed'?workspaceBatchSummary(item.tool,output,item.truncated===true):null;
    let discoveryDetail;
    if(status==='completed'&&item.tool==='mcp__musebench_discovery__discovery_call'&&output.length<=131072){try{let receipt=JSON.parse(output);if(receipt.content?.length===1&&receipt.content[0]?.type==='text')receipt=JSON.parse(receipt.content[0].text);if(['completed','failed','unknown'].includes(receipt.outcome)&&typeof receipt.sourceId==='string'&&receipt.sourceId.length<=110&&typeof receipt.tool==='string'&&receipt.tool.length<=200)discoveryDetail=receipt.sourceId+' · '+receipt.tool+' · '+receipt.outcome;}catch{}}
-   rows.set(item.itemId,{revision:item.revision,id:item.itemId,kind:'tool',title:tools.get(item.tool),tool:item.tool,status,detail:discoveryDetail??(item.status==='rejected'?'Tool request was not approved':status==='working'?'Native tool request in progress':status==='completed'?'Native tool completed':'Native tool did not complete'),output:output.slice(0,6000),truncated:item.truncated===true||output.length>6000,...(workspaceBatch?{workspaceBatch}:{})});return true;
+   rows.set(item.itemId,{revision:item.revision,id:item.itemId,kind:'tool',title:tools.get(item.tool)??({command:'Run command',edit:'Edit file',read:'Read file',search:'Search files',webSearch:'Search the web',webRead:'Read webpage'}[toolCategory(item.tool)]??'Use tool'),tool:item.tool,status,...(typeof item.callId==='string'&&item.callId.length>0&&item.callId.length<=1024?{callId:item.callId}:{}),subject:toolSubject(item.tool,item.args),detail:discoveryDetail??(typeof item.statusLine==='string'&&item.statusLine.trim()?item.statusLine.slice(0,1000):(item.status==='rejected'?'Tool request was not approved':status==='working'?'Native tool request in progress':status==='completed'?'Native tool completed':'Native tool did not complete')),output:output.slice(0,6000),truncated:item.truncated===true||output.length>6000,...(workspaceBatch?{workspaceBatch}:{})});return true;
   },
-  finish(status){for(const row of rows.values())if(row.status==='working'){row.status=status==='cancelled'?'cancelled':'interrupted';row.detail='No final tool result was reported';}},
+  finish(status){for(const row of rows.values())if(['working','waiting','queued'].includes(row.status)){row.status=status==='cancelled'?'cancelled':'interrupted';row.detail='No final tool result was reported';}},
   snapshot(){return{scope:'workspace-tools',items:structuredClone([...rows.values()].map(({revision,...row})=>row)),truncated};},
  };
 }

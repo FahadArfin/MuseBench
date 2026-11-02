@@ -43,7 +43,7 @@ function installFixture(){
 
 const out=path.resolve(process.argv[2]??'artifacts/code-render-responsiveness'),checks={},errors=[],timings={};
 await mkdir(out,{recursive:true});
-const server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-renderer-performance',server:{host:'127.0.0.1',port:0,strictPort:true,open:false}});
+const server=await createServer({configFile:'vite.preview.config.mjs',cacheDir:'node_modules/.vite-renderer-performance',server:{host:'127.0.0.1',port:0,strictPort:false,open:false}});
 let browser;
 try{
  await server.listen();const origin=`http://127.0.0.1:${server.httpServer.address().port}`;
@@ -64,7 +64,7 @@ try{
  await activity.locator('.work-activity-item summary').click();
  await activity.getByText('Private fixture output a',{exact:true}).waitFor();checks.expandedOutputAccessible=true;
  await activity.getByRole('button',{name:/Worked for/}).click();
- checks.closingDetailsInert=await activity.locator('.motion-disclosure').evaluate(element=>element.inert);
+ checks.closingDetailsInert=await activity.locator(':scope > .motion-disclosure').evaluate(element=>element.inert);
  // Keep output only for the short exit transition; it must still be released.
  await activity.locator('.work-activity-item').waitFor({state:'detached',timeout:1000});
  checks.closedDetailsReleased=await activity.locator('.work-activity-item').count()===0;

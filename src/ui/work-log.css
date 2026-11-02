@@ -1,0 +1,23 @@
+.work-log{display:flex;flex-direction:column;gap:10px;margin:12px 0;min-width:0;font-size:13px;line-height:1.6;color:var(--muted)}
+.work-log-group,.work-log-row{min-width:0}
+.work-log-toggle{display:flex;align-items:center;gap:8px;max-width:100%;min-width:0;padding:3px 0;color:var(--muted);text-align:left;font-size:inherit;line-height:1.6;background:transparent;border-radius:4px}
+.work-log-toggle:hover{color:var(--text)}
+.work-log-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.work-log-toggle>svg{flex:none}
+.work-log-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.work-log-toggle>.work-disclosure{opacity:.65}
+.work-log-items{display:flex;flex-direction:column;gap:3px;padding-top:4px;padding-left:0}
+.work-log-single>.work-log-row>.work-log-toggle{display:none}
+.work-log-status{flex:none;font-size:11px;white-space:nowrap}
+.work-log-status-failed,.work-log-status-interrupted{color:var(--danger,#f28b82)}
+.work-log-status-waiting{color:var(--warning,#e6ad61)}
+.work-log-spinner{color:var(--accent)}
+.work-log-output{margin:5px 0 9px 22px;padding:8px 12px;border-left:1px solid var(--border);min-width:0;color:var(--muted);font-size:12px}
+.work-log-output>span{font-size:11px}
+.work-log-output p{margin:4px 0;overflow-wrap:anywhere;white-space:pre-wrap}
+.work-log-output pre{margin:5px 0;max-height:280px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.7 var(--font-mono);color:var(--text)}
+.run-activity .run-activity-heading{width:100%}
+.run-activity .run-activity-label{color:var(--muted);font-weight:500}
+.run-activity .run-current-action{margin:10px 0 0;font-size:12px}
+.run-activity .run-current-line{display:none}
+@media(max-width:480px){.work-log{font-size:12px;gap:8px}.work-log-toggle{gap:6px}.work-log-output{margin-left:18px;padding-left:9px}}
