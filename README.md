@@ -1,14 +1,14 @@
 # MuseBench
 
-For visual feedback in Codex, run `npm.cmd run preview:ui` and open
-[the browser preview](http://127.0.0.1:4319/preview.html). Use **Annotate** in the browser
-toolbar to select elements and leave comments. The preview and desktop use one shared
-UI. Native screens use sample data; embedded websites use timestamped, read-only
-desktop snapshots captured locally. The preview cannot execute shell commands or
-change your account. See [browser preview](docs/BROWSER-PREVIEW.md) and the
-[parity contract](docs/PREVIEW-PARITY.md).
-
 A local Windows workspace for Muse: code with Muse CLI, keep your personal chats nearby, and create dashboards, animated explainers, reports and presentations in Work.
+
+## Quickstart (Windows 11 x64)
+
+1. Download `MuseBench-Setup-<version>.exe` from the [latest public release](https://github.com/FahadArfin/MuseBench/releases/latest) and run the installer. Current releases target Intel/AMD 64-bit Windows 11; the Windows build is unsigned.
+2. Install the official **Muse CLI 1.4.14** separately and complete its sign-in using [Meta's setup instructions](https://dev.meta.ai/docs/muse-code). MuseBench requires that version for its native connection and does not bundle the CLI. Real Muse requests use your account's access and selected billing source.
+3. Open **MuseBench**, choose **Muse Code**, then **Open a folder** or **Try sample project**. Send a request to connect automatically. If the CLI is not found, open **Your Muse connection** and select its native executable; see [Connect Muse](#connect-muse).
+
+You can use **Explore the guided sample** to try the deterministic review workflow without a Muse account or model request. Personal Muse and Meta AI browser sign-in is separate from CLI sign-in. See [release platforms](docs/RELEASE-PLATFORMS.md) for platform scope and [Development](#development) to run from source.
 
 [Built-in file viewer](docs/FILE-VIEWER.md) previews HTML, Markdown, PDF, Word and PowerPoint beside Code chats, with navigation, source views and draft file comments.
 
@@ -18,22 +18,6 @@ A local Windows workspace for Muse: code with Muse CLI, keep your personal chats
 
 MuseBench is an independent application. It is not affiliated with or endorsed by Meta. The supplied Patchlight handoff and source archive are preserved; their extracted contents live in `reference/patchlight`.
 
-## Open the app
-
-Double-click **Launch-MuseBench.cmd** in this folder. After packaging, it opens `release/win-unpacked/MuseBench.exe`. Keep the entire `win-unpacked` folder together; the executable uses the files beside it. This local build is unsigned.
-
-From source, with Node 22.14 or later:
-
-```powershell
-npm.cmd ci
-npm.cmd run build
-npm.cmd start
-```
-
-For development: `npm.cmd run dev`. To produce a Windows application directory: `npm.cmd run package`.
-
-For authorized Windows releases, use the [release procedure](docs/RELEASING.md), including `npm.cmd run release:preflight` before publication.
-
 ## Coding workspace
 
 The interface follows the supplied Codex and Claude desktop references: project overviews, nested saved chats, a conversation with Markdown/code blocks, a bottom composer, and an optional resizable Review panel. The research and evidence behind the design are in [FRONTEND-RESEARCH.md](docs/FRONTEND-RESEARCH.md).
@@ -42,17 +26,17 @@ Click a project to see its overview and saved chats. Choose **New chat** there, 
 
 Long conversations have a slim **prompt timeline** along the left edge. Hover a tick to preview its prompt and reply, then click to jump back. Keyboard focus shows the same preview; use arrows, Home/End and Enter. The timeline works in Muse Code, Muse AI bot chats and regular Meta AI Chat. It shows messages currently loaded by the service, and appears after two prompts.
 
-Chats open at full width with Review closed. Type a request and press Send: MuseBench creates the chat, verifies the Muse connection and submits it. No local plan approval is required to chat. Planning is optional; your selected action approval mode and the Muse sandbox still apply. If connection fails, the draft remains available to retry. The sidebar restores each chat's messages, command evidence and original file baseline. Reopening a chat refreshes source evidence, stops its old preview and disconnects an old runtime session. Each Windows request uses native exec with bounded replay of your recent conversation, attached source snapshots, initial objective and project guidance. This preserves conversational continuity without claiming native session resume or retaining hidden tool/reasoning state.
+Chats open at full width with Review closed. Type a request and press Send: MuseBench creates the chat, verifies the Muse connection and submits it. No local plan approval is required to chat. Planning is optional; ordinary chat uses your selected execution access and approval mode. If connection fails, the draft remains available to retry. The sidebar restores each chat's messages, command evidence and original file baseline. Windows Code chats retain a native Muse session for follow-ups, with app-supplied project guidance and selected source snapshots. Existing chats seed their saved conversation on the first native request; later requests continue the session without replaying that history. Interrupted sessions require explicit recovery; see [Code chat tools](#code-chat-tools).
 
 Use **Ctrl+K** to search project/chat names and saved message contents, **Ctrl+N** for a new chat, **Ctrl+B** to toggle the sidebar, and **Ctrl+,** for settings. **Ctrl+Enter** sends; optional Enter-to-send is available in settings. Dark/light/system theme, transcript font, text size and motion preferences persist locally. The **profile button at the bottom of the sidebar** opens Settings, Usage & billing, Muse connection, Prompt starters, and Help & commands. When the sidebar is collapsed, use the profile icon at the bottom of the rail. **Review** contains the existing plan, diff, preview, checks and checkpoint controls; in a narrow window, toggle it to return to chat.
 
-Use the composer’s **Muse / effort** button to choose reasoning from None through Ultra. Use the shield button for **Ask for approval**, **Auto-review**, or **No prompts**. Choices are saved per chat and applied to the next Windows Muse request. Every choice keeps the sandbox enabled; new chats default to High and Ask for approval. The **+** menu holds project files and instructions, project selection, chat/plan mode, and the Muse connection.
+Use the composer’s **model / effort** button to choose a model from the native Muse catalog and one of its supported reasoning levels. Choices are saved per chat and applied to the next request. The shield button offers **Ask for approval**, **Auto-review**, and the separate **Full access** option. New chats default to High reasoning and Ask for approval, with sandboxed execution. Full access disables filesystem and network sandboxing for ordinary chat; approval settings remain separate. The **+** menu holds project files and instructions, project selection, chat/plan mode, and the Muse connection.
 
 Click the **microphone** to dictate with Windows speech recognition on this device, then Stop, edit and Send. It appends text to your draft without sending automatically or saving audio. Changing chats, opening overlays, switching products or leaving the window stops recording. Windows needs an installed speech language and a working default microphone.
 
 Type **/** on a new composer line for the command menu. It includes reasoning/access submenus, optional Plan, saved goals and memory instructions, chat/history tools, copy/export, appearance, voice and installed Muse skills. Use arrows, Enter/Tab and Escape, or hover/click. Skills fill an editable request. Provider-specific features that are not connected are labeled **Info**. See the [command reference](docs/SLASH-COMMANDS.md) for aliases and exact behavior.
 
-Native Muse commands run through the existing sandbox and the selected approval setting. Plan mode is guidance, not an enforced read-only boundary. Preview and independent check actions retain their existing local execution behavior and revision gates.
+Native Muse commands use the selected execution access and approval setting. In native exec mode, **Plan** starts a separate read-only run with only file reading and local source search; workspace writes, shell commands, web tools, workflows, hooks and extension tools are disabled, even when ordinary chat uses Full access. Interactive connections require switching to native exec for Plan. See the [planning boundary and validation scope](docs/validation/2026-11-01-planning-boundary.md). Preview and independent check actions retain their existing local execution behavior and revision gates.
 
 Existing data is preserved. Legacy tasks with a known current-project association are migrated; unrelated older records without a reliable project association remain stored and are not guessed into another project's chat list.
 
@@ -126,23 +110,45 @@ For an existing project, choose **Open a folder**. This release supports project
 
 ## Connect Muse
 
-Install and sign in to the official native Muse CLI separately using [Meta's instructions](https://dev.meta.ai/docs/muse-code). MuseBench does not install that binary, collect API keys, or copy credentials from other apps. It discovers the official versioned Windows executable from PATH or `%LOCALAPPDATA%\Programs\muse`, including when this app inherited an older PATH. Open the runtime panel, choose the native executable if discovery did not find it, and connect to your selected project.
+Install and sign in to the official native **Muse CLI 1.4.14** separately using [Meta's instructions](https://dev.meta.ai/docs/muse-code). MuseBench does not install the CLI. It discovers the official versioned Windows executable from PATH or `%LOCALAPPDATA%\Programs\muse`, including when this app inherited an older PATH. Open **Your Muse connection**, choose the native executable if discovery did not find it, and connect to your selected project. CLI sign-in and the app's personal browser sessions are separate.
 
-On Windows, MuseBench uses the official **1.4.13** CLI's `exec --json` entry point. This avoids the native `serve` host failure while retaining the sandbox. **Ask for approval** is the default; the composer also supports Muse’s Auto-review and sandboxed No prompts settings. Connection checks the native version, Windows sandbox readiness and an inert echo event stream. These are readiness checks; they do not prove a real model request or file confinement. Clicking Send is a real Muse operation and uses your own Muse account's access and billing.
+Windows defaults to the CLI's `exec --json` transport with sandboxed execution and **Ask for approval**. Connection checks the pinned native version, sandbox readiness and an inert echo event stream. These are readiness checks, not a completed model request. Clicking Send performs a real Muse operation using the selected account and billing source. The optional [Interactive · Full access](#interactive-full-access-connection) transport has different permissions and controls.
 
-Send a complete request to start a Muse chat; MuseBench connects automatically if needed. Plan mode can be selected from the composer when wanted. The optional checkpoint workflow still requires its review evidence; it does not block conversation. Windows compatibility mode starts an independent run for each message. Compatible workspaces support Muse's managed, sandboxed PowerShell commands, including project tests and builds. Native command cards show their command, output and exit status; they do not satisfy MuseBench's separate revision-check gate. Web, reminder and interactive input tools and hooks remain disabled. Configured external tools that cannot be safely excluded prevent connection. Interactive approvals cannot be answered by this transport; reported requests stop without approval, and native holds without an event time out. Completion requires a correlated native completion event, exit zero, and confirmed cleanup of the run's Windows Job Object. Failed runs are never retried automatically.
+Code chats retain native sessions; Work and Sites generation use independent requests. Compatible workspaces support Muse's managed PowerShell commands, including project tests and builds. Native command cards show their command, output and exit status; they do not satisfy MuseBench's separate revision-check gate. Ordinary exec chat enables native web search and a bounded public webpage reader independently of shell access. Direct native web fetch is enabled only with Full access. Read-only Plan runs exclude all web tools.
 
-Muse 1.4.13 can stall before starting a shell in the Windows user profile. Those projects retain file-editing mode. The connection panel offers **Create working copy** to copy supported source to a compatible location and start a fresh task. Dependencies, Git metadata and local secrets are excluded, so a copied project may need dependency setup. Original files remain untouched. See [sandboxed commands](docs/SANDBOXED-COMMANDS.md) for the Windows workaround and proof boundaries.
+The model picker loads the native catalog and validates the chosen model and reasoning level before submission; availability depends on the connected account. Native exec cannot answer interactive approval or input requests: reported requests stop without approval, and native holds without an event time out. Unreviewed external tools can block connection; reviewed extensions and hooks remain subject to their execution checks. Completion requires a correlated native completion event, exit zero, and confirmed cleanup of the run's Windows Job Object. Failed runs are never retried automatically.
 
-The Plan conversation option is guidance, not enforced read-only access. Session resume/replay, automatic reconnect, arbitrary preview recipes and model switching are not implemented. Non-Windows hosts retain the SDK adapter pinned to **1.4.13**, schema **1**, fingerprint `sha256:7fddaf646dbc317e5fcac0785e135eb04df14fbb0db1863089dfd6da21730e5b`, with strict sandbox and permission inspection. Its one-time approval UI remains available for supported hosts.
+Sandboxed commands are unavailable for projects inside the Windows user profile because of the native shell startup issue; file editing remains available. **Create working copy** copies supported source to a compatible location and starts a fresh task. Dependencies, Git metadata and local secrets are excluded, so the copy may need dependency setup. Original files remain untouched. The connection panel reports the capabilities available for the selected folder.
 
-On the tested machine, **1.4.13-R6996.1** is installed and the user completed browser sign-in. Native sandbox setup reports ready while `serve` reports unavailable, matching [Meta SDK issue #107](https://github.com/meta-models/muse-code-sdk/issues/107). The native `exec` route retains the sandbox. Initial billing was resolved by the user. Both the original file-editing workflow and the subsequent sandboxed-command probes have separate evidence records; see [VALIDATION.md](docs/VALIDATION.md).
+The native CLI and SDK contract is pinned to **1.4.14**. See [Code chat tools](#code-chat-tools) for session recovery, [planning validation](docs/validation/2026-11-01-planning-boundary.md) for the read-only boundary, and [model catalog validation](docs/validation/2026-10-31-model-picker-catalog.md) for discovery and its limits. Older records in [VALIDATION.md](docs/VALIDATION.md) describe their dated environments, not the reader's current installation or account readiness.
 
 ## Data and acceptance
 
 Project metadata, task journals and checkpoint records stay in MuseBench's application data directory (normally `%APPDATA%\MuseBench`; development may use `%APPDATA%\musebench`). An accepted checkpoint records the exact reviewed content hash. It is not a Git commit, backup, merge, deployment, or automatic undo operation.
 
-Changing source files invalidates old preview/test evidence and acceptance, and stops the preview so the new revision must be opened again. Check results derive from the actual command's exit status, with a two-minute limit and explicit cancellation. An agent saying “tests passed” never marks a check passed. Generated folders, credential files and symlinks are excluded or refused by the bounded source snapshot; this app does not provide a full repository backup. Snapshot limits are 4,000 files, 2 MiB per file, and 24 MiB total.
+Changing source files invalidates old preview/test evidence and acceptance, and stops the preview so the new revision must be opened again. Check results derive from the actual command's exit status, with a two-minute limit and explicit cancellation. An agent saying “tests passed” never marks a check passed. Generated folders, credential files and symlinks are excluded or refused by the bounded source snapshot; this app does not provide a full repository backup. Source snapshots support up to 100,000 files, 256 MiB per file, and 16 GiB total. These capture limits are separate from the smaller selected-file context sent to Muse.
+
+## Development
+
+From source, with Node 22.14 or later:
+
+```powershell
+npm.cmd ci
+npm.cmd run build
+npm.cmd start
+```
+
+For development: `npm.cmd run dev`. To produce a Windows application directory: `npm.cmd run package`. After packaging, **Launch-MuseBench.cmd** opens `release/win-unpacked/MuseBench.exe`. Keep the entire `win-unpacked` folder together; the executable uses the files beside it.
+
+For visual feedback in Codex, run `npm.cmd run preview:ui` and open
+[the browser preview](http://127.0.0.1:4319/preview.html). Use **Annotate** in the browser
+toolbar to select elements and leave comments. The preview and desktop use one shared
+UI. Native screens use sample data; embedded websites use timestamped, read-only
+desktop snapshots captured locally. The preview cannot execute shell commands or
+change your account. See [browser preview](docs/BROWSER-PREVIEW.md) and the
+[parity contract](docs/PREVIEW-PARITY.md).
+
+For authorized Windows releases, use the [release procedure](docs/RELEASING.md), including `npm.cmd run release:preflight` before publication.
 
 ## Verify
 
@@ -179,10 +185,16 @@ Code chats can now run in the background while you navigate. Each chat owns its 
 
 Windows Code chats can opt into **Your Muse connection → Interactive · Full access**. The official `serve --disable-sandbox` host runs with your Windows account permissions, while MuseBench still verifies the pinned SDK/CLI contract and the separate Ask me approval profile. The default remains native exec. Disconnect before changing transport; this opt-in is connection-scoped.
 
-During an interactive run, Enter sends a correction to the existing turn; **Alt+Enter** queues a later prompt. MuseBench binds corrections to the exact active turn and checks the native acknowledgement without automatic retries. A rejected or uncertain correction remains in your draft. Interactive mode currently requires the default model, Ask for approval, text input and no exec budget preset. Reconnecting starts a new native session seeded from the app conversation; exec saved sessions are separate.
+During an interactive run, Enter sends a correction to the existing turn; **Alt+Enter** queues a later prompt. MuseBench binds corrections to the exact active turn and checks the native acknowledgement without automatic retries. A rejected or uncertain correction remains in your draft. Interactive mode requires Ask for approval and no exec budget preset; it supports native catalog model selection and image attachments. Reconnecting restores a saved interactive session when available and verifies its identity. Exec saved sessions are separate.
 
 The **Session → Compact context** control is available after a turn completes on an interactive connection. It sends native `session/compact`, displays admission separately from the observed terminal outcome, and reports token counts only when Muse supplies them. Local chat history and files are preserved. Pending or uncertain compaction prevents another turn; disconnect to resolve an unknown connection. Unfinished receipts become unknown after restart and are never automatically replayed.
 
 **Session → Child agents** shows native subagents and workflow attempts observed on the interactive connection. Available controls include child messages, follow-up tasks, interrupt/stop, resume/reopen/close, result retrieval, and workflow retry/skip. Actions bind the exact observed child revision and latest attempt; Muse remains the eligibility authority. Command admission and child results are shown separately. Unknown commands are not retried, and children keep their checkout reserved through the parent reporting turn. Parent reports remain attached to the original app request.
 
 Browser preview renders these same controls with labeled sample children and simulated admission receipts. It does not execute agents. Live verification on the pinned host confirmed a child message changed its result, interruption cancelled child work, and both parent reporting turns completed. Other controls have protocol-boundary regression coverage; their eligibility depends on native state. The tested generated workflow child rejected a follow-up with `subagent_state_ineligible`, which is shown as a rejection, not successful execution. Children from earlier explicit requests remain inspectable, but new work on them is disabled to preserve parent attribution.
+
+## License
+
+Original MuseBench code is licensed under the [MIT License](LICENSE), copyright 2026 Fahad Arfin. Third-party dependencies, fonts, icons and supplied reference material retain their own licenses and notices; this grant does not relicense them. The [license scope](LICENSE-SCOPE.md) is included in packaged builds.
+
+The supplied [Patchlight reference](reference/patchlight/README.md) is excluded from this new license grant and retains its recorded provenance. Its [third-party notice](reference/patchlight/adapter/THIRD-PARTY-NOTICE.md) identifies the official Meta SDK research evidence, whose [upstream MIT notice](reference/patchlight/adapter/evidence/LICENSE) is preserved separately. The official native Muse CLI is installed separately and is not distributed with MuseBench.

@@ -72,7 +72,10 @@ export async function collectRelease({inputDir,outputDir,expectedTargets=release
   group.sort((a,b)=>(a.arch==='x64'?0:1)-(b.arch==='x64'?0:1));
   const combined={...group[0].value,files:group.flatMap(item=>item.value.files)};
   if(new Set(combined.files.map(f=>f.url)).size!==combined.files.length)throw Error(`Duplicate update downloads in ${name}.`);
-  files.set(name,Buffer.from(yaml.dump(combined)));
+  const bytes=Buffer.from(yaml.dump(combined)),published={name,size:bytes.length,sha256:digest(bytes)};
+  files.set(name,bytes);
+  // Target manifests must describe the shared published YAML, not its staged inputs.
+  for(const manifest of targets.values())manifest.files=manifest.files.map(item=>item.name===name?{...item,...published}:item);
  }
  files.set('release-manifest.json',Buffer.from(JSON.stringify({version,commit,targets:[...targets.values()]},null,2)+'\n'));
  await mkdir(outputDir,{recursive:true});

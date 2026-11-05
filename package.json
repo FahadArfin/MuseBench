@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "description": "A local coding workspace for Muse CLI",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "main": "electron/main.mjs",
   "scripts": {
@@ -154,6 +154,8 @@
       "reference/patchlight/adapter/THIRD-PARTY-NOTICE.md",
       "reference/patchlight/adapter/evidence/LICENSE",
       "templates/**/*",
+      "LICENSE",
+      "LICENSE-SCOPE.md",
       "package.json",
       "src/shared/*.mjs",
       "!dist/file-viewer/**/*"

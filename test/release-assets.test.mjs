@@ -25,6 +25,30 @@ test('normal releases publish only the verified Windows x64 package and preserve
  assert.match(await readFile(path.join(root,'out','SHA256SUMS'),'utf8'),new RegExp(name.replaceAll('.','\\.')));
  await windows(root,'arm64');await assert.rejects(collectRelease(options),/Unexpected.*arm64/);
 });
+test('published manifests describe final updater bytes after serialization and architecture merging',async t=>{
+ for(const architectures of [['x64'],['x64','arm64']])await t.test(architectures.join('+'),async t=>{
+  const root=await fixture(t);for(const arch of architectures)await windows(root,arch);
+  const releaseDir=path.join(root,'raw-x64'),metadataPath=path.join(releaseDir,'latest.yml');
+  const sourceMetadata=Buffer.from(JSON.stringify(yaml.load(await readFile(metadataPath,'utf8'))));
+  await writeFile(metadataPath,sourceMetadata);
+  await stageRelease({releaseDir,outDir:path.join(root,'input','win32-x64'),platform:'win32',arch:'x64',version,commit});
+  const outputDir=path.join(root,'out');
+  await collectRelease({inputDir:path.join(root,'input'),outputDir,expectedTargets:architectures.map(arch=>`win32-${arch}`),version,commit});
+  const publishedMetadata=await readFile(path.join(outputDir,'latest.yml'));
+  assert.notDeepEqual(publishedMetadata,sourceMetadata,'fixture must exercise rewritten updater bytes');
+  const manifest=JSON.parse(await readFile(path.join(outputDir,'release-manifest.json'),'utf8'));
+  assert.equal(manifest.targets.length,architectures.length);
+  for(const target of manifest.targets)for(const item of target.files){
+   const bytes=await readFile(path.join(outputDir,item.name));
+   assert.equal(item.size,bytes.length,`${target.arch}/${item.name} published size`);
+   assert.equal(item.sha256,createHash('sha256').update(bytes).digest('hex'),`${target.arch}/${item.name} published hash`);
+  }
+  for(const line of (await readFile(path.join(outputDir,'SHA256SUMS'),'utf8')).trim().split('\n')){
+   const [hash,name]=line.split('  '),bytes=await readFile(path.join(outputDir,name));
+   assert.equal(hash,createHash('sha256').update(bytes).digest('hex'),`${name} checksum`);
+  }
+ });
+});
 test('all platforms require explicit selection and still reject an incomplete release',async t=>{
  assert.deepEqual(releaseAssets.releaseTargets(),['win32-x64']);
  assert.deepEqual(releaseAssets.releaseTargets('all'),releaseAssets.RELEASE_TARGETS);
