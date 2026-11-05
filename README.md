@@ -195,6 +195,6 @@ Browser preview renders these same controls with labeled sample children and sim
 
 ## License
 
-Original MuseBench code is licensed under the [MIT License](LICENSE), copyright 2026 Fahad Arfin. Third-party dependencies, fonts, icons and supplied reference material retain their own licenses and notices; this grant does not relicense them. The [license scope](LICENSE-SCOPE.md) is included in packaged builds.
+Original MuseBench code and the original supplied Patchlight prototype and adapter are licensed under the [MIT License](LICENSE), copyright 2026 Fahad Arfin. Third-party dependencies, fonts, icons and copied upstream reference material retain their own licenses and notices; this grant does not relicense them. The [license scope](LICENSE-SCOPE.md) is included in packaged builds.
 
-The supplied [Patchlight reference](reference/patchlight/README.md) is excluded from this new license grant and retains its recorded provenance. Its [third-party notice](reference/patchlight/adapter/THIRD-PARTY-NOTICE.md) identifies the official Meta SDK research evidence, whose [upstream MIT notice](reference/patchlight/adapter/evidence/LICENSE) is preserved separately. The official native Muse CLI is installed separately and is not distributed with MuseBench.
+The [Patchlight reference](reference/patchlight/README.md) retains its recorded provenance. Its [third-party notice](reference/patchlight/adapter/THIRD-PARTY-NOTICE.md) identifies the official Meta SDK research evidence, whose [upstream MIT notice](reference/patchlight/adapter/evidence/LICENSE) is preserved separately. The official native Muse CLI is installed separately and is not distributed with MuseBench.
