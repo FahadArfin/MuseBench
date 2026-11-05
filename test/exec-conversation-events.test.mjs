@@ -59,6 +59,16 @@ const consume = (fold, rows) => { for (const row of rows) fold.accept(row); retu
 
 const mcpCapture=(await readFile(new URL('./fixtures/native-mcp-startup.jsonl',import.meta.url),'utf8')).trim().split(/\r?\n/).map(JSON.parse);
 const mcpRows=()=>structuredClone(mcpCapture);
+function mcpWorkspaceRows(){
+ const rows=mcpRows(),model=rows[2],commandId=model.payload.command_id;
+ // Captured 1.4.14 durable sessions report the workspace branch here, before
+ // user input/run start and the same one-slot MCP catalog omission.
+ const branch={...structuredClone(model),id:'018f0000-0000-7000-8000-00000000c353',sequence:5,
+  payload_type:'session.workspace_branch.observed',payload:{kind:'workspace_branch_observed',command_id:commandId,
+   record:{command_id:commandId,workspace_root:'C:\\fixture',reference:{kind:'branch',name:'main'},vcs:'git',commit:'a'.repeat(40)}}};
+ for(const row of rows)if(row.stream.kind==='session'&&row.sequence>=5)row.sequence++;
+ rows.splice(3,0,branch);return rows;
+}
 test('opt-in replays captured native MCP startup omissions without losing terminal or tool authority',()=>{
  assert.throws(()=>consume(createExecConversationFold(),mcpRows()),/sequence/i);
  const rows=mcpRows(),result=consume(createExecConversationFold({allowMcpStartupOmissions:true}),rows).finish(0);
@@ -69,6 +79,29 @@ test('opt-in replays captured native MCP startup omissions without losing termin
  const nativeTool=rows.find(row=>row.payload_type==='tool.result');
  assert.equal(nativeTool.payload.correlation_facts.tool_name,'mcp__musebench_web__read_web_page');
  assert.match(nativeTool.payload.text,/Example Domain/);
+});
+
+test('MCP startup permits one correlated workspace observation before optional user input',()=>{
+ for(const includeInput of [true,false]){
+  const rows=mcpWorkspaceRows();
+  if(!includeInput){rows.splice(4,1);for(const row of rows)if(row.stream.kind==='session'&&row.sequence>6)row.sequence--;}
+  const result=consume(createExecConversationFold({allowMcpStartupOmissions:true}),rows).finish(0);
+  assert.equal(result.success,true);assert.equal(result.providerId,'meta');assert.equal(result.recordCount,rows.length);
+  assert.equal(result.commandId,rows[0].payload.command_id);assert.match(result.text,/Offline fixture completed/);
+ }
+});
+
+test('workspace observation cannot widen MCP startup correlation or ordering',()=>{
+ const mutations=[
+  rows=>rows[3].payload_type='session.other.observed',rows=>rows[3].payload.kind='other',
+  rows=>rows[3].record_type='status',rows=>rows[3].durability='ephemeral',rows=>rows[3].causation_id='foreign',
+  rows=>rows[3].payload.command_id='foreign',rows=>rows[3].payload.record.command_id='foreign',rows=>delete rows[3].payload.record,
+  rows=>{const copy=structuredClone(rows[3]);copy.id='018f0000-0000-7000-8000-00000000c355';copy.sequence++;
+   for(const row of rows)if(row.stream.kind==='session'&&row.sequence>=6)row.sequence++;rows.splice(4,0,copy);},
+  rows=>{[rows[3],rows[4]]=[rows[4],rows[3]];rows[3].sequence=5;rows[4].sequence=6;},
+ ];
+ for(const mutate of mutations){const rows=mcpWorkspaceRows();mutate(rows);
+  assert.throws(()=>consume(createExecConversationFold({allowMcpStartupOmissions:true}),rows));}
 });
 
 test('MCP opt-in permits exactly the captured one-slot initial omission',()=>{

@@ -119,19 +119,26 @@ export function createExecConversationFold({
   const nativeControl = (record, type) => record.payload_type === type && record.stream.kind === 'session'
     && record.record_type === 'event' && record.durability === 'durable'
     && record.causation_id === active()?.state.commandId;
+  const nativeWorkspaceObservation = record => nativeControl(record, 'session.workspace_branch.observed')
+    && record.payload.kind === 'workspace_branch_observed' && record.payload.command_id === active()?.state.commandId
+    && object(record.payload.record) && record.payload.record.command_id === active()?.state.commandId;
   function advanceMcpStartup(record, catalogGap) {
     if (!mcpStartup.phase) return;
     const type = record.payload_type;
     if (catalogGap) {
       mcpStartup.gapUsed = true; mcpStartup.modelTaskId = record.payload.task_id; mcpStartup.phase = 'model-proposed'; return;
     }
+    const inputOrStart = () => type === 'turn.input.user' && record.payload.kind === 'turn_input_user'
+      && record.record_type === 'status' && record.durability === 'ephemeral' ? 'run-start'
+      : nativeControl(record, 'run.lifecycle.started') ? 'startup-link' : null;
     const next = {
       command: () => nativeAccepted(record) ? 'linked' : null,
       linked: () => nativeControl(record, 'session.run.linked') ? 'model' : null,
       model: () => nativeControl(record, 'run.model.configured') && record.payload.provider_id === 'meta' ? 'input-or-start' : null,
-      'input-or-start': () => type === 'turn.input.user' && record.payload.kind === 'turn_input_user'
-        && record.record_type === 'status' && record.durability === 'ephemeral' ? 'run-start'
-        : nativeControl(record, 'run.lifecycle.started') ? 'startup-link' : null,
+      // Durable workspace sessions may insert this one correlated observation.
+      // Consume its own phase so duplicates cannot preserve gap eligibility.
+      'input-or-start': () => nativeWorkspaceObservation(record) ? 'input-after-branch' : inputOrStart(),
+      'input-after-branch': inputOrStart,
       'run-start': () => nativeControl(record, 'run.lifecycle.started') ? 'startup-link' : null,
       'startup-link': () => nativeTaskLink(record, true) ? 'model-link' : null,
     };
