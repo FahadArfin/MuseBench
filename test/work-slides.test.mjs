@@ -1,0 +1,8 @@
+import test from 'node:test';
+import {demoArtifact} from '../src/shared/work-artifacts.mjs';
+import assert from 'node:assert/strict';
+import {createSlidesData,validateSlidesData} from '../src/shared/work-slides-schema.mjs';
+import {applySlideOperation,convertLegacySlides} from '../src/shared/work-slide-operations.mjs';
+test('slide duplication, ordering, notes and themes are immutable and validated',()=>{let data=createSlidesData();const before=structuredClone(data); data=applySlideOperation(data,{type:'duplicateSlide',slideId:data.slides[0].id});assert.equal(data.slides.length,2);assert.notEqual(data.slides[0].id,data.slides[1].id);assert.notEqual(data.slides[0].nodes[0]?.id,data.slides[1].nodes[0]?.id); const id=data.slides[1].id;data=applySlideOperation(data,{type:'moveSlide',slideId:id,index:0});data=applySlideOperation(data,{type:'setNotes',slideId:id,notes:'Private notes'});assert.equal(data.slides[0].notes,'Private notes');assert.equal(before.slides.length,1);assert.deepEqual(validateSlidesData(data),data);assert.throws(()=>validateSlidesData({...data,width:NaN}));});
+test('last slide cannot be deleted; unknown operations fail',()=>{const data=createSlidesData();assert.throws(()=>applySlideOperation(data,{type:'deleteSlide',slideId:data.slides[0].id}));assert.throws(()=>applySlideOperation(data,{type:'eval',code:'oops'}));});
+test('legacy conversion creates editable text and keeps sources',()=>{const artifact=demoArtifact('slides');const data=convertLegacySlides(artifact);assert.equal(data.slides[0].nodes[0].text,artifact.title);assert.ok(data.slides.some(s=>s.nodes[0].text===artifact.sections[0].heading));assert.ok(data.slides.every(s=>s.notes.includes(artifact.sources[0].name)));});

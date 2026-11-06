@@ -1,4 +1,5 @@
 import {createFilePreview} from './file-preview.mjs';
+import {createDesktopFinance} from './finance.mjs';
 import {createComposerPredictions} from './composer-predictions.mjs';
 import {createDesktopAssist} from './desktop-assist.mjs';
 import {createDesktopHelper} from './desktop-helper.mjs';
@@ -48,6 +49,7 @@ import {createCustomize} from './customize.mjs';
 import {createExtensionReview} from '../src/runtime/extension-review.mjs';
 import {createRunNotifier} from './notifications.mjs';
 import {createWorkService} from '../src/work/index.mjs';
+import {createDesktopWorkStudio} from './work-studio.mjs';
 import {createDesktopSpaces} from './spaces.mjs';
 import {createDesktopSites} from './sites.mjs';
 import {createSitePreviewHandler,isSitePreviewUrl,sitePreviewNavigationDecision} from './sites-protocol.mjs';
@@ -57,7 +59,7 @@ import {createWorkExporter} from './work-export.mjs';
 import {writeFile} from 'node:fs/promises';
 import {workDataDirectory} from './work-root.mjs';
 import {createDictation} from './dictation.mjs';
-import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, Tray, shell, session, nativeTheme, Notification, protocol, safeStorage, clipboard, ClipboardItem, nativeImage, globalShortcut } from 'electron';
+import { app, BrowserWindow, WebContentsView, dialog, ipcMain, Menu, Tray, shell, session, nativeTheme, Notification, protocol, safeStorage, clipboard, ClipboardItem, nativeImage, globalShortcut, screen } from 'electron';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -85,11 +87,12 @@ const sessionDurability = createSessionDurability({ app });
 const onboardingOwners=createServiceOwners();
 const dev = !app.isPackaged && process.env.MUSEBENCH_DEV === '1';
 const uiURL = dev ? 'http://127.0.0.1:4318/' : pathToFileURL(path.join(root,'dist','index.html')).href;
-protocol.registerSchemesAsPrivileged([{scheme:'musebench-files',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}},{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
+protocol.registerSchemesAsPrivileged([{scheme:'musebench-files',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}},{scheme:'musebench-artifact',privileges:{standard:true,secure:true}},{scheme:'musebench-work-asset',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true,stream:true}},{scheme:'musebench-site',privileges:{standard:true,secure:true,supportFetchAPI:true,corsEnabled:true}}]);
 let pendingChatLink=process.argv.map(chatLinkTask).find(Boolean)??null,deliverChatLink;
 let trayNavigation,notificationTray;
 let filePreview,desktopAssist,composerPredictions,desktopStopRegistered=false;
-let window, ui, openWindow, background, closeOwned, ownedWorkBusy, controller, temporaryChat, customize, codeBilling, dictation, work, workExporter, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0, opening=null, pendingQuit=false;
+const studioDraftOwners=new Set();
+let window, ui, openWindow, background, closeOwned, ownedWorkBusy, controller, temporaryChat, customize, codeBilling, dictation, work, workStudio, workExporter, finance, spaces, sites, updates, mobileHost, nativeControl, closing=false, updateInstalling=false, updateShutdown, pendingIpc=0, opening=null, pendingQuit=false;
 const retryPendingQuit=()=>{if(pendingQuit&&!opening&&pendingIpc===0){pendingQuit=false;setImmediate(()=>app.quit());}};
 const startupFailed = createStartupFailureHandler({ app, dialog, getWindow: () => window });
 const quitLifecycle=createQuitLifecycle({close:()=>closeOwned?.(),quit:()=>app.quit(),onFailure:async()=>{
@@ -112,7 +115,7 @@ else {
     const discoveryMcp=createDiscoveryMcpConfig({appRoot:root,helperPath,extensionReview,oauth:()=>discoveryOAuth});
     const discoveryStore=await createDiscoveryOAuthStore({dataDir,protection:{available:async()=>safeStorage.isEncryptionAvailable()&&!['basic_text','plaintext'].includes(safeStorage.getSelectedStorageBackend?.()),encrypt:text=>safeStorage.encryptStringAsync(text),decrypt:bytes=>safeStorage.decryptStringAsync(bytes)}});
     discoveryOAuth=createDiscoveryOAuth({store:discoveryStore,flow:createDiscoveryOAuthFlow({networkFactory:({url,limits})=>createRemoteNetwork({url},{limits})}),callbackFactory:createDiscoveryOAuthCallback,resolveSource:discoveryMcp.resolveAuthSource,getSourceSnapshot:discoveryMcp.getAuthSourceSnapshot,ownerSnapshot:()=>controller?.discoveryOwnerSnapshot(),runtimeOwnerSnapshot:discoveryMcp.runtimeOwnerSnapshot,admitSourceMutation:id=>!controller||controller.discoverySourceBusy(id)?null:discoveryMcp.admitSourceMutation(id),withIdleLease:discoveryMcp.withIdleLease,openBrowser:url=>shell.openExternal(url),onSafeUpdate:event=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:discovery-auth-update',event);}});
-    codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>composerPredictions?.isBusy()||temporaryChat?.isBusy()||onboardingOwners.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:async()=>{await temporaryChat?.close();return controller.resetCodeConnections();},readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
+    codeBilling=await createCodeBilling({dataDir,safeStorage,getBinary:()=>controller?.getState().runtime.binary,isActive:()=>finance?.isBusy()||workStudio?.isBusy?.()||composerPredictions?.isBusy()||temporaryChat?.isBusy()||onboardingOwners.isBusy()||!!customize?.isBusy()||controller&&!controller.canRestartForUpdate()||updateBlocked(work?.getState(),sites?.getState(),sites?.getState().generation),beforeChange:async()=>{await temporaryChat?.close();return controller.resetCodeConnections();},readBilling:()=>{if(!ui?.billingReader)throw Error('Open MuseBench to read billing.');return ui.billingReader.read();}});
     const normalizeVisual=createVisualNormalizer(nativeImage,{decodeWebp:async dataUrl=>{const contents=ui?.window?.webContents;if(!contents||contents.isDestroyed())throw Error('Open MuseBench to inspect WebP images.');return contents.executeJavaScriptInIsolatedWorld(991,[{code:'('+decodeVisualInRenderer.toString()+')('+JSON.stringify(dataUrl)+')'}]);}});
     const browserMcp=createBrowserMcpConfig({getBrowser:()=>ui?.chatBrowser,getVisuals:()=>ui?.visualTools,normalizeImage:normalizeVisual,beginVisual:binding=>controller.beginVisual(binding)});
     const desktopMcp=process.platform==='win32'?createDesktopMcpConfig({getDesktop:()=>desktopAssist}):undefined;
@@ -131,7 +134,10 @@ else {
     // Windows can redirect the app's known Roaming folder under its package
     // identity. Anchor Work's strict path checks to that trusted physical root.
     const workDataDir=await workDataDirectory(dataDir);
+    finance=await createDesktopFinance({dataDir:path.join(workDataDir,'finance'),workspaceRoot:path.join(projectsDir||path.join(dataDir,'projects'),'finance-questions'),safeStorage,dialog,shell,getWindow:()=>window,runtimeFactory:process.platform==='win32'?()=>createExecRuntime({credentials:codeBilling.credentials,helperPath,extensionReview,publicWebMcp:null,durableSessions:false,maxModelSteps:1,runTimeoutMs:15000}):null,onChange:state=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:finance-update',state);}});
     work = await createWorkService({dataDir:workDataDir,projectsDir:path.join(projectsDir||path.join(dataDir,'projects'),'work'),runtime:process.platform==='win32'?createExecRuntime({helperPath,extensionReview}):createRuntime({extensionReview})});
+    workStudio=await createDesktopWorkStudio({dataDir:path.join(workDataDir,'studio'),work,dialog,BrowserWindow,nativeImage,normalizeVisual,shell,screen,codeBilling,getWindow:()=>window,onChange:value=>{if(window&&!window.isDestroyed()&&!window.webContents.isDestroyed())window.webContents.send('musebench:work-studio-update',value);}});
+    protocol.handle('musebench-work-asset',request=>workStudio.handleAsset(request));
     spaces=await createDesktopSpaces({dataDir:path.join(path.dirname(workDataDir),'spaces'),safeStorage,work});
     sites=await createDesktopSites({dataDir:path.join(path.dirname(workDataDir),'sites'),projectsDir:path.join(projectsDir||path.join(dataDir,'projects'),'sites'),runtime:process.platform==='win32'?createExecRuntime({helperPath,extensionReview}):createRuntime({extensionReview}),safeStorage,work,shell,clipboard});
     workExporter=createWorkExporter({BrowserWindow});
@@ -155,11 +161,11 @@ else {
     dictation = createDictation({helperPath: app.isPackaged ? path.join(process.resourcesPath,'native','MuseBenchSpeech.exe') : path.join(root,'native','bin','MuseBenchSpeech.exe'), onState: value => { if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) window.webContents.send('musebench:dictation-update',value); }});
     customize=createCustomize({getState:()=>controller.getState(),dataDir,review:extensionReview,isActive:()=>customizeBlocked(work.getState(),sites.getState(),sites.getState().generation),chooseFolder:async kind=>{if(!window||window.isDestroyed())throw Error('Open MuseBench to choose a folder.');const result=await dialog.showOpenDialog(window,{title:kind==='skills'?'Choose a skill folder containing SKILL.md':'Choose a local plugin bundle',properties:['openDirectory']});return result.canceled?null:result.filePaths[0];}});
     mobileHost=await createMobileHost({dataDir,protection:safeStorage,service:createMobileService({controller,isBlocked:()=>closing||updateInstalling||customize.isBusy()||onboardingOwners.isBusy()})});
-    ownedWorkBusy=()=>composerPredictions.isBusy()||desktopAssist.isBusy()||temporaryChat.isBusy()||discoveryOAuth.isBusy()||nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||onboardingOwners.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
-    const updateBusy=()=>pendingIpc>0||ownedWorkBusy();
-    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['predictions','Composer prediction',composerPredictions.isBusy()],['desktop-assist','Desktop Assist',desktopAssist.isBusy()],['side-chat','Temporary side chat',temporaryChat.isBusy()],['tool-signin','Tool sign-in',discoveryOAuth.isBusy()],['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',onboardingOwners.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
+    ownedWorkBusy=()=>finance?.isBusy()||workStudio?.isBusy?.()||composerPredictions.isBusy()||desktopAssist.isBusy()||temporaryChat.isBusy()||discoveryOAuth.isBusy()||nativeControl?.isBusy()||mobileHost.isBusy()||codeBilling.isBusy()||onboardingOwners.isBusy()||!controller.canRestartForUpdate()||customize.isBusy()||updateBlocked(controller.getState(),work.getState(),sites.getState(),sites.getState().generation,dictation.snapshot());
+    const updateBusy=()=>pendingIpc>0||studioDraftOwners.size>0||ownedWorkBusy();
+    const updateBlockers=()=>readUpdateBlockers({controller,work,sites,dictation,operations:()=>[['finance','Finance sync or question',finance?.isBusy()],['predictions','Composer prediction',composerPredictions.isBusy()],['desktop-assist','Desktop Assist',desktopAssist.isBusy()],['side-chat','Temporary side chat',temporaryChat.isBusy()],['tool-signin','Tool sign-in',discoveryOAuth.isBusy()],['app-control','App control',nativeControl?.isBusy()],['mobile','Mobile connection',mobileHost.isBusy()],['billing','Billing source change',codeBilling.isBusy()],['signin','Sign-in',onboardingOwners.isBusy()],['customize','Customize',customize.isBusy()],['app-action','App action',pendingIpc>0]]});
     let firstWindow=true,blockedDialog=false,pendingWindowClose=false;
-    const showBlocked=async message=>{if(blockedDialog||closing)return;blockedDialog=true;try{await openWindow();await dialog.showMessageBox(window,{type:'info',title:'MuseBench is still working',message,detail:updateBlockers().map(row=>row.label+': '+row.detail).join('\n'),buttons:['Keep running']});}finally{blockedDialog=false;}};
+    const showBlocked=async message=>{if(blockedDialog||closing)return;if(studioDraftOwners.size)message='Save or retry your unsaved Work drafts before quitting or updating MuseBench.';blockedDialog=true;try{await openWindow();await dialog.showMessageBox(window,{type:'info',title:'MuseBench is still working',message,detail:updateBlockers().map(row=>row.label+': '+row.detail).join('\n'),buttons:['Keep running']});}finally{blockedDialog=false;}};
     openWindow=()=>{
       if(closing&&!quitLifecycle.confirmed())void quitLifecycle.request();
       if(closing||updateInstalling)return Promise.reject(Error('MuseBench is closing or updating.'));
@@ -185,7 +191,7 @@ else {
     closeOwned=async()=>{
       closing=true;trayNavigation?.close();ui?.personal?.close();ui?.billingReader?.close();ui?.billingPayments?.close();
       const discoveryClose=Promise.resolve().then(()=>discoveryOAuth.close()).finally(()=>discoveryStore.close());
-      const results=await Promise.allSettled([filePreview.close(),composerPredictions.close(),desktopAssist.close(),discoveryClose,onboardingOwners.closeAll(),codeBilling.close(),temporaryChat.close(),nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),work.close(),workExporter.close(),dictation.close(),background.close(),browserLogin.close(),sessionDurability.close()]);
+      const results=await Promise.allSettled([filePreview.close(),finance.close(),composerPredictions.close(),desktopAssist.close(),discoveryClose,onboardingOwners.closeAll(),codeBilling.close(),temporaryChat.close(),nativeControl.close(),mobileHost.close(),customize.close(),sites.close(),spaces.close(),controller.close(),workStudio.close().then(()=>work.close()),workExporter.close(),dictation.close(),background.close(),browserLogin.close(),sessionDurability.close()]);
       for(const notification of notifications)notification.close();notifications.clear();
       if(results.some(r=>r.status==='rejected'))throw Error('Shutdown needs attention');
     };
@@ -244,6 +250,11 @@ else {
       try{if(!previewURL||new URL(event.url).origin!==new URL(previewURL).origin)event.preventDefault();}catch{event.preventDefault();}
     });
     window.webContents.on('will-attach-webview', event=>event.preventDefault());
+    const studioAssetOwner=window.webContents.id;
+    const reportStudioDrafts=(event,dirty)=>{event.returnValue=false;if(typeof dirty!=='boolean'||!trustedSender(event,window.webContents,uiURL))return;if(dirty)studioDraftOwners.add(studioAssetOwner);else studioDraftOwners.delete(studioAssetOwner);event.returnValue=true;};
+    ipcMain.on('musebench:work-drafts-dirty',reportStudioDrafts);
+    window.webContents.on('render-process-gone',()=>{studioDraftOwners.delete(studioAssetOwner);workStudio?.revokeAssetAccess(studioAssetOwner);});
+    window.once('closed',()=>{studioDraftOwners.delete(studioAssetOwner);ipcMain.removeListener('musebench:work-drafts-dirty',reportStudioDrafts);workStudio?.revokeAssetAccess(studioAssetOwner);});
     const personal = view.personal = createPersonalBrowser({ window, BrowserWindow, WebContentsView, session, shell,
       sessionReady:()=>browserLogin.canUseSession(),
       sessionStatus:()=>browserLogin.snapshot(),
@@ -379,6 +390,9 @@ else {
     handler('musebench:spaces',command=>spaces.dispatch(command));
     handler('musebench:spaces-copy-invitation',()=>{const invitation=spaces.getState().invitation;if(!invitation)throw Error('Create an invitation first.');return clipboard.writeText(invitation.text);});
     handler('musebench:work-state',()=>workSnapshot(work.getState()));
+    handler('musebench:finance',input=>{if(input?.type==='ask'&&(closing||codeBilling.blocksWork()||onboardingOwners.isBusy()||customize.isBusy()))throw Error('Finance questions are paused during sign-in, setup or shutdown.');return finance.command(input);});
+    handler('musebench:work-studio',request=>workStudio.dispatch(request));
+    handler('musebench:work-import-files',request=>workStudio.importDroppedFiles(request));
     handler('musebench:work',async command=>{if(customize.isBusy())throw Error('Wait for Customize to finish before starting another operation.');return workSnapshot(await work.dispatch(command));});
     handler('musebench:work-import',async()=>{
       const selected=work.getState().activeId;

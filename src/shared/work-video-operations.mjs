@@ -1,0 +1,39 @@
+import {validateVideoData} from './work-video-schema.mjs';
+export function createVideoClip(input={}){return JSON.parse(JSON.stringify({id:input.id??globalThis.crypto.randomUUID(),kind:'video',start:0,duration:90000,sourceIn:0,speed:1,...input,transform:{x:0,y:0,scale:1,rotation:0,fit:'contain',crop:{left:0,top:0,right:0,bottom:0},...input.transform},audio:{gain:1,muted:false,fadeIn:0,fadeOut:0,...input.audio},transition:{type:'cut',duration:0,...input.transition}}));}
+export function videoDuration(data){return Math.max(0,...data.tracks.flatMap(t=>t.clips.map(c=>c.start+c.duration)),...data.captions.map(c=>c.end));}
+export function frameTick(data,tick){const frame=Math.round(tick*data.frameRate.numerator/(data.timebase*data.frameRate.denominator));return Math.max(0,Math.round(frame*data.timebase*data.frameRate.denominator/data.frameRate.numerator));}
+export function snapTick(data,tick,{excludeIds=[],threshold=0}={}){const framed=frameTick(data,tick);const points=data.tracks.flatMap(t=>t.clips.filter(c=>!excludeIds.includes(c.id)).flatMap(c=>[c.start,c.start+c.duration]));let best=framed;let delta=threshold+1;for(const p of points)if(Math.abs(p-tick)<=threshold&&Math.abs(p-tick)<delta){best=p;delta=Math.abs(p-tick);}return best;}
+export function audioGainAtTick(data,track,clip,tick){
+  if(track.muted||clip.audio.muted||tick<clip.start||tick>=clip.start+clip.duration)return 0;
+  const local=tick-clip.start;const a=clip.audio;let gain=track.gain*a.gain;
+  if(a.fadeIn)gain*=Math.min(1,local/a.fadeIn);if(a.fadeOut)gain*=Math.min(1,(clip.duration-local)/a.fadeOut);
+  if(a.ducking){const d=a.ducking;const side=data.tracks.find(t=>t.id===d.sidechainTrackId);let envelope=0;if(side&&!side.muted&&side.gain>0)for(const c of side.clips){if(c.audio.muted||c.audio.gain<=0)continue;const end=c.start+c.duration;if(tick>=c.start&&tick<end)envelope=Math.max(envelope,d.attack?Math.min(1,(tick-c.start)/d.attack):1);else if(tick>=end&&d.release&&tick<end+d.release)envelope=Math.max(envelope,1-(tick-end)/d.release);}gain*=1-envelope*(1-d.amount);}
+  return gain;
+}
+export function sampleVideoAtTick(data,tick){const at=frameTick(data,tick);return data.tracks.flatMap((track,trackIndex)=>track.clips.filter(c=>c.start<=at&&at<c.start+c.duration).map(clip=>({trackId:track.id,trackIndex,track,clip,sourceTick:Math.round(clip.sourceIn+(at-clip.start)*clip.speed),opacity:clip.transition.type==='crossfade'&&clip.transition.duration?Math.min(1,(at-clip.start)/clip.transition.duration):1,gain:audioGainAtTick(data,track,clip,at)})));}
+function selected(data,id){for(const track of data.tracks){const clip=track.clips.find(c=>c.id===id);if(clip)return {track,clip};}throw new Error('Clip not found');}
+function editable(track){if(track.locked)throw new Error('Track is locked');}
+function linked(data,clip){return data.tracks.flatMap(track=>track.clips.filter(c=>c.id===clip.id||(clip.linkedGroupId&&c.linkedGroupId===clip.linkedGroupId)).map(clip=>({track,clip})));}
+function boundAudio(clip){clip.audio.fadeIn=Math.min(clip.audio.fadeIn,clip.duration);clip.audio.fadeOut=Math.min(clip.audio.fadeOut,clip.duration);clip.transition.duration=Math.min(clip.transition.duration,clip.duration);}
+function ripple(track,after,delta,ignore){for(const c of track.clips)if(!ignore.has(c.id)&&c.start>=after)c.start=Math.max(0,c.start+delta);}
+const assertKeys=(patch,keys)=>{if(!patch||Object.keys(patch).some(k=>!keys.includes(k)))throw new Error('Unsupported clip edit');};
+export function applyVideoOperation(value,op){
+  const data=validateVideoData(value);
+  if(op.type==='addTrack'){if(data.tracks.some(t=>t.id===op.track.id))throw new Error('Duplicate track');data.tracks.push(structuredClone(op.track));}
+  else if(op.type==='track'){const t=data.tracks.find(t=>t.id===op.trackId);if(!t)throw new Error('Track not found');assertKeys(op.patch,['name','muted','locked','gain']);Object.assign(t,op.patch);}
+  else if(op.type==='addClip'){const t=data.tracks.find(t=>t.id===op.trackId);if(!t)throw new Error('Track not found');editable(t);t.clips.push(structuredClone(op.clip));}
+  else if(op.type==='project'){assertKeys(op.patch,['width','height','timebase','frameRate']);if(op.patch.timebase!==undefined&&op.patch.timebase!==data.timebase&&videoDuration(data)>0)throw new Error('Timebase cannot change after clips are added');Object.assign(data,op.patch);}
+  else {
+    const {track,clip}=selected(data,op.clipId);const group=linked(data,clip);for(const entry of group)editable(entry.track);const oldEnd=clip.start+clip.duration;const ignore=new Set(group.map(x=>x.clip.id));
+    if(op.type==='delete'){for(const {track:t,clip:c} of group){t.clips=t.clips.filter(x=>x.id!==c.id);if(op.ripple)ripple(t,c.start+c.duration,-c.duration,ignore);}}
+    else if(op.type==='split'){const tick=frameTick(data,op.tick);if(tick<=clip.start||tick>=oldEnd)throw new Error('Split must be inside clip');for(const {track:t,clip:c} of group){if(tick<=c.start||tick>=c.start+c.duration)throw new Error('Linked clip cannot split at this time');const left=tick-c.start;const right=structuredClone(c);right.id=c.id===clip.id?op.id:`${op.id}:${c.id}`;right.start=tick;right.duration=c.duration-left;right.sourceIn=Math.round(c.sourceIn+left*c.speed);if(c.linkedGroupId)right.linkedGroupId=`${c.linkedGroupId}:split:${op.id}`;c.duration=left;boundAudio(c);boundAudio(right);t.clips.splice(t.clips.indexOf(c)+1,0,right);}}
+    else if(op.type==='trim'){const start=frameTick(data,op.start),end=frameTick(data,op.end);if(start<clip.start||end>oldEnd||end<=start)throw new Error('Trim must retain a positive interval inside the clip');const left=start-clip.start,right=oldEnd-end;for(const {track:t,clip:c} of group){if(c.duration<=left+right)throw new Error('Linked clip trim exceeds source');const before=c.start+c.duration;c.sourceIn=Math.round(c.sourceIn+left*c.speed);c.start+=op.ripple?0:left;c.duration-=left+right;boundAudio(c);if(op.ripple)ripple(t,before,-left-right,ignore);}}
+    else if(op.type==='speed'){if(!Number.isFinite(op.speed)||op.speed<0.25||op.speed>4)throw new Error('Speed must be 0.25–4');for(const {track:t,clip:c} of group){const before=c.start+c.duration;const duration=Math.max(1,frameTick(data,c.duration*c.speed/op.speed));c.speed=op.speed;c.duration=duration;boundAudio(c);if(op.ripple)ripple(t,before,c.start+c.duration-before,ignore);}}
+    else if(op.type==='move'){const start=frameTick(data,op.start);const delta=start-clip.start;for(const {clip:c} of group){if(c.start+delta<0)throw new Error('Linked clip would start before zero');c.start+=delta;}if(op.trackId&&op.trackId!==track.id){const target=data.tracks.find(t=>t.id===op.trackId);if(!target)throw new Error('Track not found');editable(target);track.clips=track.clips.filter(c=>c.id!==clip.id);target.clips.push(clip);}}
+    else if(op.type==='duplicate'){for(const {track:t,clip:c} of group){const copy=structuredClone(c);copy.id=c.id===clip.id?op.id:`${op.id}:${c.id}`;copy.start+=c.duration;if(c.linkedGroupId)copy.linkedGroupId=`${c.linkedGroupId}:copy:${op.id}`;t.clips.push(copy);}}
+    else if(op.type==='replaceMedia'){if(!['video','audio','image'].includes(op.kind))throw new Error('Unsupported replacement media');clip.kind=op.kind;clip.assetId=op.assetId;clip.sourceIn=0;clip.speed=1;delete clip.text;}
+    else if(op.type==='update'){assertKeys(op.patch,['text','transform','audio','transition','duration']);for(const key of ['transform','audio','transition'])if(op.patch[key])clip[key]={...clip[key],...structuredClone(op.patch[key])};if(op.patch.text!==undefined)clip.text=op.patch.text;if(op.patch.duration!==undefined){if(!['image','text','placeholder'].includes(clip.kind))throw new Error('Use trim for media duration');clip.duration=op.patch.duration;boundAudio(clip);}}
+    else throw new Error('Unsupported video operation');
+  }
+  return validateVideoData(JSON.parse(JSON.stringify(data)));
+}

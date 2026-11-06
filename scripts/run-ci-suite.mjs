@@ -17,6 +17,12 @@ export const CI_SUITES={
  'chats-a':npm('code-responsiveness','prompt-shelf','code-chat-relations','update-details','renderer-state','workspace-focus','app-instructions','context-history','chat-menu-tools','image-annotations'),
  'chats-b':npm('composer-predictions','transcript-position','profile-identity','chat-organization','session-recovery','chat-history-find','chat-navigation','recent-context','transcript-render'),
  native:[
+  ...npm('finance'),
+  ['node','scripts/work-studio-acceptance.mjs'],
+  ['node','scripts/work-studio-formats-probe.mjs','--allow-unavailable-media'],
+  ['node','scripts/work-studio-recovery-probe.mjs'],
+  ['node','scripts/work-studio-performance.mjs'],
+  ['node','scripts/work-studio-performance.mjs','--library-only'],
   ...npm('source-diff','file-review','desktop-assist','file-viewer','file-renderers'),['node','scripts/browser-control-smoke.mjs'],
   ['node','scripts/discovery-oauth-smoke.mjs'],['node','scripts/discovery-oauth-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-recovery-smoke.mjs'],['node','scripts/discovery-oauth-recovery-smoke.mjs','--desktop'],['node','scripts/discovery-oauth-protection.mjs','--local-fixture'],
   ['node','scripts/mobile-settings-smoke.mjs'],['node','scripts/native-control-smoke.mjs'],['node','test/native-control-http-ui-smoke.mjs'],['node','scripts/native-navigation-smoke.mjs'],

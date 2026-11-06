@@ -1,0 +1,1 @@
+export function SlideNotes({value,onChange}:{value:string;onChange:(value:string)=>void}){return <label style={{display:'grid',gap:6}}>Speaker notes (private during playback)<textarea aria-label="Speaker notes" value={value} onChange={e=>onChange(e.target.value)} rows={4} maxLength={100000}/></label>;}

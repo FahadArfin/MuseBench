@@ -25,6 +25,11 @@ test('API selection saves encrypted credentials and never falls back to the acco
  await reopened.command({type:'select',source:'account'});await assert.rejects(c.verify(),/changed/);
  const a=await reopened.credentials({binary:'muse.exe',environment:{PATH:'safe',META_API_KEY:'inherited'}});assert.equal(a.environment.META_API_KEY,undefined);assert.equal(a.source,'account');
 });
+test('media API credentials require explicit API mode and stay out of public status',async t=>{
+ const f=await fixture(t);assert.equal(f.service.mediaConnection().ready,false);await assert.rejects(f.service.mediaCredential(),/API|unavailable/i);
+ const key='fixture-media-secret-abcdefgh';await f.service.command({type:'saveApiKey',key});const status=f.service.mediaConnection();assert.equal(status.ready,true);assert.ok(!JSON.stringify(status).includes(key));const credential=await f.service.mediaCredential();assert.equal(credential.key,key);assert.equal(credential.connectionId,status.connectionId);await credential.verify();
+ await f.service.command({type:'saveApiKey',key:'fixture-new-secret-abcdefgh'});await assert.rejects(credential.verify(),/changed/i);assert.notEqual(f.service.mediaConnection().connectionId,status.connectionId);await f.service.command({type:'select',source:'account'});assert.equal(f.service.mediaConnection().ready,false);await assert.rejects(f.service.mediaCredential(),/API|unavailable/i);
+});
 test('account selection refuses a higher priority stored API key and busy work',async t=>{
  const f=await fixture(t);f.setBusy(true);await assert.rejects(f.service.command({type:'saveApiKey',key:'fixture-secret-abcdefgh'}),/work|running/i);assert.equal(f.resets,0);
  f.setBusy(false);f.setAccount('apiKey');await assert.rejects(f.service.command({type:'select',source:'account'}),/sign in/i);assert.equal(f.resets,0);

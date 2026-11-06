@@ -1,0 +1,15 @@
+export type DocumentRun={text:string;bold?:boolean;italic?:boolean;underline?:boolean;code?:boolean};
+export type DocumentSource={label:string;url?:string};
+export type DocumentBlock=({type:'paragraph';runs:DocumentRun[]}|{type:'heading';level:number;runs:DocumentRun[]}|{type:'list';ordered:boolean;items:{id:string;runs:DocumentRun[]}[]}|{type:'table';columns:string[];rows:string[][]}|{type:'image';assetId:string;width:number;height:number;alt:string}|{type:'chart';chart:{type:'bar'|'line';labels:string[];values:number[];title?:string}}|{type:'pageBreak'})&{id:string;source?:DocumentSource};
+export type DocumentPage={width:number;height:number;marginTop:number;marginRight:number;marginBottom:number;marginLeft:number;header:string;footer:string;pageNumbers:boolean};
+export type StructuredDocumentData={page:DocumentPage;blocks:DocumentBlock[];provenance?:{sourceItemId:string;sourceRevision:number;conversion:string;losses:string[]}};
+export type DocumentPageFragment=DocumentBlock&{continuation?:boolean;rowOffset?:number;itemOffset?:number;textStart?:number;textEnd?:number;displayHeight?:number};
+export const DOCUMENT_PAGE_PRESETS:Record<'A4'|'Letter',{width:number;height:number}>;
+export function createDocumentData():StructuredDocumentData;
+export function validateDocumentData(value:unknown,context?:{assetIds?:Set<string>;ids?:Set<string>}):StructuredDocumentData;
+export function blockText(block:DocumentBlock):string;
+export function applyDocumentOperation(data:StructuredDocumentData,operation:{type:'replaceBlock';blockId:string;block:DocumentBlock}|{type:'insertBlock';afterId?:string;block:DocumentBlock}|{type:'deleteBlock';blockId:string}|{type:'setPage';page:Partial<DocumentPage>}):StructuredDocumentData;
+export function paginateDocument(data:StructuredDocumentData):{number:number;blocks:DocumentPageFragment[];usedHeight:number}[];
+export function sliceRuns(runs:DocumentRun[],start:number,end:number):DocumentRun[];
+export function renderRunsHtml(runs:DocumentRun[]):string;
+export function renderDocumentHtml(data:StructuredDocumentData,options?:{resolveAsset?:(assetId:string)=>string|null;title?:string}):string;

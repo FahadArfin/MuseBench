@@ -114,9 +114,15 @@ export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<Chat
  spacesCopyInvitation():Promise<void>;
  onSpacesState(callback:(state:import('./spaces-types').SpacesState)=>void):()=>void;
  workState():Promise<import('./work-types').WorkState>;
+ finance(command:import('./finance-types').FinanceCommand):Promise<import('./finance-types').FinanceResult>;
+ onFinance(callback:(state:import('./finance-types').FinanceState)=>void):()=>void;
  work(command:import('./work-types').WorkCommand):Promise<import('./work-types').WorkState>;
  workImport():Promise<import('./work-types').WorkState>;
  workExport(format:import('./work-types').WorkExport):Promise<{saved:boolean;path?:string}>;
+ workStudio(request:import('./work-studio-types').WorkStudioRequest):Promise<import('./work-studio-types').WorkStudioResult>;
+ importWorkFiles(itemId:string,files:File[]):Promise<import('./work-studio-types').WorkStudioResult>;
+ setWorkDraftsDirty(value:boolean):void;
+ onWorkStudio(callback:(event:unknown)=>void):()=>void;
  onWorkState(callback:(state:import('./work-types').WorkState)=>void):()=>void;
 }
 export interface MuseBenchBridge { chatTools(input:ChatToolCommand):Promise<ChatToolResult>;onChatLink?(listener:(taskId:string)=>void):()=>void;mobileDevice(command:import('./mobile-types').MobileDeviceCommand):Promise<import('./mobile-types').MobileDeviceState>;}

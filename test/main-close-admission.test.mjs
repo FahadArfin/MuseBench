@@ -58,7 +58,7 @@ async function fixture(t,options={},finish=()=>{}){
  const heldAction=deferred();
  const lifecycle=createQuitLifecycle({close:async()=>{counts.cleanupRequests++;await Promise.all([billing.close(),background.close()]);},quit});
  context=createContext({codeBilling:billing,closing:false,opening:null,pendingIpc:0,pendingQuit:false,pendingWindowClose:false,updateInstalling:false,
-  view:{},handlers:[],temporaryChat:idle,composerPredictions:idle,desktopAssist:idle,onboardingOwners:idle,discoveryOAuth:idle,nativeControl:idle,mobileHost:idle,customize:idle,
+  view:{},handlers:[],temporaryChat:idle,composerPredictions:idle,desktopAssist:idle,onboardingOwners:idle,discoveryOAuth:idle,nativeControl:idle,mobileHost:idle,customize:idle,workStudio:idle,finance:idle,studioDraftOwners:new Set(),
   controller:{...state,canRestartForUpdate:()=>true},work:state,sites:state,dictation:{snapshot:()=>({status:'idle'})},updateBlocked,
   updateShutdown:{preparing:()=>false},quitLifecycle:lifecycle,allowedWhileBillingBlocked,
   showBlocked:async message=>{notices.push(message);},trustedSender:()=>true,uiURL:'file:///fictional/index.html',billingChanged:()=>{},
@@ -80,7 +80,7 @@ async function fixture(t,options={},finish=()=>{}){
 }
 
 for(const target of ['window','app']){
- for(const service of ['composerPredictions','desktopAssist'])test(`${target} close blocks active ${service} until cleanup completes`,async t=>{
+ for(const service of ['composerPredictions','desktopAssist','workStudio','finance'])test(`${target} close blocks active ${service} until cleanup completes`,async t=>{
   const f=await fixture(t);f.context[service]={isBusy:()=>true};
   assert.equal(f.close(target).prevented,true);assert.equal(f.notices.length,1);assert.equal(f.counts.cleanupRequests,0);
   f.context[service]={isBusy:()=>false};assert.equal(f.context.admissionBusy(),false);
@@ -129,3 +129,12 @@ for(const target of ['window','app']){
   confirmed=true;exited.resolve();await turn();assert.equal(f.billing.isBusy(),false);
  });
 }
+
+test('unsaved studio drafts block app quit and update admission before native service cleanup',async t=>{
+ const f=await fixture(t);f.context.studioDraftOwners.add('renderer-owner');
+ assert.equal(f.context.admissionBusy(),true);
+ assert.equal(f.close('app').prevented,true);
+ assert.equal(f.counts.cleanupRequests,0);assert.equal(f.counts.quits,0);assert.equal(f.context.closing,false);
+ f.context.studioDraftOwners.clear();assert.equal(f.context.admissionBusy(),false);
+ f.close('app');await f.drain();assert.equal(f.counts.cleanupRequests,1);assert.equal(f.counts.quits,1);
+});

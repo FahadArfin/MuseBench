@@ -1,0 +1,7 @@
+/** Serialization and editor limits. All byte limits refer to UTF-8 or original file bytes. */
+export const WORK_ASSET_LIMITS = Object.freeze({maxFileBytes:25*1024*1024,maxPixels:24_000_000,maxDimension:12000,maxFilesPerImport:32,maxAssetsPerItem:256,maxImportBytes:100*1024*1024,thumbnailSize:256});
+export const WORK_LIMITS = Object.freeze({maxDocumentBytes:16*1024*1024,maxDepth:48,maxValues:250_000,maxAssets:256,maxAssetBytes:2*1024*1024*1024,maxArtboards:100,maxNodesPerSurface:2000,maxNodes:10000,maxDimension:32768,maxCoordinate:100000,maxTextLength:100000,maxTitleLength:240,maxIdLength:128,maxChartPoints:1000,maxTableColumns:100,maxTableRows:1000});
+export const WORK_SLIDES_LIMITS = Object.freeze({minDimension:72,maxDimension:10000,maxSlides:500,maxNotesLength:100000});
+export const WORK_VIDEO_LIMITS = Object.freeze({maxTicks:2_147_483_647,minDimension:16,maxDimension:8192,maxTimebase:1000000,maxTracks:64,maxClips:10000,maxCaptions:10000,maxStoryboardScenes:1000});
+export const WORK_MOTION_LIMITS = Object.freeze({minDimension:16,maxDimension:7680,timebase:1000,maxDurationTicks:120000,maxFps:60,maxScenes:120,maxTracksPerScene:3000,maxKeyframesPerTrack:2000,maxDataBytes:8*1024*1024});
+export const WORK_DOCUMENT_LIMITS = Object.freeze({minDimension:144,maxDimension:2400,maxMargin:600,minContentDimension:72,maxBlocks:5000,maxRuns:10000,maxListItems:2000,maxTableColumns:30,maxTableRows:2000,maxDataBytes:8*1024*1024});

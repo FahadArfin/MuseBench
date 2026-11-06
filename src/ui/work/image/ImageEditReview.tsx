@@ -1,0 +1,7 @@
+import {useState} from 'react';
+import type {ImageEditProposal} from '../../../work/image-edits.mjs';
+export function ImageEditReview({proposal,itemId,revision,beforeUrl,afterUrl,onAccept,onDiscard}:{proposal:ImageEditProposal;itemId:string;revision:number;beforeUrl?:string;afterUrl?:string;onAccept:()=>void|Promise<void>;onDiscard:()=>void}){
+ const [busy,setBusy]=useState(false),[error,setError]=useState('');const stale=proposal.itemId!==itemId||proposal.revision!==revision;
+ return <section aria-label="Review image edit"><h3>Review image edit</h3><div style={{display:'flex',gap:12,flexWrap:'wrap'}}>{[[beforeUrl,'Before'],[afterUrl,'After']].map(([url,label])=><figure key={label} style={{flex:'1 1 180px',margin:0}}>{url?<img src={url} alt={label} style={{maxWidth:'100%',maxHeight:360}}/>:<p>{label} preview unavailable</p>}<figcaption>{label}</figcaption></figure>)}</div><p>Accept adds a new layer and preserves the original image.</p>{stale&&<p role="status">This project changed after generation. Accept is disabled for this revision.</p>}<button type="button" disabled={busy||stale||proposal.status!=='completed'} onClick={()=>{setBusy(true);setError('');void Promise.resolve().then(onAccept).catch(()=>setError('The result could not be applied. Your original image is preserved.')).finally(()=>setBusy(false));}}>Accept as new layer</button><button type="button" disabled={busy} onClick={onDiscard}>Discard</button>{error&&<p role="alert">{error}</p>}</section>;
+}
+export default ImageEditReview;

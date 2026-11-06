@@ -41,6 +41,14 @@ jobs:
         with:
           name: windows-timings-${{ matrix.suite }}
           path: artifacts/ci-timings/${{ matrix.suite }}.json
+      # A passing run may explicitly lack optional media/PDF inspection tools.
+      # Preserve that coverage disclosure without uploading fixture profiles.
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.suite == 'native'
+        with:
+          name: windows-work-studio-coverage
+          path: artifacts/work-studio/formats-*/report.json
+          if-no-files-found: warn
       # Only clean fixture reports; never upload account captures or profiles.
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -109,3 +117,4 @@ jobs:
             artifacts/file-viewer/**/report.json
             artifacts/file-viewer-app/**/report.json
             artifacts/file-viewer-preview/report.json
+            artifacts/work-studio/**/report.json

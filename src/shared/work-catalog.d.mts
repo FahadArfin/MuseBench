@@ -8,3 +8,5 @@ export const WORK_EXAMPLES: ReadonlyArray<WorkTemplate>;
 export function filterWorkTemplates(filters?: { team?: WorkTeam | 'all'; kind?: WorkKind | 'all'; query?: string }): WorkTemplate[];
 export function createWorkDraft(template: WorkTemplate, runOptions?: RunOptions): Extract<WorkCommand, { type: 'create' }>;
 export function workExportOptions(artifact: WorkArtifact | null, capabilities?: { mp4: boolean }): { format: WorkExport; label: string; enabled: boolean; reason: string }[];
+
+export {CREATIVE_TEMPLATES as WORK_CREATIVE_TEMPLATES} from './work-creative-catalog.mjs';

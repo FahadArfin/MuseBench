@@ -1,0 +1,6 @@
+export const WORK_ASSET_LIMITS: Readonly<{maxFileBytes:number;maxPixels:number;maxDimension:number;maxFilesPerImport:number;maxAssetsPerItem:number;maxImportBytes:number;thumbnailSize:number}>;
+export const WORK_LIMITS: Readonly<{maxDocumentBytes:number;maxDepth:number;maxValues:number;maxAssets:number;maxAssetBytes:number;maxArtboards:number;maxNodesPerSurface:number;maxNodes:number;maxDimension:number;maxCoordinate:number;maxTextLength:number;maxTitleLength:number;maxIdLength:number;maxChartPoints:number;maxTableColumns:number;maxTableRows:number}>;
+export const WORK_SLIDES_LIMITS:Readonly<{minDimension:number;maxDimension:number;maxSlides:number;maxNotesLength:number}>;
+export const WORK_VIDEO_LIMITS:Readonly<{maxTicks:number;minDimension:number;maxDimension:number;maxTimebase:number;maxTracks:number;maxClips:number;maxCaptions:number;maxStoryboardScenes:number}>;
+export const WORK_MOTION_LIMITS:Readonly<{minDimension:number;maxDimension:number;timebase:number;maxDurationTicks:number;maxFps:number;maxScenes:number;maxTracksPerScene:number;maxKeyframesPerTrack:number;maxDataBytes:number}>;
+export const WORK_DOCUMENT_LIMITS:Readonly<{minDimension:number;maxDimension:number;maxMargin:number;minContentDimension:number;maxBlocks:number;maxRuns:number;maxListItems:number;maxTableColumns:number;maxTableRows:number;maxDataBytes:number}>;

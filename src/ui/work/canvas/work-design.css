@@ -1,0 +1,27 @@
+/* The scene stays independent of the app shell so imported editors retain usable controls. */
+.work-design-editor{color:var(--text,#27352d);font-size:12px;line-height:1.45;container-type:inline-size}
+.work-design-editor button,.work-design-editor select,.work-design-editor input,.work-design-editor textarea{font:inherit;color:inherit;box-sizing:border-box}
+.work-design-editor button{min-height:28px;border:1px solid var(--border,#cbd0cc);border-radius:6px;background:var(--surface,#fafbf8);padding:5px 9px;cursor:pointer;line-height:1.3}
+.work-design-editor button:hover{background:var(--surface-hover,#e7ece7)}
+.work-design-editor button:disabled{opacity:.4;cursor:default}
+.work-design-editor button[aria-selected=true],.work-design-editor button[aria-pressed=true]{border-color:#718d7a;background:rgba(89,130,102,.12)}
+.work-design-editor input:not([type=checkbox]):not([type=range]):not([type=color]),.work-design-editor select,.work-design-editor textarea{min-width:0;width:100%;padding:6px 7px;background:var(--bg,#fff);border:1px solid var(--border,#cbd0cc);border-radius:5px}
+.work-design-editor [role=toolbar]{padding:10px;border:1px solid var(--border,#d8ddd7);border-radius:9px;align-items:center;background:rgba(120,130,120,.035)}
+.work-design-editor [role=toolbar] label{display:inline-flex;gap:6px;align-items:center;white-space:nowrap;font-size:11px}
+.work-design-editor [role=toolbar] select{width:auto;max-width:170px}
+.work-design-editor aside{padding:12px;background:var(--surface,#fafbf8);border:1px solid var(--border,#d8ddd7);border-radius:9px}
+.work-design-editor aside label{display:grid!important;grid-template-columns:75px minmax(0,1fr);align-items:center;gap:7px;margin:7px 0;font-size:11px;text-transform:capitalize}
+.work-design-editor aside label:has(input[type=checkbox]){display:flex!important}
+.work-design-editor aside input[type=number]{width:100%}
+.work-design-editor aside textarea{min-height:75px;resize:vertical}
+.work-design-editor aside summary{font-weight:600;cursor:pointer;padding:3px 0 6px}
+.work-design-editor aside fieldset{margin:14px 0;padding:8px;border:1px solid var(--border,#d8ddd7);border-radius:7px;min-width:0}
+.work-design-editor aside legend{font-size:11px;padding:0 5px;font-weight:600}
+.work-design-editor aside h3{font-size:12px;margin:17px 0 7px}
+.work-design-editor aside button{font-size:10px;padding:5px 6px;margin:2px 1px}
+.work-design-editor [aria-label="Align layers"]{display:flex;flex-wrap:wrap;gap:3px}
+.work-design-editor [aria-label="Resize selected layer"],.work-design-editor [aria-label="Rotate selected layer"]{min-height:0;border:1px solid #8069ff;background:#fff;color:#5030be;border-radius:2px;line-height:1}
+.work-design-editor :focus-visible{outline:2px solid #6a8d74;outline-offset:2px}
+@container(max-width:700px){.work-design-editor .work-design-layout{grid-template-columns:minmax(0,1fr)!important}.work-design-editor aside{max-height:340px!important}}
+
+.work-design-editor option{background:var(--surface,#fff);color:var(--text,#27352d)}

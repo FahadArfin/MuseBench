@@ -24,6 +24,7 @@ import type {ProjectActionDefinition} from '../shared/project-actions.mjs';
 import {projectRuntimeStatus,runtimeStatusBusy} from '../runtime/status.mjs';
 import {createChildTracker} from '../runtime/children.mjs';
 import {workIdentity,workLabel} from '../shared/work-activity.mjs';
+import {createPreviewWorkStudio} from './work-studio';
 import {sampleAnalytics} from './analytics';
 import {CURATED_EXTENSIONS} from '../shared/extension-catalog.mjs';
 import type {CatalogEntry} from '../shared/extension-catalog-types';
@@ -270,6 +271,7 @@ export function createPreviewBridge():MuseBenchBridge {
  const work:WorkState={items:workItems,activeId:null,item:null,task:null,runtime:copy(runtime),busy:false,error:null,artifact:null,artifactError:null,artifactUpdatedAt:null,capabilities:{mp4:false}};
  const workChannel=channel(()=>work);
  function selectWork(key:string){work.item=workItems.find(i=>i.id===key)??null;work.activeId=work.item?.id??null;work.task=workTasks.get(key)??null;work.artifact=artifacts.get(key)??null;work.artifactUpdatedAt=stamp;}
+ const workStudio=createPreviewWorkStudio((document,created)=>{if(created){const item:WorkItem={id:document.id,title:document.title,kind:document.kind,team:'marketing',projectId:document.id,taskId:document.id,createdAt:document.createdAt,updatedAt:document.updatedAt,sources:[],demo:true,documentVersion:2,documentRevision:document.revision};workItems.unshift(item);workTasks.set(item.id,task('Preview creative project',item.id,item.id));selectWork(item.id);}else{const item=workItems.find(i=>i.id===document.id);if(item){item.title=document.title;item.documentRevision=document.revision;item.updatedAt=document.updatedAt;}}workChannel.emit();});
  const spaces:SpacesState={spaces:[{id:'sample-space',spaceId:'sample-space',name:'Design studio',url:'',local:true}],activeId:null,snapshot:null,page:null,comments:[],history:[],error:null,conflict:false,busy:false,lastSynced:stamp,invitation:null,hosting:null};
  const pages:SpacePage[]=[{id:'sample-page',title:'Welcome to the studio',type:'note',revision:1,updatedAt:stamp,updatedBy:'Preview member',body:'# A place to work together\n\nKeep project notes, ideas, and decisions in one shared space.\n\n- Agree on the next milestone\n- Share a useful draft\n- Leave focused feedback'}];
  const spaceChannel=channel(()=>spaces);
@@ -379,7 +381,7 @@ export function createPreviewBridge():MuseBenchBridge {
    }
    return person.emit();
   },
-  workState:workChannel.read,onWorkState:workChannel.on,workImport:desktop,workExport:desktop,work:async command=>{
+  finance:async command=>{if(command.type==='state'||command.type==='stopAsk')return{state:{revision:0,configured:false,environment:null,protectedStorage:false,busy:false,error:null,link:null,items:[],accounts:[],transactions:[],budgets:{}}};return desktop();},onFinance:()=>()=>{},workState:workChannel.read,onWorkState:workChannel.on,workImport:desktop,workExport:desktop,importWorkFiles:desktop,setWorkDraftsDirty:()=>{},workStudio,onWorkStudio:()=>()=>{},work:async command=>{
    switch(command.type){
     case 'select':selectWork(command.id);break;
     case 'create':{const key=id();const next:WorkItem={id:key,title:command.title,team:command.team,kind:command.kind,projectId:key,taskId:key,createdAt:stamp,updatedAt:stamp,sources:[],demo:true};workItems.unshift(next);workTasks.set(key,task(command.brief||command.title,key,key));artifacts.set(key,demoArtifact(command.kind,command.team));selectWork(key);break;}

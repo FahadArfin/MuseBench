@@ -8,11 +8,21 @@ import {fileURLToPath} from 'node:url';
 import yaml from 'js-yaml';
 import {CI_SUITES,runChecks} from '../scripts/run-ci-suite.mjs';
 
+test('native formats stay in required CI while optional codec gaps remain recorded',async()=>{
+ assert.ok(CI_SUITES.native.some(check=>check.join(' ')==='node scripts/work-studio-formats-probe.mjs --allow-unavailable-media'));
+ const shared=yaml.load(await readFile(new URL('../.github/workflows/windows-checks.yml',import.meta.url),'utf8'));
+ const coverage=shared.jobs.check.steps.find(step=>step.with?.name==='windows-work-studio-coverage');
+ assert.equal(coverage.if,"always() && matrix.suite == 'native'");
+ assert.equal(coverage.with.path,'artifacts/work-studio/formats-*/report.json');
+});
+
 const workflow=async name=>yaml.load(await readFile(new URL(`../.github/workflows/${name}.yml`,import.meta.url),'utf8'));
 const packageJson=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
 // Union of release + validation at ccf56e2. This baseline prevents a speedup
 // accidentally omitting an expensive check. The removed Quote UI is replaced by image annotation and chat menu coverage.
 const required=[
+ 'npm run test:finance',
+ 'node scripts/work-studio-acceptance.mjs','node scripts/work-studio-formats-probe.mjs --allow-unavailable-media','node scripts/work-studio-recovery-probe.mjs','node scripts/work-studio-performance.mjs','node scripts/work-studio-performance.mjs --library-only',
  'npm run test:composer-predictions','npm run test:file-viewer','npm run test:file-renderers',
  'npm run test:source-diff','npm run test:file-review','npm run test:desktop-assist','node scripts/browser-control-smoke.mjs','npm run test:subagent-messaging','npm run test:visual-tools',
  'node scripts/discovery-oauth-smoke.mjs','node scripts/discovery-oauth-smoke.mjs --desktop','node scripts/discovery-oauth-recovery-smoke.mjs','node scripts/discovery-oauth-recovery-smoke.mjs --desktop','node scripts/discovery-oauth-protection.mjs --local-fixture',

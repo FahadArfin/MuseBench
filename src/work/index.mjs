@@ -5,10 +5,13 @@ import {createController} from '../controller/index.mjs';
 import {validateRunOptions} from '../shared/run-options.mjs';
 import {validateArtifact,demoArtifact,artifactPrompt} from '../shared/work-artifacts.mjs';
 import {updateStateFlags} from '../shared/update-status.mjs';
+import {createWorkDocument,validateWorkDocument} from '../shared/work-documents.mjs';
+import {createWorkDocumentStore} from './document-store.mjs';
 
 const MAX_SOURCE=2*1024*1024,MAX_ARTIFACT=512*1024,MAX_MANIFEST=8*1024*1024;
 const TEAMS=new Set(['finance','operations','marketing','sales','analytics','engineering']);
 const KINDS=new Set(['dashboard','motion','document','slides']);
+const STUDIO_KINDS=new Set(['design','image','slides','document','video','motion']);
 const EXTENSIONS=new Set(['.csv','.json','.md','.txt']);
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const LIVE=new Set(['running','starting','submitting','connecting','checking-permissions']);
@@ -78,8 +81,9 @@ function command(value){
 function verifiedArtifact(value,kind){const artifact=validateArtifact(value);if(artifact.kind!==kind)throw Error('Artifact kind must match this Work item.');return artifact;}
 function restoredRecord(value){
   const item=value?.item;
-  if(!item||!UUID.test(item.id??'')||!UUID.test(item.projectId??'')||!UUID.test(item.taskId??'')||!TEAMS.has(item.team)||!KINDS.has(item.kind)||typeof item.demo!=='boolean'||!Number.isFinite(Date.parse(item.createdAt))||!Number.isFinite(Date.parse(item.updatedAt))||!Array.isArray(item.sources)||item.sources.length>8)throw Error('Saved Work item is invalid.');
-  string(item.title,'Saved title',160);
+  if(!item||!UUID.test(item.id??'')||!UUID.test(item.projectId??'')||!UUID.test(item.taskId??'')||!TEAMS.has(item.team)||!(KINDS.has(item.kind)||(item.documentVersion===2&&STUDIO_KINDS.has(item.kind)))||typeof item.demo!=='boolean'||!Number.isFinite(Date.parse(item.createdAt))||!Number.isFinite(Date.parse(item.updatedAt))||!Array.isArray(item.sources)||item.sources.length>8)throw Error('Saved Work item is invalid.');
+  if(item.documentVersion!==undefined&&(item.documentVersion!==2||!STUDIO_KINDS.has(item.kind)||!Number.isSafeInteger(item.documentRevision)||item.documentRevision<0))throw Error('Unsupported saved creative project. Its bytes were preserved.');
+  string(item.title,'Saved title',item.documentVersion===2?240:160);
   const sourceIds=new Set();
   for(const source of item.sources){
     if(!source||!UUID.test(source.id??'')||sourceIds.has(source.id)||typeof source.name!=='string'||source.name.length>120||typeof source.path!=='string'||!/^inputs\/[a-zA-Z0-9._-]+\.(csv|json|md|txt)$/.test(source.path)||!Number.isSafeInteger(source.bytes)||source.bytes<0||source.bytes>MAX_SOURCE||!Number.isFinite(Date.parse(source.addedAt)))throw Error('Saved Work source is invalid.');
@@ -92,7 +96,7 @@ function restoredRecord(value){
 
 /** Local Work library. getArtifact(id) is asynchronous and returns the last
  * validated artifact for a registered item, or null, without changing selection.
- * addSources(paths) is a main-process-only entry point for native picker results.
+ * addSources(paths,{itemId}?) is a main-process-only entry point for native picker results.
  */
 export async function createWorkService({dataDir,projectsDir,runtime}={}){
   if(!dataDir||!path.isAbsolute(dataDir))throw Error('An absolute Work data folder is required.');
@@ -100,6 +104,8 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
   projectsDir=await makeDirectory(projectsDir??path.join(dataDir,'workspaces'));
   if(samePath(dataDir,projectsDir)||inside(projectsDir,dataDir))throw Error('Workspaces cannot contain Work application data.');
   const artifactDir=await makeDirectory(path.join(dataDir,'artifacts')),manifestFile=path.join(dataDir,'manifest.json');
+  const documents=createWorkDocumentStore({rootDir:path.join(dataDir,'documents')});
+  await documents.initialize();
   const records=new Map(),artifacts=new Map(),artifactErrors=new Map(),listeners=new Set(),observedTerminals=new Set();
   let activeId=null,ownError=null,manifestReadable=true,closed=false,closing=false,operationBusy=false,queue=Promise.resolve(),pendingDisplay=null;
   let cancellationEpoch=0,activeSendEpoch=null,closePromise=null;
@@ -157,6 +163,7 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
   }
   async function act(action){native=await controller.dispatch(action);if(native.error)throw Error(native.error);return native;}
   async function refresh(record,{required=false}={}){
+    if(record.item.documentVersion===2)return;
     try{
       const root=await workspace(record),text=await boundedRead(path.join(root,'work-artifact.json'),MAX_ARTIFACT);
       const artifact=verifiedArtifact(JSON.parse(text),record.item.kind);
@@ -185,9 +192,19 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
     emit();
   }
   const unsubscribe=controller.subscribe(onController);
+  let documentMetadataChanged=false;
   for(const record of records.values()){
+    if(record.item.documentVersion===2){
+      try{
+        const saved=await documents.read(record.item.id);
+        documentMetadataChanged=syncDocumentMetadata(record,saved)||documentMetadataChanged;
+        if(saved.recovered)artifactErrors.set(record.item.id,saved.recovery?.message??'Recovered the last complete Work revision.');
+      }catch(error){artifactErrors.set(record.item.id,`Saved creative document could not be read: ${message(error)}`);}
+      continue;
+    }
     try{artifacts.set(record.item.id,verifiedArtifact(JSON.parse(await boundedRead(cacheFor(record),MAX_ARTIFACT)),record.item.kind));}catch(error){if(error.code!=='ENOENT')artifactErrors.set(record.item.id,`Saved preview could not be read: ${message(error)}`);}
   }
+  if(documentMetadataChanged)try{await persist();}catch(error){ownError=`Document revisions were recovered, but library metadata could not be refreshed: ${message(error)}`;}
   if(activeId)try{const record=requireItem();await workspace(record);await act({type:'selectTask',id:record.item.taskId});await refresh(record);}catch(error){ownError=message(error);}
 
   async function perform(value,requestedEpoch){
@@ -197,11 +214,13 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
       case 'create':{
         requireIdle();if(records.size>=200)throw Error('This Work library has reached its 200 item limit.');
         if(!manifestReadable)throw Error('The saved Work library is unreadable. Its original file was preserved.');
-        const id=randomUUID(),root=path.join(projectsDir,`work-${id}`);await inspectPath(projectsDir,{directory:true});await fs.mkdir(root);
+        const id=value.studioDocument?.id??randomUUID(),root=path.join(projectsDir,`work-${id}`);if(!UUID.test(id)||records.has(id))throw Error('A new project requires a unique ID.');await inspectPath(projectsDir,{directory:true});await fs.mkdir(root);
         await atomicWrite(path.join(root,'package.json'),JSON.stringify({name:`musebench-work-${id}`,private:true,scripts:{}}),{exclusive:true});
         await act({type:'openProject',path:root});await act({type:'newTask',request:value.brief||value.title,mode:'muse',runOptions:value.runOptions});
         const createdAt=date(),record={item:{id,title:value.title,team:value.team,kind:value.kind,projectId:native.activeProject.id,taskId:native.task.id,createdAt,updatedAt:createdAt,sources:[],demo:value.demo===true},prompts:{},artifactUpdatedAt:null};
-        records.set(id,record);activeId=id;await persist();
+        if(value.studioDocument){const saved=await documents.create({itemId:id,document:value.studioDocument});record.item.documentVersion=2;syncDocumentMetadata(record,saved);}
+        const previousActive=activeId;records.set(id,record);activeId=id;
+        try{await persist();}catch(error){records.delete(id);activeId=previousActive;throw error;}
         if(value.demo)await saveArtifact(record,demoArtifact(value.kind,value.team));
         break;
       }
@@ -210,7 +229,7 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
       case 'saveArtifact':{requireIdle();await saveArtifact(requireItem(),value.artifact);break;}
       case 'send':{
         requireCurrentSend(requestedEpoch);
-        requireIdle();const record=requireItem(),root=await workspace(record);await refresh(record);
+        requireIdle();const record=requireItem(),root=await workspace(record);if(record.item.documentVersion===2)throw Error('Use the studio selection-aware Muse action to propose edits.');await refresh(record);
         for(const source of record.item.sources)await boundedRead(path.join(root,source.path),MAX_SOURCE);
         const prompt=artifactPrompt({item:record.item,text:value.text,sources:record.item.sources,artifact:artifacts.get(record.item.id)??null});
         if(typeof prompt!=='string'||prompt.length>16000)throw Error('The request and source context exceed the native message limit. Shorten the message.');
@@ -238,8 +257,46 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
       return getState();
     });
   }
+  const studioRecord=id=>{const record=records.get(id);if(!record||record.item.documentVersion!==2)throw Error('Choose a saved creative Work item.');return record;};
+  function studioRun(operation){return schedule(async()=>{if(closed||closing)throw Error('Work service is closed.');try{return await operation();}finally{emit();}});}
+  function syncDocumentMetadata(record,result){
+    const changed=record.item.title!==result.document.title||record.item.updatedAt!==result.document.updatedAt||record.item.documentRevision!==result.revision;
+    record.item.title=result.document.title;record.item.updatedAt=result.document.updatedAt;record.item.documentRevision=result.revision;
+    return changed;
+  }
+  async function updateDocumentRecord(record,result){
+    const changed=syncDocumentMetadata(record,result);
+    if(result.recovered)artifactErrors.set(record.item.id,result.recovery?.message??'Recovered the last complete Work revision.');else artifactErrors.delete(record.item.id);
+    if(changed)try{await persist();}catch(error){result.warning=`Document saved; library metadata will refresh on reopen: ${message(error)}`;}
+    return result;
+  }
   return{
     getState,getUpdateState,
+    getItem(id){const record=records.get(id);return record?clone(record.item):null;},
+    async getWorkspace(id){const record=records.get(id);if(!record)throw Error('Saved Work item not found.');return workspace(record);},
+    createDocument({kind,title,document,team='marketing'}={}){return studioRun(async()=>{
+      requireIdle();if(!STUDIO_KINDS.has(kind)||!TEAMS.has(team))throw Error('Choose a supported creative category.');
+      const candidate=document?validateWorkDocument(document):createWorkDocument(kind,{title:string(title??'Untitled work','Title',240)});
+      if(candidate.kind!==kind||candidate.revision!==0)throw Error('New work must start with a matching kind at revision zero.');
+      await perform({type:'create',kind,title:candidate.title,team,brief:'Creative Work project. Direct edits remain local until an explicit Muse action.',studioDocument:candidate});
+      return{itemId:candidate.id,...await documents.read(candidate.id)};
+    });},
+    readWorkDocument(itemId,options){return studioRun(async()=>{const record=studioRecord(itemId),saved=await documents.read(itemId,options);return options?.revision===undefined?updateDocumentRecord(record,saved):saved;});},
+    commitWorkEdit(request){return studioRun(async()=>{const record=studioRecord(request.itemId);return updateDocumentRecord(record,await documents.commit(request));});},
+    listWorkVersions(itemId){studioRecord(itemId);return documents.listVersions(itemId);},
+    checkpointWorkVersion(request){studioRecord(request.itemId);return documents.checkpoint(request);},
+    restoreWorkVersion(request){return studioRun(async()=>{const record=studioRecord(request.itemId);return updateDocumentRecord(record,await documents.restore(request));});},
+    requestStudioMuse({itemId,prompt,displayText}){
+      const requestedEpoch=cancellationEpoch;
+      return studioRun(async()=>{
+        const record=studioRecord(itemId);requireCurrentSend(requestedEpoch);requireIdle();await workspace(record);
+        if(typeof prompt!=='string'||prompt.length>16000)throw Error('The selected context exceeds the Muse message limit. Select fewer objects.');
+        if(native.task?.id!==record.item.taskId)await act({type:'selectTask',id:record.item.taskId});
+        const previous=new Set(native.task?.messages.map(entry=>entry.id));activeSendEpoch=requestedEpoch;pendingDisplay={record,previous,text:displayText};
+        try{await act({type:'sendMessage',text:prompt});}finally{pendingDisplay=null;activeSendEpoch=null;const sent=native.task?.messages.findLast(entry=>entry.role==='user'&&!previous.has(entry.id));if(sent){record.prompts[sent.id]=displayText;await persist();}}
+        return{accepted:true,itemId};
+      });
+    },
     copyArtifact(value,team){return run(async()=>{
       const artifact=validateArtifact(value);
       const draft=command({type:'create',team,kind:artifact.kind,title:artifact.title,brief:'Revise this private copy of the shared artifact. Publishing back to its space is a separate action.'});
@@ -258,8 +315,8 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
       }
       return run(async()=>perform(parsed,requestedEpoch));
     },
-    addSources(paths){return run(async()=>{
-      requireIdle();const record=requireItem();
+    addSources(paths,{itemId}={}){return run(async()=>{
+      requireIdle();const record=itemId===undefined?requireItem():records.get(itemId);if(!record)throw Error('Saved Work item not found.');
       if(!Array.isArray(paths)||paths.length===0||paths.length+record.item.sources.length>8)throw Error('Choose between one and eight source files; each Work item supports 8 sources.');
       const root=await workspace(record),inputDir=path.join(root,'inputs');await inspectPath(inputDir,{missing:true});
       const pending=[];
@@ -280,7 +337,7 @@ export async function createWorkService({dataDir,projectsDir,runtime}={}){
     close(){
       if(closePromise)return closePromise;
       closing=true;const cancellation=cancelPending();
-      closePromise=(async()=>{const error=await cancellation;await queue;unsubscribe();await controller.close();closed=true;listeners.clear();if(error)throw error;})();
+      closePromise=(async()=>{const error=await cancellation;await queue;unsubscribe();await documents.close();await controller.close();closed=true;listeners.clear();if(error)throw error;})();
       return closePromise;
     }
   };

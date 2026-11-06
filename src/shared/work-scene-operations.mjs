@@ -1,0 +1,23 @@
+import {validateSceneNodes} from './work-documents.mjs';
+const fields=new Set(['x','y','width','height','rotation','opacity','locked','hidden','groupId','text','style','image','assetId','shape']);
+function check(node){for(const key of ['x','y','width','height','rotation','opacity'])if(!Number.isFinite(node[key]))throw Error(`Invalid ${key}`);if(node.width<=0||node.height<=0||node.opacity<0||node.opacity>1)throw Error('Invalid scene geometry');return node;}
+function editSceneImpl(nodes,ids,patch){for(const key of Object.keys(patch))if(!fields.has(key))throw Error(`Unsupported scene field ${key}`);return nodes.map(node=>ids.includes(node.id)&&!node.locked?check({...node,...structuredClone(patch)}):structuredClone(node));}
+function duplicateSceneNodesImpl(nodes,ids,idFactory=()=>globalThis.crypto.randomUUID()){return [...structuredClone(nodes),...nodes.filter(n=>ids.includes(n.id)).map(n=>{const copy={...structuredClone(n),id:idFactory(),x:n.x+16,y:n.y+16,locked:false};delete copy.groupId;return copy;})];}
+function alignSceneImpl(nodes,ids,mode){const selected=nodes.filter(n=>ids.includes(n.id)&&!n.locked);if(!selected.length)return structuredClone(nodes);const left=Math.min(...selected.map(n=>n.x)),right=Math.max(...selected.map(n=>n.x+n.width)),top=Math.min(...selected.map(n=>n.y)),bottom=Math.max(...selected.map(n=>n.y+n.height));const sorted=[...selected].sort((a,b)=>mode==='distribute-y'?a.y-b.y:a.x-b.x);return nodes.map(node=>{if(!selected.includes(node))return structuredClone(node);const next={...structuredClone(node)};if(mode==='left')next.x=left;if(mode==='right')next.x=right-node.width;if(mode==='center')next.x=(left+right-node.width)/2;if(mode==='top')next.y=top;if(mode==='bottom')next.y=bottom-node.height;if(mode==='middle')next.y=(top+bottom-node.height)/2;if(mode==='distribute-x'&&selected.length>2)next.x=left+sorted.slice(0,sorted.indexOf(node)).reduce((sum,n)=>sum+n.width,0)+sorted.indexOf(node)*(right-left-selected.reduce((sum,n)=>sum+n.width,0))/(selected.length-1);if(mode==='distribute-y'&&selected.length>2)next.y=top+sorted.slice(0,sorted.indexOf(node)).reduce((sum,n)=>sum+n.height,0)+sorted.indexOf(node)*(bottom-top-selected.reduce((sum,n)=>sum+n.height,0))/(selected.length-1);return next;});}
+export function resizeArtboard(board,width,height){if(!Number.isFinite(width)||!Number.isFinite(height)||width<=0||height<=0||width>16384||height>16384)throw Error('Artboard dimensions must be 1-16384');const next={...structuredClone(board),width,height,nodes:validateSceneNodes(board.nodes)};for(const field of ['margin','safeArea'])if(next[field]!==undefined)next[field]=Math.min(next[field],Math.min(width,height)/2);return next;}
+function reorderSceneImpl(nodes,id,direction){const result=structuredClone(nodes),from=result.findIndex(n=>n.id===id);if(from<0)return result;const target=direction==='front'?result.length-1:direction==='back'?0:Math.max(0,Math.min(result.length-1,from+(direction==='up'?1:-1)));const [node]=result.splice(from,1);result.splice(target,0,node);return result;}
+function groupSceneImpl(nodes,ids,groupId){return nodes.map(n=>{const copy=structuredClone(n);if(ids.includes(n.id)&&!n.locked){if(groupId)copy.groupId=groupId;else delete copy.groupId;}return copy;});}
+
+function transformSceneImpl(nodes,ids,{dx=0,dy=0,scaleX=1,scaleY=1,rotation=0}={}){if(![dx,dy,scaleX,scaleY,rotation].every(Number.isFinite)||scaleX<=0||scaleY<=0)throw Error('Invalid scene transform');const selected=nodes.filter(n=>ids.includes(n.id)&&!n.locked);if(!selected.length)return structuredClone(nodes);const x=Math.min(...selected.map(n=>n.x)),y=Math.min(...selected.map(n=>n.y)),right=Math.max(...selected.map(n=>n.x+n.width)),bottom=Math.max(...selected.map(n=>n.y+n.height)),cx=(x+right)/2,cy=(y+bottom)/2,r=rotation*Math.PI/180;return nodes.map(n=>{if(!selected.includes(n))return structuredClone(n);const px=n.x+n.width/2-cx,py=n.y+n.height/2-cy;const rx=cx+px*Math.cos(r)-py*Math.sin(r),ry=cy+px*Math.sin(r)+py*Math.cos(r);return check({...structuredClone(n),x:x+(rx-n.width/2-x)*scaleX+dx,y:y+(ry-n.height/2-y)*scaleY+dy,width:n.width*scaleX,height:n.height*scaleY,rotation:n.rotation+rotation});});}
+
+export function editScene(...args){return validateSceneNodes(editSceneImpl(...args));}
+
+export function duplicateSceneNodes(...args){return validateSceneNodes(duplicateSceneNodesImpl(...args));}
+
+export function alignScene(...args){return validateSceneNodes(alignSceneImpl(...args));}
+
+export function reorderScene(...args){return validateSceneNodes(reorderSceneImpl(...args));}
+
+export function groupScene(...args){return validateSceneNodes(groupSceneImpl(...args));}
+
+export function transformScene(...args){return validateSceneNodes(transformSceneImpl(...args));}

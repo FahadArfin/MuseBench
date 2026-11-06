@@ -1,0 +1,2 @@
+import type {NativeProviderAdapter} from './index.mjs';
+export function createMuseImageProvider(options:{getConnectionStatus:()=>Promise<{ready:boolean;connectionId?:string}>;getCredential:()=>Promise<{key:string;connectionId:string;verify:()=>Promise<void>}>;readReferenceAsset?:(input:{itemId:string;assetId:string})=>Promise<{bytes:Uint8Array;mediaType:string}>;fetchImpl?:typeof fetch}):NativeProviderAdapter;

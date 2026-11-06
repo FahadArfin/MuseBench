@@ -1,6 +1,6 @@
 import {readFile,writeFile,mkdir,rename,rm} from 'node:fs/promises';
 import path from 'node:path';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
 import {curateEnvironment} from '../src/runtime/index.mjs';
 import {readNativeAccount} from '../src/runtime/account.mjs';
 
@@ -134,7 +134,11 @@ export async function createCodeBilling({dataDir,safeStorage,getBinary,isActive=
   })(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(cleanupError()),closeTimeoutMs);})]).finally(()=>{clearTimeout(timer);closePending=null;});
   return closePending;
  }
- return{status,command,credentials,signIn,isBusy,blocksWork,close};
+ // Main-process only. Reuse the explicitly selected encrypted API connection;
+ // Muse account/CLI login is never treated as media API authorization.
+ function mediaConnection(){const ready=!closing&&!busy&&!storageError&&record.mode==='api'&&!!record.key;return{ready,connectionId:ready?'muse-api-'+createHash('sha256').update('musebench-media-connection\0'+record.key).digest('hex').slice(0,24):null};}
+ async function mediaCredential(){available();const status=mediaConnection();if(!status.ready)throw Error('Select a saved Meta API connection in Usage & billing to enable Muse media.');const captured=revision,key=record.key;return{key,connectionId:status.connectionId,async verify(){available();if(busy||revision!==captured||record.mode!=='api'||!mediaConnection().ready)throw Error('The media API connection changed. Review the request again.');}};}
+ return{status,command,credentials,signIn,isBusy,blocksWork,close,mediaConnection,mediaCredential};
 }
 function validKey(key){return typeof key==='string'&&key.length>=10&&key.length<=8192&&!/[\s\x00-\x1f\x7f]/.test(key);}
 function validAccount(id){return typeof id==='string'&&/^[\w-]{1,200}$/.test(id);}

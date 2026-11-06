@@ -1,0 +1,9 @@
+export interface FinanceAccount {id:string;itemId:string;name:string;mask:string;type:string;currency:string;balanceMinor:number|null;balanceAt:string|null;}
+export interface FinanceTransaction {id:string;itemId:string;accountId:string;date:string;merchant:string;amountMinor:number;currency:string;category:string;flow:'expense'|'income'|'transfer'|'refund';pending:boolean;}
+export interface FinanceItem {id:string;source:'plaid'|'csv'|'sample';institution:string;status:string;lastSync:string|null;error:string|null;}
+export interface FinanceData {accounts:FinanceAccount[];transactions:FinanceTransaction[];items:FinanceItem[];budgets:Record<string,number>;}
+export interface FinanceState extends FinanceData {revision:number;configured:boolean;environment:'sandbox'|'production'|null;protectedStorage:boolean;busy:boolean;questionBusy?:boolean;link:null|{expiresAt:string;reconnect:boolean;uncertain?:boolean};error:string|null;}
+export interface FinanceCsvOptions {currency:string;positive:'expense'|'income';accountName?:string;columns?:{date:string;description:string;amount:string;category?:string;type?:string;};}
+export interface FinanceImportPreview {id:string;name:string;rows:number;added:number;duplicates:number;sample:FinanceTransaction[];}
+export type FinanceCommand={type:'state'}|{type:'configure';clientId:string;secret:string;environment:'sandbox'|'production'}|{type:'link';itemId?:string}|{type:'finishLink'}|{type:'cancelLink';acknowledgeUnknown?:boolean}|{type:'sync';itemId?:string}|{type:'unlink';itemId:string}|{type:'budget';currency:string;category:string;amountMinor:number}|{type:'importPreview';options:FinanceCsvOptions}|{type:'importCommit';id:string}|{type:'importCancel';id:string}|{type:'forget'}|{type:'clearError'}|{type:'ask';question:string;month:string;currency:string}|{type:'stopAsk'};
+export interface FinanceResult {state:FinanceState;preview?:FinanceImportPreview;answer?:string;}

@@ -1,0 +1,3 @@
+import type {VideoData,VideoTrack,VideoClip} from './work-video-schema.mjs';
+export const VIDEO_TIMELINE_LAYOUT:Readonly<{trackHeight:number;rulerHeight:number;labelWidth:number;overscanPixels:number;overscanTracks:number;maxRenderedClips:number}>;
+export function timelineViewport(data:Pick<VideoData,'timebase'|'tracks'>,options?:{scrollLeft?:number;scrollTop?:number;width?:number;height?:number;zoom?:number;pinnedIds?:(string|null|undefined)[]}):{tracks:{track:VideoTrack;index:number;clips:VideoClip[]}[];totalClipCount:number;renderedClipCount:number;densityHiddenCount:number;totalHeight:number};

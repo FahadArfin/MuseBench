@@ -7,6 +7,8 @@
   "type": "module",
   "main": "electron/main.mjs",
   "scripts": {
+    "test:finance": "node scripts/finance-smoke.mjs",
+    "test:work-studio": "node scripts/work-studio-acceptance.mjs",
     "build:icon": "node scripts/build-app-icon.mjs",
     "preview:ui": "vite --config vite.preview.config.mjs",
     "test:browser-preview": "node scripts/browser-preview-smoke.mjs && node scripts/queue-composer-smoke.mjs && node scripts/session-tools-smoke.mjs --annotations",
@@ -97,10 +99,14 @@
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@muse-code/sdk": "1.4.14",
+    "@napi-rs/canvas": "1.1.0",
+    "docx": "9.5.1",
     "docx-preview": "0.4.1",
     "electron-updater": "6.8.11",
+    "fast-xml-parser": "5.12.0",
     "lucide-react": "^0.468.0",
     "pdfjs-dist": "6.5.438",
+    "pptxgenjs": "4.0.1",
     "qrcode": "1.5.4",
     "react": "19.3.1",
     "react-dom": "19.3.1",
@@ -126,7 +132,8 @@
     "@electron/universal": "3.0.6",
     "filelist": "2.0.2",
     "minimatch": "11.0.1",
-    "glob@>=9": "14.0.2"
+    "glob@>=9": "14.0.2",
+    "image-size": "2.0.4"
   },
   "build": {
     "appId": "local.musebench.desktop",

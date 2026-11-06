@@ -1,0 +1,2 @@
+export function createImportReport(format,name){return{format,name,mode:'editable',warnings:[],imported:{surfaces:0,nodes:0,assets:0},limitations:['Original Office layout and font metrics may differ. Review every imported page or slide.']};}
+export function addImportWarning(report,{surfaceId,code,message,severity='warning'}){if(report.warnings.length>=2000)throw Error('Import warning count exceeded.');report.warnings.push({surfaceId,code,message,severity});return report;}

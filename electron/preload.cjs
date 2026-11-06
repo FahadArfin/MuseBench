@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 const launchActive = process.argv.includes('--musebench-launch-animation') && Boolean(ipcRenderer.sendSync('musebench:launch-claim'));
 // One ordering gate for every Code snapshot. Action results remain independent:
 // callers receive their exact result, while only canonical envelopes update UI.
@@ -83,9 +83,27 @@ contextBridge.exposeInMainWorld('musebench', Object.freeze({
   spacesCopyInvitation: () => ipcRenderer.invoke('musebench:spaces-copy-invitation'),
   onSpacesState: callback => { const listener = (_event, state) => callback(state); ipcRenderer.on('musebench:spaces-update', listener); return () => ipcRenderer.removeListener('musebench:spaces-update', listener); },
   workState: () => ipcRenderer.invoke('musebench:work-state'),
+  finance: command => ipcRenderer.invoke('musebench:finance',command),
+  onFinance: callback => {const listener=(_event,state)=>callback(state);ipcRenderer.on('musebench:finance-update',listener);return()=>ipcRenderer.removeListener('musebench:finance-update',listener);},
   work: command => ipcRenderer.invoke('musebench:work', command),
   workImport: () => ipcRenderer.invoke('musebench:work-import'),
   workExport: format => ipcRenderer.invoke('musebench:work-export', format),
+  workStudio: request => ipcRenderer.invoke('musebench:work-studio', request),
+  setWorkDraftsDirty: value => {if(typeof value!=='boolean')throw Error('Work draft state must be a boolean.');ipcRenderer.sendSync('musebench:work-drafts-dirty',value);},
+  // Only disk-backed File objects have native provenance. Never read File.path,
+  // accept renderer paths, or expose webUtils itself across context isolation.
+  importWorkFiles: async (itemId,files) => {
+    if(typeof itemId!=='string'||! /^[a-zA-Z0-9_-]{1,128}$/.test(itemId)||!Array.isArray(files)||files.length<1||files.length>32)throw Error('Choose a Work item and drop between 1 and 32 local files.');
+    const paths=[];
+    for(let index=0;index<files.length;index++){
+      const file=files[index];
+      let nativePath;try{nativePath=webUtils.getPathForFile(file);}catch{throw Error('Drop native local files from disk; constructed files and path strings are not accepted.');}
+      if(typeof nativePath!=='string'||!nativePath||nativePath.length>32768||nativePath.includes('\0'))throw Error('This dropped file is not backed by a local disk file.');
+      paths.push(nativePath);
+    }
+    return ipcRenderer.invoke('musebench:work-import-files',{itemId,paths});
+  },
+  onWorkStudio: callback => {const listener=(_event,value)=>callback(value);ipcRenderer.on('musebench:work-studio-update',listener);return()=>ipcRenderer.removeListener('musebench:work-studio-update',listener);},
   onWorkState: callback => { const listener = (_event, state) => callback(state); ipcRenderer.on('musebench:work-update', listener); return () => ipcRenderer.removeListener('musebench:work-update', listener); },
   onBackgroundEngine: callback => {const fn=(_event,state)=>callback(state);ipcRenderer.on('musebench:background-state',fn);return()=>ipcRenderer.removeListener('musebench:background-state',fn);},
   onTrayCommand: callback => {let active=true;const fn=async(_event,ticket)=>{let handled=false;try{handled=await callback(ticket);}catch{}if(active)void ipcRenderer.invoke('musebench:tray-ack',{id:ticket.id,handled:handled===true}).catch(()=>{});};ipcRenderer.on('musebench:tray-command',fn);void ipcRenderer.invoke('musebench:tray-ready').catch(()=>{});return()=>{active=false;ipcRenderer.removeListener('musebench:tray-command',fn);void ipcRenderer.invoke('musebench:tray-detach').catch(()=>{});};},

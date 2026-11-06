@@ -73,3 +73,6 @@ export function workExportOptions(artifact, capabilities = { mp4: false }) {
     { format: 'mp4', label: 'Motion MP4', enabled: available && artifact?.kind === 'motion' && capabilities.mp4 === true, reason: artifact?.kind !== 'motion' ? 'Available for Motion artifacts.' : 'FFmpeg must be installed to export MP4.' },
   ];
 }
+
+// Creative resources complement the original 24 team templates.
+export {CREATIVE_TEMPLATES as WORK_CREATIVE_TEMPLATES} from './work-creative-catalog.mjs';
