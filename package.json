@@ -154,6 +154,7 @@
       "electron/**/*",
       "src/controller/**/*",
       "src/work/**/*",
+      "src/finance/**/*",
       "src/spaces/**/*",
       "src/sites/**/*",
       "src/runtime/**/*",

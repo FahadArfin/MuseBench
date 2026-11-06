@@ -22,6 +22,10 @@ try{
  await page.waitForFunction(()=>!!window.musebench,{},{timeout:30000});
  const state=await page.evaluate(()=>window.musebench.getState());assert.ok(Array.isArray(state.projects));
  assert.equal(state.runtime.liveVerified,false);report.checks.push('Fresh profile starts with the real preload/controller; no model verification is invented');
+ const {state:finance}=await page.evaluate(()=>window.musebench.finance({type:'state'}));
+ assert.equal(finance.configured,false);assert.deepEqual(finance.accounts,[]);assert.deepEqual(finance.transactions,[]);assert.equal(finance.busy,false);
+ if(process.platform==='win32'){assert.equal(finance.protectedStorage,true);assert.equal(finance.error,null);}
+ report.checks.push('Packaged Finance backend opens an empty isolated profile through real preload/IPC; Windows protected storage is available');
  const info=await app.evaluate(({app})=>({version:app.getVersion(),arch:process.arch,platform:process.platform}));
  const expected=JSON.parse(await readFile('package.json','utf8'));assert.equal(info.version,expected.version);assert.equal(info.arch,process.arch);assert.equal(info.platform,process.platform);report.checks.push('Packaged version and native CPU architecture match the build');
  await page.getByRole('button',{name:'Muse Code',exact:true}).click();

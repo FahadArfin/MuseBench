@@ -16,7 +16,7 @@ function visit(relative) {
     else files.push(file);
   }
 }
-for (const dir of ['electron', 'dist', 'src/controller', 'src/runtime', 'src/work', 'src/spaces', 'src/sites', 'templates']) visit(dir);
+for (const dir of ['electron', 'dist', 'src/controller', 'src/runtime', 'src/work', 'src/finance', 'src/spaces', 'src/sites', 'templates']) visit(dir);
 for (const name of readdirSync(path.join(root, 'reference/patchlight/adapter'))) if (name.endsWith('.mjs')) files.push(`reference/patchlight/adapter/${name}`);
 for (const name of readdirSync(path.join(root, 'src/shared'))) if (name.endsWith('.mjs')) files.push(`src/shared/${name}`);
 // Remote v2 is a separate pinned graph. Check its runtime bytes and package

@@ -67,3 +67,11 @@ See [Finance setup and boundaries](../FINANCE.md) and the [implementation plan](
 ## Publication authorization and local release gate
 
 The user subsequently authorized publication of this combined Finance/Creative Studio batch. `npm.cmd run release:preflight` passed all six checks, and `node scripts/run-ci-suite.mjs unit --reuse` passed **2,814 tests with no failures or skips**. Both timing reports recorded `reused:false`, `evidenceStable:true`, and the same source/build/runtime fingerprint: `9859de388111d5ee64823609131e00879b8a7ce620e245b77ed2e876b52ba6c3`. These are local release-candidate checks. The release workflow must still run all required GitHub CI groups and verify/package/publish the exact commit. Installation is not part of this release authorization.
+
+## Packaged startup correction
+
+[Release run 42160002483](https://github.com/FahadArfin/MuseBench/actions/runs/42160002483) passed all seven Windows CI suites on `7f0db50d23e56b96a1e0d8caae843d35be653baf`, but its packaged launch check failed before the shell opened. Publication was skipped. The explicit Electron packaging list omitted `src/finance`, which the main process imports at startup.
+
+The package-content verifier now covers that directory. It reproduced the omission against a real local ASAR (`src/finance/plaid.mjs` missing) before the packaging list was corrected. Rebuilding with the corrected list passed byte comparisons for **685 packaged source/build files and three native helpers**. The unstamped local package then passed all eight launch/IPC checks with no renderer errors, including Finance's empty profile and Windows protected storage. These checks used a disposable profile and did not install or modify the user's installed app. The new candidate still requires the complete release workflow on its own commit.
+
+After the correction, the forced release preflight passed all six checks with `reused:false`, `evidenceStable:true`, and fingerprint `0371c68a8887177ac201c6ea3ee313b9e3a947cc922ac025f36824e49cc71782`. The targeted build-tool, CI-suite and release-asset contracts also passed **19 tests**.
